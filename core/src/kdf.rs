@@ -85,8 +85,8 @@ pub fn derive_window_key(srk: &[u8], window_index: u64) -> Result<Vec<u8>, &'sta
     )
 }
 
-/// İki anahtar materyalini birleştirip HKDF'ten geçirir.
-/// PCS ratchet için kullanılır.
+/// Combines two key materials and passes them through HKDF.
+/// Used for PCS ratcheting.
 pub fn derive_hkdf_combined(
     ikm_a: &[u8],
     ikm_b: &[u8],
@@ -98,7 +98,7 @@ pub fn derive_hkdf_combined(
     combined.extend_from_slice(ikm_a);
     combined.extend_from_slice(ikm_b);
     let result = derive_hkdf(&combined, salt, info, key_len);
-    combined.zeroize(); // Birleştirilmiş ara buffer temizlenir
+    combined.zeroize(); // Combined intermediate buffer is zeroized
     result
 }
 
@@ -142,7 +142,7 @@ mod tests {
         let srk1 = derive_srk(&dek, chat_id).unwrap();
         let srk2 = derive_srk(&dek, chat_id).unwrap();
         
-        assert_eq!(srk1, srk2, "SRK türetimi deterministik olmalı");
+        assert_eq!(srk1, srk2, "SRK derivation must be deterministic");
     }
 
     #[test]
@@ -152,7 +152,7 @@ mod tests {
         let srk_chat_a = derive_srk(&dek, b"chat-a").unwrap();
         let srk_chat_b = derive_srk(&dek, b"chat-b").unwrap();
         
-        assert_ne!(srk_chat_a, srk_chat_b, "Farklı chat_id farklı SRK üretmeli");
+        assert_ne!(srk_chat_a, srk_chat_b, "Different chat_id must produce different SRK");
     }
 
     #[test]
@@ -162,7 +162,7 @@ mod tests {
         let wk1 = derive_window_key(&srk, 1000).unwrap();
         let wk2 = derive_window_key(&srk, 1000).unwrap();
         
-        assert_eq!(wk1, wk2, "WindowKey türetimi deterministik olmalı");
+        assert_eq!(wk1, wk2, "WindowKey derivation must be deterministic");
     }
 
     #[test]
@@ -172,12 +172,12 @@ mod tests {
         let wk_window_1 = derive_window_key(&srk, 1000).unwrap();
         let wk_window_2 = derive_window_key(&srk, 1001).unwrap();
         
-        assert_ne!(wk_window_1, wk_window_2, "Farklı window_index farklı WindowKey üretmeli");
+        assert_ne!(wk_window_1, wk_window_2, "Different window_index must produce different WindowKey");
     }
 
     #[test]
     fn test_srk_isolation() {
-        // Farklı DEK ile aynı chat_id -> farklı SRK
+        // Different DEK with same chat_id -> different SRK
         let dek_a = [0xAAu8; 32];
         let dek_b = [0xBBu8; 32];
         let chat_id = b"same-chat";
@@ -185,6 +185,6 @@ mod tests {
         let srk_a = derive_srk(&dek_a, chat_id).unwrap();
         let srk_b = derive_srk(&dek_b, chat_id).unwrap();
         
-        assert_ne!(srk_a, srk_b, "Farklı DEK ile aynı chat_id farklı SRK üretmeli");
+        assert_ne!(srk_a, srk_b, "Different DEK with same chat_id must produce different SRK");
     }
 }

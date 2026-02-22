@@ -22,12 +22,12 @@ impl core::fmt::Display for CryptoError {
     }
 }
 
-/// PCS ratchet adımı için ephemeral anahtar çifti.
-/// Kullanım sonrası otomatik zeroize edilir.
+/// Ephemeral key pair for a PCS ratchet step.
+/// Automatically zeroized after usage.
 #[derive(ZeroizeOnDrop, Zeroize)]
 pub struct RatchetKeyPair {
-    pub public_key: [u8; 32],   // Karşı tarafa gönderilir
-    secret_key: [u8; 32],       // Asla dışarı çıkmaz
+    pub public_key: [u8; 32],   // Sent to the other party
+    secret_key: [u8; 32],       // Never leaves the local context
 }
 
 impl RatchetKeyPair {
@@ -39,13 +39,13 @@ impl RatchetKeyPair {
 /// Bir PCS ratchet adımının çıktısı.
 #[derive(ZeroizeOnDrop, Zeroize)]
 pub struct RatchetOutput {
-    pub new_srk: [u8; 32],          // Yeni Session Root Key
+    pub new_srk: [u8; 32],          // New Session Root Key
 }
 
-/// Ratchet tetikleme koşulları.
+/// Ratchet trigger conditions.
 pub struct RatchetConfig {
-    pub messages_per_ratchet: u32,   // Kaç mesajda bir ratchet (varsayılan: 50)
-    pub ratchet_on_new_window: bool, // Her yeni WindowKey döneminde ratchet (varsayılan: true)
+    pub messages_per_ratchet: u32,   // Number of messages between ratchets (default: 50)
+    pub ratchet_on_new_window: bool, // Ratchet on every new WindowKey period (default: true)
 }
 
 impl Default for RatchetConfig {
@@ -57,8 +57,8 @@ impl Default for RatchetConfig {
     }
 }
 
-/// Yeni bir ephemeral X25519 ratchet key pair üretir.
-/// Gönderen bu fonksiyonu çağırır, public_key'i karşı tarafa gönderir.
+/// Generates a new ephemeral X25519 ratchet key pair.
+/// The sender calls this function and transmits the public_key to the recipient.
 pub fn generate_ratchet_keypair() -> Result<RatchetKeyPair, CryptoError> {
     let mut csprng = OsRng;
     let secret = StaticSecret::random_from_rng(&mut csprng);
@@ -75,7 +75,7 @@ pub fn generate_ratchet_keypair() -> Result<RatchetKeyPair, CryptoError> {
     })
 }
 
-/// Gönderen tarafı: Mevcut SRK + kendi ratchet secret + karşının ratchet public → Yeni SRK
+/// Sender side: Current SRK + our ratchet secret + their ratchet public -> New SRK
 pub fn ratchet_srk_sender(
     current_srk: &[u8; 32],
     our_ratchet_secret: &[u8; 32],
@@ -110,7 +110,7 @@ pub fn ratchet_srk_sender(
     Ok(new_srk)
 }
 
-/// Alıcı tarafı: Mevcut SRK + kendi ratchet secret + karşının ratchet public → Yeni SRK
+/// Receiver side: Current SRK + our ratchet secret + their ratchet public -> New SRK
 pub fn ratchet_srk_receiver(
     current_srk: &[u8; 32],
     our_ratchet_secret: &[u8; 32],
@@ -118,11 +118,11 @@ pub fn ratchet_srk_receiver(
     chat_id: &[u8],
     ratchet_step: u64,
 ) -> Result<[u8; 32], CryptoError> {
-    // Alıcı ve gönderen aynı matematiği çalıştırır (ECDH özelliği)
+    // Receiver and sender execute the same math (ECDH property)
     ratchet_srk_sender(current_srk, our_ratchet_secret, their_ratchet_pub, chat_id, ratchet_step)
 }
 
-/// Ratchet tetiklenmeli mi? Mesaj sayısı ve pencere durumuna göre karar verir.
+/// Should we ratchet? Decides based on message count and window state.
 pub fn should_ratchet(
     message_count: u32,
     window_changed: bool,
@@ -153,7 +153,7 @@ mod tests {
             1,
         ).unwrap();
 
-        assert_ne!(old_srk, new_srk, "Ratchet sonrası SRK değişmeli");
+        assert_ne!(old_srk, new_srk, "SRK must change after ratchet");
         old_srk.zeroize(); // zeroize test cleanup
     }
 
@@ -182,7 +182,7 @@ mod tests {
             ratchet_step,
         ).unwrap();
 
-        assert_eq!(alice_new_srk, bob_new_srk, "Alice ve Bob bağımsız olarak aynı SRK'yı üretmeli");
+        assert_eq!(alice_new_srk, bob_new_srk, "Alice and Bob must independently produce the same SRK");
     }
 
     #[test]
@@ -200,7 +200,7 @@ mod tests {
             &current_srk, &kp_a.secret_key, &kp_b.public_key, chat_id, 2
         ).unwrap();
 
-        assert_ne!(srk_step_1, srk_step_2, "Farklı ratchet step'leri farklı SRK üretmeli");
+        assert_ne!(srk_step_1, srk_step_2, "Different ratchet steps must produce different SRKs");
     }
 
     #[test]
@@ -219,7 +219,7 @@ mod tests {
             &current_srk, &kp_c.secret_key, &kp_d.public_key, b"chat", 1
         ).unwrap();
 
-        assert_ne!(new_srk, attempted_srk, "Farklı ephemeral key pair ile aynı SRK türetilemez");
+        assert_ne!(new_srk, attempted_srk, "Cannot derive the same SRK with a different ephemeral key pair");
     }
 
     #[test]
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn test_should_ratchet_on_new_window() {
         let config = RatchetConfig { messages_per_ratchet: 1000, ratchet_on_new_window: true };
-        assert!(should_ratchet(1, true, &config), "Yeni pencerede ratchet tetiklenmeli");
-        assert!(!should_ratchet(1, false, &config), "Aynı pencerede ratchet tetiklenmemeli");
+        assert!(should_ratchet(1, true, &config), "Ratchet should trigger on new window");
+        assert!(!should_ratchet(1, false, &config), "Ratchet should not trigger on same window");
     }
 }

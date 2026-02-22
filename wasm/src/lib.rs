@@ -388,8 +388,8 @@ impl RatchetKeyPairObj {
         self.public_key.clone()
     }
 
-    /// Bu key pair'i kullanarak SRK ratchet hesapla.
-    /// secret_key WASM sınırını asla geçmez.
+    /// Computes SRK ratchet using this key pair.
+    /// secret_key never crosses the WASM boundary.
     #[wasm_bindgen]
     pub fn compute_ratchet(
         &self,
