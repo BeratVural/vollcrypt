@@ -6,6 +6,7 @@ pub mod wrap;
 pub mod padding;
 pub mod envelope;
 pub mod pqc;
+pub mod device;
 
 // Re-export common functions directly
 pub use bip39::{generate_mnemonic, mnemonic_to_seed};
@@ -22,3 +23,4 @@ pub use pqc::{
     ml_kem_keygen, ml_kem_encapsulate, ml_kem_decapsulate,
     hybrid_kem_encapsulate, hybrid_kem_decapsulate,
 };
+pub use device::{Device, DefaultDeviceRegistry};

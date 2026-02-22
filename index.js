@@ -310,7 +310,7 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { generateMnemonic, mnemonicToSeed, generateEd25519Keypair, generateX25519Keypair, ecdhSharedSecret, signMessage, verifySignature, encryptAesGcm, decryptAesGcm, derivePbkdf2, deriveHkdf, deriveSrk, deriveWindowKey } = nativeBinding
+const { generateMnemonic, mnemonicToSeed, generateEd25519Keypair, generateX25519Keypair, ecdhSharedSecret, signMessage, verifySignature, encryptAesGcm, decryptAesGcm, derivePbkdf2, deriveHkdf, deriveSrk, deriveWindowKey, wrapKey, unwrapKey, padMessage, packEnvelope, unpackEnvelope, mlKemKeygen, mlKemEncapsulate, mlKemDecapsulate, hybridKemEncapsulate, hybridKemDecapsulate, registryEmpty, registryAddDevice, registryRevokeDevice, registryGetActiveDevices } = nativeBinding
 
 module.exports.generateMnemonic = generateMnemonic
 module.exports.mnemonicToSeed = mnemonicToSeed
@@ -325,3 +325,17 @@ module.exports.derivePbkdf2 = derivePbkdf2
 module.exports.deriveHkdf = deriveHkdf
 module.exports.deriveSrk = deriveSrk
 module.exports.deriveWindowKey = deriveWindowKey
+module.exports.wrapKey = wrapKey
+module.exports.unwrapKey = unwrapKey
+module.exports.padMessage = padMessage
+module.exports.packEnvelope = packEnvelope
+module.exports.unpackEnvelope = unpackEnvelope
+module.exports.mlKemKeygen = mlKemKeygen
+module.exports.mlKemEncapsulate = mlKemEncapsulate
+module.exports.mlKemDecapsulate = mlKemDecapsulate
+module.exports.hybridKemEncapsulate = hybridKemEncapsulate
+module.exports.hybridKemDecapsulate = hybridKemDecapsulate
+module.exports.registryEmpty = registryEmpty
+module.exports.registryAddDevice = registryAddDevice
+module.exports.registryRevokeDevice = registryRevokeDevice
+module.exports.registryGetActiveDevices = registryGetActiveDevices
