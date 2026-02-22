@@ -14,10 +14,15 @@ pub fn encrypt_aes256gcm(
     associated_data: Option<&[u8]>,
 ) -> Result<Vec<u8>, &'static str> {
     if key.len() != 32 {
+        log::error!("encrypt_aes256gcm: Invalid AES key length (expected 32, got {})", key.len());
         return Err("Invalid AES key length, must be 32 bytes");
     }
 
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "Failed to create AES cipher")?;
+    log::debug!("encrypt_aes256gcm: Encrypting plaintext of length {}", plaintext.len());
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| {
+        log::error!("encrypt_aes256gcm: Failed to create AES cipher");
+        "Failed to create AES cipher"
+    })?;
 
     let mut nonce_bytes = [0u8; 12];
     OsRng.fill_bytes(&mut nonce_bytes);
@@ -30,7 +35,10 @@ pub fn encrypt_aes256gcm(
 
     let ciphertext = cipher
         .encrypt(nonce, payload)
-        .map_err(|_| "Encryption failed")?;
+        .map_err(|_| {
+            log::error!("encrypt_aes256gcm: Encryption failed");
+            "Encryption failed"
+        })?;
 
     // Prepend the nonce to the ciphertext
     let mut result = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
@@ -50,13 +58,19 @@ pub fn decrypt_aes256gcm(
     associated_data: Option<&[u8]>,
 ) -> Result<Vec<u8>, &'static str> {
     if key.len() != 32 {
+        log::error!("decrypt_aes256gcm: Invalid AES key length");
         return Err("Invalid AES key length, must be 32 bytes");
     }
     if encrypted_data.len() < 12 {
+        log::error!("decrypt_aes256gcm: Encrypted data too short (missing nonce)");
         return Err("Encrypted data too short, missing nonce");
     }
 
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "Failed to create AES cipher")?;
+    log::debug!("decrypt_aes256gcm: Decrypting ciphertext of length {}", encrypted_data.len());
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| {
+        log::error!("decrypt_aes256gcm: Failed to create AES cipher");
+        "Failed to create AES cipher"
+    })?;
 
     let (nonce_bytes, ciphertext) = encrypted_data.split_at(12);
     let nonce = Nonce::from_slice(nonce_bytes);
@@ -68,7 +82,10 @@ pub fn decrypt_aes256gcm(
 
     let plaintext = cipher
         .decrypt(nonce, payload)
-        .map_err(|_| "Decryption failed or MAC mismatch")?;
+        .map_err(|_| {
+            log::error!("decrypt_aes256gcm: Decryption failed or MAC mismatch");
+            "Decryption failed or MAC mismatch"
+        })?;
 
     Ok(plaintext)
 }

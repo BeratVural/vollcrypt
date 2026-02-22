@@ -363,3 +363,12 @@ pub fn registry_get_active_devices(registry_json: &str) -> Result<String, JsValu
         
     registry.get_active_devices_json().map_err(|e| JsValue::from_str(e))
 }
+
+// ==================== Logging Initialization ====================
+
+#[wasm_bindgen]
+pub fn init_logger() {
+    console_error_panic_hook::set_once();
+    
+    let _ = console_log::init_with_level(log::Level::Debug);
+}

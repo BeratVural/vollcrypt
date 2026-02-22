@@ -29,12 +29,19 @@ pub fn ml_kem_encapsulate(ek_bytes: &[u8]) -> Result<(Vec<u8>, Vec<u8>), &'stati
 
     // Try to build the encapsulation key from raw bytes
     let ek_array = ml_kem::array::Array::try_from(ek_bytes)
-        .map_err(|_| "Invalid encapsulation key length")?;
+        .map_err(|_| {
+            log::error!("ml_kem_encapsulate: Invalid encapsulation key length");
+            "Invalid encapsulation key length"
+        })?;
     let ek = <EK as EncodedSizeUser>::from_bytes(&ek_array);
 
+    log::debug!("ml_kem_encapsulate: Encapsulating shared secret");
     let (ct, shared_secret): (ml_kem::Ciphertext<MlKem768>, ml_kem::SharedKey<MlKem768>) = 
         ek.encapsulate(&mut OsRng)
-            .map_err(|_| "ML-KEM encapsulation failed")?;
+            .map_err(|_| {
+                log::error!("ml_kem_encapsulate: ML-KEM encapsulation failed");
+                "ML-KEM encapsulation failed"
+            })?;
 
     Ok((ct.as_slice().to_vec(), shared_secret.as_slice().to_vec()))
 }
@@ -48,14 +55,24 @@ pub fn ml_kem_decapsulate(dk_bytes: &[u8], ct_bytes: &[u8]) -> Result<Vec<u8>, &
     type CT = ml_kem::Ciphertext<MlKem768>;
 
     let dk_array = ml_kem::array::Array::try_from(dk_bytes)
-        .map_err(|_| "Invalid decapsulation key length")?;
+        .map_err(|_| {
+            log::error!("ml_kem_decapsulate: Invalid decapsulation key length");
+            "Invalid decapsulation key length"
+        })?;
     let dk = <DK as EncodedSizeUser>::from_bytes(&dk_array);
 
     let ct = CT::try_from(ct_bytes)
-        .map_err(|_| "Invalid ciphertext length")?;
+        .map_err(|_| {
+            log::error!("ml_kem_decapsulate: Invalid ciphertext length");
+            "Invalid ciphertext length"
+        })?;
 
+    log::debug!("ml_kem_decapsulate: Decapsulating ciphertext");
     let shared_secret: ml_kem::SharedKey<MlKem768> = dk.decapsulate(&ct)
-        .map_err(|_| "ML-KEM decapsulation failed")?;
+        .map_err(|_| {
+            log::error!("ml_kem_decapsulate: ML-KEM decapsulation failed");
+            "ML-KEM decapsulation failed"
+        })?;
 
     Ok(shared_secret.as_slice().to_vec())
 }
@@ -71,6 +88,8 @@ pub fn hybrid_kem_encapsulate(
     x25519_their_public: &[u8],
     ml_kem_ek_bytes: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>), &'static str> {
+    log::debug!("hybrid_kem_encapsulate: Starting hybrid encapsulation");
+    
     // Step 1: X25519 ECDH shared secret
     let x25519_shared = crate::ecdh_shared_secret(x25519_our_secret, x25519_their_public)?;
 
@@ -101,6 +120,8 @@ pub fn hybrid_kem_decapsulate(
     ml_kem_dk_bytes: &[u8],
     ml_kem_ct_bytes: &[u8],
 ) -> Result<Vec<u8>, &'static str> {
+    log::debug!("hybrid_kem_decapsulate: Starting hybrid decapsulation");
+    
     // Step 1: X25519 ECDH shared secret
     let x25519_shared = crate::ecdh_shared_secret(x25519_our_secret, x25519_their_public)?;
 
