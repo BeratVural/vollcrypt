@@ -7,6 +7,7 @@ pub mod padding;
 pub mod envelope;
 pub mod pqc;
 pub mod device;
+pub mod ratchet;
 
 // Re-export common functions directly
 pub use bip39::{generate_mnemonic, mnemonic_to_seed};
@@ -24,3 +25,7 @@ pub use pqc::{
     hybrid_kem_encapsulate, hybrid_kem_decapsulate,
 };
 pub use device::{Device, DefaultDeviceRegistry};
+pub use ratchet::{
+    generate_ratchet_keypair, ratchet_srk_sender, ratchet_srk_receiver, should_ratchet,
+    RatchetKeyPair, RatchetOutput, RatchetConfig, CryptoError,
+};

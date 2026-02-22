@@ -43,3 +43,6 @@ export declare function registryEmpty(): string
 export declare function registryAddDevice(registryJson: string, deviceId: string, name: string, addedAt: number, publicKey: string): string
 export declare function registryRevokeDevice(registryJson: string, deviceId: string): string
 export declare function registryGetActiveDevices(registryJson: string): string
+export declare function generateRatchetKeypair(): Array<Buffer>
+export declare function ratchetSrk(currentSrk: Uint8Array, ourRatchetSecret: Uint8Array, theirRatchetPub: Uint8Array, chatId: Uint8Array, ratchetStep: number, isSender: boolean): Buffer
+export declare function shouldRatchet(messageCount: number, windowChanged: boolean, messagesPerRatchet: number, ratchetOnNewWindow: boolean): boolean
