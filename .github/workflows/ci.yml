@@ -1,0 +1,68 @@
+name: CI/CD
+
+env:
+  DEBUG: napi:*
+  MACOSX_DEPLOYMENT_TARGET: "10.13"
+
+on:
+  push:
+    branches:
+      - main
+    tags-ignore:
+      - "**"
+  pull_request:
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install Dependencies
+        run: npm install
+      - name: Run Cargo Tests
+        run: cargo test --all
+      - name: Build WASM
+        run: npm run build:wasm
+      - name: Build Node
+        run: npm run build:node
+
+  publish:
+    name: Publish to NPM
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://registry.npmjs.org"
+      - name: Install Dependencies
+        run: npm install
+      - name: Build WASM
+        run: npm run build:wasm
+      - name: Build Node
+        run: npm run build:node
+      - name: Publish Node Package
+        run: npm publish ./node --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish WASM Package
+        run: npm publish ./wasm/pkg --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

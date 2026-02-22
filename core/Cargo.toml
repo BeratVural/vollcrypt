@@ -1,0 +1,18 @@
+[package]
+name = "vollcrypt-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+aes-gcm = "0.10.3"
+bip39 = "2.2.2"
+ed25519-dalek = { version = "2.2.0", features = ["rand_core"] }
+hkdf = "0.12.4"
+pbkdf2 = "0.12.2"
+rand = "0.8.5"
+sha2 = "0.10.9"
+x25519-dalek = { version = "2.0.1", features = ["static_secrets"] }
+zeroize = "1.8.2"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2.17", features = ["js"] }

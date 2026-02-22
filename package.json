@@ -1,0 +1,17 @@
+{
+  "name": "vollcrypt",
+  "version": "0.1.0",
+  "description": "Cross-platform Rust cryptography core for VollChat & KanzleiLink",
+  "private": true,
+  "scripts": {
+    "build:node": "npx @napi-rs/cli build --platform --release --cargo-cwd node",
+    "build:wasm": "npx wasm-pack build wasm --target web --out-dir pkg",
+    "build": "npm run build:node && npm run build:wasm",
+    "test:cargo": "cargo test --all",
+    "format": "cargo fmt --all"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.4",
+    "wasm-pack": "^0.13.1"
+  }
+}

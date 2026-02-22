@@ -1,0 +1,15 @@
+[package]
+name = "node"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2.16.2", default-features = false, features = ["napi4"] }
+napi-derive = "2.16.0"
+vollcrypt-core = { path = "../core" }
+
+[build-dependencies]
+napi-build = "2.1.3"
