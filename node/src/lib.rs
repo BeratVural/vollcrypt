@@ -98,3 +98,57 @@ pub fn derive_window_key(srk: Uint8Array, window_index: u32) -> Result<Buffer> {
         Err(e) => Err(Error::from_reason(e.to_string())),
     }
 }
+
+#[napi]
+pub fn wrap_key(kek: Uint8Array, key_to_wrap: Uint8Array) -> Result<Buffer> {
+    match vollcrypt_core::wrap_key(kek.as_ref(), key_to_wrap.as_ref()) {
+        Ok(v) => Ok(Buffer::from(v)),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}
+
+#[napi]
+pub fn unwrap_key(kek: Uint8Array, wrapped_key: Uint8Array) -> Result<Buffer> {
+    match vollcrypt_core::unwrap_key(kek.as_ref(), wrapped_key.as_ref()) {
+        Ok(v) => Ok(Buffer::from(v)),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}
+
+#[napi]
+pub fn pad_message(content: Uint8Array) -> Buffer {
+    let padded = vollcrypt_core::pad_message(content.as_ref());
+    Buffer::from(padded)
+}
+
+#[napi]
+pub fn pack_envelope(window_index: u32, aad_hash: Uint8Array, encrypted_blob: Uint8Array) -> Result<Buffer> {
+    if aad_hash.as_ref().len() != 32 {
+        return Err(Error::from_reason("AAD hash must be exactly 32 bytes"));
+    }
+    let mut aad = [0u8; 32];
+    aad.copy_from_slice(aad_hash.as_ref());
+    match vollcrypt_core::pack_envelope(window_index, &aad, encrypted_blob.as_ref()) {
+        Ok(v) => Ok(Buffer::from(v)),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}
+
+#[napi(object)]
+pub struct UnpackedEnvelope {
+    pub window_index: u32,
+    pub aad_hash: Buffer,
+    pub encrypted_blob: Buffer,
+}
+
+#[napi]
+pub fn unpack_envelope(envelope: Uint8Array) -> Result<UnpackedEnvelope> {
+    match vollcrypt_core::unpack_envelope(envelope.as_ref()) {
+        Ok((window_index, aad_hash, encrypted_blob)) => Ok(UnpackedEnvelope {
+            window_index,
+            aad_hash: Buffer::from(aad_hash.to_vec()),
+            encrypted_blob: Buffer::from(encrypted_blob),
+        }),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}

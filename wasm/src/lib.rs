@@ -13,6 +13,11 @@ use vollcrypt_core::{
     ecdh_shared_secret as core_ecdh_shared_secret,
     derive_srk as core_derive_srk,
     derive_window_key as core_derive_window_key,
+    wrap_key as core_wrap_key,
+    unwrap_key as core_unwrap_key,
+    pad_message as core_pad_message,
+    pack_envelope as core_pack_envelope,
+    unpack_envelope as core_unpack_envelope,
 };
 
 #[wasm_bindgen]
@@ -43,6 +48,11 @@ impl Ed25519KeyPairObj {
     #[wasm_bindgen(getter)]
     pub fn public_key(&self) -> Vec<u8> {
         self.public_key.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn secret_key(&self) -> Vec<u8> {
+        self.secret_key.clone()
     }
 }
 
@@ -131,4 +141,61 @@ pub fn derive_srk(dek: &[u8], chat_id: &[u8]) -> Result<Vec<u8>, JsValue> {
 #[wasm_bindgen]
 pub fn derive_window_key(srk: &[u8], window_index: u32) -> Result<Vec<u8>, JsValue> {
     core_derive_window_key(srk, window_index as u64).map_err(|e| JsValue::from_str(e))
+}
+
+#[wasm_bindgen]
+pub fn wrap_key(kek: &[u8], key_to_wrap: &[u8]) -> Result<Vec<u8>, JsValue> {
+    core_wrap_key(kek, key_to_wrap).map_err(|e| JsValue::from_str(e))
+}
+
+#[wasm_bindgen]
+pub fn unwrap_key(kek: &[u8], wrapped_key: &[u8]) -> Result<Vec<u8>, JsValue> {
+    core_unwrap_key(kek, wrapped_key).map_err(|e| JsValue::from_str(e))
+}
+
+#[wasm_bindgen]
+pub fn pad_message(content: &[u8]) -> Vec<u8> {
+    core_pad_message(content)
+}
+
+#[wasm_bindgen]
+pub fn pack_envelope(window_index: u32, aad_hash: &[u8], encrypted_blob: &[u8]) -> Result<Vec<u8>, JsValue> {
+    let mut aad = [0u8; 32];
+    if aad_hash.len() != 32 {
+        return Err(JsValue::from_str("AAD Hash must be exactly 32 bytes"));
+    }
+    aad.copy_from_slice(aad_hash);
+    core_pack_envelope(window_index, &aad, encrypted_blob).map_err(|e| JsValue::from_str(e))
+}
+
+#[wasm_bindgen]
+pub struct UnpackedEnvelope {
+    pub window_index: u32,
+    aad_hash: Vec<u8>,
+    encrypted_blob: Vec<u8>,
+}
+
+#[wasm_bindgen]
+impl UnpackedEnvelope {
+    #[wasm_bindgen(getter)]
+    pub fn aad_hash(&self) -> Vec<u8> {
+        self.aad_hash.clone()
+    }
+    
+    #[wasm_bindgen(getter)]
+    pub fn encrypted_blob(&self) -> Vec<u8> {
+        self.encrypted_blob.clone()
+    }
+}
+
+#[wasm_bindgen]
+pub fn unpack_envelope(envelope: &[u8]) -> Result<UnpackedEnvelope, JsValue> {
+    match core_unpack_envelope(envelope) {
+        Ok((window_index, aad_hash, encrypted_blob)) => Ok(UnpackedEnvelope {
+            window_index,
+            aad_hash: aad_hash.to_vec(),
+            encrypted_blob,
+        }),
+        Err(e) => Err(JsValue::from_str(e)),
+    }
 }
