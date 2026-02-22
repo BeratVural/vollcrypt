@@ -85,6 +85,23 @@ pub fn derive_window_key(srk: &[u8], window_index: u64) -> Result<Vec<u8>, &'sta
     )
 }
 
+/// İki anahtar materyalini birleştirip HKDF'ten geçirir.
+/// PCS ratchet için kullanılır.
+pub fn derive_hkdf_combined(
+    ikm_a: &[u8],
+    ikm_b: &[u8],
+    salt: Option<&[u8]>,
+    info: Option<&[u8]>,
+    key_len: usize,
+) -> Result<Vec<u8>, &'static str> {
+    let mut combined = Vec::with_capacity(ikm_a.len() + ikm_b.len());
+    combined.extend_from_slice(ikm_a);
+    combined.extend_from_slice(ikm_b);
+    let result = derive_hkdf(&combined, salt, info, key_len);
+    combined.zeroize(); // Birleştirilmiş ara buffer temizlenir
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

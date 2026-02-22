@@ -278,3 +278,71 @@ pub fn registry_get_active_devices(registry_json: String) -> Result<String> {
         
     registry.get_active_devices_json().map_err(|e| Error::from_reason(e.to_string()))
 }
+
+// ==================== Post-Compromise Security (PCS) ====================
+
+#[napi]
+pub fn generate_ratchet_keypair() -> Result<Vec<Buffer>> {
+    match vollcrypt_core::generate_ratchet_keypair() {
+        Ok(kp) => Ok(vec![Buffer::from(kp.secret_key().to_vec()), Buffer::from(kp.public_key.to_vec())]),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}
+
+#[napi]
+pub fn ratchet_srk(
+    current_srk: Uint8Array,
+    our_ratchet_secret: Uint8Array,
+    their_ratchet_pub: Uint8Array,
+    chat_id: Uint8Array,
+    ratchet_step: u32,
+    is_sender: bool,
+) -> Result<Buffer> {
+    if current_srk.len() != 32 || our_ratchet_secret.len() != 32 || their_ratchet_pub.len() != 32 {
+        return Err(Error::from_reason("Keys must be 32 bytes".to_string()));
+    }
+
+    let mut current_srk_arr = [0u8; 32];
+    current_srk_arr.copy_from_slice(current_srk.as_ref());
+    let mut our_secret_arr = [0u8; 32];
+    our_secret_arr.copy_from_slice(our_ratchet_secret.as_ref());
+    let mut their_pub_arr = [0u8; 32];
+    their_pub_arr.copy_from_slice(their_ratchet_pub.as_ref());
+
+    let result = if is_sender {
+        vollcrypt_core::ratchet_srk_sender(
+            &current_srk_arr,
+            &our_secret_arr,
+            &their_pub_arr,
+            chat_id.as_ref(),
+            ratchet_step as u64,
+        )
+    } else {
+        vollcrypt_core::ratchet_srk_receiver(
+            &current_srk_arr,
+            &our_secret_arr,
+            &their_pub_arr,
+            chat_id.as_ref(),
+            ratchet_step as u64,
+        )
+    };
+
+    match result {
+        Ok(new_srk) => Ok(Buffer::from(new_srk.to_vec())),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}
+
+#[napi]
+pub fn should_ratchet(
+    message_count: u32,
+    window_changed: bool,
+    messages_per_ratchet: u32,
+    ratchet_on_new_window: bool,
+) -> bool {
+    let config = vollcrypt_core::RatchetConfig {
+        messages_per_ratchet,
+        ratchet_on_new_window,
+    };
+    vollcrypt_core::should_ratchet(message_count, window_changed, &config)
+}
