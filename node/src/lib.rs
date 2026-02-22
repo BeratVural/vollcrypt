@@ -229,3 +229,52 @@ pub fn hybrid_kem_decapsulate(
     }
 }
 
+// ==================== Device Authorization Registry ====================
+
+#[napi]
+pub fn registry_empty() -> String {
+    let registry = vollcrypt_core::DefaultDeviceRegistry::new();
+    registry.to_json().unwrap_or_else(|_| "{\"devices\":[]}".to_string())
+}
+
+#[napi]
+pub fn registry_add_device(
+    registry_json: String,
+    device_id: String,
+    name: String,
+    added_at: u32,
+    public_key: String,
+) -> Result<String> {
+    let mut registry = vollcrypt_core::DefaultDeviceRegistry::from_json(&registry_json)
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+        
+    let device = vollcrypt_core::Device {
+        device_id,
+        name,
+        added_at: added_at as u64,
+        public_key,
+        is_revoked: false,
+    };
+    
+    registry.add_device(device).map_err(|e| Error::from_reason(e.to_string()))?;
+    
+    registry.to_json().map_err(|e| Error::from_reason(e.to_string()))
+}
+
+#[napi]
+pub fn registry_revoke_device(registry_json: String, device_id: String) -> Result<String> {
+    let mut registry = vollcrypt_core::DefaultDeviceRegistry::from_json(&registry_json)
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+        
+    registry.revoke_device(&device_id).map_err(|e| Error::from_reason(e.to_string()))?;
+    
+    registry.to_json().map_err(|e| Error::from_reason(e.to_string()))
+}
+
+#[napi]
+pub fn registry_get_active_devices(registry_json: String) -> Result<String> {
+    let registry = vollcrypt_core::DefaultDeviceRegistry::from_json(&registry_json)
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+        
+    registry.get_active_devices_json().map_err(|e| Error::from_reason(e.to_string()))
+}

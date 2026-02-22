@@ -314,3 +314,52 @@ pub fn hybrid_kem_decapsulate(
         .map_err(|e| JsValue::from_str(e))
 }
 
+// ==================== Device Authorization Registry ====================
+
+#[wasm_bindgen]
+pub fn registry_empty() -> String {
+    let registry = vollcrypt_core::DefaultDeviceRegistry::new();
+    registry.to_json().unwrap_or_else(|_| "{\"devices\":[]}".to_string())
+}
+
+#[wasm_bindgen]
+pub fn registry_add_device(
+    registry_json: &str,
+    device_id: &str,
+    name: &str,
+    added_at: u32,
+    public_key: &str,
+) -> Result<String, JsValue> {
+    let mut registry = vollcrypt_core::DefaultDeviceRegistry::from_json(registry_json)
+        .map_err(|e| JsValue::from_str(e))?;
+        
+    let device = vollcrypt_core::Device {
+        device_id: device_id.to_string(),
+        name: name.to_string(),
+        added_at: added_at as u64,
+        public_key: public_key.to_string(),
+        is_revoked: false,
+    };
+    
+    registry.add_device(device).map_err(|e| JsValue::from_str(e))?;
+    
+    registry.to_json().map_err(|e| JsValue::from_str(e))
+}
+
+#[wasm_bindgen]
+pub fn registry_revoke_device(registry_json: &str, device_id: &str) -> Result<String, JsValue> {
+    let mut registry = vollcrypt_core::DefaultDeviceRegistry::from_json(registry_json)
+        .map_err(|e| JsValue::from_str(e))?;
+        
+    registry.revoke_device(device_id).map_err(|e| JsValue::from_str(e))?;
+    
+    registry.to_json().map_err(|e| JsValue::from_str(e))
+}
+
+#[wasm_bindgen]
+pub fn registry_get_active_devices(registry_json: &str) -> Result<String, JsValue> {
+    let registry = vollcrypt_core::DefaultDeviceRegistry::from_json(registry_json)
+        .map_err(|e| JsValue::from_str(e))?;
+        
+    registry.get_active_devices_json().map_err(|e| JsValue::from_str(e))
+}

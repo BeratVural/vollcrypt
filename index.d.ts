@@ -16,3 +16,30 @@ export declare function derivePbkdf2(password: Uint8Array, salt: Uint8Array, ite
 export declare function deriveHkdf(ikm: Uint8Array, salt: Uint8Array | undefined | null, info: Uint8Array | undefined | null, keyLen: number): Buffer
 export declare function deriveSrk(dek: Uint8Array, chatId: Uint8Array): Buffer
 export declare function deriveWindowKey(srk: Uint8Array, windowIndex: number): Buffer
+export declare function wrapKey(kek: Uint8Array, keyToWrap: Uint8Array): Buffer
+export declare function unwrapKey(kek: Uint8Array, wrappedKey: Uint8Array): Buffer
+export declare function padMessage(content: Uint8Array): Buffer
+export declare function packEnvelope(windowIndex: number, aadHash: Uint8Array, encryptedBlob: Uint8Array): Buffer
+export interface UnpackedEnvelope {
+  windowIndex: number
+  aadHash: Buffer
+  encryptedBlob: Buffer
+}
+export declare function unpackEnvelope(envelope: Uint8Array): UnpackedEnvelope
+export declare function mlKemKeygen(): Array<Buffer>
+export interface MlKemEncapsulationResult {
+  ciphertext: Buffer
+  sharedSecret: Buffer
+}
+export declare function mlKemEncapsulate(encapsulationKey: Uint8Array): MlKemEncapsulationResult
+export declare function mlKemDecapsulate(decapsulationKey: Uint8Array, ciphertext: Uint8Array): Buffer
+export interface HybridKemResult {
+  sharedKey: Buffer
+  mlKemCiphertext: Buffer
+}
+export declare function hybridKemEncapsulate(x25519OurSecret: Uint8Array, x25519TheirPublic: Uint8Array, mlKemEk: Uint8Array): HybridKemResult
+export declare function hybridKemDecapsulate(x25519OurSecret: Uint8Array, x25519TheirPublic: Uint8Array, mlKemDk: Uint8Array, mlKemCt: Uint8Array): Buffer
+export declare function registryEmpty(): string
+export declare function registryAddDevice(registryJson: string, deviceId: string, name: string, addedAt: number, publicKey: string): string
+export declare function registryRevokeDevice(registryJson: string, deviceId: string): string
+export declare function registryGetActiveDevices(registryJson: string): string
