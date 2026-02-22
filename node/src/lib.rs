@@ -82,3 +82,19 @@ pub fn derive_hkdf(ikm: Uint8Array, salt: Option<Uint8Array>, info: Option<Uint8
         Err(e) => Err(Error::from_reason(e.to_string())),
     }
 }
+
+#[napi]
+pub fn derive_srk(dek: Uint8Array, chat_id: Uint8Array) -> Result<Buffer> {
+    match vollcrypt_core::derive_srk(dek.as_ref(), chat_id.as_ref()) {
+        Ok(v) => Ok(Buffer::from(v)),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}
+
+#[napi]
+pub fn derive_window_key(srk: Uint8Array, window_index: u32) -> Result<Buffer> {
+    match vollcrypt_core::derive_window_key(srk.as_ref(), window_index as u64) {
+        Ok(v) => Ok(Buffer::from(v)),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}

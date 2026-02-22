@@ -11,6 +11,8 @@ use vollcrypt_core::{
     sign_message as core_sign_message,
     verify_signature as core_verify_signature,
     ecdh_shared_secret as core_ecdh_shared_secret,
+    derive_srk as core_derive_srk,
+    derive_window_key as core_derive_window_key,
 };
 
 #[wasm_bindgen]
@@ -32,9 +34,10 @@ pub struct Ed25519KeyPairObj {
 
 #[wasm_bindgen]
 impl Ed25519KeyPairObj {
-    #[wasm_bindgen(getter)]
-    pub fn secret_key(&self) -> Vec<u8> {
-        self.secret_key.clone()
+    #[wasm_bindgen]
+    pub fn sign(&self, message: &[u8]) -> Result<Vec<u8>, JsValue> {
+        core_sign_message(&self.secret_key, message)
+            .map_err(|e| JsValue::from_str(e))
     }
 
     #[wasm_bindgen(getter)]
@@ -118,4 +121,14 @@ pub fn derive_pbkdf2(password: &[u8], salt: &[u8], iterations: u32, key_len: u32
 pub fn derive_hkdf(ikm: &[u8], salt: Option<Vec<u8>>, info: Option<Vec<u8>>, key_len: u32) -> Result<Vec<u8>, JsValue> {
     core_derive_hkdf(ikm, salt.as_deref(), info.as_deref(), key_len as usize)
         .map_err(|e| JsValue::from_str(e))
+}
+
+#[wasm_bindgen]
+pub fn derive_srk(dek: &[u8], chat_id: &[u8]) -> Result<Vec<u8>, JsValue> {
+    core_derive_srk(dek, chat_id).map_err(|e| JsValue::from_str(e))
+}
+
+#[wasm_bindgen]
+pub fn derive_window_key(srk: &[u8], window_index: u32) -> Result<Vec<u8>, JsValue> {
+    core_derive_window_key(srk, window_index as u64).map_err(|e| JsValue::from_str(e))
 }
