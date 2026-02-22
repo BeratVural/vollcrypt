@@ -13,6 +13,7 @@ rand = "0.8.5"
 sha2 = "0.10.9"
 x25519-dalek = { version = "2.0.1", features = ["static_secrets"] }
 zeroize = "1.8.2"
+aes-kw = { version = "0.2.1", features = ["alloc"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.17", features = ["js"] }
