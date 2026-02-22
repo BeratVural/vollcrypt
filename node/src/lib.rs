@@ -152,3 +152,80 @@ pub fn unpack_envelope(envelope: Uint8Array) -> Result<UnpackedEnvelope> {
         Err(e) => Err(Error::from_reason(e.to_string())),
     }
 }
+
+// ==================== Post-Quantum Cryptography (Phase 6) ====================
+
+#[napi]
+pub fn ml_kem_keygen() -> Vec<Buffer> {
+    let (dk, ek) = vollcrypt_core::ml_kem_keygen();
+    vec![Buffer::from(dk), Buffer::from(ek)]
+}
+
+#[napi(object)]
+pub struct MlKemEncapsulationResult {
+    pub ciphertext: Buffer,
+    pub shared_secret: Buffer,
+}
+
+#[napi]
+pub fn ml_kem_encapsulate(encapsulation_key: Uint8Array) -> Result<MlKemEncapsulationResult> {
+    match vollcrypt_core::ml_kem_encapsulate(encapsulation_key.as_ref()) {
+        Ok((ct, ss)) => Ok(MlKemEncapsulationResult {
+            ciphertext: Buffer::from(ct),
+            shared_secret: Buffer::from(ss),
+        }),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}
+
+#[napi]
+pub fn ml_kem_decapsulate(decapsulation_key: Uint8Array, ciphertext: Uint8Array) -> Result<Buffer> {
+    match vollcrypt_core::ml_kem_decapsulate(decapsulation_key.as_ref(), ciphertext.as_ref()) {
+        Ok(ss) => Ok(Buffer::from(ss)),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}
+
+#[napi(object)]
+pub struct HybridKemResult {
+    pub shared_key: Buffer,
+    pub ml_kem_ciphertext: Buffer,
+}
+
+#[napi]
+pub fn hybrid_kem_encapsulate(
+    x25519_our_secret: Uint8Array,
+    x25519_their_public: Uint8Array,
+    ml_kem_ek: Uint8Array,
+) -> Result<HybridKemResult> {
+    match vollcrypt_core::hybrid_kem_encapsulate(
+        x25519_our_secret.as_ref(),
+        x25519_their_public.as_ref(),
+        ml_kem_ek.as_ref(),
+    ) {
+        Ok((key, ct)) => Ok(HybridKemResult {
+            shared_key: Buffer::from(key),
+            ml_kem_ciphertext: Buffer::from(ct),
+        }),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}
+
+#[napi]
+pub fn hybrid_kem_decapsulate(
+    x25519_our_secret: Uint8Array,
+    x25519_their_public: Uint8Array,
+    ml_kem_dk: Uint8Array,
+    ml_kem_ct: Uint8Array,
+) -> Result<Buffer> {
+    match vollcrypt_core::hybrid_kem_decapsulate(
+        x25519_our_secret.as_ref(),
+        x25519_their_public.as_ref(),
+        ml_kem_dk.as_ref(),
+        ml_kem_ct.as_ref(),
+    ) {
+        Ok(key) => Ok(Buffer::from(key)),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}
+
