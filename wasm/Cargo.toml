@@ -10,3 +10,6 @@ crate-type = ["cdylib"]
 js-sys = "0.3.88"
 vollcrypt-core = { path = "../core" }
 wasm-bindgen = "0.2.111"
+log = "0.4"
+console_log = "1.0"
+console_error_panic_hook = "0.1"
