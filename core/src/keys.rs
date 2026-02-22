@@ -58,7 +58,10 @@ pub fn verify_signature(public_key_bytes: &[u8], message: &[u8], signature_bytes
         Err(_) => return false,
     };
 
-    let sig = Signature::from_slice(signature_bytes).expect("len checked");
+    let sig = match Signature::from_slice(signature_bytes) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
 
     verifying_key.verify_strict(message, &sig).is_ok()
 }
@@ -87,6 +90,20 @@ pub fn ecdh_shared_secret(
     // Derived with HKDF immediately as best practice? Or return raw shared secret.
     // Returning raw shared secret here for maximum flexibility. Let the higher layer do KDF.
     Ok(shared_secret.as_bytes().to_vec())
+}
+
+/// Performs ECDH Key Exchange and derives a key using HKDF.
+pub fn ecdh_derive_key(
+    our_secret: &[u8],
+    their_public: &[u8],
+    salt: Option<&[u8]>,
+    info: &[u8],
+    key_len: usize,
+) -> Result<Vec<u8>, &'static str> {
+    let mut raw_secret = ecdh_shared_secret(our_secret, their_public)?;
+    let result = crate::kdf::derive_hkdf(&raw_secret, salt, Some(info), key_len);
+    raw_secret.zeroize();
+    result
 }
 
 #[cfg(test)]

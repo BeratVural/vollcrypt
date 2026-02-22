@@ -2,7 +2,7 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
     aead::{Aead, KeyInit, Payload},
 };
-use rand::{RngCore, thread_rng};
+use rand::{RngCore, rngs::OsRng};
 use zeroize::Zeroize;
 
 /// Encrypts data using AES-256-GCM.
@@ -20,7 +20,7 @@ pub fn encrypt_aes256gcm(
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "Failed to create AES cipher")?;
 
     let mut nonce_bytes = [0u8; 12];
-    thread_rng().fill_bytes(&mut nonce_bytes);
+    OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     let payload = Payload {

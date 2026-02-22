@@ -310,7 +310,7 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { generateMnemonic, mnemonicToSeed, generateEd25519Keypair, generateX25519Keypair, ecdhSharedSecret, signMessage, verifySignature, encryptAesGcm, decryptAesGcm, derivePbkdf2, deriveHkdf } = nativeBinding
+const { generateMnemonic, mnemonicToSeed, generateEd25519Keypair, generateX25519Keypair, ecdhSharedSecret, signMessage, verifySignature, encryptAesGcm, decryptAesGcm, derivePbkdf2, deriveHkdf, deriveSrk, deriveWindowKey } = nativeBinding
 
 module.exports.generateMnemonic = generateMnemonic
 module.exports.mnemonicToSeed = mnemonicToSeed
@@ -323,3 +323,5 @@ module.exports.encryptAesGcm = encryptAesGcm
 module.exports.decryptAesGcm = decryptAesGcm
 module.exports.derivePbkdf2 = derivePbkdf2
 module.exports.deriveHkdf = deriveHkdf
+module.exports.deriveSrk = deriveSrk
+module.exports.deriveWindowKey = deriveWindowKey
