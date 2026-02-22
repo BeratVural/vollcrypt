@@ -5,6 +5,7 @@ pub mod symmetric;
 pub mod wrap;
 pub mod padding;
 pub mod envelope;
+pub mod pqc;
 
 // Re-export common functions directly
 pub use bip39::{generate_mnemonic, mnemonic_to_seed};
@@ -17,3 +18,7 @@ pub use symmetric::{decrypt_aes256gcm, encrypt_aes256gcm};
 pub use wrap::{wrap_key, unwrap_key};
 pub use padding::pad_message;
 pub use envelope::{pack_envelope, unpack_envelope};
+pub use pqc::{
+    ml_kem_keygen, ml_kem_encapsulate, ml_kem_decapsulate,
+    hybrid_kem_encapsulate, hybrid_kem_decapsulate,
+};

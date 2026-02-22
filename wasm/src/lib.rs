@@ -18,6 +18,11 @@ use vollcrypt_core::{
     pad_message as core_pad_message,
     pack_envelope as core_pack_envelope,
     unpack_envelope as core_unpack_envelope,
+    ml_kem_keygen as core_ml_kem_keygen,
+    ml_kem_encapsulate as core_ml_kem_encapsulate,
+    ml_kem_decapsulate as core_ml_kem_decapsulate,
+    hybrid_kem_encapsulate as core_hybrid_kem_encapsulate,
+    hybrid_kem_decapsulate as core_hybrid_kem_decapsulate,
 };
 
 #[wasm_bindgen]
@@ -199,3 +204,113 @@ pub fn unpack_envelope(envelope: &[u8]) -> Result<UnpackedEnvelope, JsValue> {
         Err(e) => Err(JsValue::from_str(e)),
     }
 }
+
+// ==================== Post-Quantum Cryptography (Phase 6) ====================
+
+#[wasm_bindgen]
+pub struct MlKemKeyPairObj {
+    decapsulation_key: Vec<u8>,
+    encapsulation_key: Vec<u8>,
+}
+
+#[wasm_bindgen]
+impl MlKemKeyPairObj {
+    #[wasm_bindgen(getter)]
+    pub fn decapsulation_key(&self) -> Vec<u8> {
+        self.decapsulation_key.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn encapsulation_key(&self) -> Vec<u8> {
+        self.encapsulation_key.clone()
+    }
+}
+
+#[wasm_bindgen]
+pub fn ml_kem_keygen() -> MlKemKeyPairObj {
+    let (dk, ek) = core_ml_kem_keygen();
+    MlKemKeyPairObj {
+        decapsulation_key: dk,
+        encapsulation_key: ek,
+    }
+}
+
+#[wasm_bindgen]
+pub struct MlKemEncapsulationResult {
+    ciphertext: Vec<u8>,
+    shared_secret: Vec<u8>,
+}
+
+#[wasm_bindgen]
+impl MlKemEncapsulationResult {
+    #[wasm_bindgen(getter)]
+    pub fn ciphertext(&self) -> Vec<u8> {
+        self.ciphertext.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn shared_secret(&self) -> Vec<u8> {
+        self.shared_secret.clone()
+    }
+}
+
+#[wasm_bindgen]
+pub fn ml_kem_encapsulate(encapsulation_key: &[u8]) -> Result<MlKemEncapsulationResult, JsValue> {
+    let (ct, ss) = core_ml_kem_encapsulate(encapsulation_key)
+        .map_err(|e| JsValue::from_str(e))?;
+    Ok(MlKemEncapsulationResult {
+        ciphertext: ct,
+        shared_secret: ss,
+    })
+}
+
+#[wasm_bindgen]
+pub fn ml_kem_decapsulate(decapsulation_key: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, JsValue> {
+    core_ml_kem_decapsulate(decapsulation_key, ciphertext)
+        .map_err(|e| JsValue::from_str(e))
+}
+
+#[wasm_bindgen]
+pub struct HybridKemResult {
+    shared_key: Vec<u8>,
+    ml_kem_ciphertext: Vec<u8>,
+}
+
+#[wasm_bindgen]
+impl HybridKemResult {
+    #[wasm_bindgen(getter)]
+    pub fn shared_key(&self) -> Vec<u8> {
+        self.shared_key.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn ml_kem_ciphertext(&self) -> Vec<u8> {
+        self.ml_kem_ciphertext.clone()
+    }
+}
+
+#[wasm_bindgen]
+pub fn hybrid_kem_encapsulate(
+    x25519_our_secret: &[u8],
+    x25519_their_public: &[u8],
+    ml_kem_ek: &[u8],
+) -> Result<HybridKemResult, JsValue> {
+    let (key, ct) = core_hybrid_kem_encapsulate(x25519_our_secret, x25519_their_public, ml_kem_ek)
+        .map_err(|e| JsValue::from_str(e))?;
+    Ok(HybridKemResult {
+        shared_key: key,
+        ml_kem_ciphertext: ct,
+    })
+}
+
+#[wasm_bindgen]
+pub fn hybrid_kem_decapsulate(
+    x25519_our_secret: &[u8],
+    x25519_their_public: &[u8],
+    ml_kem_dk: &[u8],
+    ml_kem_ct: &[u8],
+) -> Result<Vec<u8>, JsValue> {
+    core_hybrid_kem_decapsulate(x25519_our_secret, x25519_their_public, ml_kem_dk, ml_kem_ct)
+        .map_err(|e| JsValue::from_str(e))
+}
+
