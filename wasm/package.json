@@ -1,0 +1,21 @@
+{
+  "name": "@vollsign/crypto-wasm",
+  "version": "0.1.0",
+  "description": "WebAssembly bindings for Vollcrypt cryptographic library",
+  "main": "pkg/wasm.js",
+  "types": "pkg/wasm.d.ts",
+  "files": [
+    "pkg/"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "vollcrypt",
+    "crypto",
+    "wasm",
+    "pqc"
+  ],
+  "author": "Vollsign",
+  "license": "MIT"
+}

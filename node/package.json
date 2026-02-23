@@ -1,8 +1,23 @@
 {
-  "name": "@vollchat/crypto-node",
+  "name": "@vollsign/crypto-node",
   "version": "0.1.0",
   "main": "index.js",
   "types": "index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "index.d.ts",
+    "index.js",
+    "crypto-node.*.node"
+  ],
+  "keywords": [
+    "vollcrypt",
+    "crypto",
+    "pqc"
+  ],
+  "author": "Vollsign",
+  "license": "MIT",
   "napi": {
     "name": "crypto-node"
   }
