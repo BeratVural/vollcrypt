@@ -100,6 +100,93 @@ pub fn derive_window_key(srk: Uint8Array, window_index: u32) -> Result<Buffer> {
 }
 
 #[napi]
+pub fn generate_verification_code(
+    key_a: Uint8Array,
+    key_b: Uint8Array,
+    conversation_id: Uint8Array,
+) -> Result<String> {
+    let key_a_slice = key_a.as_ref();
+    let key_b_slice = key_b.as_ref();
+    
+    if key_a_slice.len() != 32 {
+        return Err(Error::from_reason("key_a must be 32 bytes"));
+    }
+    if key_b_slice.len() != 32 {
+        return Err(Error::from_reason("key_b must be 32 bytes"));
+    }
+    
+    let mut ka = [0u8; 32];
+    ka.copy_from_slice(key_a_slice);
+    
+    let mut kb = [0u8; 32];
+    kb.copy_from_slice(key_b_slice);
+    
+    let code = vollcrypt_core::verification::generate_verification_code(
+        &ka, 
+        &kb, 
+        conversation_id.as_ref()
+    );
+    
+    serde_json::to_string(&code)
+        .map_err(|e| Error::from_reason(format!("Serialization failed: {}", e)))
+}
+
+#[napi]
+pub fn compute_fingerprint(
+    key_a: Uint8Array,
+    key_b: Uint8Array,
+    conversation_id: Uint8Array,
+) -> Result<Buffer> {
+    let key_a_slice = key_a.as_ref();
+    let key_b_slice = key_b.as_ref();
+
+    if key_a_slice.len() != 32 {
+        return Err(Error::from_reason("key_a must be 32 bytes"));
+    }
+    if key_b_slice.len() != 32 {
+        return Err(Error::from_reason("key_b must be 32 bytes"));
+    }
+
+    let mut ka = [0u8; 32];
+    ka.copy_from_slice(key_a_slice);
+    
+    let mut kb = [0u8; 32];
+    kb.copy_from_slice(key_b_slice);
+
+    let fp = vollcrypt_core::verification::compute_fingerprint(
+        &ka,
+        &kb,
+        conversation_id.as_ref()
+    );
+    
+    Ok(Buffer::from(fp.to_vec()))
+}
+
+#[napi]
+pub fn verify_fingerprints_match(
+    fingerprint_a: Uint8Array,
+    fingerprint_b: Uint8Array,
+) -> Result<bool> {
+    let fa_slice = fingerprint_a.as_ref();
+    let fb_slice = fingerprint_b.as_ref();
+
+    if fa_slice.len() != 32 {
+        return Err(Error::from_reason("fingerprint_a must be 32 bytes"));
+    }
+    if fb_slice.len() != 32 {
+        return Err(Error::from_reason("fingerprint_b must be 32 bytes"));
+    }
+
+    let mut fa = [0u8; 32];
+    fa.copy_from_slice(fa_slice);
+    
+    let mut fb = [0u8; 32];
+    fb.copy_from_slice(fb_slice);
+
+    Ok(vollcrypt_core::verification::verify_fingerprints_match(&fa, &fb))
+}
+
+#[napi]
 pub fn wrap_key(kek: Uint8Array, key_to_wrap: Uint8Array) -> Result<Buffer> {
     match vollcrypt_core::wrap_key(kek.as_ref(), key_to_wrap.as_ref()) {
         Ok(v) => Ok(Buffer::from(v)),

@@ -98,6 +98,66 @@ pub fn generate_x25519_keypair() -> X25519KeyPairObj {
     }
 }
 
+/// Verification code result (for WASM)
+#[wasm_bindgen]
+pub struct VerificationCodeResult {
+    fingerprint:      Vec<u8>,  // 32 bytes
+    numeric_digits:   String,   // 60 digits
+    numeric_formatted: String,  // "12345 67890 ..."
+    emoji_formatted:  String,   // "🔥💧... 🌊⚡..."
+}
+
+#[wasm_bindgen]
+impl VerificationCodeResult {
+    #[wasm_bindgen(getter)] pub fn fingerprint(&self)       -> Vec<u8> { self.fingerprint.clone() }
+    #[wasm_bindgen(getter)] pub fn numeric_digits(&self)    -> String  { self.numeric_digits.clone() }
+    #[wasm_bindgen(getter)] pub fn numeric_formatted(&self) -> String  { self.numeric_formatted.clone() }
+    #[wasm_bindgen(getter)] pub fn emoji_formatted(&self)   -> String  { self.emoji_formatted.clone() }
+}
+
+#[wasm_bindgen]
+pub fn generate_verification_code(
+    key_a: &[u8],
+    key_b: &[u8],
+    conversation_id: &[u8],
+) -> Result<VerificationCodeResult, JsValue> {
+    let ka: [u8; 32] = key_a.try_into().map_err(|_| JsValue::from_str("key_a must be 32 bytes"))?;
+    let kb: [u8; 32] = key_b.try_into().map_err(|_| JsValue::from_str("key_b must be 32 bytes"))?;
+    
+    let code = vollcrypt_core::verification::generate_verification_code(&ka, &kb, conversation_id);
+    
+    Ok(VerificationCodeResult {
+        fingerprint: code.fingerprint.to_vec(),
+        numeric_digits: code.numeric.digits,
+        numeric_formatted: code.numeric.formatted,
+        emoji_formatted: code.emoji.formatted,
+    })
+}
+
+#[wasm_bindgen]
+pub fn compute_fingerprint(
+    key_a: &[u8],
+    key_b: &[u8],
+    conversation_id: &[u8],
+) -> Result<Vec<u8>, JsValue> {
+    let ka: [u8; 32] = key_a.try_into().map_err(|_| JsValue::from_str("key_a must be 32 bytes"))?;
+    let kb: [u8; 32] = key_b.try_into().map_err(|_| JsValue::from_str("key_b must be 32 bytes"))?;
+    
+    let fp = vollcrypt_core::verification::compute_fingerprint(&ka, &kb, conversation_id);
+    Ok(fp.to_vec())
+}
+
+#[wasm_bindgen]
+pub fn verify_fingerprints_match(
+    fingerprint_a: &[u8],
+    fingerprint_b: &[u8],
+) -> Result<bool, JsValue> {
+    let fa: [u8; 32] = fingerprint_a.try_into().map_err(|_| JsValue::from_str("fingerprint_a must be 32 bytes"))?;
+    let fb: [u8; 32] = fingerprint_b.try_into().map_err(|_| JsValue::from_str("fingerprint_b must be 32 bytes"))?;
+    
+    Ok(vollcrypt_core::verification::verify_fingerprints_match(&fa, &fb))
+}
+
 #[wasm_bindgen]
 pub fn ecdh_shared_secret(our_secret: &[u8], their_public: &[u8]) -> Result<Vec<u8>, JsValue> {
     core_ecdh_shared_secret(our_secret, their_public)
