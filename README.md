@@ -1,17 +1,16 @@
 <div align="center">
+
 # Vollcrypt
 
 **Cross-platform, quantum-resistant cryptography engine for Node.js, WebAssembly, and Rust**
 
 [![CI](https://github.com/vollsign/vollcrypt/actions/workflows/ci.yml/badge.svg)](https://github.com/vollsign/vollcrypt/actions/workflows/ci.yml)
-[![npm (node)](https://img.shields.io/npm/v/@vollsign/crypto-node?label=%40vollsign%2Fcrypto-node&color=cb3837)](https://www.npmjs.com/package/@vollsign/crypto-node)
-[![npm (wasm)](https://img.shields.io/npm/v/@vollsign/crypto-wasm?label=%40vollsign%2Fcrypto-wasm&color=cb3837)](https://www.npmjs.com/package/@vollsign/crypto-wasm)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://claude.ai/chat/LICENSE)
+[![npm (node)](https://img.shields.io/npm/v/@vollcrypt/node?label=%40vollcrypt%2Fnode&color=cb3837)](https://www.npmjs.com/package/@vollcrypt/node)
+[![npm (wasm)](https://img.shields.io/npm/v/@vollcrypt/wasm?label=%40vollcrypt%2Fwasm&color=cb3837)](https://www.npmjs.com/package/@vollcrypt/wasm)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![FIPS 203](https://img.shields.io/badge/PQC-FIPS%20203%20ML--KEM--768-8A2BE2)](https://csrc.nist.gov/pubs/fips/203/final)
 
 </div>
----
-
 
 ---
 
@@ -19,38 +18,38 @@ Vollcrypt is a cryptography library — not a product. It provides the cryptogra
 
 The same Rust core is compiled to three targets:
 
-| Target           | Package                   | Use Case                     |
-| ---------------- | ------------------------- | ---------------------------- |
-| Node.js (native) | `@vollsign/crypto-node` | NestJS, Express, server-side |
-| WebAssembly      | `@vollsign/crypto-wasm` | React, Next.js, browser      |
-| Rust             | `vollcrypt-core`        | Direct Rust integration      |
+| Target           | Package             | Use Case                     |
+| ---------------- | ------------------- | ---------------------------- |
+| Node.js (native) | `@vollcrypt/node` | NestJS, Express, server-side |
+| WebAssembly      | `@vollcrypt/wasm` | React, Next.js, browser      |
+| Rust             | `vollcrypt-core`  | Direct Rust integration      |
 
 ---
 
 ## Table of Contents
 
-* [Why Vollcrypt](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#why-vollcrypt)
-* [Security Properties](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#security-properties)
-* [What It Provides](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#what-it-provides)
-* [Installation](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#installation)
-* [Quick Start](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#quick-start)
-* [API Reference](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#api-reference)
-  * [Identity and Key Exchange](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#identity-and-key-exchange)
-  * [Post-Quantum Cryptography](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#post-quantum-cryptography)
-  * [Symmetric Encryption](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#symmetric-encryption)
-  * [Key Derivation](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#key-derivation)
-  * [Key Management](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#key-management)
-  * [Session Security](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#session-security)
-  * [Sealed Sender](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#sealed-sender)
-  * [Key Verification Codes](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#key-verification-codes)
-  * [Key Transparency Log](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#key-transparency-log)
-  * [Device Registry](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#device-registry)
-* [Full E2EE Flow Example](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#full-e2ee-flow-example)
-* [Building From Source](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#building-from-source)
-* [Architecture](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#architecture)
-* [Security Considerations](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#security-considerations)
-* [Licensing](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#licensing)
-* [Contributing](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#contributing)
+- [Why Vollcrypt](#why-vollcrypt)
+- [Security Properties](#security-properties)
+- [What It Provides](#what-it-provides)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [API Reference](#api-reference)
+  - [Identity and Key Exchange](#identity-and-key-exchange)
+  - [Post-Quantum Cryptography](#post-quantum-cryptography)
+  - [Symmetric Encryption](#symmetric-encryption)
+  - [Key Derivation](#key-derivation)
+  - [Key Management](#key-management)
+  - [Session Security](#session-security)
+  - [Sealed Sender](#sealed-sender)
+  - [Key Verification Codes](#key-verification-codes)
+  - [Key Transparency Log](#key-transparency-log)
+  - [Device Registry](#device-registry)
+- [Full E2EE Flow Example](#full-e2ee-flow-example)
+- [Building From Source](#building-from-source)
+- [Architecture](#architecture)
+- [Security Considerations](#security-considerations)
+- [Licensing](#licensing)
+- [Contributing](#contributing)
 
 ---
 
@@ -60,12 +59,12 @@ Most cryptography libraries give you low-level primitives and leave you to wire 
 
 **What makes it different:**
 
-* **Hybrid post-quantum KEM** — X25519 combined with ML-KEM-768 (NIST FIPS 203). Breaking one does not break the session.
-* **Post-Compromise Security** — Unlike systems that only offer forward secrecy, Vollcrypt implements a ratchet mechanism. If a session key is compromised, the system heals itself within a configurable number of messages.
-* **Sealed Sender** — Sender identity is encrypted inside the message. The server routes messages without knowing who sent them.
-* **Key Transparency** — Every public key publication is recorded in an append-only, hash-linked, Ed25519-signed log. Key changes cannot be silently backdated.
-* **Verification Codes** — Users can confirm each other's keys out of band using short numeric or emoji codes, defeating MITM attacks at the human layer.
-* **Single core, three targets** — The same Rust logic runs in Node.js, WebAssembly, and native Rust. No divergence between environments.
+- **Hybrid post-quantum KEM** — X25519 combined with ML-KEM-768 (NIST FIPS 203). Breaking one does not break the session.
+- **Post-Compromise Security** — Unlike systems that only offer forward secrecy, Vollcrypt implements a ratchet mechanism. If a session key is compromised, the system heals itself within a configurable number of messages.
+- **Sealed Sender** — Sender identity is encrypted inside the message. The server routes messages without knowing who sent them.
+- **Key Transparency** — Every public key publication is recorded in an append-only, hash-linked, Ed25519-signed log. Key changes cannot be silently backdated.
+- **Verification Codes** — Users can confirm each other's keys out of band using short numeric or emoji codes, defeating MITM attacks at the human layer.
+- **Single core, three targets** — The same Rust logic runs in Node.js, WebAssembly, and native Rust. No divergence between environments.
 
 ---
 
@@ -104,29 +103,29 @@ Most cryptography libraries give you low-level primitives and leave you to wire 
 
 ### Core Primitives
 
-* Ed25519 keypair generation, signing, and verification
-* X25519 keypair generation and ECDH
-* ML-KEM-768 keypair generation, encapsulation, and decapsulation
-* AES-256-GCM encryption and decryption with optional AAD
-* HKDF-SHA256 and PBKDF2-SHA256 key derivation
-* AES-256-KW key wrapping and unwrapping
-* BIP-39 mnemonic generation and seed derivation
+- Ed25519 keypair generation, signing, and verification
+- X25519 keypair generation and ECDH
+- ML-KEM-768 keypair generation, encapsulation, and decapsulation
+- AES-256-GCM encryption and decryption with optional AAD
+- HKDF-SHA256 and PBKDF2-SHA256 key derivation
+- AES-256-KW key wrapping and unwrapping
+- BIP-39 mnemonic generation and seed derivation
 
 ### Session Building Blocks
 
-* Hybrid KEM handshake (X25519 + ML-KEM-768)
-* Authenticated KEM (hybrid KEM + Ed25519 signature — closes MITM on key exchange)
-* Time-windowed Session Root Key → WindowKey derivation chain
-* Binary envelope packing: `[4B window_index][12B IV][32B AAD hash][ciphertext][16B auth tag]`
-* PCS ratchet (ephemeral X25519 ratchet for post-compromise recovery)
-* Transcript hashing (SHA-256 chain over message sequence — detects reordering and deletion)
-* Sealed sender (sender identity hidden from server)
+- Hybrid KEM handshake (X25519 + ML-KEM-768)
+- Authenticated KEM (hybrid KEM + Ed25519 signature — closes MITM on key exchange)
+- Time-windowed Session Root Key → WindowKey derivation chain
+- Binary envelope packing: `[4B window_index][12B IV][32B AAD hash][ciphertext][16B auth tag]`
+- PCS ratchet (ephemeral X25519 ratchet for post-compromise recovery)
+- Transcript hashing (SHA-256 chain over message sequence — detects reordering and deletion)
+- Sealed sender (sender identity hidden from server)
 
 ### Key Management
 
-* Key Transparency log (append-only, Ed25519-signed, hash-linked)
-* Verification codes (numeric and emoji, derived from public key pair + conversation ID)
-* Device registry with revocation
+- Key Transparency log (append-only, Ed25519-signed, hash-linked)
+- Verification codes (numeric and emoji, derived from public key pair + conversation ID)
+- Device registry with revocation
 
 ---
 
@@ -135,19 +134,19 @@ Most cryptography libraries give you low-level primitives and leave you to wire 
 ### Node.js
 
 ```bash
-npm install @vollsign/crypto-node
+npm install @vollcrypt/node
 ```
 
 Prebuilt native binaries are provided for:
 
-* Linux x64 (`linux-x64-gnu`)
-* macOS x64 (`darwin-x64`)
-* Windows x64 (`win32-x64-msvc`)
+- Linux x64 (`linux-x64-gnu`)
+- macOS x64 (`darwin-x64`)
+- Windows x64 (`win32-x64-msvc`)
 
 ### WebAssembly (Browser / React Native)
 
 ```bash
-npm install @vollsign/crypto-wasm
+npm install @vollcrypt/wasm
 ```
 
 ### Rust
@@ -176,7 +175,7 @@ import {
   generateX25519Keypair,
   encryptAesGcm,
   decryptAesGcm,
-} from '@vollsign/crypto-node';
+} from '@vollcrypt/node';
 import crypto from 'crypto';
 
 // Identity keypair
@@ -201,7 +200,7 @@ import init, {
   generateEd25519Keypair,
   encryptAesGcm,
   decryptAesGcm,
-} from '@vollsign/crypto-wasm';
+} from '@vollcrypt/wasm';
 
 await init();
 
@@ -594,7 +593,7 @@ The Key Transparency log is an append-only, Ed25519-signed, hash-linked record o
 #### Creating and Appending Entries
 
 ```ts
-import { keyLogCreateEntry, keyLogVerifyChain } from '@vollsign/crypto-node';
+import { keyLogCreateEntry, keyLogVerifyChain } from '@vollcrypt/node';
 
 const GENESIS_HASH = Buffer.alloc(32, 0);
 
@@ -651,7 +650,7 @@ const historicalKey = keyLogKeyAtTimestamp(
 ### Device Registry
 
 ```ts
-import { addDevice, revokeDevice, isDeviceRevoked } from '@vollsign/crypto-node';
+import { addDevice, revokeDevice, isDeviceRevoked } from '@vollcrypt/node';
 
 // Register a new device
 addDevice(registry, {
@@ -673,7 +672,7 @@ if (isDeviceRevoked(registry, signingDeviceId)) {
 
 ## Full E2EE Flow Example
 
-The following shows a complete session between Alice and Bob using the authenticated KEM handshake, time-windowed encryption, sealed sender, and transcript hashing. See [`vollcrypt-example/src/09_full_flow.ts`](https://claude.ai/chat/vollcrypt-example/src/09_full_flow.ts) for the runnable version.
+The following shows a complete session between Alice and Bob using the authenticated KEM handshake, time-windowed encryption, sealed sender, and transcript hashing. See [`vollcrypt-example/src/09_full_flow.ts`](vollcrypt-example/src/09_full_flow.ts) for the runnable version.
 
 ```ts
 // ─── 1. Key Generation ────────────────────────────────────────────────────
@@ -801,8 +800,8 @@ vollcrypt/
 │       ├── wrap.rs           AES-256-KW key wrapping
 │       ├── bip39.rs          BIP-39 mnemonic generation and seed derivation
 │       └── device.rs         Device registry and revocation
-├── node/               N-API native binding (@vollsign/crypto-node)
-├── wasm/               wasm-bindgen WebAssembly binding (@vollsign/crypto-wasm)
+├── node/               N-API native binding (@vollcrypt/node)
+├── wasm/               wasm-bindgen WebAssembly binding (@vollcrypt/wasm)
 ├── packages/
 │   └── license-server/ License validation and MAU tracking server
 └── vollcrypt-example/  Runnable usage examples (01 through 10)
@@ -828,10 +827,10 @@ The window index tells the recipient which WindowKey to derive. The AAD hash ens
 
 ### Things the Library Does For You
 
-* Generates IVs internally using `OsRng` — you cannot pass an IV manually
-* Zeroizes sensitive memory (`zeroize` crate) after use in all Rust code
-* Uses `subtle::ConstantTimeEq` for all security-sensitive comparisons
-* Enforces distinct HKDF context strings for every key derivation purpose
+- Generates IVs internally using `OsRng` — you cannot pass an IV manually
+- Zeroizes sensitive memory (`zeroize` crate) after use in all Rust code
+- Uses `subtle::ConstantTimeEq` for all security-sensitive comparisons
+- Enforces distinct HKDF context strings for every key derivation purpose
 
 ### Things You Are Responsible For
 
@@ -856,8 +855,8 @@ new Uint8Array(rawDekBuffer).fill(0); // zero immediately after import
 
 Vollcrypt is dual-licensed:
 
-* **Open source:** [GNU General Public License v3.0](https://claude.ai/chat/LICENSE) — free for open source projects
-* **Commercial:** Contact [licensing@vollsign.io](mailto:licensing@vollsign.io) for a commercial license that removes the GPL copyleft requirement
+- **Open source:** [GNU General Public License v3.0](LICENSE) — free for open source projects
+- **Commercial:** Contact [licensing@vollsign.io](mailto:licensing@vollsign.io) for a commercial license that removes the GPL copyleft requirement
 
 | Tier       | Monthly Active Users | Price       |
 | ---------- | -------------------- | ----------- |
@@ -872,15 +871,20 @@ Commercial licenses include a private build without GPL obligations and priority
 
 ## Contributing
 
-Contributions are welcome. Before opening a pull request, please read [CONTRIBUTING.md](https://claude.ai/chat/CONTRIBUTING.md).
+Contributions are welcome. Before opening a pull request, please read [CONTRIBUTING.md](CONTRIBUTING.md).
 
 All contributors must sign the Contributor License Agreement (CLA) before their first pull request is merged. This allows Vollcrypt to be offered under both the GPL and a commercial license.
 
-**Security issues:** Please do not open public GitHub issues for security vulnerabilities. Follow the process in [SECURITY.md](https://claude.ai/chat/SECURITY.md).
+**Security issues:** Please do not open public GitHub issues for security vulnerabilities. Follow the process in [SECURITY.md](SECURITY.md).
 
 ---
 
 <div align="center">
+
 Built with Rust · Powered by [RustCrypto](https://github.com/RustCrypto) and [dalek-cryptography](https://github.com/dalek-cryptography)
 
-</div>
+</div><div align="center">
+# Vollcrypt
+
+
+# Vollcrypt

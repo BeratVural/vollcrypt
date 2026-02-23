@@ -1,3 +1,4 @@
+
 # Contributing to Vollcrypt
 
 Thank you for your interest in contributing to Vollcrypt. This document covers everything you need to know before opening a pull request — from setting up your environment to the security rules that apply to cryptographic code.
@@ -112,8 +113,8 @@ vollcrypt/
 │   ├── wrap.rs         AES-256-KW key wrapping
 │   ├── bip39.rs        BIP-39 mnemonic
 │   └── device.rs       Device registry
-├── node/               N-API binding (@vollsign/crypto-node)
-├── wasm/               wasm-bindgen binding (@vollsign/crypto-wasm)
+├── node/               N-API binding (@vollcrypt/node)
+├── wasm/               wasm-bindgen binding (@vollcrypt/wasm)
 ├── packages/
 │   └── license-server/ License validation and MAU tracking server
 └── vollcrypt-example/  Runnable examples (01_keypair.ts → 10_verification.ts)
