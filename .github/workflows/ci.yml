@@ -1,68 +1,79 @@
-name: CI/CD
-
-env:
-  DEBUG: napi:*
-  MACOSX_DEPLOYMENT_TARGET: "10.13"
+name: CI
 
 on:
   push:
-    branches:
-      - main
-    tags-ignore:
-      - "**"
+    branches: ["main"]
   pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   test:
-    name: Run Tests
+    name: Test all crates
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-      - name: Setup Node
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run Core Tests
+        working-directory: core
+        run: cargo test
+
+  build-node:
+    name: Build Node Bindings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install Dependencies
         run: npm install
-      - name: Run Cargo Tests
-        run: cargo test --all
-      - name: Build WASM
-        run: npm run build:wasm
+
       - name: Build Node
         run: npm run build:node
 
-  publish:
-    name: Publish to NPM
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  build-wasm:
+    name: Build WASM Bindings
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          registry-url: "https://registry.npmjs.org"
+
       - name: Install Dependencies
         run: npm install
+
       - name: Build WASM
         run: npm run build:wasm
-      - name: Build Node
-        run: npm run build:node
-      - name: Publish Node Package
-        run: npm publish ./node --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Publish WASM Package
-        run: npm publish ./wasm/pkg --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

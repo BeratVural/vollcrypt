@@ -1,0 +1,14 @@
+{
+  "name": "vollcrypt-example",
+  "version": "1.0.0",
+  "description": "Vollcrypt usage examples",
+  "main": "index.js",
+  "scripts": {
+    "start": "ts-node src/09_full_flow.ts"
+  },
+  "dependencies": {
+    "@vollsign/crypto-node": "file:../node",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}
