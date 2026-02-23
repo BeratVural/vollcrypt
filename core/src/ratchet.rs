@@ -11,6 +11,10 @@ pub enum CryptoError {
     InvalidKeyLength,
     InvalidSealedPacketFormat,
     DecryptionFailed,
+    KeyLogChainBroken { at_index: usize },
+    KeyLogInvalidSignature { at_index: usize },
+    KeyLogHashMismatch,
+    KeyLogEmpty,
 }
 
 impl core::fmt::Display for CryptoError {
@@ -22,6 +26,10 @@ impl core::fmt::Display for CryptoError {
             CryptoError::InvalidKeyLength => write!(f, "Invalid key length"),
             CryptoError::InvalidSealedPacketFormat => write!(f, "Invalid sealed packet format"),
             CryptoError::DecryptionFailed => write!(f, "Decryption failed or MAC mismatch"),
+            CryptoError::KeyLogChainBroken { at_index } => write!(f, "Key log chain broken at index {}", at_index),
+            CryptoError::KeyLogInvalidSignature { at_index } => write!(f, "Key log invalid signature at index {}", at_index),
+            CryptoError::KeyLogHashMismatch => write!(f, "Key log hash mismatch"),
+            CryptoError::KeyLogEmpty => write!(f, "Key log empty"),
         }
     }
 }

@@ -10,6 +10,7 @@ pub mod device;
 pub mod ratchet;
 pub mod transcript;
 pub mod sealed_sender;
+pub mod key_log;
 
 // Re-export common functions directly
 pub use bip39::{generate_mnemonic, mnemonic_to_seed};

@@ -481,3 +481,92 @@ pub fn unseal_message(
         Err(e) => Err(Error::from_reason(format!("Unsealing failed: {:?}", e))),
     }
 }
+
+// ==================== Key Transparency (Key Log) ====================
+
+#[napi]
+pub fn key_log_create_entry(
+    user_id: Uint8Array,
+    public_key: Uint8Array,
+    timestamp: u32,
+    prev_entry_hash: Uint8Array,
+    action: u8,
+    signing_key: Uint8Array,
+) -> Result<String> {
+    if public_key.len() != 32 || prev_entry_hash.len() != 32 || signing_key.len() != 32 {
+        return Err(Error::from_reason("Key lengths must be exactly 32 bytes".to_string()));
+    }
+
+    let mut pk = [0u8; 32];
+    pk.copy_from_slice(public_key.as_ref());
+    let mut prev_hash = [0u8; 32];
+    prev_hash.copy_from_slice(prev_entry_hash.as_ref());
+    let mut sign_key = [0u8; 32];
+    sign_key.copy_from_slice(signing_key.as_ref());
+
+    let act = match action {
+        1 => vollcrypt_core::key_log::KeyAction::Add,
+        2 => vollcrypt_core::key_log::KeyAction::Update,
+        3 => vollcrypt_core::key_log::KeyAction::Revoke,
+        _ => return Err(Error::from_reason("Invalid action type".to_string())),
+    };
+
+    match vollcrypt_core::key_log::create_entry(user_id.as_ref(), &pk, timestamp as u64, &prev_hash, act, &sign_key) {
+        Ok(entry) => {
+            serde_json::to_string(&entry).map_err(|e| Error::from_reason(e.to_string()))
+        },
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}
+
+#[napi]
+pub fn key_log_verify_chain(entries_json: String) -> Result<bool> {
+    let entries: Vec<vollcrypt_core::key_log::KeyLogEntry> = serde_json::from_str(&entries_json)
+        .map_err(|e| Error::from_reason(format!("Invalid JSON array: {}", e)))?;
+    
+    let log = vollcrypt_core::key_log::KeyLog { entries };
+    match log.verify_chain() {
+        Ok(_) => Ok(true),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}
+
+#[napi]
+pub fn key_log_current_key(
+    entries_json: String,
+    user_id: Uint8Array,
+) -> Result<Option<Buffer>> {
+    let entries: Vec<vollcrypt_core::key_log::KeyLogEntry> = serde_json::from_str(&entries_json)
+        .map_err(|e| Error::from_reason(format!("Invalid JSON array: {}", e)))?;
+    
+    let log = vollcrypt_core::key_log::KeyLog { entries };
+    match log.current_key_for(user_id.as_ref()) {
+        Some(k) => Ok(Some(Buffer::from(k.to_vec()))),
+        None => Ok(None),
+    }
+}
+
+#[napi]
+pub fn key_log_key_at_timestamp(
+    entries_json: String,
+    user_id: Uint8Array,
+    timestamp: u32,
+) -> Result<Option<Buffer>> {
+    let entries: Vec<vollcrypt_core::key_log::KeyLogEntry> = serde_json::from_str(&entries_json)
+        .map_err(|e| Error::from_reason(format!("Invalid JSON array: {}", e)))?;
+    
+    let log = vollcrypt_core::key_log::KeyLog { entries };
+    match log.key_at_timestamp(user_id.as_ref(), timestamp as u64) {
+        Some(k) => Ok(Some(Buffer::from(k.to_vec()))),
+        None => Ok(None),
+    }
+}
+
+#[napi]
+pub fn key_log_compute_entry_hash(entry_json: String) -> Result<Buffer> {
+    let entry: vollcrypt_core::key_log::KeyLogEntry = serde_json::from_str(&entry_json)
+        .map_err(|e| Error::from_reason(format!("Invalid JSON object: {}", e)))?;
+    
+    let hash = entry.compute_hash();
+    Ok(Buffer::from(hash.to_vec()))
+}
