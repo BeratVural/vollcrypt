@@ -226,6 +226,62 @@ impl MlKemKeyPairObj {
     }
 }
 
+// ==================== Transcript Hashing ====================
+
+#[wasm_bindgen]
+pub fn transcript_new(session_id: &[u8]) -> Vec<u8> {
+    let ts = vollcrypt_core::transcript::TranscriptState::new(session_id);
+    ts.to_bytes().to_vec()
+}
+
+#[wasm_bindgen]
+pub fn transcript_update(
+    chain_state: &[u8],
+    message_hash: &[u8],
+) -> Result<Vec<u8>, JsValue> {
+    if chain_state.len() != 32 || message_hash.len() != 32 {
+        return Err(JsValue::from_str("chain_state and message_hash must be 32 bytes"));
+    }
+    
+    let mut state_bytes = [0u8; 32];
+    state_bytes.copy_from_slice(chain_state);
+    let mut msg_hash_bytes = [0u8; 32];
+    msg_hash_bytes.copy_from_slice(message_hash);
+
+    let mut ts = vollcrypt_core::transcript::TranscriptState::from_bytes(state_bytes);
+    ts.update(&msg_hash_bytes);
+    Ok(ts.to_bytes().to_vec())
+}
+
+#[wasm_bindgen]
+pub fn transcript_compute_message_hash(
+    message_id: &[u8],
+    sender_id: &[u8],
+    timestamp: u32,
+    ciphertext: &[u8],
+) -> Vec<u8> {
+    vollcrypt_core::transcript::TranscriptState::compute_message_hash(
+        message_id,
+        sender_id,
+        timestamp as u64,
+        ciphertext,
+    ).to_vec()
+}
+
+#[wasm_bindgen]
+pub fn transcript_verify_sync(hash_a: &[u8], hash_b: &[u8]) -> bool {
+    if hash_a.len() != 32 || hash_b.len() != 32 {
+        return false;
+    }
+    
+    let mut a_bytes = [0u8; 32];
+    a_bytes.copy_from_slice(hash_a);
+    let mut b_bytes = [0u8; 32];
+    b_bytes.copy_from_slice(hash_b);
+
+    vollcrypt_core::transcript::TranscriptState::verify_sync(&a_bytes, &b_bytes)
+}
+
 #[wasm_bindgen]
 pub fn ml_kem_keygen() -> MlKemKeyPairObj {
     let (dk, ek) = core_ml_kem_keygen();

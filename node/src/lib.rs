@@ -384,3 +384,61 @@ pub fn should_ratchet(
     };
     vollcrypt_core::should_ratchet(message_count, window_changed, &config)
 }
+
+// ==================== Transcript Hashing ====================
+
+#[napi]
+pub fn transcript_new(session_id: Uint8Array) -> Buffer {
+    let ts = vollcrypt_core::transcript::TranscriptState::new(session_id.as_ref());
+    Buffer::from(ts.to_bytes().to_vec())
+}
+
+#[napi]
+pub fn transcript_update(
+    chain_state: Uint8Array,
+    message_hash: Uint8Array,
+) -> Result<Buffer> {
+    if chain_state.len() != 32 || message_hash.len() != 32 {
+        return Err(Error::from_reason("chain_state and message_hash must be 32 bytes".to_string()));
+    }
+    let mut state_bytes = [0u8; 32];
+    state_bytes.copy_from_slice(chain_state.as_ref());
+    let mut msg_hash_bytes = [0u8; 32];
+    msg_hash_bytes.copy_from_slice(message_hash.as_ref());
+
+    let mut ts = vollcrypt_core::transcript::TranscriptState::from_bytes(state_bytes);
+    ts.update(&msg_hash_bytes);
+    Ok(Buffer::from(ts.to_bytes().to_vec()))
+}
+
+#[napi]
+pub fn transcript_compute_message_hash(
+    message_id: Uint8Array,
+    sender_id: Uint8Array,
+    timestamp: u32,
+    ciphertext: Uint8Array,
+) -> Buffer {
+    let hash = vollcrypt_core::transcript::TranscriptState::compute_message_hash(
+        message_id.as_ref(),
+        sender_id.as_ref(),
+        timestamp as u64,
+        ciphertext.as_ref(),
+    );
+    Buffer::from(hash.to_vec())
+}
+
+#[napi]
+pub fn transcript_verify_sync(
+    hash_a: Uint8Array,
+    hash_b: Uint8Array,
+) -> Result<bool> {
+    if hash_a.len() != 32 || hash_b.len() != 32 {
+        return Err(Error::from_reason("Hashes must be 32 bytes".to_string()));
+    }
+    let mut a_bytes = [0u8; 32];
+    a_bytes.copy_from_slice(hash_a.as_ref());
+    let mut b_bytes = [0u8; 32];
+    b_bytes.copy_from_slice(hash_b.as_ref());
+
+    Ok(vollcrypt_core::transcript::TranscriptState::verify_sync(&a_bytes, &b_bytes))
+}
