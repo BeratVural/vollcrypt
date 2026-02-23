@@ -52,3 +52,5 @@ export declare function transcriptNew(sessionId: Uint8Array): Buffer
 export declare function transcriptUpdate(chainState: Uint8Array, messageHash: Uint8Array): Buffer
 export declare function transcriptComputeMessageHash(messageId: Uint8Array, senderId: Uint8Array, timestamp: number, ciphertext: Uint8Array): Buffer
 export declare function transcriptVerifySync(hashA: Uint8Array, hashB: Uint8Array): boolean
+export declare function sealMessage(recipientX25519Pub: Uint8Array, senderId: Uint8Array, content: Uint8Array): Buffer
+export declare function unsealMessage(sealedPacket: Uint8Array, ourX25519Sk: Uint8Array): Array<Buffer>

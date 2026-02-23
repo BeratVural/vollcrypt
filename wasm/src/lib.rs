@@ -282,6 +282,63 @@ pub fn transcript_verify_sync(hash_a: &[u8], hash_b: &[u8]) -> bool {
     vollcrypt_core::transcript::TranscriptState::verify_sync(&a_bytes, &b_bytes)
 }
 
+// ==================== Sealed Sender ====================
+
+#[wasm_bindgen]
+pub struct UnsealResult {
+    sender_id: Vec<u8>,
+    content: Vec<u8>,
+}
+
+#[wasm_bindgen]
+impl UnsealResult {
+    #[wasm_bindgen(getter)]
+    pub fn sender_id(&self) -> Vec<u8> {
+        self.sender_id.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn content(&self) -> Vec<u8> {
+        self.content.clone()
+    }
+
+    pub fn free(self) {}
+}
+
+#[wasm_bindgen]
+pub fn seal_message(
+    recipient_x25519_pub: &[u8],
+    sender_id: &[u8],
+    content: &[u8],
+) -> Result<Vec<u8>, JsValue> {
+    if recipient_x25519_pub.len() != 32 {
+        return Err(JsValue::from_str("recipient_x25519_pub must be 32 bytes"));
+    }
+    
+    let mut pub_bytes = [0u8; 32];
+    pub_bytes.copy_from_slice(recipient_x25519_pub);
+
+    vollcrypt_core::sealed_sender::seal(&pub_bytes, sender_id, content)
+        .map_err(|e| JsValue::from_str(&format!("Sealing failed: {:?}", e)))
+}
+
+#[wasm_bindgen]
+pub fn unseal_message(
+    sealed_packet: &[u8],
+    our_x25519_sk: &[u8],
+) -> Result<UnsealResult, JsValue> {
+    if our_x25519_sk.len() != 32 {
+        return Err(JsValue::from_str("our_x25519_sk must be 32 bytes"));
+    }
+    
+    let mut sk_bytes = [0u8; 32];
+    sk_bytes.copy_from_slice(our_x25519_sk);
+
+    vollcrypt_core::sealed_sender::unseal(sealed_packet, &sk_bytes)
+        .map(|(sender_id, content)| UnsealResult { sender_id, content })
+        .map_err(|e| JsValue::from_str(&format!("Unsealing failed: {:?}", e)))
+}
+
 #[wasm_bindgen]
 pub fn ml_kem_keygen() -> MlKemKeyPairObj {
     let (dk, ek) = core_ml_kem_keygen();

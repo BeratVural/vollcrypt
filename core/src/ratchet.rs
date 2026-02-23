@@ -9,6 +9,8 @@ pub enum CryptoError {
     RatchetComputationFailed,
     InvalidRatchetStep,
     InvalidKeyLength,
+    InvalidSealedPacketFormat,
+    DecryptionFailed,
 }
 
 impl core::fmt::Display for CryptoError {
@@ -18,6 +20,8 @@ impl core::fmt::Display for CryptoError {
             CryptoError::RatchetComputationFailed => write!(f, "Ratchet computation failed"),
             CryptoError::InvalidRatchetStep => write!(f, "Invalid ratchet step"),
             CryptoError::InvalidKeyLength => write!(f, "Invalid key length"),
+            CryptoError::InvalidSealedPacketFormat => write!(f, "Invalid sealed packet format"),
+            CryptoError::DecryptionFailed => write!(f, "Decryption failed or MAC mismatch"),
         }
     }
 }

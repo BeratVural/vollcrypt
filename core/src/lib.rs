@@ -9,6 +9,7 @@ pub mod pqc;
 pub mod device;
 pub mod ratchet;
 pub mod transcript;
+pub mod sealed_sender;
 
 // Re-export common functions directly
 pub use bip39::{generate_mnemonic, mnemonic_to_seed};
