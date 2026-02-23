@@ -442,3 +442,42 @@ pub fn transcript_verify_sync(
 
     Ok(vollcrypt_core::transcript::TranscriptState::verify_sync(&a_bytes, &b_bytes))
 }
+
+// ==================== Sealed Sender ====================
+
+#[napi]
+pub fn seal_message(
+    recipient_x25519_pub: Uint8Array,
+    sender_id: Uint8Array,
+    content: Uint8Array,
+) -> Result<Buffer> {
+    if recipient_x25519_pub.len() != 32 {
+        return Err(Error::from_reason("recipient_x25519_pub must be 32 bytes".to_string()));
+    }
+
+    let mut pub_bytes = [0u8; 32];
+    pub_bytes.copy_from_slice(recipient_x25519_pub.as_ref());
+
+    match vollcrypt_core::sealed_sender::seal(&pub_bytes, sender_id.as_ref(), content.as_ref()) {
+        Ok(sealed) => Ok(Buffer::from(sealed)),
+        Err(e) => Err(Error::from_reason(format!("Sealing failed: {:?}", e))),
+    }
+}
+
+#[napi]
+pub fn unseal_message(
+    sealed_packet: Uint8Array,
+    our_x25519_sk: Uint8Array,
+) -> Result<Vec<Buffer>> {
+    if our_x25519_sk.len() != 32 {
+        return Err(Error::from_reason("our_x25519_sk must be 32 bytes".to_string()));
+    }
+
+    let mut sk_bytes = [0u8; 32];
+    sk_bytes.copy_from_slice(our_x25519_sk.as_ref());
+
+    match vollcrypt_core::sealed_sender::unseal(sealed_packet.as_ref(), &sk_bytes) {
+        Ok((sender_id, content)) => Ok(vec![Buffer::from(sender_id), Buffer::from(content)]),
+        Err(e) => Err(Error::from_reason(format!("Unsealing failed: {:?}", e))),
+    }
+}
