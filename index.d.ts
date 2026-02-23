@@ -48,3 +48,7 @@ export declare function registryGetActiveDevices(registryJson: string): string
 export declare function generateRatchetKeypair(): Array<Buffer>
 export declare function ratchetSrk(currentSrk: Uint8Array, ourRatchetSecret: Uint8Array, theirRatchetPub: Uint8Array, chatId: Uint8Array, ratchetStep: number, isSender: boolean): Buffer
 export declare function shouldRatchet(messageCount: number, windowChanged: boolean, messagesPerRatchet: number, ratchetOnNewWindow: boolean): boolean
+export declare function transcriptNew(sessionId: Uint8Array): Buffer
+export declare function transcriptUpdate(chainState: Uint8Array, messageHash: Uint8Array): Buffer
+export declare function transcriptComputeMessageHash(messageId: Uint8Array, senderId: Uint8Array, timestamp: number, ciphertext: Uint8Array): Buffer
+export declare function transcriptVerifySync(hashA: Uint8Array, hashB: Uint8Array): boolean
