@@ -54,3 +54,8 @@ export declare function transcriptComputeMessageHash(messageId: Uint8Array, send
 export declare function transcriptVerifySync(hashA: Uint8Array, hashB: Uint8Array): boolean
 export declare function sealMessage(recipientX25519Pub: Uint8Array, senderId: Uint8Array, content: Uint8Array): Buffer
 export declare function unsealMessage(sealedPacket: Uint8Array, ourX25519Sk: Uint8Array): Array<Buffer>
+export declare function keyLogCreateEntry(userId: Uint8Array, publicKey: Uint8Array, timestamp: number, prevEntryHash: Uint8Array, action: number, signingKey: Uint8Array): string
+export declare function keyLogVerifyChain(entriesJson: string): boolean
+export declare function keyLogCurrentKey(entriesJson: string, userId: Uint8Array): Buffer | null
+export declare function keyLogKeyAtTimestamp(entriesJson: string, userId: Uint8Array, timestamp: number): Buffer | null
+export declare function keyLogComputeEntryHash(entryJson: string): Buffer

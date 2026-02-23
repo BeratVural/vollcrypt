@@ -310,7 +310,7 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { generateMnemonic, mnemonicToSeed, generateEd25519Keypair, generateX25519Keypair, ecdhSharedSecret, signMessage, verifySignature, encryptAesGcm, decryptAesGcm, derivePbkdf2, deriveHkdf, deriveSrk, deriveWindowKey, wrapKey, unwrapKey, padMessage, packEnvelope, unpackEnvelope, mlKemKeygen, mlKemEncapsulate, mlKemDecapsulate, hybridKemEncapsulate, hybridKemDecapsulate, authenticatedKemEncapsulate, authenticatedKemDecapsulate, registryEmpty, registryAddDevice, registryRevokeDevice, registryGetActiveDevices, generateRatchetKeypair, ratchetSrk, shouldRatchet, transcriptNew, transcriptUpdate, transcriptComputeMessageHash, transcriptVerifySync, sealMessage, unsealMessage } = nativeBinding
+const { generateMnemonic, mnemonicToSeed, generateEd25519Keypair, generateX25519Keypair, ecdhSharedSecret, signMessage, verifySignature, encryptAesGcm, decryptAesGcm, derivePbkdf2, deriveHkdf, deriveSrk, deriveWindowKey, wrapKey, unwrapKey, padMessage, packEnvelope, unpackEnvelope, mlKemKeygen, mlKemEncapsulate, mlKemDecapsulate, hybridKemEncapsulate, hybridKemDecapsulate, authenticatedKemEncapsulate, authenticatedKemDecapsulate, registryEmpty, registryAddDevice, registryRevokeDevice, registryGetActiveDevices, generateRatchetKeypair, ratchetSrk, shouldRatchet, transcriptNew, transcriptUpdate, transcriptComputeMessageHash, transcriptVerifySync, sealMessage, unsealMessage, keyLogCreateEntry, keyLogVerifyChain, keyLogCurrentKey, keyLogKeyAtTimestamp, keyLogComputeEntryHash } = nativeBinding
 
 module.exports.generateMnemonic = generateMnemonic
 module.exports.mnemonicToSeed = mnemonicToSeed
@@ -350,3 +350,8 @@ module.exports.transcriptComputeMessageHash = transcriptComputeMessageHash
 module.exports.transcriptVerifySync = transcriptVerifySync
 module.exports.sealMessage = sealMessage
 module.exports.unsealMessage = unsealMessage
+module.exports.keyLogCreateEntry = keyLogCreateEntry
+module.exports.keyLogVerifyChain = keyLogVerifyChain
+module.exports.keyLogCurrentKey = keyLogCurrentKey
+module.exports.keyLogKeyAtTimestamp = keyLogKeyAtTimestamp
+module.exports.keyLogComputeEntryHash = keyLogComputeEntryHash

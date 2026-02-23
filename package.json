@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "@napi-rs/cli": "^2.18.4",
-    "wasm-pack": "^0.13.1"
+    "@types/node": "^25.3.0",
+    "wasm-pack": "^0.0.0"
   }
 }
