@@ -229,6 +229,44 @@ pub fn hybrid_kem_decapsulate(
     }
 }
 
+#[napi]
+pub fn authenticated_kem_encapsulate(
+    our_x25519_sk: Uint8Array,
+    recipient_x25519_pub: Uint8Array,
+    recipient_mlkem_ek: Uint8Array,
+    sender_identity_sk: Uint8Array,
+) -> Result<Vec<Buffer>> {
+    match vollcrypt_core::pqc::authenticated_kem_encapsulate(
+        our_x25519_sk.as_ref(),
+        recipient_x25519_pub.as_ref(),
+        recipient_mlkem_ek.as_ref(),
+        sender_identity_sk.as_ref(),
+    ) {
+        Ok((ct, ss)) => Ok(vec![Buffer::from(ct), Buffer::from(ss)]),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}
+
+#[napi]
+pub fn authenticated_kem_decapsulate(
+    our_x25519_sk: Uint8Array,
+    sender_x25519_pub: Uint8Array,
+    our_mlkem_dk: Uint8Array,
+    authenticated_ciphertext: Uint8Array,
+    sender_identity_pk: Uint8Array,
+) -> Result<Buffer> {
+    match vollcrypt_core::pqc::authenticated_kem_decapsulate(
+        our_x25519_sk.as_ref(),
+        sender_x25519_pub.as_ref(),
+        our_mlkem_dk.as_ref(),
+        authenticated_ciphertext.as_ref(),
+        sender_identity_pk.as_ref(),
+    ) {
+        Ok(ss) => Ok(Buffer::from(ss)),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}
+
 // ==================== Device Authorization Registry ====================
 
 #[napi]

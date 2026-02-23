@@ -314,6 +314,68 @@ pub fn hybrid_kem_decapsulate(
         .map_err(|e| JsValue::from_str(e))
 }
 
+// ==================== Authenticated Hybrid KEM ====================
+
+#[wasm_bindgen]
+pub struct AuthenticatedKemResult {
+    ciphertext: Vec<u8>,
+    shared_secret: Vec<u8>,
+}
+
+#[wasm_bindgen]
+impl AuthenticatedKemResult {
+    #[wasm_bindgen(getter)]
+    pub fn ciphertext(&self) -> Vec<u8> {
+        self.ciphertext.clone()
+    }
+
+    /// WARNING: shared_secret should only be used in SRK derivation,
+    /// and should not be used as an encryption key directly.
+    #[wasm_bindgen(getter)]
+    pub fn shared_secret(&self) -> Vec<u8> {
+        self.shared_secret.clone()
+    }
+
+    pub fn free(self) {} // wasm-bindgen drop
+}
+
+#[wasm_bindgen]
+pub fn authenticated_kem_encapsulate(
+    our_x25519_sk: &[u8],
+    recipient_x25519_pub: &[u8],
+    recipient_mlkem_pub: &[u8],
+    sender_identity_sk: &[u8],
+) -> Result<AuthenticatedKemResult, JsValue> {
+    let (ct, ss) = vollcrypt_core::pqc::authenticated_kem_encapsulate(
+        our_x25519_sk,
+        recipient_x25519_pub,
+        recipient_mlkem_pub,
+        sender_identity_sk,
+    ).map_err(|e| JsValue::from_str(e))?;
+
+    Ok(AuthenticatedKemResult {
+        ciphertext: ct,
+        shared_secret: ss,
+    })
+}
+
+#[wasm_bindgen]
+pub fn authenticated_kem_decapsulate(
+    our_x25519_sk: &[u8],
+    sender_x25519_pub: &[u8],
+    our_mlkem_dk: &[u8],
+    authenticated_ciphertext: &[u8],
+    sender_identity_pk: &[u8],
+) -> Result<Vec<u8>, JsValue> {
+    vollcrypt_core::pqc::authenticated_kem_decapsulate(
+        our_x25519_sk,
+        sender_x25519_pub,
+        our_mlkem_dk,
+        authenticated_ciphertext,
+        sender_identity_pk,
+    ).map_err(|e| JsValue::from_str(e))
+}
+
 // ==================== Device Authorization Registry ====================
 
 #[wasm_bindgen]

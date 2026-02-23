@@ -39,6 +39,8 @@ export interface HybridKemResult {
 }
 export declare function hybridKemEncapsulate(x25519OurSecret: Uint8Array, x25519TheirPublic: Uint8Array, mlKemEk: Uint8Array): HybridKemResult
 export declare function hybridKemDecapsulate(x25519OurSecret: Uint8Array, x25519TheirPublic: Uint8Array, mlKemDk: Uint8Array, mlKemCt: Uint8Array): Buffer
+export declare function authenticatedKemEncapsulate(ourX25519Sk: Uint8Array, recipientX25519Pub: Uint8Array, recipientMlkemEk: Uint8Array, senderIdentitySk: Uint8Array): Array<Buffer>
+export declare function authenticatedKemDecapsulate(ourX25519Sk: Uint8Array, senderX25519Pub: Uint8Array, ourMlkemDk: Uint8Array, authenticatedCiphertext: Uint8Array, senderIdentityPk: Uint8Array): Buffer
 export declare function registryEmpty(): string
 export declare function registryAddDevice(registryJson: string, deviceId: string, name: string, addedAt: number, publicKey: string): string
 export declare function registryRevokeDevice(registryJson: string, deviceId: string): string
