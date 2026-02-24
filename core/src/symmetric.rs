@@ -90,6 +90,134 @@ pub fn decrypt_aes256gcm(
     Ok(plaintext)
 }
 
+fn build_chunk_aad(base_aad: Option<&[u8]>, chunk_index: u32) -> Vec<u8> {
+    let base_len = base_aad.map(|v| v.len()).unwrap_or(0);
+    let mut aad = Vec::with_capacity(base_len + 4);
+    if let Some(base) = base_aad {
+        aad.extend_from_slice(base);
+    }
+    aad.extend_from_slice(&chunk_index.to_be_bytes());
+    aad
+}
+
+pub fn encrypt_aes256gcm_chunked(
+    key: &[u8],
+    plaintext: &[u8],
+    associated_data: Option<&[u8]>,
+    chunk_size: usize,
+) -> Result<Vec<u8>, &'static str> {
+    if chunk_size == 0 {
+        log::error!("encrypt_aes256gcm_chunked: Invalid chunk size");
+        return Err("Invalid chunk size, must be greater than 0");
+    }
+    if key.len() != 32 {
+        log::error!("encrypt_aes256gcm_chunked: Invalid AES key length (expected 32, got {})", key.len());
+        return Err("Invalid AES key length, must be 32 bytes");
+    }
+
+    let total_len = plaintext.len();
+    let chunk_count = if total_len == 0 {
+        1usize
+    } else {
+        (total_len + chunk_size - 1) / chunk_size
+    };
+
+    if chunk_count > u32::MAX as usize {
+        log::error!("encrypt_aes256gcm_chunked: Chunk count overflow");
+        return Err("Chunk count exceeds supported maximum");
+    }
+
+    let mut result = Vec::new();
+    result.extend_from_slice(&(chunk_count as u32).to_be_bytes());
+
+    for i in 0..chunk_count {
+        let start = i * chunk_size;
+        let end = if total_len == 0 { 0 } else { (start + chunk_size).min(total_len) };
+        let chunk = &plaintext[start..end];
+        let mut aad = build_chunk_aad(associated_data, i as u32);
+        let encrypted = encrypt_aes256gcm(key, chunk, Some(&aad))?;
+        let enc_len = encrypted.len();
+        if enc_len > u32::MAX as usize {
+            aad.zeroize();
+            log::error!("encrypt_aes256gcm_chunked: Chunk ciphertext too large");
+            return Err("Chunk ciphertext too large");
+        }
+        result.extend_from_slice(&(i as u32).to_be_bytes());
+        result.extend_from_slice(&(enc_len as u32).to_be_bytes());
+        result.extend_from_slice(&encrypted);
+        aad.zeroize();
+    }
+
+    Ok(result)
+}
+
+pub fn decrypt_aes256gcm_chunked(
+    key: &[u8],
+    encrypted_data: &[u8],
+    associated_data: Option<&[u8]>,
+) -> Result<Vec<u8>, &'static str> {
+    if key.len() != 32 {
+        log::error!("decrypt_aes256gcm_chunked: Invalid AES key length");
+        return Err("Invalid AES key length, must be 32 bytes");
+    }
+    if encrypted_data.len() < 4 {
+        log::error!("decrypt_aes256gcm_chunked: Encrypted data too short");
+        return Err("Encrypted data too short");
+    }
+
+    let chunk_count = u32::from_be_bytes([encrypted_data[0], encrypted_data[1], encrypted_data[2], encrypted_data[3]]) as usize;
+    if chunk_count == 0 {
+        log::error!("decrypt_aes256gcm_chunked: Invalid chunk count");
+        return Err("Invalid chunk count");
+    }
+
+    let mut offset = 4usize;
+    let mut plaintext = Vec::new();
+
+    for expected_index in 0..chunk_count {
+        if offset + 8 > encrypted_data.len() {
+            log::error!("decrypt_aes256gcm_chunked: Truncated chunk header");
+            return Err("Encrypted data truncated");
+        }
+        let chunk_index = u32::from_be_bytes([
+            encrypted_data[offset],
+            encrypted_data[offset + 1],
+            encrypted_data[offset + 2],
+            encrypted_data[offset + 3],
+        ]);
+        let chunk_len = u32::from_be_bytes([
+            encrypted_data[offset + 4],
+            encrypted_data[offset + 5],
+            encrypted_data[offset + 6],
+            encrypted_data[offset + 7],
+        ]) as usize;
+        offset += 8;
+
+        if chunk_index as usize != expected_index {
+            log::error!("decrypt_aes256gcm_chunked: Chunk index mismatch");
+            return Err("Chunk index mismatch");
+        }
+        if chunk_len == 0 || offset + chunk_len > encrypted_data.len() {
+            log::error!("decrypt_aes256gcm_chunked: Invalid chunk length");
+            return Err("Invalid chunk length");
+        }
+
+        let chunk = &encrypted_data[offset..offset + chunk_len];
+        let mut aad = build_chunk_aad(associated_data, chunk_index);
+        let decrypted = decrypt_aes256gcm(key, chunk, Some(&aad))?;
+        aad.zeroize();
+        plaintext.extend_from_slice(&decrypted);
+        offset += chunk_len;
+    }
+
+    if offset != encrypted_data.len() {
+        log::error!("decrypt_aes256gcm_chunked: Trailing data after chunks");
+        return Err("Trailing data after chunks");
+    }
+
+    Ok(plaintext)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,5 +240,33 @@ mod tests {
 
         // Fails with bad AAD
         assert!(decrypt_aes256gcm(key, &encrypted, Some(b"wrong_meta")).is_err());
+    }
+
+    #[test]
+    fn test_aes_chunked_roundtrip() {
+        let key = [7u8; 32];
+        let aad = b"chunked-aad";
+        let plaintext = vec![0x42u8; 10_000];
+        let encrypted = encrypt_aes256gcm_chunked(&key, &plaintext, Some(aad), 1024).unwrap();
+        let decrypted = decrypt_aes256gcm_chunked(&key, &encrypted, Some(aad)).unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn test_aes_chunked_index_tamper_fails() {
+        let key = [9u8; 32];
+        let plaintext = vec![0x33u8; 2048];
+        let mut encrypted = encrypt_aes256gcm_chunked(&key, &plaintext, None, 1024).unwrap();
+        encrypted[4..8].copy_from_slice(&2u32.to_be_bytes());
+        assert!(decrypt_aes256gcm_chunked(&key, &encrypted, None).is_err());
+    }
+
+    #[test]
+    fn test_aes_chunked_empty_roundtrip() {
+        let key = [1u8; 32];
+        let plaintext = Vec::new();
+        let encrypted = encrypt_aes256gcm_chunked(&key, &plaintext, None, 1024).unwrap();
+        let decrypted = decrypt_aes256gcm_chunked(&key, &encrypted, None).unwrap();
+        assert_eq!(decrypted, plaintext);
     }
 }

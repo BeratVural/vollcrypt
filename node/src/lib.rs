@@ -68,6 +68,38 @@ pub fn decrypt_aes_gcm(key: Uint8Array, ciphertext: Uint8Array, aad: Option<Uint
 }
 
 #[napi]
+pub fn encrypt_aes_gcm_chunked(
+    key: Uint8Array,
+    plaintext: Uint8Array,
+    aad: Option<Uint8Array>,
+    chunk_size: u32,
+) -> Result<Buffer> {
+    let aad_ref = aad.as_ref().map(|x| x.as_ref());
+    match vollcrypt_core::encrypt_aes256gcm_chunked(
+        key.as_ref(),
+        plaintext.as_ref(),
+        aad_ref,
+        chunk_size as usize,
+    ) {
+        Ok(v) => Ok(Buffer::from(v)),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}
+
+#[napi]
+pub fn decrypt_aes_gcm_chunked(
+    key: Uint8Array,
+    ciphertext: Uint8Array,
+    aad: Option<Uint8Array>,
+) -> Result<Buffer> {
+    let aad_ref = aad.as_ref().map(|x| x.as_ref());
+    match vollcrypt_core::decrypt_aes256gcm_chunked(key.as_ref(), ciphertext.as_ref(), aad_ref) {
+        Ok(v) => Ok(Buffer::from(v)),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
+}
+
+#[napi]
 pub fn derive_pbkdf2(password: Uint8Array, salt: Uint8Array, iterations: u32, key_len: u32) -> Buffer {
     let key = vollcrypt_core::derive_pbkdf2(password.as_ref(), salt.as_ref(), iterations, key_len as usize);
     Buffer::from(key)
