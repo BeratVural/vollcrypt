@@ -86,6 +86,77 @@ export async function decryptAesGcmAuto(key, ciphertext, aad) {
   return wasm.decryptAesGcm(key, ciphertext, aad ?? null)
 }
 
+function calculatePaddingLen(contentLen) {
+  const sizes = [64, 128, 256, 512, 1024, 2048]
+  const minPadding = 2
+  const target = sizes.find((s) => s >= contentLen + minPadding) ?? (() => {
+    const remainder = (contentLen + minPadding) % 1024
+    return remainder === 0 ? contentLen + minPadding : contentLen + minPadding + (1024 - remainder)
+  })()
+  return target - contentLen
+}
+
+function padWithLen(content) {
+  const pt = normalizeU8(content)
+  if (!pt) {
+    throw new Error("Invalid plaintext")
+  }
+  if (pt.length > 0xffffffff) {
+    throw new Error("Message too large to pad")
+  }
+  const lenPrefix = new Uint8Array(4)
+  new DataView(lenPrefix.buffer).setUint32(0, pt.length, false)
+  const baseLen = 4 + pt.length
+  const padLen = calculatePaddingLen(baseLen)
+  const padding = new Uint8Array(padLen)
+  if (padLen > 0) {
+    globalThis.crypto.getRandomValues(padding)
+  }
+  const out = new Uint8Array(baseLen + padLen)
+  out.set(lenPrefix, 0)
+  out.set(pt, 4)
+  out.set(padding, 4 + pt.length)
+  return out
+}
+
+function unpadWithLen(padded) {
+  const buf = normalizeU8(padded)
+  if (!buf || buf.length < 4) {
+    throw new Error("Padded message too short")
+  }
+  const len = new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getUint32(0, false)
+  if (len > buf.length - 4) {
+    throw new Error("Invalid padded message length")
+  }
+  return buf.subarray(4, 4 + len)
+}
+
+export async function encryptAesGcmPaddedWeb(key, plaintext, aad) {
+  const padded = padWithLen(plaintext)
+  return await encryptAesGcmWeb(key, padded, aad)
+}
+
+export async function decryptAesGcmPaddedWeb(key, ciphertext, aad) {
+  const padded = await decryptAesGcmWeb(key, ciphertext, aad)
+  return unpadWithLen(padded)
+}
+
+export async function encryptAesGcmPaddedAuto(key, plaintext, aad) {
+  const subtle = getSubtle()
+  if (subtle) {
+    return await encryptAesGcmPaddedWeb(key, plaintext, aad)
+  }
+  return wasm.encryptAesGcmPadded(key, plaintext, aad ?? null)
+}
+
+export async function decryptAesGcmPaddedAuto(key, ciphertext, aad) {
+  const subtle = getSubtle()
+  if (subtle) {
+    return await decryptAesGcmPaddedWeb(key, ciphertext, aad)
+  }
+  return wasm.decryptAesGcmPadded(key, ciphertext, aad ?? null)
+}
+
 function buildChunkAad(baseAad, chunkIndex) {
   const aadPrefix = baseAad ? normalizeU8(baseAad) : null
   const indexBuf = new Uint8Array(4)
@@ -140,6 +211,11 @@ export async function encryptAesGcmChunkedWeb(key, plaintext, aad, chunkSize) {
   return out
 }
 
+export async function encryptAesGcmChunkedPaddedWeb(key, plaintext, aad, chunkSize) {
+  const padded = padWithLen(plaintext)
+  return await encryptAesGcmChunkedWeb(key, padded, aad, chunkSize)
+}
+
 export async function decryptAesGcmChunkedWeb(key, ciphertext, aad) {
   const ct = normalizeU8(ciphertext)
   if (!ct || ct.length < 4) {
@@ -184,6 +260,11 @@ export async function decryptAesGcmChunkedWeb(key, ciphertext, aad) {
   return out
 }
 
+export async function decryptAesGcmChunkedPaddedWeb(key, ciphertext, aad) {
+  const padded = await decryptAesGcmChunkedWeb(key, ciphertext, aad)
+  return unpadWithLen(padded)
+}
+
 export async function encryptAesGcmChunkedAuto(key, plaintext, aad, chunkSize) {
   const subtle = getSubtle()
   if (subtle) {
@@ -192,12 +273,28 @@ export async function encryptAesGcmChunkedAuto(key, plaintext, aad, chunkSize) {
   return wasm.encryptAesGcmChunked(key, plaintext, aad ?? null, chunkSize)
 }
 
+export async function encryptAesGcmChunkedPaddedAuto(key, plaintext, aad, chunkSize) {
+  const subtle = getSubtle()
+  if (subtle) {
+    return await encryptAesGcmChunkedPaddedWeb(key, plaintext, aad, chunkSize)
+  }
+  return wasm.encryptAesGcmChunkedPadded(key, plaintext, aad ?? null, chunkSize)
+}
+
 export async function decryptAesGcmChunkedAuto(key, ciphertext, aad) {
   const subtle = getSubtle()
   if (subtle) {
     return await decryptAesGcmChunkedWeb(key, ciphertext, aad)
   }
   return wasm.decryptAesGcmChunked(key, ciphertext, aad ?? null)
+}
+
+export async function decryptAesGcmChunkedPaddedAuto(key, ciphertext, aad) {
+  const subtle = getSubtle()
+  if (subtle) {
+    return await decryptAesGcmChunkedPaddedWeb(key, ciphertext, aad)
+  }
+  return wasm.decryptAesGcmChunkedPadded(key, ciphertext, aad ?? null)
 }
 
 export { init }

@@ -4,6 +4,7 @@ use aes_gcm::{
 };
 use rand::{RngCore, rngs::OsRng};
 use zeroize::Zeroize;
+use crate::padding::{pad_message_with_len, unpad_message_with_len};
 
 /// Encrypts data using AES-256-GCM.
 /// Automatically generates a secure 12-byte random IV (nonce) and prepends it to the cipher text.
@@ -88,6 +89,27 @@ pub fn decrypt_aes256gcm(
         })?;
 
     Ok(plaintext)
+}
+
+pub fn encrypt_aes256gcm_padded(
+    key: &[u8],
+    plaintext: &[u8],
+    associated_data: Option<&[u8]>,
+) -> Result<Vec<u8>, &'static str> {
+    let padded = pad_message_with_len(plaintext)?;
+    let encrypted = encrypt_aes256gcm(key, &padded, associated_data)?;
+    Ok(encrypted)
+}
+
+pub fn decrypt_aes256gcm_padded(
+    key: &[u8],
+    encrypted_data: &[u8],
+    associated_data: Option<&[u8]>,
+) -> Result<Vec<u8>, &'static str> {
+    let mut padded = decrypt_aes256gcm(key, encrypted_data, associated_data)?;
+    let unpadded = unpad_message_with_len(&padded)?;
+    padded.zeroize();
+    Ok(unpadded)
 }
 
 fn build_chunk_aad(base_aad: Option<&[u8]>, chunk_index: u32) -> Vec<u8> {
@@ -218,6 +240,28 @@ pub fn decrypt_aes256gcm_chunked(
     Ok(plaintext)
 }
 
+pub fn encrypt_aes256gcm_chunked_padded(
+    key: &[u8],
+    plaintext: &[u8],
+    associated_data: Option<&[u8]>,
+    chunk_size: usize,
+) -> Result<Vec<u8>, &'static str> {
+    let padded = pad_message_with_len(plaintext)?;
+    let encrypted = encrypt_aes256gcm_chunked(key, &padded, associated_data, chunk_size)?;
+    Ok(encrypted)
+}
+
+pub fn decrypt_aes256gcm_chunked_padded(
+    key: &[u8],
+    encrypted_data: &[u8],
+    associated_data: Option<&[u8]>,
+) -> Result<Vec<u8>, &'static str> {
+    let mut padded = decrypt_aes256gcm_chunked(key, encrypted_data, associated_data)?;
+    let unpadded = unpad_message_with_len(&padded)?;
+    padded.zeroize();
+    Ok(unpadded)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,6 +304,25 @@ mod tests {
         encrypted[4..8].copy_from_slice(&2u32.to_be_bytes());
         assert!(decrypt_aes256gcm_chunked(&key, &encrypted, None).is_err());
     }
+
+    #[test]
+    fn test_aes_padded_roundtrip() {
+        let key = [3u8; 32];
+        let plaintext = b"padded-message";
+        let encrypted = encrypt_aes256gcm_padded(&key, plaintext, None).unwrap();
+        let decrypted = decrypt_aes256gcm_padded(&key, &encrypted, None).unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn test_aes_chunked_padded_roundtrip() {
+        let key = [4u8; 32];
+        let plaintext = vec![0x22u8; 10_000];
+        let encrypted = encrypt_aes256gcm_chunked_padded(&key, &plaintext, None, 1024).unwrap();
+        let decrypted = decrypt_aes256gcm_chunked_padded(&key, &encrypted, None).unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
 
     #[test]
     fn test_aes_chunked_empty_roundtrip() {

@@ -149,7 +149,7 @@ fn sealed_sender_very_long_sender_id() {
     let sealed = seal(&pk_array, &long_id, b"payload").unwrap();
     let (recovered_id, recovered_content) = unseal(&sealed, &sk_array).unwrap();
     
-    assert_eq!(recovered_id.len(), 65000);
+    assert_eq!(recovered_id.len(), 65000_usize);
     assert_eq!(recovered_content, b"payload");
 }
 
@@ -171,7 +171,7 @@ fn sealed_sender_sender_id_length_overflow_attempt() {
     
     // Let's do the manual process
     use crate::kdf::derive_hkdf;
-    use crate::symmetric::encrypt_aes256gcm;
+    use crate::symmetric::encrypt_aes256gcm_padded;
     use x25519_dalek::{PublicKey, StaticSecret};
     use rand::rngs::OsRng;
     
@@ -193,7 +193,7 @@ fn sealed_sender_sender_id_length_overflow_attempt() {
     inner_plaintext.extend_from_slice(&spoof_len.to_be_bytes());
     inner_plaintext.extend_from_slice(b"1234567890"); // Only 10 bytes remaining
     
-    let encrypted_inner = encrypt_aes256gcm(&encryption_key, &inner_plaintext, None).unwrap();
+    let encrypted_inner = encrypt_aes256gcm_padded(&encryption_key, &inner_plaintext, None).unwrap();
     
     let mut sealed_packet = Vec::new();
     sealed_packet.extend_from_slice(ephemeral_pk.as_bytes());

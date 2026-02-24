@@ -21,8 +21,9 @@ pub use keys::{
     verify_signature,
 };
 pub use symmetric::{
-    decrypt_aes256gcm, decrypt_aes256gcm_chunked, encrypt_aes256gcm,
-    encrypt_aes256gcm_chunked,
+    decrypt_aes256gcm, decrypt_aes256gcm_chunked, decrypt_aes256gcm_chunked_padded,
+    decrypt_aes256gcm_padded, encrypt_aes256gcm, encrypt_aes256gcm_chunked,
+    encrypt_aes256gcm_chunked_padded, encrypt_aes256gcm_padded,
 };
 pub use wrap::{wrap_key, unwrap_key};
 pub use padding::pad_message;

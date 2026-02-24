@@ -3,7 +3,7 @@
 //! [window_index:4B][IV:12B][AAD_hash:32B][ciphertext][auth_tag:16B]
 
 /// Packs the encryption output into the standard VollChat binary envelope.
-/// `encrypted_blob` comes from `encrypt_aes256gcm` and has the form `[IV:12B][ciphertext][auth_tag:16B]`.
+/// `encrypted_blob` comes from `encrypt_aes256gcm` (or its padded variants) and has the form `[IV:12B][ciphertext][auth_tag:16B]`.
 pub fn pack_envelope(
     window_index: u32,
     aad_hash: &[u8; 32],
@@ -22,7 +22,7 @@ pub fn pack_envelope(
 
 /// Unpacks a standard VollChat binary envelope.
 /// Returns (window_index, aad_hash, encrypted_blob).
-/// `encrypted_blob` can be passed directly to `decrypt_aes256gcm`.
+/// `encrypted_blob` can be passed directly to `decrypt_aes256gcm` or its padded variants.
 pub fn unpack_envelope(envelope: &[u8]) -> Result<(u32, [u8; 32], Vec<u8>), &'static str> {
     if envelope.len() < 4 + 12 + 32 + 16 {
         return Err("Envelope too small");

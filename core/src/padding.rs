@@ -37,6 +37,31 @@ pub fn pad_message(content: &[u8]) -> Vec<u8> {
     padded_content
 }
 
+pub fn pad_message_with_len(content: &[u8]) -> Result<Vec<u8>, &'static str> {
+    if content.len() > u32::MAX as usize {
+        return Err("Message too large to pad");
+    }
+    let len_bytes = (content.len() as u32).to_be_bytes();
+    let base_len = 4 + content.len();
+    let padding_bytes = calculate_padding(base_len);
+    let mut padded = Vec::with_capacity(base_len + padding_bytes.len());
+    padded.extend_from_slice(&len_bytes);
+    padded.extend_from_slice(content);
+    padded.extend_from_slice(&padding_bytes);
+    Ok(padded)
+}
+
+pub fn unpad_message_with_len(padded: &[u8]) -> Result<Vec<u8>, &'static str> {
+    if padded.len() < 4 {
+        return Err("Padded message too short");
+    }
+    let len = u32::from_be_bytes([padded[0], padded[1], padded[2], padded[3]]) as usize;
+    if len > padded.len() - 4 {
+        return Err("Invalid padded message length");
+    }
+    Ok(padded[4..4 + len].to_vec())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -47,5 +72,19 @@ mod tests {
         assert_eq!(calculate_padding(63).len(), 65); // 128 - 63 (because 63 + 2 > 64)
         assert_eq!(calculate_padding(2000).len(), 48); // 2048 - 2000
         assert_eq!(calculate_padding(2050).len(), 1022); // Target: 3072, Padding: 1022
+    }
+
+    #[test]
+    fn test_pad_unpad_with_len_roundtrip() {
+        let msg = b"hello padding";
+        let padded = pad_message_with_len(msg).unwrap();
+        let unpadded = unpad_message_with_len(&padded).unwrap();
+        assert_eq!(unpadded, msg);
+    }
+
+    #[test]
+    fn test_unpad_with_len_invalid() {
+        assert!(unpad_message_with_len(b"").is_err());
+        assert!(unpad_message_with_len(&[0, 0, 0, 5, 1, 2]).is_err());
     }
 }
