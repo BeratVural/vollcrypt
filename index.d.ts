@@ -14,6 +14,8 @@ export declare function encryptAesGcm(key: Uint8Array, plaintext: Uint8Array, aa
 export declare function decryptAesGcm(key: Uint8Array, ciphertext: Uint8Array, aad?: Uint8Array | undefined | null): Buffer
 export declare function encryptAesGcmChunked(key: Uint8Array, plaintext: Uint8Array, aad: Uint8Array | undefined | null, chunkSize: number): Buffer
 export declare function decryptAesGcmChunked(key: Uint8Array, ciphertext: Uint8Array, aad: Uint8Array | undefined | null): Buffer
+export declare function encryptFileChunked(inputPath: string, outputPath: string, key: Uint8Array, aad: Uint8Array | undefined | null, chunkSize: number): Promise<void>
+export declare function decryptFileChunked(inputPath: string, outputPath: string, key: Uint8Array, aad: Uint8Array | undefined | null): Promise<void>
 export declare function derivePbkdf2(password: Uint8Array, salt: Uint8Array, iterations: number, keyLen: number): Buffer
 export declare function deriveHkdf(ikm: Uint8Array, salt: Uint8Array | undefined | null, info: Uint8Array | undefined | null, keyLen: number): Buffer
 export declare function deriveSrk(dek: Uint8Array, chatId: Uint8Array): Buffer
