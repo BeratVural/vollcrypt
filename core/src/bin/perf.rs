@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 use rand::{RngCore, rngs::OsRng};
+use aes_gcm::{Aes256Gcm, Nonce, aead::{AeadInPlace, KeyInit}};
 use vollcrypt_core::{
     encrypt_aes256gcm, decrypt_aes256gcm,
     encrypt_aes256gcm_chunked, decrypt_aes256gcm_chunked,
@@ -12,6 +13,65 @@ fn mb_per_sec(bytes: usize, elapsed: Duration) -> f64 {
         return 0.0;
     }
     (bytes as f64 / (1024.0 * 1024.0)) / elapsed.as_secs_f64()
+}
+
+fn print_cpu_features() {
+    #[cfg(target_arch = "x86_64")]
+    {
+        let aes = std::is_x86_feature_detected!("aes");
+        let pclmulqdq = std::is_x86_feature_detected!("pclmulqdq");
+        println!("CPU aes={} pclmulqdq={}", aes, pclmulqdq);
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        println!("CPU aes=na pclmulqdq=na");
+    }
+}
+
+fn bench_aesgcm_raw(size: usize, iterations: usize) {
+    let mut key = [0u8; 32];
+    OsRng.fill_bytes(&mut key);
+    let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
+    let mut base = vec![0u8; size];
+    OsRng.fill_bytes(&mut base);
+
+    let mut nonces = Vec::with_capacity(iterations.max(1));
+    for _ in 0..iterations.max(1) {
+        let mut n = [0u8; 12];
+        OsRng.fill_bytes(&mut n);
+        nonces.push(n);
+    }
+
+    let mut work = vec![0u8; size];
+    let start_enc = Instant::now();
+    let mut total_enc = 0usize;
+    for i in 0..iterations {
+        work.copy_from_slice(&base);
+        let nonce = Nonce::from_slice(&nonces[i]);
+        let _ = cipher.encrypt_in_place_detached(nonce, b"", &mut work).unwrap();
+        total_enc += size;
+    }
+    let enc_elapsed = start_enc.elapsed();
+
+    work.copy_from_slice(&base);
+    let nonce0 = Nonce::from_slice(&nonces[0]);
+    let tag0 = cipher.encrypt_in_place_detached(nonce0, b"", &mut work).unwrap();
+    let ciphertext = work.clone();
+
+    let mut work_dec = vec![0u8; size];
+    let start_dec = Instant::now();
+    let mut total_dec = 0usize;
+    for _ in 0..iterations {
+        work_dec.copy_from_slice(&ciphertext);
+        let _ = cipher.decrypt_in_place_detached(nonce0, b"", &mut work_dec, &tag0).unwrap();
+        total_dec += size;
+    }
+    let dec_elapsed = start_dec.elapsed();
+
+    println!(
+        "AES-GCM-RAW size={} bytes enc={} MB/s dec={} MB/s",
+        size, mb_per_sec(total_enc, enc_elapsed), mb_per_sec(total_dec, dec_elapsed)
+    );
 }
 
 fn bench_encrypt_decrypt(size: usize, iterations: usize) {
@@ -126,6 +186,10 @@ fn bench_ml_kem(iterations: usize) {
 
 fn main() {
     println!("Vollcrypt perf");
+    print_cpu_features();
+    bench_aesgcm_raw(64 * 1024, 2000);
+    bench_aesgcm_raw(1024 * 1024, 400);
+    bench_aesgcm_raw(16 * 1024 * 1024, 20);
     bench_encrypt_decrypt(1024, 2000);
     bench_encrypt_decrypt(64 * 1024, 400);
     bench_encrypt_decrypt(1024 * 1024, 80);

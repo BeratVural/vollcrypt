@@ -5,7 +5,9 @@
   "main": "pkg/wasm.js",
   "types": "pkg/wasm.d.ts",
   "files": [
-    "pkg/"
+    "pkg/",
+    "fast.js",
+    "fast.d.ts"
   ],
   "publishConfig": {
     "access": "public"
