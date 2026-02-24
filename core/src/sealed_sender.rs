@@ -3,7 +3,7 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use zeroize::Zeroize;
 
 use crate::kdf::derive_hkdf;
-use crate::symmetric::{decrypt_aes256gcm, encrypt_aes256gcm};
+use crate::symmetric::{decrypt_aes256gcm_padded, encrypt_aes256gcm_padded};
 use crate::ratchet::CryptoError;
 
 /// Creates a sealed sender packet.
@@ -58,7 +58,7 @@ pub fn seal(
     inner_plaintext.extend_from_slice(content);
 
     // 5. Encrypt with AES-256-GCM (returns [12B IV][ciphertext][16B tag])
-    let encrypted_inner = encrypt_aes256gcm(&encryption_key, &inner_plaintext, None)
+    let encrypted_inner = encrypt_aes256gcm_padded(&encryption_key, &inner_plaintext, None)
         .map_err(|_| CryptoError::InvalidKeyLength)?;
     
     // Zeroize intermediate encryption key and plaintext
@@ -113,7 +113,7 @@ pub fn unseal(
     shared_secret.zeroize();
 
     // 5. Decrypt AES-256-GCM
-    let mut inner_plaintext = match decrypt_aes256gcm(&encryption_key, encrypted_inner, None) {
+    let mut inner_plaintext = match decrypt_aes256gcm_padded(&encryption_key, encrypted_inner, None) {
         Ok(pt) => pt,
         Err(_) => {
             encryption_key.zeroize();
