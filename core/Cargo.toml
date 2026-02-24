@@ -22,3 +22,6 @@ subtle = "2.6.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.17", features = ["js"] }
+
+[dev-dependencies]
+rand = { version = "0.8.5", features = ["std_rng"] }
