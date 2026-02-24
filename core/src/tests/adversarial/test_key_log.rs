@@ -1,5 +1,4 @@
 use std::time::Instant;
-use std::convert::TryInto;
 use crate::key_log::{KeyLog, KeyLogEntry, KeyAction, create_entry, GENESIS_HASH};
 use crate::keys::generate_ed25519_keypair;
 use crate::ratchet::CryptoError;
@@ -158,7 +157,7 @@ fn key_log_duplicate_entry() {
 fn key_log_timestamp_goes_backward() {
     let kp = generate_ed25519_keypair();
     let e0 = make_helper_entry(b"alice", &kp, &GENESIS_HASH, KeyAction::Add, 2000);
-    let mut e1 = make_helper_entry(b"alice", &kp, &e0.compute_hash(), KeyAction::Update, 1000); // 1000 < 2000
+    let e1 = make_helper_entry(b"alice", &kp, &e0.compute_hash(), KeyAction::Update, 1000); // 1000 < 2000
     
     let mut log = KeyLog::new();
     let _ = log.append(e0);
@@ -192,7 +191,7 @@ fn key_log_timestamp_max_u64() {
 
 #[test]
 fn key_log_current_key_nonexistent_user() {
-    let mut log = KeyLog::new();
+    let log = KeyLog::new();
     assert!(log.current_key_for(b"bob").is_none(), "Must not panic on unknown user");
 }
 

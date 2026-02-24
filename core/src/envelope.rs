@@ -1,6 +1,6 @@
-/// Message Envelope structures and formatting.
-/// The envelope binary format used in VollChat is:
-/// [window_index:4B][IV:12B][AAD_hash:32B][ciphertext][auth_tag:16B]
+//! Message Envelope structures and formatting.
+//! The envelope binary format used in VollChat is:
+//! [window_index:4B][IV:12B][AAD_hash:32B][ciphertext][auth_tag:16B]
 
 /// Packs the encryption output into the standard VollChat binary envelope.
 /// `encrypted_blob` comes from `encrypt_aes256gcm` and has the form `[IV:12B][ciphertext][auth_tag:16B]`.

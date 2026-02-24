@@ -178,6 +178,12 @@ pub fn create_entry(
     Ok(entry)
 }
 
+impl Default for KeyLog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KeyLog {
     /// Boş log oluşturur.
     pub fn new() -> Self {
@@ -199,10 +205,12 @@ impl KeyLog {
         }
         
         // Also check if timestamp is monotonic
-        if let Some(last_entry) = self.entries.last() {
-             if entry.timestamp < last_entry.timestamp {
-                 return Err(CryptoError::KeyLogHashMismatch); // For simplicity, we re-use mismatch
-             }
+        if self
+            .entries
+            .last()
+            .is_some_and(|last_entry| entry.timestamp < last_entry.timestamp)
+        {
+            return Err(CryptoError::KeyLogHashMismatch);
         }
 
         self.entries.push(entry);
@@ -227,11 +235,9 @@ impl KeyLog {
                 // Find previous valid key for the same user
                 let mut prev_key = None;
                 for prev_entry in self.entries[..i].iter().rev() {
-                    if prev_entry.user_id == entry.user_id {
-                        if prev_entry.action != KeyAction::Revoke {
-                            prev_key = Some(&prev_entry.public_key);
-                            break;
-                        }
+                    if prev_entry.user_id == entry.user_id && prev_entry.action != KeyAction::Revoke {
+                        prev_key = Some(&prev_entry.public_key);
+                        break;
                     }
                 }
                 match prev_key {
@@ -442,7 +448,8 @@ mod tests {
         let kp_b = generate_ed25519_keypair();
 
         let e_alice = make_entry(b"alice", &kp_a, &GENESIS_HASH, KeyAction::Add, 1000);
-        let e_bob   = make_entry(b"bob",   &kp_b, &GENESIS_HASH, KeyAction::Add, 1000);
+        let e_alice_hash = e_alice.compute_hash();
+        let e_bob = make_entry(b"bob", &kp_b, &e_alice_hash, KeyAction::Add, 1000);
 
         let mut log = KeyLog::new();
         log.append(e_alice).unwrap();
