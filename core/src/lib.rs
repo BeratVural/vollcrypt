@@ -34,3 +34,8 @@ pub use ratchet::{
     RatchetKeyPair, RatchetOutput, RatchetConfig, CryptoError,
 };
 pub use transcript::TranscriptState;
+
+#[cfg(test)]
+mod tests {
+    mod adversarial;
+}
