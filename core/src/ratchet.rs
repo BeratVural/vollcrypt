@@ -72,8 +72,8 @@ impl Default for RatchetConfig {
 /// Generates a new ephemeral X25519 ratchet key pair.
 /// The sender calls this function and transmits the public_key to the recipient.
 pub fn generate_ratchet_keypair() -> Result<RatchetKeyPair, CryptoError> {
-    let mut csprng = OsRng;
-    let secret = StaticSecret::random_from_rng(&mut csprng);
+    let csprng = OsRng;
+    let secret = StaticSecret::random_from_rng(csprng);
     let public = PublicKey::from(&secret);
 
     let mut secret_bytes = [0u8; 32];

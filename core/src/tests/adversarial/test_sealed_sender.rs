@@ -175,7 +175,7 @@ fn sealed_sender_sender_id_length_overflow_attempt() {
     use x25519_dalek::{PublicKey, StaticSecret};
     use rand::rngs::OsRng;
     
-    let mut ephemeral_sk = StaticSecret::random_from_rng(OsRng);
+    let ephemeral_sk = StaticSecret::random_from_rng(OsRng);
     let ephemeral_pk = PublicKey::from(&ephemeral_sk);
     let recipient_pk = PublicKey::from(pk_array);
     let shared_secret = ephemeral_sk.diffie_hellman(&recipient_pk).to_bytes();

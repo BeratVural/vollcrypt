@@ -1,7 +1,5 @@
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
-use hkdf::Hkdf;
 use rand::rngs::OsRng;
-use sha2::Sha256;
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
 use zeroize::Zeroize;
 
@@ -19,8 +17,8 @@ pub fn generate_ed25519_keypair() -> (Vec<u8>, Vec<u8>) {
 
 /// Generates a new X25519 Static Secret (for ECDH Key Exchange).
 pub fn generate_x25519_keypair() -> (Vec<u8>, Vec<u8>) {
-    let mut csprng = OsRng;
-    let secret = StaticSecret::random_from_rng(&mut csprng);
+    let csprng = OsRng;
+    let secret = StaticSecret::random_from_rng(csprng);
     let public = X25519PublicKey::from(&secret);
 
     (secret.to_bytes().to_vec(), public.as_bytes().to_vec())

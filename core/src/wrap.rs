@@ -7,7 +7,7 @@ pub fn wrap_key(kek: &[u8], key_to_wrap: &[u8]) -> Result<Vec<u8>, &'static str>
     if kek.len() != 32 {
         return Err("KEK must be exactly 32 bytes");
     }
-    if key_to_wrap.len() < 16 || key_to_wrap.len() % 8 != 0 {
+    if key_to_wrap.len() < 16 || !key_to_wrap.len().is_multiple_of(8) {
         return Err("Key to wrap must be at least 16 bytes and a multiple of 8 bytes in length");
     }
 
@@ -24,7 +24,7 @@ pub fn unwrap_key(kek: &[u8], wrapped_key: &[u8]) -> Result<Vec<u8>, &'static st
     if kek.len() != 32 {
         return Err("KEK must be exactly 32 bytes");
     }
-    if wrapped_key.len() < 24 || wrapped_key.len() % 8 != 0 {
+    if wrapped_key.len() < 24 || !wrapped_key.len().is_multiple_of(8) {
         return Err("Wrapped key must be at least 24 bytes and a multiple of 8 bytes in length");
     }
 

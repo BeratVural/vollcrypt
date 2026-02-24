@@ -1,5 +1,5 @@
 use std::panic;
-use crate::symmetric::{encrypt_aes256gcm, decrypt_aes256gcm};
+use crate::symmetric::decrypt_aes256gcm;
 use crate::kdf::{derive_hkdf, derive_pbkdf2, derive_srk};
 use crate::envelope::{pack_envelope, unpack_envelope};
 use crate::pqc::ml_kem_decapsulate;

@@ -199,8 +199,8 @@ fn auth_kem_length_prefix_overflows_buffer() {
 #[test]
 fn kem_shared_secrets_not_equal_wrong_private_key() {
     let (alice_sk, _alice_pk) = generate_x25519_keypair();
-    let (bob_sk, bob_pk) = generate_x25519_keypair();
-    let (bob_dk, bob_ek) = ml_kem_keygen();
+    let (_bob_sk, bob_pk) = generate_x25519_keypair();
+    let (_bob_dk, bob_ek) = ml_kem_keygen();
 
     let (mallory_sk, _mallory_pk) = generate_x25519_keypair();
     let (mallory_dk, _mallory_ek) = ml_kem_keygen();

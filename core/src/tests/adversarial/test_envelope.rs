@@ -154,12 +154,12 @@ fn envelope_message_swap() {
     let aad_a = [0xAAu8; 32];
     let aad_b = [0xBBu8; 32];
     
-    let blob_a = encrypt_aes256gcm(&key, b"Message A", Some(&aad_a)).unwrap();
+    let _blob_a = encrypt_aes256gcm(&key, b"Message A", Some(&aad_a)).unwrap();
     let blob_b = encrypt_aes256gcm(&key, b"Message B", Some(&aad_b)).unwrap();
     
     // Mallory swaps the envelope of B into A's context
     let envelope_b = pack_envelope(1, &aad_b, &blob_b).unwrap();
-    let (_, unpacked_aad_b, unpacked_blob_b) = unpack_envelope(&envelope_b).unwrap();
+    let (_, _unpacked_aad_b, unpacked_blob_b) = unpack_envelope(&envelope_b).unwrap();
     
     // Try to decrypt B's blob using A's AAD (simulate AAD check)
     let dec = decrypt_aes256gcm(&key, &unpacked_blob_b, Some(&aad_a));

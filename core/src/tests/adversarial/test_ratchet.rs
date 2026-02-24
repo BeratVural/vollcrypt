@@ -1,5 +1,5 @@
 use crate::ratchet::{
-    generate_ratchet_keypair, ratchet_srk_sender, ratchet_srk_receiver, should_ratchet, RatchetConfig
+    generate_ratchet_keypair, ratchet_srk_sender, should_ratchet, RatchetConfig
 };
 
 // ── Ratchet Security ──────────────────────────────────────────────────────

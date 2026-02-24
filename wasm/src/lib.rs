@@ -33,7 +33,7 @@ pub fn generate_mnemonic() -> String {
 #[wasm_bindgen]
 pub fn mnemonic_to_seed(phrase: &str, password: Option<String>) -> Result<Vec<u8>, JsValue> {
     core_mnemonic_to_seed(phrase, password.as_deref())
-        .map_err(|e| JsValue::from_str(e))
+        .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -47,7 +47,7 @@ impl Ed25519KeyPairObj {
     #[wasm_bindgen]
     pub fn sign(&self, message: &[u8]) -> Result<Vec<u8>, JsValue> {
         core_sign_message(&self.secret_key, message)
-            .map_err(|e| JsValue::from_str(e))
+            .map_err(JsValue::from_str)
     }
 
     #[wasm_bindgen(getter)]
@@ -161,13 +161,13 @@ pub fn verify_fingerprints_match(
 #[wasm_bindgen]
 pub fn ecdh_shared_secret(our_secret: &[u8], their_public: &[u8]) -> Result<Vec<u8>, JsValue> {
     core_ecdh_shared_secret(our_secret, their_public)
-        .map_err(|e| JsValue::from_str(e))
+        .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
 pub fn sign_message(secret_key: &[u8], message: &[u8]) -> Result<Vec<u8>, JsValue> {
     core_sign_message(secret_key, message)
-        .map_err(|e| JsValue::from_str(e))
+        .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -178,13 +178,13 @@ pub fn verify_signature(public_key: &[u8], message: &[u8], signature: &[u8]) -> 
 #[wasm_bindgen]
 pub fn encrypt_aes_gcm(key: &[u8], plaintext: &[u8], aad: Option<Vec<u8>>) -> Result<Vec<u8>, JsValue> {
     core_encrypt_aes256gcm(key, plaintext, aad.as_deref())
-        .map_err(|e| JsValue::from_str(e))
+        .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
 pub fn decrypt_aes_gcm(key: &[u8], ciphertext: &[u8], aad: Option<Vec<u8>>) -> Result<Vec<u8>, JsValue> {
     core_decrypt_aes256gcm(key, ciphertext, aad.as_deref())
-        .map_err(|e| JsValue::from_str(e))
+        .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -195,27 +195,27 @@ pub fn derive_pbkdf2(password: &[u8], salt: &[u8], iterations: u32, key_len: u32
 #[wasm_bindgen]
 pub fn derive_hkdf(ikm: &[u8], salt: Option<Vec<u8>>, info: Option<Vec<u8>>, key_len: u32) -> Result<Vec<u8>, JsValue> {
     core_derive_hkdf(ikm, salt.as_deref(), info.as_deref(), key_len as usize)
-        .map_err(|e| JsValue::from_str(e))
+        .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
 pub fn derive_srk(dek: &[u8], chat_id: &[u8]) -> Result<Vec<u8>, JsValue> {
-    core_derive_srk(dek, chat_id).map_err(|e| JsValue::from_str(e))
+    core_derive_srk(dek, chat_id).map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
 pub fn derive_window_key(srk: &[u8], window_index: u32) -> Result<Vec<u8>, JsValue> {
-    core_derive_window_key(srk, window_index as u64).map_err(|e| JsValue::from_str(e))
+    core_derive_window_key(srk, window_index as u64).map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
 pub fn wrap_key(kek: &[u8], key_to_wrap: &[u8]) -> Result<Vec<u8>, JsValue> {
-    core_wrap_key(kek, key_to_wrap).map_err(|e| JsValue::from_str(e))
+    core_wrap_key(kek, key_to_wrap).map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
 pub fn unwrap_key(kek: &[u8], wrapped_key: &[u8]) -> Result<Vec<u8>, JsValue> {
-    core_unwrap_key(kek, wrapped_key).map_err(|e| JsValue::from_str(e))
+    core_unwrap_key(kek, wrapped_key).map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -230,7 +230,7 @@ pub fn pack_envelope(window_index: u32, aad_hash: &[u8], encrypted_blob: &[u8]) 
         return Err(JsValue::from_str("AAD Hash must be exactly 32 bytes"));
     }
     aad.copy_from_slice(aad_hash);
-    core_pack_envelope(window_index, &aad, encrypted_blob).map_err(|e| JsValue::from_str(e))
+    core_pack_envelope(window_index, &aad, encrypted_blob).map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -430,7 +430,7 @@ impl MlKemEncapsulationResult {
 #[wasm_bindgen]
 pub fn ml_kem_encapsulate(encapsulation_key: &[u8]) -> Result<MlKemEncapsulationResult, JsValue> {
     let (ct, ss) = core_ml_kem_encapsulate(encapsulation_key)
-        .map_err(|e| JsValue::from_str(e))?;
+        .map_err(JsValue::from_str)?;
     Ok(MlKemEncapsulationResult {
         ciphertext: ct,
         shared_secret: ss,
@@ -440,7 +440,7 @@ pub fn ml_kem_encapsulate(encapsulation_key: &[u8]) -> Result<MlKemEncapsulation
 #[wasm_bindgen]
 pub fn ml_kem_decapsulate(decapsulation_key: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, JsValue> {
     core_ml_kem_decapsulate(decapsulation_key, ciphertext)
-        .map_err(|e| JsValue::from_str(e))
+        .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -469,7 +469,7 @@ pub fn hybrid_kem_encapsulate(
     ml_kem_ek: &[u8],
 ) -> Result<HybridKemResult, JsValue> {
     let (key, ct) = core_hybrid_kem_encapsulate(x25519_our_secret, x25519_their_public, ml_kem_ek)
-        .map_err(|e| JsValue::from_str(e))?;
+        .map_err(JsValue::from_str)?;
     Ok(HybridKemResult {
         shared_key: key,
         ml_kem_ciphertext: ct,
@@ -484,7 +484,7 @@ pub fn hybrid_kem_decapsulate(
     ml_kem_ct: &[u8],
 ) -> Result<Vec<u8>, JsValue> {
     core_hybrid_kem_decapsulate(x25519_our_secret, x25519_their_public, ml_kem_dk, ml_kem_ct)
-        .map_err(|e| JsValue::from_str(e))
+        .map_err(JsValue::from_str)
 }
 
 // ==================== Authenticated Hybrid KEM ====================
@@ -524,7 +524,7 @@ pub fn authenticated_kem_encapsulate(
         recipient_x25519_pub,
         recipient_mlkem_pub,
         sender_identity_sk,
-    ).map_err(|e| JsValue::from_str(e))?;
+    ).map_err(JsValue::from_str)?;
 
     Ok(AuthenticatedKemResult {
         ciphertext: ct,
@@ -546,7 +546,7 @@ pub fn authenticated_kem_decapsulate(
         our_mlkem_dk,
         authenticated_ciphertext,
         sender_identity_pk,
-    ).map_err(|e| JsValue::from_str(e))
+    ).map_err(JsValue::from_str)
 }
 
 // ==================== Device Authorization Registry ====================
@@ -566,7 +566,7 @@ pub fn registry_add_device(
     public_key: &str,
 ) -> Result<String, JsValue> {
     let mut registry = vollcrypt_core::DefaultDeviceRegistry::from_json(registry_json)
-        .map_err(|e| JsValue::from_str(e))?;
+        .map_err(JsValue::from_str)?;
         
     let device = vollcrypt_core::Device {
         device_id: device_id.to_string(),
@@ -576,27 +576,27 @@ pub fn registry_add_device(
         is_revoked: false,
     };
     
-    registry.add_device(device).map_err(|e| JsValue::from_str(e))?;
+    registry.add_device(device).map_err(JsValue::from_str)?;
     
-    registry.to_json().map_err(|e| JsValue::from_str(e))
+    registry.to_json().map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
 pub fn registry_revoke_device(registry_json: &str, device_id: &str) -> Result<String, JsValue> {
     let mut registry = vollcrypt_core::DefaultDeviceRegistry::from_json(registry_json)
-        .map_err(|e| JsValue::from_str(e))?;
+        .map_err(JsValue::from_str)?;
         
-    registry.revoke_device(device_id).map_err(|e| JsValue::from_str(e))?;
+    registry.revoke_device(device_id).map_err(JsValue::from_str)?;
     
-    registry.to_json().map_err(|e| JsValue::from_str(e))
+    registry.to_json().map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
 pub fn registry_get_active_devices(registry_json: &str) -> Result<String, JsValue> {
     let registry = vollcrypt_core::DefaultDeviceRegistry::from_json(registry_json)
-        .map_err(|e| JsValue::from_str(e))?;
+        .map_err(JsValue::from_str)?;
         
-    registry.get_active_devices_json().map_err(|e| JsValue::from_str(e))
+    registry.get_active_devices_json().map_err(JsValue::from_str)
 }
 
 // ==================== Logging Initialization ====================

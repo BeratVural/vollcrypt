@@ -1,6 +1,6 @@
 use rand::rngs::OsRng;
 use x25519_dalek::{PublicKey, StaticSecret};
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::Zeroize;
 
 use crate::kdf::derive_hkdf;
 use crate::symmetric::{decrypt_aes256gcm, encrypt_aes256gcm};
