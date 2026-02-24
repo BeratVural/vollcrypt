@@ -12,6 +12,8 @@ export declare function signMessage(secretKey: Uint8Array, message: Uint8Array):
 export declare function verifySignature(publicKey: Uint8Array, message: Uint8Array, signature: Uint8Array): boolean
 export declare function encryptAesGcm(key: Uint8Array, plaintext: Uint8Array, aad?: Uint8Array | undefined | null): Buffer
 export declare function decryptAesGcm(key: Uint8Array, ciphertext: Uint8Array, aad?: Uint8Array | undefined | null): Buffer
+export declare function encryptAesGcmChunked(key: Uint8Array, plaintext: Uint8Array, aad: Uint8Array | undefined | null, chunkSize: number): Buffer
+export declare function decryptAesGcmChunked(key: Uint8Array, ciphertext: Uint8Array, aad: Uint8Array | undefined | null): Buffer
 export declare function derivePbkdf2(password: Uint8Array, salt: Uint8Array, iterations: number, keyLen: number): Buffer
 export declare function deriveHkdf(ikm: Uint8Array, salt: Uint8Array | undefined | null, info: Uint8Array | undefined | null, keyLen: number): Buffer
 export declare function deriveSrk(dek: Uint8Array, chatId: Uint8Array): Buffer

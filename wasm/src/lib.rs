@@ -6,6 +6,8 @@ use vollcrypt_core::{
     generate_x25519_keypair as core_generate_x25519_keypair,
     encrypt_aes256gcm as core_encrypt_aes256gcm,
     decrypt_aes256gcm as core_decrypt_aes256gcm,
+    encrypt_aes256gcm_chunked as core_encrypt_aes256gcm_chunked,
+    decrypt_aes256gcm_chunked as core_decrypt_aes256gcm_chunked,
     derive_pbkdf2 as core_derive_pbkdf2,
     derive_hkdf as core_derive_hkdf,
     sign_message as core_sign_message,
@@ -184,6 +186,27 @@ pub fn encrypt_aes_gcm(key: &[u8], plaintext: &[u8], aad: Option<Vec<u8>>) -> Re
 #[wasm_bindgen]
 pub fn decrypt_aes_gcm(key: &[u8], ciphertext: &[u8], aad: Option<Vec<u8>>) -> Result<Vec<u8>, JsValue> {
     core_decrypt_aes256gcm(key, ciphertext, aad.as_deref())
+        .map_err(JsValue::from_str)
+}
+
+#[wasm_bindgen]
+pub fn encrypt_aes_gcm_chunked(
+    key: &[u8],
+    plaintext: &[u8],
+    aad: Option<Vec<u8>>,
+    chunk_size: u32,
+) -> Result<Vec<u8>, JsValue> {
+    core_encrypt_aes256gcm_chunked(key, plaintext, aad.as_deref(), chunk_size as usize)
+        .map_err(JsValue::from_str)
+}
+
+#[wasm_bindgen]
+pub fn decrypt_aes_gcm_chunked(
+    key: &[u8],
+    ciphertext: &[u8],
+    aad: Option<Vec<u8>>,
+) -> Result<Vec<u8>, JsValue> {
+    core_decrypt_aes256gcm_chunked(key, ciphertext, aad.as_deref())
         .map_err(JsValue::from_str)
 }
 
