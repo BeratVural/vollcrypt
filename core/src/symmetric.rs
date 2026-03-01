@@ -1,3 +1,4 @@
+#[cfg(not(feature = "fast-aes"))]
 use aes_gcm::{
     Aes256Gcm, Nonce,
     aead::{Aead, KeyInit, Payload},
@@ -5,6 +6,9 @@ use aes_gcm::{
 use rand::{RngCore, rngs::OsRng};
 use zeroize::Zeroize;
 use crate::padding::{pad_message_with_len, unpad_message_with_len};
+
+#[cfg(feature = "fast-aes")]
+use ring::aead::{Aad, LessSafeKey, Nonce as RingNonce, UnboundKey, AES_256_GCM};
 
 /// Encrypts data using AES-256-GCM.
 /// Automatically generates a secure 12-byte random IV (nonce) and prepends it to the cipher text.
@@ -19,36 +23,52 @@ pub fn encrypt_aes256gcm(
         return Err("Invalid AES key length, must be 32 bytes");
     }
 
-    log::debug!("encrypt_aes256gcm: Encrypting plaintext of length {}", plaintext.len());
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| {
-        log::error!("encrypt_aes256gcm: Failed to create AES cipher");
-        "Failed to create AES cipher"
-    })?;
-
     let mut nonce_bytes = [0u8; 12];
     OsRng.fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
-
-    let payload = Payload {
-        msg: plaintext,
-        aad: associated_data.unwrap_or(b""),
-    };
-
-    let ciphertext = cipher
-        .encrypt(nonce, payload)
-        .map_err(|_| {
+    let aad = associated_data.unwrap_or(b"");
+    #[cfg(feature = "fast-aes")]
+    {
+        log::debug!("encrypt_aes256gcm: Encrypting plaintext of length {}", plaintext.len());
+        let unbound = UnboundKey::new(&AES_256_GCM, key).map_err(|_| {
+            log::error!("encrypt_aes256gcm: Failed to create AES cipher");
+            "Failed to create AES cipher"
+        })?;
+        let key = LessSafeKey::new(unbound);
+        let mut in_out = plaintext.to_vec();
+        let nonce = RingNonce::assume_unique_for_key(nonce_bytes);
+        key.seal_in_place_append_tag(nonce, Aad::from(aad), &mut in_out).map_err(|_| {
             log::error!("encrypt_aes256gcm: Encryption failed");
             "Encryption failed"
         })?;
+        let mut result = Vec::with_capacity(nonce_bytes.len() + in_out.len());
+        result.extend_from_slice(&nonce_bytes);
+        result.extend_from_slice(&in_out);
+        nonce_bytes.zeroize();
+        return Ok(result);
+    }
 
-    // Prepend the nonce to the ciphertext
-    let mut result = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
-    result.extend_from_slice(&nonce_bytes);
-    result.extend_from_slice(&ciphertext);
-
-    nonce_bytes.zeroize();
-
-    Ok(result)
+    #[cfg(not(feature = "fast-aes"))]
+    {
+        log::debug!("encrypt_aes256gcm: Encrypting plaintext of length {}", plaintext.len());
+        let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| {
+            log::error!("encrypt_aes256gcm: Failed to create AES cipher");
+            "Failed to create AES cipher"
+        })?;
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        let payload = Payload {
+            msg: plaintext,
+            aad,
+        };
+        let ciphertext = cipher.encrypt(nonce, payload).map_err(|_| {
+            log::error!("encrypt_aes256gcm: Encryption failed");
+            "Encryption failed"
+        })?;
+        let mut result = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
+        result.extend_from_slice(&nonce_bytes);
+        result.extend_from_slice(&ciphertext);
+        nonce_bytes.zeroize();
+        return Ok(result);
+    }
 }
 
 /// Decrypts data using AES-256-GCM.
@@ -67,28 +87,47 @@ pub fn decrypt_aes256gcm(
         return Err("Encrypted data too short, missing nonce");
     }
 
-    log::debug!("decrypt_aes256gcm: Decrypting ciphertext of length {}", encrypted_data.len());
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| {
-        log::error!("decrypt_aes256gcm: Failed to create AES cipher");
-        "Failed to create AES cipher"
-    })?;
-
     let (nonce_bytes, ciphertext) = encrypted_data.split_at(12);
-    let nonce = Nonce::from_slice(nonce_bytes);
+    let aad = associated_data.unwrap_or(b"");
 
-    let payload = Payload {
-        msg: ciphertext,
-        aad: associated_data.unwrap_or(b""),
-    };
-
-    let plaintext = cipher
-        .decrypt(nonce, payload)
-        .map_err(|_| {
+    #[cfg(feature = "fast-aes")]
+    {
+        log::debug!("decrypt_aes256gcm: Decrypting ciphertext of length {}", encrypted_data.len());
+        let unbound = UnboundKey::new(&AES_256_GCM, key).map_err(|_| {
+            log::error!("decrypt_aes256gcm: Failed to create AES cipher");
+            "Failed to create AES cipher"
+        })?;
+        let key = LessSafeKey::new(unbound);
+        let nonce = RingNonce::assume_unique_for_key(nonce_bytes.try_into().map_err(|_| {
+            log::error!("decrypt_aes256gcm: Invalid nonce length");
+            "Invalid nonce length"
+        })?);
+        let mut in_out = ciphertext.to_vec();
+        let plaintext = key.open_in_place(nonce, Aad::from(aad), &mut in_out).map_err(|_| {
             log::error!("decrypt_aes256gcm: Decryption failed or MAC mismatch");
             "Decryption failed or MAC mismatch"
         })?;
+        return Ok(plaintext.to_vec());
+    }
 
-    Ok(plaintext)
+    #[cfg(not(feature = "fast-aes"))]
+    {
+        log::debug!("decrypt_aes256gcm: Decrypting ciphertext of length {}", encrypted_data.len());
+        let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| {
+            log::error!("decrypt_aes256gcm: Failed to create AES cipher");
+            "Failed to create AES cipher"
+        })?;
+        let nonce = Nonce::from_slice(nonce_bytes);
+        let payload = Payload {
+            msg: ciphertext,
+            aad,
+        };
+        let plaintext = cipher.decrypt(nonce, payload).map_err(|_| {
+            log::error!("decrypt_aes256gcm: Decryption failed or MAC mismatch");
+            "Decryption failed or MAC mismatch"
+        })?;
+        return Ok(plaintext);
+    }
 }
 
 pub fn encrypt_aes256gcm_padded(
