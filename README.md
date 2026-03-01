@@ -44,6 +44,7 @@ The same Rust core is compiled to three targets:
   - [Key Verification Codes](#key-verification-codes)
   - [Key Transparency Log](#key-transparency-log)
   - [Device Registry](#device-registry)
+- [License Configuration](#license-configuration)
 - [Full E2EE Flow Example](#full-e2ee-flow-example)
 - [Building From Source](#building-from-source)
 - [Architecture](#architecture)
@@ -118,6 +119,21 @@ Most cryptography libraries give you low-level primitives and leave you to wire 
 - Time-windowed Session Root Key → WindowKey derivation chain
 - Binary envelope packing: `[4B window_index][12B IV][32B AAD hash][ciphertext][16B auth tag]`
 - PCS ratchet (ephemeral X25519 ratchet for post-compromise recovery)
+
+---
+
+## License Configuration
+
+Create a `.env` file using the template below:
+
+```
+VOLLCRYPT_LICENSE_KEY=
+VOLLCRYPT_LICENSE_SERVER=https://api.vollsign.io
+VOLLCRYPT_LICENSE_REPORT_INTERVAL_MS=3600000
+VOLLCRYPT_LICENSE_OFFLINE_FALLBACK=true
+```
+
+The Node.js package reads these values on startup and will validate the license automatically.
 - Transcript hashing (SHA-256 chain over message sequence — detects reordering and deletion)
 - Sealed sender (sender identity hidden from server)
 
