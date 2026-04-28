@@ -157,7 +157,7 @@ mod tests {
         let bob_sk: [u8; 32] = bob_kp.0.clone().try_into().unwrap();
         let bob_pk: [u8; 32] = bob_kp.1.clone().try_into().unwrap();
 
-        let sender_id = b"alice@vollsign.com";
+        let sender_id = b"alice@example.com";
         let content = b"Secret message content";
 
         let sealed = seal(&bob_pk, sender_id, content).unwrap();
@@ -191,7 +191,7 @@ mod tests {
         let bob_kp = generate_x25519_keypair();
         let bob_pk: [u8; 32] = bob_kp.1.clone().try_into().unwrap();
 
-        let sender_id = b"alice@vollsign.com";
+        let sender_id = b"alice@example.com";
         let content = b"content";
 
         let sealed = seal(&bob_pk, sender_id, content).unwrap();

@@ -1,5 +1,5 @@
 {
-  "name": "@vollsign/license-server",
+  "name": "@vollcrypt/license-server",
   "version": "1.0.0",
   "description": "Vollcrypt license and MAU tracking server",
   "main": "dist/index.js",

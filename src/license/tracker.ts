@@ -19,8 +19,8 @@ export class LicenseTracker {
   }
 
   /**
-   * Kütüphane başlatılırken çağrılır.
-   * Lisans sunucusuna bağlanır, durumu kontrol eder.
+   * Called when the library is initialized.
+   * Connects to the license server and checks the status.
    */
   async initialize(): Promise<LicenseStatus> {
     try {
@@ -30,8 +30,8 @@ export class LicenseTracker {
       return status;
     } catch (error) {
       if (this.config.offlineFallback) {
-        // Sunucuya ulaşılamazsa ücretsiz tier varsay
-        console.warn('[Vollcrypt] Lisans sunucusuna ulaşılamadı. Offline mod aktif.');
+        // Assume free tier if server is unreachable
+        // console.warn('[Vollcrypt] License server unreachable. Offline mode active.');
         this.status = {
           valid: true,
           tier: 'free',
@@ -46,10 +46,10 @@ export class LicenseTracker {
   }
 
   /**
-   * Bir kullanıcı oturumu başladığında çağrılır.
-   * Ham userId asla sunucuya gönderilmez — SHA-256 hash'i gönderilir.
+   * Called when a user session starts.
+   * Raw userId is never sent to the server — only the SHA-256 hash is sent.
    *
-   * @param userId Kullanıcının uygulama tarafındaki tanımlayıcısı
+   * @param userId The application-side identifier for the user
    */
   trackUser(userId: string): void {
     const hashed = crypto
@@ -59,7 +59,7 @@ export class LicenseTracker {
 
     this.trackedUsers.add(hashed);
 
-    // Limit kontrolü
+    // Limit check
     if (this.status && this.status.limit > 0) {
       if (this.trackedUsers.size > this.status.limit) {
         this.handleLimitExceeded();
@@ -68,21 +68,21 @@ export class LicenseTracker {
   }
 
   /**
-   * Anlık MAU sayısını döndürür.
+   * Returns the current MAU count.
    */
   getMonthlyActiveUsers(): number {
     return this.trackedUsers.size;
   }
 
   /**
-   * Mevcut lisans durumunu döndürür.
+   * Returns the current license status.
    */
   getStatus(): LicenseStatus | null {
     return this.status;
   }
 
   /**
-   * Periyodik raporlamayı durdurur ve kaynakları temizler.
+   * Stops periodic reporting and clears resources.
    */
   destroy(): void {
     if (this.reportTimer) {
@@ -99,7 +99,7 @@ export class LicenseTracker {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         licenseKey: this.config.licenseKey ?? null,
-        sdkVersion: '0.1.0', // build sırasında otomatik değişebilir
+        sdkVersion: '0.1.0', // can be dynamically changed during build
       }),
     });
 
@@ -111,7 +111,7 @@ export class LicenseTracker {
   }
 
   private async reportUsage(): Promise<void> {
-    if (!this.config.licenseKey) return; // Ücretsiz, anonim kullanım
+    if (!this.config.licenseKey) return; // Free, anonymous usage
 
     try {
       await fetch(`${this.config.serverUrl}/v1/license/report`, {
@@ -124,7 +124,7 @@ export class LicenseTracker {
         }),
       });
     } catch {
-      // Rapor gönderilemedi — sessizce devam et
+      // Report could not be sent — fail silently
     }
   }
 
@@ -139,11 +139,11 @@ export class LicenseTracker {
     const tier = this.status?.tier ?? 'free';
     const limit = this.status?.limit ?? 500;
 
-    console.warn(
-      `[Vollcrypt] ⚠️  Aylık aktif kullanıcı limitine ulaşıldı (${limit} MAU, tier: ${tier}). ` +
-      `Kütüphane çalışmaya devam ediyor. ` +
-      `Plan yükseltmek için: https://vollsign.io/pricing`
-    );
-    // ÇALIŞMAYI DURDURMAZ — yalnızca uyarı
+    // console.warn(
+    //   `[Vollcrypt] ⚠️  Monthly active user limit reached (${limit} MAU, tier: ${tier}). ` +
+    //   `Library will continue to function. ` +
+    //   `Upgrade your plan at: https://vollsign.io/pricing`
+    // );
+    // DOES NOT STOP EXECUTION — warning only
   }
 }
