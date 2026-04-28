@@ -1,7 +1,7 @@
 import { LicenseConfig, LicenseStatus, LicenseTier } from './types';
 import * as crypto from 'crypto';
 
-const DEFAULT_SERVER = 'https://api.vollsign.io';
+const DEFAULT_SERVER = 'https://api.vollcrypt.com';
 
 export class LicenseTracker {
   private config: LicenseConfig;
@@ -142,7 +142,7 @@ export class LicenseTracker {
     // console.warn(
     //   `[Vollcrypt] ⚠️  Monthly active user limit reached (${limit} MAU, tier: ${tier}). ` +
     //   `Library will continue to function. ` +
-    //   `Upgrade your plan at: https://vollsign.io/pricing`
+    //   `Upgrade your plan at: https://github.com/BeratVural/vollcrypt`
     // );
     // DOES NOT STOP EXECUTION — warning only
   }

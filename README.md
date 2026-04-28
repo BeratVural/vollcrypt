@@ -128,7 +128,7 @@ Create a `.env` file using the template below:
 
 ```
 VOLLCRYPT_LICENSE_KEY=
-VOLLCRYPT_LICENSE_SERVER=https://api.vollsign.io
+VOLLCRYPT_LICENSE_SERVER=https://api.vollcrypt.com
 VOLLCRYPT_LICENSE_REPORT_INTERVAL_MS=3600000
 VOLLCRYPT_LICENSE_OFFLINE_FALLBACK=true
 ```
@@ -877,7 +877,7 @@ Vollcrypt is dual-licensed under the **[GNU General Public License v3.0](LICENSE
 > 
 > **At this time, Vollcrypt is completely free to use without any Monthly Active User (MAU) limits or license key requirements.** You do not need to configure a license key to use the library in production today.
 > 
-> Once our licensing system is finalized and active, we will officially announce the pricing tiers and provide a smooth transition period for all our early adopters. For inquiries, you can reach out to [licensing@vollsign.io](mailto:licensing@vollsign.io).
+> Once our licensing system is finalized and active, we will officially announce the pricing tiers and provide a smooth transition period for all our early adopters. For inquiries, you can reach out to Berat Vural at [berat.vural.tr@gmail.com](mailto:berat.vural.tr@gmail.com) or connect on [LinkedIn](https://www.linkedin.com/in/berattugrulvural/).
 
 ---
 
