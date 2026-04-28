@@ -1,6 +1,6 @@
 {
   "name": "vollcrypt",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "description": "Cross-platform Rust cryptography core for VollChat & KanzleiLink",
   "private": true,
   "scripts": {
