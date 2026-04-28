@@ -51,10 +51,10 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - name: Install Dependencies
-        run: npm install
+        run: cd node && npm install
 
       - name: Build Node
-        run: npx @napi-rs/cli build --platform --release --cargo-cwd node --target ${{ matrix.target }}
+        run: cd node && npx @napi-rs/cli build --platform --release --target ${{ matrix.target }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -109,13 +109,13 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        run: npm install -g wasm-pack
 
       - name: Install Dependencies
         run: npm install
 
       - name: Build WASM
-        run: wasm-pack build wasm --target web --out-dir pkg
+        run: npm run build:wasm
 
       - name: Publish to NPM
         run: cd wasm && npm publish --access public
