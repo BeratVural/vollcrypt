@@ -1,23 +1,41 @@
 {
-  "name": "@vollsign/crypto-wasm",
+  "name": "@vollcrypt/wasm",
   "version": "0.1.0",
-  "description": "WebAssembly bindings for Vollcrypt cryptographic library",
+  "description": "Cross-platform, quantum-resistant cryptography engine - WebAssembly binding",
+  "type": "module",
   "main": "pkg/wasm.js",
   "types": "pkg/wasm.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vollsign/vollcrypt",
+    "directory": "wasm"
+  },
+  "homepage": "https://github.com/vollsign/vollcrypt#readme",
+  "bugs": {
+    "url": "https://github.com/vollsign/vollcrypt/issues"
+  },
   "files": [
     "pkg/",
     "fast.js",
     "fast.d.ts"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
   "keywords": [
     "vollcrypt",
-    "crypto",
+    "cryptography",
+    "encryption",
     "wasm",
-    "pqc"
+    "webassembly",
+    "aes-gcm",
+    "ed25519",
+    "x25519",
+    "ml-kem",
+    "post-quantum",
+    "pqc",
+    "e2ee"
   ],
   "author": "Vollsign",
-  "license": "MIT"
+  "license": "GPL-3.0-only"
 }

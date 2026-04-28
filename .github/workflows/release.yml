@@ -5,10 +5,31 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: read
+
 jobs:
   build-and-publish-node:
     name: Publish Node Bindings
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@v4
 
@@ -20,12 +41,50 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - name: Install Dependencies
         run: npm install
 
       - name: Build Node
-        run: npm run build:node
+        run: npx @napi-rs/cli build --platform --release --cargo-cwd node --target ${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bindings-${{ matrix.target }}
+          path: node/vollcrypt.*.node
+          if-no-files-found: error
+
+  publish-node:
+    name: Publish @vollcrypt/node
+    needs: build-and-publish-node
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: node/
+          pattern: bindings-*
+          merge-multiple: true
+
+      - name: List binaries
+        run: ls -la node/vollcrypt.*.node
 
       - name: Publish to NPM
         run: cd node && npm publish --access public
@@ -49,11 +108,14 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
       - name: Install Dependencies
         run: npm install
 
       - name: Build WASM
-        run: npm run build:wasm
+        run: wasm-pack build wasm --target web --out-dir pkg
 
       - name: Publish to NPM
         run: cd wasm && npm publish --access public
