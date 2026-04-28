@@ -10,7 +10,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/BeratVural/vollcrypt.git",
+    "url": "git+https://github.com/BeratVural/vollcrypt.git",
     "directory": "wasm"
   },
   "homepage": "https://github.com/BeratVural/vollcrypt#readme",

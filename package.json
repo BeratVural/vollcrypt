@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "build:node": "cd node && npm install && npm run build",
-    "build:wasm": "npx wasm-pack build wasm --target web --out-dir pkg",
+    "build:wasm": "wasm-pack build wasm --target web --out-dir pkg",
     "build": "npm run build:node && npm run build:wasm",
     "test:cargo": "cargo test --all",
     "format": "cargo fmt --all"
