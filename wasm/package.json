@@ -1,6 +1,6 @@
 {
   "name": "@vollcrypt/wasm",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "description": "Cross-platform, quantum-resistant cryptography engine - WebAssembly binding",
   "type": "module",
   "main": "pkg/wasm.js",
