@@ -4,7 +4,7 @@
 
 **Cross-platform, quantum-resistant cryptography engine for Node.js, WebAssembly, and Rust**
 
-[![CI](https://github.com/vollsign/vollcrypt/actions/workflows/ci.yml/badge.svg)](https://github.com/vollsign/vollcrypt/actions/workflows/ci.yml)
+[![CI](https://github.com/BeratVural/vollcrypt/actions/workflows/ci.yml/badge.svg)](https://github.com/BeratVural/vollcrypt/actions/workflows/ci.yml)
 [![npm (node)](https://img.shields.io/npm/v/@vollcrypt/node?label=%40vollcrypt%2Fnode&color=cb3837)](https://www.npmjs.com/package/@vollcrypt/node)
 [![npm (wasm)](https://img.shields.io/npm/v/@vollcrypt/wasm?label=%40vollcrypt%2Fwasm&color=cb3837)](https://www.npmjs.com/package/@vollcrypt/wasm)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -170,7 +170,7 @@ npm install @vollcrypt/wasm
 ```toml
 # Cargo.toml
 [dependencies]
-vollcrypt-core = { git = "https://github.com/vollsign/vollcrypt" }
+vollcrypt-core = { git = "https://github.com/BeratVural/vollcrypt.git" }
 ```
 
 Or in a workspace:
@@ -774,7 +774,7 @@ const bobCode   = generateVerificationCode(bobIdPk, aliceIdPk, conversationId);
 
 ```bash
 # Clone
-git clone https://github.com/vollsign/vollcrypt
+git clone https://github.com/BeratVural/vollcrypt.git
 cd vollcrypt
 
 # Run all tests

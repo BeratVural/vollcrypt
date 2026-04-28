@@ -71,7 +71,7 @@ git clone https://github.com/<your-username>/vollcrypt
 cd vollcrypt
 
 # 2. Add the upstream remote
-git remote add upstream https://github.com/vollsign/vollcrypt
+git remote add upstream https://github.com/BeratVural/vollcrypt.git
 
 # 3. Run all tests to confirm your environment is working
 cargo test --workspace
@@ -145,7 +145,7 @@ vollcrypt/
    cargo clippy --workspace -- -D warnings
    cargo test --workspace
    ```
-5. **Open a pull request** against the `main` branch of `vollsign/vollcrypt`.
+5. **Open a pull request** against the `main` branch of `BeratVural/vollcrypt`.
 
 ---
 
