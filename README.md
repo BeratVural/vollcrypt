@@ -867,21 +867,17 @@ new Uint8Array(rawDekBuffer).fill(0); // zero immediately after import
 
 ---
 
-## Licensing
+## Licensing & Early Access
 
-Vollcrypt is dual-licensed:
+Vollcrypt is dual-licensed under the **[GNU General Public License v3.0](LICENSE)** (for open source projects) and a **Commercial License** (for proprietary projects).
 
-- **Open source:** [GNU General Public License v3.0](LICENSE) — free for open source projects
-- **Commercial:** Contact [licensing@vollsign.io](mailto:licensing@vollsign.io) for a commercial license that removes the GPL copyleft requirement
-
-| Tier       | Monthly Active Users | Price       |
-| ---------- | -------------------- | ----------- |
-| Free       | Up to 500            | Free        |
-| Starter    | Up to 5 000          | $5 / month  |
-| Pro        | Up to 50 000         | $49 / month |
-| Enterprise | Unlimited            | Contact us  |
-
-Commercial licenses include a private build without GPL obligations and priority support. See [vollsign.io/pricing](https://vollsign.io/pricing).
+> [!NOTE]
+> **Current Status: Free Early Access**
+> While the code includes methods like `initializeLicense` and references `VOLLCRYPT_LICENSE_KEY`, our commercial licensing infrastructure is currently under development. 
+> 
+> **At this time, Vollcrypt is completely free to use without any Monthly Active User (MAU) limits or license key requirements.** You do not need to configure a license key to use the library in production today.
+> 
+> Once our licensing system is finalized and active, we will officially announce the pricing tiers and provide a smooth transition period for all our early adopters. For inquiries, you can reach out to [licensing@vollsign.io](mailto:licensing@vollsign.io).
 
 ---
 
