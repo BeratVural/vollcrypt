@@ -7,16 +7,16 @@ Vollcrypt is a cryptographic library. A vulnerability in it can silently undermi
 
 ## Table of Contents
 
-* [Supported Versions](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#supported-versions)
-* [Reporting a Vulnerability](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#reporting-a-vulnerability)
-* [What to Include in Your Report](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#what-to-include-in-your-report)
-* [Our Commitments to You](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#our-commitments-to-you)
-* [Disclosure Process](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#disclosure-process)
-* [Scope](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#scope)
-* [Out of Scope](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#out-of-scope)
-* [Severity Classification](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#severity-classification)
-* [Bug Bounty](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#bug-bounty)
-* [Safe Harbor](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#safe-harbor)
+* [Supported Versions](#supported-versions)
+* [Reporting a Vulnerability](#reporting-a-vulnerability)
+* [What to Include in Your Report](#what-to-include-in-your-report)
+* [Our Commitments to You](#our-commitments-to-you)
+* [Disclosure Process](#disclosure-process)
+* [Scope](#scope)
+* [Out of Scope](#out-of-scope)
+* [Severity Classification](#severity-classification)
+* [Bug Bounty](#bug-bounty)
+* [Safe Harbor](#safe-harbor)
 
 ---
 
@@ -52,7 +52,7 @@ A complete report helps us reproduce and fix the issue faster. Please include as
 **Required:**
 
 * A clear description of the vulnerability and the security property it breaks (confidentiality, integrity, authentication, forward secrecy, etc.)
-* The affected component and version (see [Scope](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#scope))
+* The affected component and version (see [Scope](#scope))
 * Steps to reproduce the issue
 
 **Strongly recommended:**
