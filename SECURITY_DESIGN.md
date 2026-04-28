@@ -8,44 +8,44 @@
 
 This document describes the security architecture of Vollcrypt. It is intended for independent security auditors, cryptography reviewers, and engineers who need to reason about the library's security properties in depth.
 
-This is not end-user documentation. For integration guidance, see [README.md](https://claude.ai/chat/README.md). For contribution rules, see [CONTRIBUTING.md](https://claude.ai/chat/CONTRIBUTING.md).
+This is not end-user documentation. For integration guidance, see [README.md](README.md). For contribution rules, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
 ## Table of Contents
 
-* [1. Scope](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#1-scope)
-* [2. Threat Model](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#2-threat-model)
-  * [2.1 Assets](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#21-assets)
-  * [2.2 Adversary Capabilities](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#22-adversary-capabilities)
-  * [2.3 Trust Boundaries](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#23-trust-boundaries)
-  * [2.4 Attack Scenarios and Mitigations](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#24-attack-scenarios-and-mitigations)
-  * [2.5 Out of Scope Threats](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#25-out-of-scope-threats)
-* [3. Algorithm Selection Rationale](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#3-algorithm-selection-rationale)
-  * [3.1 Symmetric Encryption — AES-256-GCM](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#31-symmetric-encryption--aes-256-gcm)
-  * [3.2 Classical Key Exchange — X25519](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#32-classical-key-exchange--x25519)
-  * [3.3 Post-Quantum KEM — ML-KEM-768](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#33-post-quantum-kem--ml-kem-768)
-  * [3.4 Digital Signatures — Ed25519](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#34-digital-signatures--ed25519)
-  * [3.5 Key Derivation — HKDF-SHA256](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#35-key-derivation--hkdf-sha256)
-  * [3.6 Password-Based Derivation — PBKDF2-SHA256](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#36-password-based-derivation--pbkdf2-sha256)
-  * [3.7 Key Wrapping — AES-256-KW](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#37-key-wrapping--aes-256-kw)
-  * [3.8 Recovery Phrase — BIP-39](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#38-recovery-phrase--bip-39)
-* [4. Key Hierarchy and Lifecycle](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#4-key-hierarchy-and-lifecycle)
-  * [4.1 Key Hierarchy Overview](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#41-key-hierarchy-overview)
-  * [4.2 Session Establishment Flow](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#42-session-establishment-flow)
-  * [4.3 Time-Windowed Encryption — WindowKey Chain](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#43-time-windowed-encryption--windowkey-chain)
-  * [4.4 Post-Compromise Security — PCS Ratchet](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#44-post-compromise-security--pcs-ratchet)
-  * [4.5 Key Storage and Zeroization](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#45-key-storage-and-zeroization)
-* [5. Protocol Constructions](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#5-protocol-constructions)
-  * [5.1 Binary Message Envelope](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#51-binary-message-envelope)
-  * [5.2 Authenticated KEM](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#52-authenticated-kem)
-  * [5.3 Sealed Sender](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#53-sealed-sender)
-  * [5.4 Transcript Hashing](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#54-transcript-hashing)
-  * [5.5 Key Verification Codes](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#55-key-verification-codes)
-  * [5.6 Key Transparency Log](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#56-key-transparency-log)
-* [6. Known Limitations and Accepted Risks](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#6-known-limitations-and-accepted-risks)
-* [7. Test Coverage](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#7-test-coverage)
-* [8. Cryptographic Dependencies](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#8-cryptographic-dependencies)
+* [1. Scope](#1-scope)
+* [2. Threat Model](#2-threat-model)
+  * [2.1 Assets](#21-assets)
+  * [2.2 Adversary Capabilities](#22-adversary-capabilities)
+  * [2.3 Trust Boundaries](#23-trust-boundaries)
+  * [2.4 Attack Scenarios and Mitigations](#24-attack-scenarios-and-mitigations)
+  * [2.5 Out of Scope Threats](#25-out-of-scope-threats)
+* [3. Algorithm Selection Rationale](#3-algorithm-selection-rationale)
+  * [3.1 Symmetric Encryption — AES-256-GCM](#31-symmetric-encryption--aes-256-gcm)
+  * [3.2 Classical Key Exchange — X25519](#32-classical-key-exchange--x25519)
+  * [3.3 Post-Quantum KEM — ML-KEM-768](#33-post-quantum-kem--ml-kem-768)
+  * [3.4 Digital Signatures — Ed25519](#34-digital-signatures--ed25519)
+  * [3.5 Key Derivation — HKDF-SHA256](#35-key-derivation--hkdf-sha256)
+  * [3.6 Password-Based Derivation — PBKDF2-SHA256](#36-password-based-derivation--pbkdf2-sha256)
+  * [3.7 Key Wrapping — AES-256-KW](#37-key-wrapping--aes-256-kw)
+  * [3.8 Recovery Phrase — BIP-39](#38-recovery-phrase--bip-39)
+* [4. Key Hierarchy and Lifecycle](#4-key-hierarchy-and-lifecycle)
+  * [4.1 Key Hierarchy Overview](#41-key-hierarchy-overview)
+  * [4.2 Session Establishment Flow](#42-session-establishment-flow)
+  * [4.3 Time-Windowed Encryption — WindowKey Chain](#43-time-windowed-encryption--windowkey-chain)
+  * [4.4 Post-Compromise Security — PCS Ratchet](#44-post-compromise-security--pcs-ratchet)
+  * [4.5 Key Storage and Zeroization](#45-key-storage-and-zeroization)
+* [5. Protocol Constructions](#5-protocol-constructions)
+  * [5.1 Binary Message Envelope](#51-binary-message-envelope)
+  * [5.2 Authenticated KEM](#52-authenticated-kem)
+  * [5.3 Sealed Sender](#53-sealed-sender)
+  * [5.4 Transcript Hashing](#54-transcript-hashing)
+  * [5.5 Key Verification Codes](#55-key-verification-codes)
+  * [5.6 Key Transparency Log](#56-key-transparency-log)
+* [6. Known Limitations and Accepted Risks](#6-known-limitations-and-accepted-risks)
+* [7. Test Coverage](#7-test-coverage)
+* [8. Cryptographic Dependencies](#8-cryptographic-dependencies)
 
 ---
 
@@ -239,7 +239,7 @@ ECDSA over P-256 was excluded specifically because of its randomized nonce requi
 
 RSA was excluded for the same reasons as in key exchange: quantum vulnerability and larger key sizes.
 
-**Note on post-quantum signatures:** Ed25519 is vulnerable to quantum attacks via Shor's algorithm. ML-DSA (CRYSTALS-Dilithium, NIST FIPS 204) is the post-quantum replacement. The current design uses Ed25519 for identity keys and signatures. Migration to ML-DSA is a known future work item (see [Section 6](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#6-known-limitations-and-accepted-risks)).
+**Note on post-quantum signatures:** Ed25519 is vulnerable to quantum attacks via Shor's algorithm. ML-DSA (CRYSTALS-Dilithium, NIST FIPS 204) is the post-quantum replacement. The current design uses Ed25519 for identity keys and signatures. Migration to ML-DSA is a known future work item (see [Section 6](#6-known-limitations-and-accepted-risks)).
 
 ### 3.5 Key Derivation — HKDF-SHA256
 

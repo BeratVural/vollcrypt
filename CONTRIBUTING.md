@@ -9,21 +9,21 @@ Please read this guide fully before contributing. Cryptographic libraries have s
 
 ## Table of Contents
 
-* [Code of Conduct](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#code-of-conduct)
-* [Contributor License Agreement](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#contributor-license-agreement)
-* [Prerequisites](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#prerequisites)
-* [Setting Up the Development Environment](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#setting-up-the-development-environment)
-* [Repository Layout](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#repository-layout)
-* [Development Workflow](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#development-workflow)
-* [Coding Standards](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#coding-standards)
-  * [Rust](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#rust)
-  * [TypeScript](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#typescript)
-* [Cryptographic Contribution Rules](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#cryptographic-contribution-rules)
-* [Testing Requirements](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#testing-requirements)
-* [Pull Request Process](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#pull-request-process)
-* [Commit Message Format](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#commit-message-format)
-* [What We Will and Will Not Accept](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#what-we-will-and-will-not-accept)
-* [Reporting Security Vulnerabilities](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#reporting-security-vulnerabilities)
+* [Code of Conduct](#code-of-conduct)
+* [Contributor License Agreement](#contributor-license-agreement)
+* [Prerequisites](#prerequisites)
+* [Setting Up the Development Environment](#setting-up-the-development-environment)
+* [Repository Layout](#repository-layout)
+* [Development Workflow](#development-workflow)
+* [Coding Standards](#coding-standards)
+  * [Rust](#rust)
+  * [TypeScript](#typescript)
+* [Cryptographic Contribution Rules](#cryptographic-contribution-rules)
+* [Testing Requirements](#testing-requirements)
+* [Pull Request Process](#pull-request-process)
+* [Commit Message Format](#commit-message-format)
+* [What We Will and Will Not Accept](#what-we-will-and-will-not-accept)
+* [Reporting Security Vulnerabilities](#reporting-security-vulnerabilities)
 
 ---
 
@@ -388,7 +388,7 @@ BREAKING CHANGE: none
 ### We will not accept:
 
 * Changes that downgrade cryptographic strength for any reason, including performance
-* Additions that introduce prohibited algorithms (see [Algorithm Policy](https://claude.ai/chat/99bfe173-6ef9-4115-8faa-547c516880d0#algorithm-policy))
+* Additions that introduce prohibited algorithms (see [Algorithm Policy](#algorithm-policy))
 * Changes to permanent binary formats without a migration path
 * Pull requests that introduce `unwrap()` or `expect()` in library code
 * Binding-layer logic that duplicates or reimplements core behavior
@@ -403,4 +403,4 @@ If you are unsure whether a contribution falls into either category, open an iss
 
 **Do not open GitHub issues for security vulnerabilities.**
 
-Please follow the responsible disclosure process described in [SECURITY.md](https://claude.ai/chat/SECURITY.md). Security reports sent through GitHub issues will be closed without acknowledgment to avoid public disclosure before a fix is available.
+Please follow the responsible disclosure process described in [SECURITY.md](SECURITY.md). Security reports sent through GitHub issues will be closed without acknowledgment to avoid public disclosure before a fix is available.
