@@ -4,8 +4,14 @@
   "description": "Cross-platform, quantum-resistant cryptography engine for Node.js - native binding",
   "main": "index.js",
   "types": "index.d.ts",
+  "scripts": {
+    "build": "npx @napi-rs/cli build --platform --release"
+  },
   "publishConfig": {
     "access": "public"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.4"
   },
   "repository": {
     "type": "git",

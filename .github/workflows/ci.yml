@@ -75,5 +75,8 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      - name: Install wasm-pack
+        run: npm install -g wasm-pack
+
       - name: Build WASM
         run: npm run build:wasm
