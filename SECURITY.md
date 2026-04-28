@@ -29,7 +29,7 @@ Vollcrypt is a cryptographic library. A vulnerability in it can silently undermi
 | 0.x releases           | ⚠️ Latest 0.x only — no backports within the 0.x line  |
 | Older releases         | ❌ No support                                             |
 
-If you are unsure whether the version you are testing is supported, check the [releases page](https://github.com/vollsign/vollcrypt/releases) or ask at [security@vollsign.com](mailto:security@vollsign.com).
+If you are unsure whether the version you are testing is supported, check the [releases page](https://github.com/BeratVural/vollcrypt/releases) or ask at [security@vollsign.com](mailto:security@vollsign.com).
 
 ---
 
