@@ -99,7 +99,7 @@ export class LicenseTracker {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         licenseKey: this.config.licenseKey ?? null,
-        sdkVersion: '0.1.5', // can be dynamically changed during build
+        sdkVersion: '0.1.6', // can be dynamically changed during build
       }),
     });
 

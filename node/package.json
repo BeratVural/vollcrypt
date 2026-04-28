@@ -1,6 +1,6 @@
 {
   "name": "@vollcrypt/node",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Cross-platform, quantum-resistant cryptography engine for Node.js - native binding",
   "main": "index.js",
   "types": "index.d.ts",
