@@ -3,7 +3,7 @@ export type LicenseTier = 'free' | 'starter' | 'pro' | 'enterprise';
 export interface LicenseConfig {
   /** npm paketinden alınan lisans anahtarı. Ücretsiz kullanımda opsiyonel. */
   licenseKey?: string;
-  /** Lisans sunucusu URL'i. Varsayılan: https://api.vollsign.io */
+  /** License server URL. Default: https://api.vollcrypt.com */
   serverUrl?: string;
   /** MAU rapor aralığı (ms). Varsayılan: 3_600_000 (1 saat) */
   reportIntervalMs?: number;

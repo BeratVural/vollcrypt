@@ -29,7 +29,7 @@ Vollcrypt is a cryptographic library. A vulnerability in it can silently undermi
 | 0.x releases           | ⚠️ Latest 0.x only — no backports within the 0.x line  |
 | Older releases         | ❌ No support                                             |
 
-If you are unsure whether the version you are testing is supported, check the [releases page](https://github.com/BeratVural/vollcrypt/releases) or ask at [security@vollsign.com](mailto:security@vollsign.com).
+If you are unsure whether the version you are testing is supported, check the [releases page](https://github.com/BeratVural/vollcrypt/releases) or ask at [berat.vural.tr@gmail.com](mailto:berat.vural.tr@gmail.com).
 
 ---
 
@@ -39,9 +39,9 @@ If you are unsure whether the version you are testing is supported, check the [r
 
 Report vulnerabilities by email:
 
-**[security@vollsign.com](mailto:security@vollsign.com)**
+**[berat.vural.tr@gmail.com](mailto:berat.vural.tr@gmail.com)**
 
-If the report contains highly sensitive material (such as a working exploit), you may request our PGP public key before sending. Email [security@vollsign.com](mailto:security@vollsign.com) with the subject line `PGP key request` and we will respond within 24 hours.
+If the report contains highly sensitive material (such as a working exploit), you may request our PGP public key before sending. Email [berat.vural.tr@gmail.com](mailto:berat.vural.tr@gmail.com) with the subject line `PGP key request` and we will respond within 24 hours.
 
 ---
 
@@ -177,4 +177,4 @@ We will not pursue legal action against security researchers who:
 * Limit their testing to their own installations or accounts
 * Do not disclose the vulnerability publicly before a fix is available and coordinated with us
 
-Testing against production infrastructure or npm-published packages without prior coordination is not covered by this safe harbor. If you need a test environment, contact [security@vollsign.com](mailto:security@vollsign.com) and we will set one up.
+Testing against production infrastructure or npm-published packages without prior coordination is not covered by this safe harbor. If you need a test environment, contact [berat.vural.tr@gmail.com](mailto:berat.vural.tr@gmail.com) and we will set one up.

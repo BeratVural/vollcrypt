@@ -43,7 +43,7 @@
     "e2ee",
     "napi"
   ],
-  "author": "Vollsign",
+  "author": "Berat Vural <berat.vural.tr@gmail.com>",
   "license": "GPL-3.0-only",
   "napi": {
     "name": "vollcrypt",

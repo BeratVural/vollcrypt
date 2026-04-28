@@ -41,7 +41,7 @@ Vollcrypt is dual-licensed under GPLv3 (open source) and a commercial license. T
 
 When you open your first pull request, an automated bot will prompt you to sign the CLA through a short web form. The process takes about two minutes. Pull requests from contributors who have not signed cannot be merged regardless of their quality.
 
-If your contribution is on behalf of a company or organization, a corporate CLA is also available. Contact [cla@vollsign.io](mailto:cla@vollsign.io) before opening the pull request.
+If your contribution is on behalf of a company or organization, a corporate CLA is also available. Contact [berat.vural.tr@gmail.com](mailto:berat.vural.tr@gmail.com) before opening the pull request.
 
 ---
 
