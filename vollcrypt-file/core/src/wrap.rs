@@ -21,6 +21,11 @@ pub enum WrapEntry {
         mlkem_ciphertext: Vec<u8>,
         wrapped_dek: [u8; 40],
     },
+    GroupWrap {
+        group_id: [u8; 16],
+        gk_version: u32,
+        wrapped_dek: [u8; 40],
+    },
 }
 
 impl WrapEntry {
@@ -134,6 +139,30 @@ impl WrapEntry {
                     wrapped_dek,
                 }
             }
+            3 => {
+                if payload_len != 60 {
+                    return Err(FileFormatError::WrapPayloadLengthMismatch {
+                        wrap_type: 3,
+                        expected: 60,
+                        got: payload_len as u16,
+                    });
+                }
+                let mut group_id = [0u8; 16];
+                group_id.copy_from_slice(&payload[0..16]);
+
+                let mut gk_version_bytes = [0u8; 4];
+                gk_version_bytes.copy_from_slice(&payload[16..20]);
+                let gk_version = u32::from_be_bytes(gk_version_bytes);
+
+                let mut wrapped_dek = [0u8; 40];
+                wrapped_dek.copy_from_slice(&payload[20..60]);
+
+                WrapEntry::GroupWrap {
+                    group_id,
+                    gk_version,
+                    wrapped_dek,
+                }
+            }
             invalid_type => return Err(FileFormatError::InvalidWrapType(invalid_type)),
         };
 
@@ -145,6 +174,7 @@ impl WrapEntry {
             WrapEntry::PasswordPbkdf2 { .. } => 0u8,
             WrapEntry::PasswordArgon2id { .. } => 1u8,
             WrapEntry::HybridKem { .. } => 2u8,
+            WrapEntry::GroupWrap { .. } => 3u8,
         };
 
         let payload_len = (self.wire_size() - 3) as u16;
@@ -188,6 +218,15 @@ impl WrapEntry {
                 out.extend_from_slice(mlkem_ciphertext);
                 out.extend_from_slice(wrapped_dek);
             }
+            WrapEntry::GroupWrap {
+                group_id,
+                gk_version,
+                wrapped_dek,
+            } => {
+                out.extend_from_slice(group_id);
+                out.extend_from_slice(&gk_version.to_be_bytes());
+                out.extend_from_slice(wrapped_dek);
+            }
         }
 
         out
@@ -198,6 +237,7 @@ impl WrapEntry {
             WrapEntry::PasswordPbkdf2 { .. } => 3 + 60,
             WrapEntry::PasswordArgon2id { .. } => 3 + 68,
             WrapEntry::HybridKem { .. } => 3 + 1180,
+            WrapEntry::GroupWrap { .. } => 3 + 60,
         }
     }
 }
