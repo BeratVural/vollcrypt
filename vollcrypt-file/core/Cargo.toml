@@ -8,10 +8,11 @@ license = "GPL-3.0-only"
 thiserror = "1"
 rand = "0.8"
 argon2 = "0.5"
-aes-gcm = "0.10.3"
+aes-gcm = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+zeroize = { version = "1", features = ["zeroize_derive"] }
+subtle = "2"
 aes-kw = { version = "0.2.1", features = ["alloc"] }
 pbkdf2 = "0.12.2"
-hkdf = "0.12.4"
-sha2 = "0.10.9"
-zeroize = { version = "1.8.2", features = ["derive"] }
 log = "0.4"

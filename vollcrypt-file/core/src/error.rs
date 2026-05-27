@@ -29,4 +29,13 @@ pub enum FileFormatError {
         expected: u16,
         got: u16,
     },
+
+    #[error("AES-GCM decryption failed")]
+    AesGcmDecryptFailed,
+
+    #[error("Chunk index out of order: expected {expected}, got {got}")]
+    ChunkIndexOutOfOrder { expected: u32, got: u32 },
+
+    #[error("Invalid proof length: expected {expected}, got {got}")]
+    InvalidProofLength { expected: usize, got: usize },
 }
