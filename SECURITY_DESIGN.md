@@ -266,7 +266,7 @@ Context string versioning ensures that a future change to a derivation can be de
 Password-based derivation is used for deriving key wrapping keys (KEK) from low-entropy user passwords to secure master seeds and keys. The library implements different strategies depending on the module:
 
 #### Messages (`vollcrypt-messages`)
-PBKDF2 with 100,000 iterations is used for deriving the key wrapping key from the user's master password. Argon2id is not used in the messages module due to WebAssembly memory constraints in client-side browser environments, although its migration is planned for a future version.
+PBKDF2 with 600,000 iterations is used for deriving the key wrapping key from the user's master password. Argon2id is not used in the messages module due to WebAssembly memory constraints in client-side browser environments, although its migration is planned for a future version.
 
 #### Files (`vollcrypt-file`)
 Files support both PBKDF2 and Argon2id:
@@ -302,7 +302,7 @@ Recovery Phrase (BIP-39, 24 words)
 │  256-bit entropy. Never stored digitally in plaintext.
 │  Used only during onboarding and disaster recovery.
 │
-└──▶ Master Seed (PBKDF2-SHA256, 100K iter)
+└──▶ Master Seed (PBKDF2-SHA256, 600K iter)
      │  64 bytes. Derived from Recovery Phrase + empty passphrase.
      │
      └──▶ DEK (Data Encryption Key, AES-256)
@@ -572,7 +572,7 @@ Ed25519(signing_key, canonical_body)
 | Limitation                                                     | Impact                                                                                                                                 | Mitigation / Future Work                                                                                                                                  |
 | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Ed25519 is quantum-vulnerable**                        | A cryptographically relevant quantum computer could forge signatures on Key Transparency log entries and authenticated KEM ciphertexts | Migration to ML-DSA (NIST FIPS 204) is planned. Session confidentiality is quantum-resistant via ML-KEM-768; only authentication is affected.             |
-| **PBKDF2 instead of Argon2id**                           | PBKDF2 is less resistant to GPU/ASIC brute force than memory-hard functions                                                            | 100,000 iterations (messages) and 600,000 iterations (files) provide reasonable resistance. Files also fully support Argon2id. |
+| **PBKDF2 instead of Argon2id**                           | PBKDF2 is less resistant to GPU/ASIC brute force than memory-hard functions                                                            | 600,000 iterations (messages and files) provide reasonable resistance. Files also fully support Argon2id. |
 | **No transcript mismatch recovery**                      | The library detects transcript chain mismatches but does not define a recovery protocol                                                | Recovery is the responsibility of the application layer.                                                                                                  |
 | **Sealed sender provides sender privacy, not anonymity** | A powerful network adversary with timing correlation capabilities may be able to link sealed packets to senders via traffic analysis   | Sealed sender is not designed to defeat global passive adversaries. Applications requiring stronger anonymity should use a mixnet or onion routing layer. |
 | **Key Transparency log requires server availability**    | The log is served by the server. A malicious server could serve a stale or truncated log                                               | Future work: gossip protocol between clients to cross-check log state.                                                                                    |
