@@ -2,16 +2,16 @@
 name = "vollcrypt-file-core"
 version = "0.1.0"
 edition = "2021"
+license = "GPL-3.0-only"
 
 [dependencies]
+thiserror = "1"
+rand = "0.8"
+argon2 = "0.5"
 aes-gcm = "0.10.3"
 aes-kw = { version = "0.2.1", features = ["alloc"] }
 pbkdf2 = "0.12.2"
 hkdf = "0.12.4"
 sha2 = "0.10.9"
-rand = "0.8.5"
 zeroize = { version = "1.8.2", features = ["derive"] }
 log = "0.4"
-
-[dev-dependencies]
-rand = { version = "0.8.5", features = ["std_rng"] }
