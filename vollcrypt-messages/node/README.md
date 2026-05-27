@@ -1,8 +1,8 @@
-# @vollcrypt/node
+# @vollcrypt/messages-node
 
 **Cross-platform, quantum-resistant cryptography engine for Node.js - Native Binding**
 
-[![npm](https://img.shields.io/npm/v/@vollcrypt/node.svg)](https://www.npmjs.com/package/@vollcrypt/node)
+[![npm](https://img.shields.io/npm/v/@vollcrypt/messages-node.svg)](https://www.npmjs.com/package/@vollcrypt/messages-node)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://github.com/BeratVural/vollcrypt/blob/main/LICENSE)
 
 This package provides the high-performance **native Node.js bindings** for the Vollcrypt cryptography engine. It is compiled directly from Rust using NAPI-RS, offering maximum performance and utilizing hardware-accelerated instructions (such as AES-NI) where available.
@@ -17,7 +17,7 @@ This package provides the high-performance **native Node.js bindings** for the V
 ## Installation
 
 ```bash
-npm install @vollcrypt/node
+npm install @vollcrypt/messages-node
 ```
 
 *Note: When you install this package, npm will automatically download the correct pre-compiled native binary for your operating system and CPU architecture.*
@@ -25,7 +25,7 @@ npm install @vollcrypt/node
 ## Quick Start
 
 ```javascript
-const vollcrypt = require('@vollcrypt/node');
+const vollcrypt = require('@vollcrypt/messages-node');
 
 // Generate an Ed25519 Identity Keypair
 const identity = vollcrypt.generateEd25519Keypair();

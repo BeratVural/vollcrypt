@@ -1,8 +1,8 @@
-# @vollcrypt/wasm
+# @vollcrypt/messages-wasm
 
 **Cross-platform, quantum-resistant cryptography engine - WebAssembly Binding**
 
-[![npm](https://img.shields.io/npm/v/@vollcrypt/wasm.svg)](https://www.npmjs.com/package/@vollcrypt/wasm)
+[![npm](https://img.shields.io/npm/v/@vollcrypt/messages-wasm.svg)](https://www.npmjs.com/package/@vollcrypt/messages-wasm)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://github.com/BeratVural/vollcrypt/blob/main/LICENSE)
 
 This package provides the **WebAssembly (WASM) bindings** for the Vollcrypt cryptography engine. It is compiled directly from Rust using `wasm-pack`, bringing robust, post-quantum cryptography straight to the user's browser or frontend application (React, Next.js, Vue, etc.) without relying on slow JavaScript cryptography implementations.
@@ -17,7 +17,7 @@ This package provides the **WebAssembly (WASM) bindings** for the Vollcrypt cryp
 ## Installation
 
 ```bash
-npm install @vollcrypt/wasm
+npm install @vollcrypt/messages-wasm
 ```
 
 *Note: Since this is a WebAssembly module, you may need to configure your bundler (Webpack, Vite, Rollup) to handle `.wasm` files depending on your frontend setup.*
@@ -25,7 +25,7 @@ npm install @vollcrypt/wasm
 ## Quick Start
 
 ```javascript
-import * as vollcrypt from '@vollcrypt/wasm';
+import * as vollcrypt from '@vollcrypt/messages-wasm';
 
 // Generate an Ed25519 Identity Keypair
 const identity = vollcrypt.generate_ed25519_keypair();
