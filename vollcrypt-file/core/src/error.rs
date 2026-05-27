@@ -38,4 +38,13 @@ pub enum FileFormatError {
 
     #[error("Invalid proof length: expected {expected}, got {got}")]
     InvalidProofLength { expected: usize, got: usize },
+
+    #[error("Wrong password / AES-KW verification failed")]
+    WrongPassword,
+
+    #[error("Wrong wrap type for password mode")]
+    WrongWrapType,
+
+    #[error("KDF parameter out of range: {0}")]
+    KdfParameterOutOfRange(String),
 }
