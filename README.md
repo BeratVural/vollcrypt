@@ -12,47 +12,57 @@
 
 ---
 
-Vollcrypt is a cryptographic library providing secure building blocks for end-to-end encrypted (E2EE) messaging systems and file transfer tools. The core library is written in Rust and compiled to Node.js native bindings, WebAssembly, and native Rust.
+Vollcrypt is a cryptographic library providing secure building blocks for end-to-end encrypted (E2EE) messaging systems and file transfer/storage tools. The core library is written in Rust and compiled to Node.js native bindings, WebAssembly, and native Rust.
 
-## Repository structure
+## Documentation Modules
 
-This repository is organized as a monorepo containing multiple modules:
+Explore the specific modules of Vollcrypt:
 
-*   **`vollcrypt-messages/` (Stable)**: Cryptographic primitives and session management for secure messaging. Includes hybrid PQC KEM handshakes, PCS ratcheting, sealed sender, transcript verification, and key transparency logs.
-    *   *Documentation:* [vollcrypt-messages/README.md](file:///c:/Users/iTopya/Desktop/Project/vollcrypt/vollcrypt-messages/README.md)
-    *   *NPM Scopes:* `@vollcrypt/messages-node` and `@vollcrypt/messages-wasm`
-*   **`vollcrypt-file/` (Under Active Development)**: Encrypted file transmission, stream encryption/decryption, chunk-based encryption, and Merkle tree verification core.
+*   📩 **[Vollcrypt Messages Module Documentation (README-messages.md)](README-messages.md)** - Stable, E2EE messaging session managers, PCS ratchets, sealed sender, and transparency logs.
+*   📁 **[Vollcrypt Files Module Documentation (README-files.md)](README-files.md)** - Active Development, streaming chunk-based encryption, and Merkle tree verification.
+
+---
+
+## Repository Structure
+
+This repository is organized as a monorepo containing the following modules:
+
+*   `vollcrypt-messages/`: The Rust implementation and bindings for E2EE messaging (Node.js and WebAssembly).
+*   `vollcrypt-file/`: The Rust implementation and core logic for E2EE file/stream chunking and verification.
 
 ---
 
 ## Security Properties
 
-| Property                 | Mechanism                                         | Guarantee                                                        |
-| ------------------------ | ------------------------------------------------- | ---------------------------------------------------------------- |
-| Confidentiality          | AES-256-GCM                                       | Messages/files cannot be read without the session key            |
-| Integrity                | AES-256-GCM auth tag + Transcript hash            | Data cannot be modified or reordered without detection           |
-| Forward Secrecy          | Time-windowed WindowKey (HKDF-derived per window) | Compromising a current key does not expose past data             |
-| Post-Compromise Security | Ephemeral X25519 PCS ratchet                      | System recovers from key compromise within N messages            |
-| Quantum Resistance       | X25519 + ML-KEM-768 hybrid KEM                    | Session establishment resists both classical and quantum attacks |
-| Sender Authenticity      | Ed25519 signature on KEM ciphertext               | The server cannot substitute a different sender's key            |
-| Sender Privacy           | Sealed Sender (ephemeral ECDH + AES-GCM)          | The server routes messages without knowing the sender's identity |
-| Key Authenticity         | Key Transparency log (Ed25519-signed hash chain)  | Key changes are auditable and cannot be silently backdated       |
-| MITM Detection           | Verification codes (SHA-256 of public key pair)   | Users can confirm keys out of band                               |
+| Property | Applied To | Mechanism | Guarantee / Protection |
+| :--- | :--- | :--- | :--- |
+| **Confidentiality** | Messages & Files | AES-256-GCM | Encrypted content cannot be read without the session/file key. Files are encrypted in chunk streams. |
+| **Integrity** | Messages | AES-256-GCM tag + Transcript Hash Chain | Messages cannot be modified, reordered, replayed, or deleted without detection. |
+| **Integrity** | Files | Merkle Tree over chunk authentication tags | Individual chunks cannot be swapped, reordered, or deleted. Allows verification of individual chunks without full download. |
+| **Forward Secrecy** | Messages | Time-windowed WindowKey (HKDF) | Compromising a current key does not expose past session messages. |
+| **Post-Compromise Security** | Messages | Ephemeral X25519 PCS ratchet | Session recovers automatically from key compromise within a few messages. |
+| **Quantum Resistance** | Messages & Files | X25519 + ML-KEM-768 Hybrid KEM | Session/file key exchange resists both classical and quantum attacks. |
+| **Sender Authenticity** | Messages & Files | Ed25519 signature on KEM ciphertext/metadata | Recipients can verify the authenticity of the sender and prevent MITM key substitution by the server. |
+| **Sender Privacy** | Messages | Sealed Sender (ECDH + AES-GCM) | The server routes messages without knowing the sender's identity. |
+| **Key Auditability** | Messages | Key Transparency log (signed hash chain) | Key modifications are append-only and public, preventing silent backdating of keys. |
+| **MITM Detection** | Messages | Out-of-band Verification Codes (Numeric/Emoji) | Humans can easily verify the fingerprint of their keys to ensure no MITM is present. |
+| **Password Derivation** | Messages & Files | Argon2id & PBKDF2 (100k iterations) | Derives high-entropy wrapping keys from user passwords to secure recovery seeds and keys. |
+| **Key Wrapping** | Messages & Files | AES-256-KW (RFC 3394) | Protects sensitive keys (DEK, SRK, Mnemonics) when stored in insecure local storage. |
 
 ---
 
 ## Algorithms Used
 
-| Purpose                | Algorithm                          | Standard        |
-| ---------------------- | ---------------------------------- | --------------- |
-| Symmetric encryption   | AES-256-GCM                        | NIST SP 800-38D |
-| Classical key exchange | X25519 ECDH                        | RFC 7748        |
-| Post-quantum KEM       | ML-KEM-768                         | NIST FIPS 203   |
-| Digital signatures     | Ed25519                            | RFC 8032        |
-| Key derivation         | HKDF-SHA256                        | RFC 5869        |
-| Password derivation    | PBKDF2-SHA256 (100 000 iterations) | RFC 8018        |
-| Key wrapping           | AES-256-KW                         | RFC 3394        |
-| Recovery phrase        | BIP-39 (24 words, 256-bit entropy) | BIP-39          |
+| Purpose | Algorithm | Standard / Specification |
+| :--- | :--- | :--- |
+| **Symmetric Encryption** | AES-256-GCM | NIST SP 800-38D |
+| **Classical Key Exchange** | X25519 ECDH | RFC 7748 |
+| **Post-Quantum KEM** | ML-KEM-768 | NIST FIPS 203 |
+| **Digital Signatures** | Ed25519 | RFC 8032 |
+| **Key Derivation (KDF)** | HKDF-SHA256 | RFC 5869 |
+| **Password Hashing / KDF** | Argon2id & PBKDF2-SHA256 | OWASP Recommendation / RFC 8018 |
+| **Key Wrapping** | AES-256-KW | RFC 3394 |
+| **Recovery Phrase** | BIP-39 (24 words, 256-bit entropy) | BIP-39 |
 
 ---
 
@@ -73,12 +83,12 @@ VOLLCRYPT_LICENSE_OFFLINE_FALLBACK=true
 
 ### Prerequisites
 
-| Tool      | Version          | Purpose                      |
-| --------- | ---------------- | ---------------------------- |
-| Rust      | stable (≥ 1.76) | Core and bindings            |
-| wasm-pack | latest           | WASM build                   |
-| Node.js   | ≥ 18            | Node.js binding and examples |
-| npm       | ≥ 9             | Package management           |
+| Tool | Version | Purpose |
+| :--- | :--- | :--- |
+| Rust | stable (≥ 1.76) | Core and bindings |
+| wasm-pack | latest | WASM build |
+| Node.js | ≥ 18 | Node.js binding and examples |
+| npm | ≥ 9 | Package management |
 
 ### Steps
 
