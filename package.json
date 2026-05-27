@@ -1,7 +1,7 @@
 {
   "name": "vollcrypt",
   "version": "0.2.0",
-  "description": "Cross-platform Rust cryptography core for VollChat & KanzleiLink",
+  "description": "Cross-platform Rust cryptography core",
   "private": true,
   "scripts": {
     "build:node": "cd vollcrypt-messages/node && npm install && npm run build",

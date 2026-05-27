@@ -111,7 +111,6 @@ The following components are in scope for this security policy:
 | `vollcrypt-core`           | Rust cryptographic core (`core/src/`)                                   |
 | `vollcrypt-node`           | Node.js N-API binding (`node/`)                                         |
 | `vollcrypt-wasm`           | WebAssembly binding (`wasm/`)                                           |
-| `vollcrypt-license-server` | License validation and MAU tracking server (`packages/license-server/`) |
 | `vollcrypt-example`        | Example code shipped in the repository                                    |
 
 **We are particularly interested in:**
@@ -122,7 +121,6 @@ The following components are in scope for this security policy:
 * Incorrect or missing authentication — conditions under which forged ciphertexts, signatures, or transcripts are accepted
 * Key confusion attacks — scenarios where key material derived for one purpose is usable for another
 * Implementation deviations from the specification — cases where the library's behavior differs from the documented cryptographic construction in a way that reduces security
-* Vulnerabilities in the license server that could allow unauthorized access to license data or user tracking information
 
 ---
 
