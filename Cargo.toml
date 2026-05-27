@@ -1,8 +1,9 @@
 [workspace]
 members = [
-    "core",
-    "node",
-    "wasm"
+    "vollcrypt-messages/core",
+    "vollcrypt-messages/node",
+    "vollcrypt-messages/wasm",
+    "vollcrypt-file/core"
 ]
 resolver = "2"
 

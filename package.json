@@ -4,8 +4,8 @@
   "description": "Cross-platform Rust cryptography core for VollChat & KanzleiLink",
   "private": true,
   "scripts": {
-    "build:node": "cd node && npm install && npm run build",
-    "build:wasm": "wasm-pack build wasm --target web --out-dir pkg",
+    "build:node": "cd vollcrypt-messages/node && npm install && npm run build",
+    "build:wasm": "wasm-pack build vollcrypt-messages/wasm --target web --out-dir pkg",
     "build": "npm run build:node && npm run build:wasm",
     "test:cargo": "cargo test --all",
     "format": "cargo fmt --all"
