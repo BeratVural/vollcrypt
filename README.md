@@ -5,8 +5,8 @@
 **Cross-platform, quantum-resistant cryptography engine for Node.js, WebAssembly, and Rust**
 
 [![CI](https://github.com/BeratVural/vollcrypt/actions/workflows/ci.yml/badge.svg)](https://github.com/BeratVural/vollcrypt/actions/workflows/ci.yml)
-[![npm (node)](https://img.shields.io/npm/v/@vollcrypt/node?label=%40vollcrypt%2Fnode&color=cb3837)](https://www.npmjs.com/package/@vollcrypt/node)
-[![npm (wasm)](https://img.shields.io/npm/v/@vollcrypt/wasm?label=%40vollcrypt%2Fwasm&color=cb3837)](https://www.npmjs.com/package/@vollcrypt/wasm)
+[![npm (node)](https://img.shields.io/npm/v/@vollcrypt/messages-node?label=%40vollcrypt%2Fmessages-node&color=cb3837)](https://www.npmjs.com/package/@vollcrypt/messages-node)
+[![npm (wasm)](https://img.shields.io/npm/v/@vollcrypt/messages-wasm?label=%40vollcrypt%2Fmessages-wasm&color=cb3837)](https://www.npmjs.com/package/@vollcrypt/messages-wasm)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![FIPS 203](https://img.shields.io/badge/PQC-FIPS%20203%20ML--KEM--768-8A2BE2)](https://csrc.nist.gov/pubs/fips/203/final)
 
@@ -20,8 +20,8 @@ The same Rust core is compiled to three targets:
 
 | Target           | Package             | Use Case                     |
 | ---------------- | ------------------- | ---------------------------- |
-| Node.js (native) | `@vollcrypt/node` | NestJS, Express, server-side |
-| WebAssembly      | `@vollcrypt/wasm` | React, Next.js, browser      |
+| Node.js (native) | `@vollcrypt/messages-node` | NestJS, Express, server-side |
+| WebAssembly      | `@vollcrypt/messages-wasm` | React, Next.js, browser      |
 | Rust             | `vollcrypt-core`  | Direct Rust integration      |
 
 ---
@@ -150,7 +150,7 @@ The Node.js package reads these values on startup and will validate the license 
 ### Node.js
 
 ```bash
-npm install @vollcrypt/node
+npm install @vollcrypt/messages-node
 ```
 
 Prebuilt native binaries are provided for:
@@ -162,7 +162,7 @@ Prebuilt native binaries are provided for:
 ### WebAssembly (Browser / React Native)
 
 ```bash
-npm install @vollcrypt/wasm
+npm install @vollcrypt/messages-wasm
 ```
 
 ### Rust
@@ -191,7 +191,7 @@ import {
   generateX25519Keypair,
   encryptAesGcm,
   decryptAesGcm,
-} from '@vollcrypt/node';
+} from '@vollcrypt/messages-node';
 import crypto from 'crypto';
 
 // Identity keypair
@@ -216,7 +216,7 @@ import init, {
   generateEd25519Keypair,
   encryptAesGcm,
   decryptAesGcm,
-} from '@vollcrypt/wasm';
+} from '@vollcrypt/messages-wasm';
 
 await init();
 
@@ -609,7 +609,7 @@ The Key Transparency log is an append-only, Ed25519-signed, hash-linked record o
 #### Creating and Appending Entries
 
 ```ts
-import { keyLogCreateEntry, keyLogVerifyChain } from '@vollcrypt/node';
+import { keyLogCreateEntry, keyLogVerifyChain } from '@vollcrypt/messages-node';
 
 const GENESIS_HASH = Buffer.alloc(32, 0);
 
@@ -666,7 +666,7 @@ const historicalKey = keyLogKeyAtTimestamp(
 ### Device Registry
 
 ```ts
-import { addDevice, revokeDevice, isDeviceRevoked } from '@vollcrypt/node';
+import { addDevice, revokeDevice, isDeviceRevoked } from '@vollcrypt/messages-node';
 
 // Register a new device
 addDevice(registry, {
@@ -785,10 +785,10 @@ cargo fmt --all -- --check
 cargo clippy --workspace -- -D warnings
 
 # Build Node.js native addon
-cd node && npm install && npm run build && cd ..
+cd vollcrypt-messages/node && npm install && npm run build && cd ../..
 
 # Build WebAssembly package
-cd wasm && wasm-pack build --target web --out-dir pkg && cd ..
+cd vollcrypt-messages/wasm && wasm-pack build --target web --out-dir pkg && cd ../..
 
 # Run usage examples
 cd vollcrypt-example && npm install
