@@ -4,7 +4,7 @@ use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 use sha2::Digest;
 
 use crate::transcript::TranscriptState;
@@ -403,9 +403,7 @@ fn test_sealed_sender_malleability_and_replay() {
 // 4. The "Panic & Memory Zeroization" Validation Test
 // =========================================================================
 
-// Global raw pointer to observe memory changes of the dropped object safely
-static mut OBSERVED_KEY_POINTER: *const u8 = std::ptr::null();
-
+#[derive(ZeroizeOnDrop)]
 struct SecretKeyContainer {
     key_data: [u8; 32],
 }
@@ -416,10 +414,35 @@ impl SecretKeyContainer {
     }
 }
 
-// Emulate ZeroizeOnDrop behavior
-impl Drop for SecretKeyContainer {
+// Custom smart pointer that behaves like Box<T> but does NOT deallocate on drop.
+// This allows us to safely check the zeroized memory after catch_unwind
+// without reading deallocated memory (which is undefined behavior).
+struct ObservedBox<T> {
+    ptr: *mut T,
+}
+
+impl<T> ObservedBox<T> {
+    fn new(val: T) -> Self {
+        let layout = std::alloc::Layout::new::<T>();
+        unsafe {
+            let ptr = std::alloc::alloc(layout) as *mut T;
+            std::ptr::write(ptr, val);
+            Self { ptr }
+        }
+    }
+
+    fn as_ptr(&self) -> *const T {
+        self.ptr
+    }
+}
+
+unsafe impl<T: Send> Send for ObservedBox<T> {}
+
+impl<T> Drop for ObservedBox<T> {
     fn drop(&mut self) {
-        self.key_data.zeroize();
+        unsafe {
+            std::ptr::drop_in_place(self.ptr);
+        }
     }
 }
 
@@ -427,15 +450,13 @@ impl Drop for SecretKeyContainer {
 fn test_panic_memory_zeroization() {
     let original_key = [0x99u8; 32];
     
-    // Allocate the container on the heap using Box to ensure stable address
-    let container = Box::new(SecretKeyContainer::new(original_key));
+    // Allocate the container using our custom ObservedBox
+    let container = ObservedBox::new(SecretKeyContainer::new(original_key));
+    let raw_ptr = container.as_ptr();
     
-    // Store the raw pointer to the inner key bytes in our global variable
     unsafe {
-        OBSERVED_KEY_POINTER = container.key_data.as_ptr();
-        
         // Confirm the memory initially holds the original key data
-        let initial_slice = std::slice::from_raw_parts(OBSERVED_KEY_POINTER, 32);
+        let initial_slice = std::slice::from_raw_parts(raw_ptr as *const u8, 32);
         assert_eq!(initial_slice, original_key);
     }
 
@@ -450,11 +471,10 @@ fn test_panic_memory_zeroization() {
 
     assert!(panic_result.is_err(), "Closure must panic");
 
-    // After the panic unwinds, the Box<SecretKeyContainer> must be dropped.
-    // We check the observed pointer to verify it has been zeroized.
+    // After the panic unwinds, the ObservedBox<SecretKeyContainer> has been dropped.
+    // We check the memory to verify it has been zeroized.
     unsafe {
-        assert!(!OBSERVED_KEY_POINTER.is_null());
-        let zeroized_slice = std::slice::from_raw_parts(OBSERVED_KEY_POINTER, 32);
+        let zeroized_slice = std::slice::from_raw_parts(raw_ptr as *const u8, 32);
         
         // Verify that the memory was zeroized, despite the panic
         assert_eq!(
@@ -462,5 +482,9 @@ fn test_panic_memory_zeroization() {
             [0u8; 32],
             "Memory containing key must be zeroized during panic unwinding"
         );
+
+        // Manually free the memory now that we have finished testing it
+        let layout = std::alloc::Layout::new::<SecretKeyContainer>();
+        std::alloc::dealloc(raw_ptr as *mut u8, layout);
     }
 }
