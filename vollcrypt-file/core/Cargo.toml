@@ -15,4 +15,7 @@ zeroize = { version = "1", features = ["zeroize_derive"] }
 subtle = "2"
 aes-kw = { version = "0.2.1", features = ["alloc"] }
 pbkdf2 = "0.12.2"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+ml-kem = "0.2"
 log = "0.4"
+ed25519-dalek = { version = "2", features = ["fast"] }

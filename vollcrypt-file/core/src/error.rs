@@ -47,4 +47,37 @@ pub enum FileFormatError {
 
     #[error("KDF parameter out of range: {0}")]
     KdfParameterOutOfRange(String),
+
+    #[error("Wrong recipient key / decapsulation failed")]
+    WrongRecipientKey,
+
+    #[error("Invalid wrap payload size")]
+    InvalidWrapPayload,
+
+    #[error("Invalid cryptographic signature")]
+    SignatureInvalid,
+
+    #[error("Invalid manifest magic bytes")]
+    InvalidManifestMagic,
+
+    #[error("Unsupported manifest version: {0}")]
+    UnsupportedManifestVersion(u8),
+
+    #[error("Invalid manifest operation chain / hash link")]
+    InvalidManifestChain,
+
+    #[error("Group manifest has no operations / genesis block")]
+    EmptyManifest,
+
+    #[error("Member not found in group")]
+    MemberNotFound,
+
+    #[error("Operation signer not authorized / not an admin")]
+    NotAuthorized,
+
+    #[error("Wrong group key / group decryption failed")]
+    WrongGroupKey,
+
+    #[error("Unknown manifest operation type: {0}")]
+    UnknownOperationType(u8),
 }
