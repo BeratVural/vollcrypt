@@ -1,6 +1,6 @@
 {
-  "name": "@vollcrypt-messages/node",
-  "version": "0.1.6",
+  "name": "@vollcrypt/messages-node",
+  "version": "0.2.0",
   "description": "Cross-platform, quantum-resistant cryptography engine for Node.js - native binding",
   "main": "index.js",
   "types": "index.d.ts",

@@ -64,7 +64,7 @@ jobs:
           if-no-files-found: error
 
   publish-node:
-    name: Publish @vollcrypt-messages/node
+    name: Publish @vollcrypt/messages-node
     needs: build-and-publish-node
     runs-on: ubuntu-latest
     steps:
