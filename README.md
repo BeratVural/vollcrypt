@@ -30,6 +30,41 @@ This repository is organized as a monorepo containing the following modules:
 *   `vollcrypt-messages/`: The Rust implementation and bindings for E2EE messaging (Node.js and WebAssembly).
 *   `vollcrypt-file/`: The Rust implementation and core logic for E2EE file/stream chunking and verification.
 
+```mermaid
+graph TD
+    classDef rust fill:#df5c3f,stroke:#333,stroke-width:1px,color:#fff;
+    classDef bindings fill:#f0db4f,stroke:#333,stroke-width:1px,color:#333;
+    classDef runtime fill:#43853d,stroke:#333,stroke-width:1px,color:#fff;
+
+    subgraph Core ["Vollcrypt Core Workspace"]
+        vollcrypt_core["vollcrypt-core (Rust)"]:::rust
+    end
+
+    subgraph Bindings ["Binding Adapters"]
+        napi["vollcrypt-messages/node (napi-rs)"]:::bindings
+        wasm["vollcrypt-messages/wasm (wasm-bindgen)"]:::bindings
+        files_node["vollcrypt-file/node (Node streams)"]:::bindings
+        files_wasm["vollcrypt-file/wasm (Browser streams)"]:::bindings
+    end
+
+    subgraph Clients ["Application Runtimes"]
+        node_app["Node.js Backend / Server (e.g. NestJS)"]:::runtime
+        web_app["Web Browser / Front-end (e.g. Next.js)"]:::runtime
+        native_app["Native Rust Applications / Daemons"]:::rust
+    end
+
+    vollcrypt_core --> napi
+    vollcrypt_core --> wasm
+    vollcrypt_core --> files_node
+    vollcrypt_core --> files_wasm
+
+    napi --> node_app
+    wasm --> web_app
+    files_node --> node_app
+    files_wasm --> web_app
+    vollcrypt_core --> native_app
+```
+
 ---
 
 ## Security Properties
@@ -46,23 +81,25 @@ This repository is organized as a monorepo containing the following modules:
 | **Sender Privacy** | Messages | Sealed Sender (ECDH + AES-GCM) | The server routes messages without knowing the sender's identity. |
 | **Key Auditability** | Messages | Key Transparency log (signed hash chain) | Key modifications are append-only and public, preventing silent backdating of keys. |
 | **MITM Detection** | Messages | Out-of-band Verification Codes (Numeric/Emoji) | Humans can easily verify the fingerprint of their keys to ensure no MITM is present. |
-| **Password Derivation** | Messages & Files | PBKDF2 (100k for messages, 600k for files) & Argon2id (files only) | Derives high-entropy wrapping keys from user passwords to secure recovery seeds and keys. |
+| **Password Derivation** | Messages & Files | PBKDF2 (600k iterations) & Argon2id (files only) | Derives high-entropy wrapping keys from user passwords to secure recovery seeds and keys. |
 | **Key Wrapping** | Messages & Files | AES-256-KW (RFC 3394) | Protects sensitive keys (DEK, SRK, Mnemonics) when stored in insecure local storage. |
 
 ---
 
-## Algorithms Used
+## Feature Support Matrix
 
-| Purpose | Algorithm | Standard / Specification |
-| :--- | :--- | :--- |
-| **Symmetric Encryption** | AES-256-GCM | NIST SP 800-38D |
-| **Classical Key Exchange** | X25519 ECDH | RFC 7748 |
-| **Post-Quantum KEM** | ML-KEM-768 | NIST FIPS 203 |
-| **Digital Signatures** | Ed25519 | RFC 8032 |
-| **Key Derivation (KDF)** | HKDF-SHA256 | RFC 5869 |
-| **Password Hashing / KDF** | Argon2id & PBKDF2-SHA256 | OWASP Recommendation / RFC 8018 |
-| **Key Wrapping** | AES-256-KW | RFC 3394 |
-| **Recovery Phrase** | BIP-39 (24 words, 256-bit entropy) | BIP-39 |
+| Feature | Messages Module (`vollcrypt-messages`) | Files Module (`vollcrypt-file`) | Maturity Level | Primary Use Case |
+| :--- | :--- | :--- | :--- | :--- |
+| **Symmetric Cipher** | AES-256-GCM | AES-256-GCM | Production-ready (Messages) / Beta (Files) | Bulk payload encryption |
+| **Classical Key Exchange** | X25519 ECDH | X25519 ECDH | Production-ready | Classical forward-secure key exchanges |
+| **Post-Quantum KEM** | ML-KEM-768 | ML-KEM-768 | Production-ready (FIPS 203) | Quantum-resistant session setup |
+| **Hybrid Key Transport** | Yes (X25519 + ML-KEM) | Yes (X25519 + ML-KEM) | Production-ready | Forward-secure, PQ-secure handshakes |
+| **Digital Signatures** | Ed25519 | Ed25519 | Production-ready | Key log entries, ciphertext authenticity |
+| **Password Derivation** | PBKDF2-SHA256 (600k) | PBKDF2-SHA256 (600k) & Argon2id | Production-ready | Local database / seed wrapping |
+| **Key Wrapping** | AES-256-KW (RFC 3394) | AES-256-KW (RFC 3394) | Production-ready | Secure key storage at rest |
+| **Integrity Verification** | Transcript Hash Chain | Merkle Tree over Chunk Tags | Production-ready (Messages) / Beta (Files) | Reordering protection (Messages) / Random access seek validation (Files) |
+| **Group Support** | - | Signed Group Manifest Log | Beta | Multi-recipient file sharing/rotation |
+| **Maturity** | **Stable** | **Active Development** | - | - |
 
 ---
 
@@ -70,36 +107,60 @@ This repository is organized as a monorepo containing the following modules:
 
 ### Prerequisites
 
-| Tool | Version | Purpose |
-| :--- | :--- | :--- |
-| Rust | stable (≥ 1.76) | Core and bindings |
-| wasm-pack | latest | WASM build |
-| Node.js | ≥ 18 | Node.js binding and examples |
-| npm | ≥ 9 | Package management |
+You must have Rust, Node.js, and compiler tools set up on your machine. Depending on your Operating System, additional libraries are required:
 
-### Steps
+| Tool | Version | OS Requirements / Configuration | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Rust** | Stable (≥ 1.76) | Standard target setup. Run `rustup target add wasm32-unknown-unknown` for WASM. | Core compilation and library code |
+| **wasm-pack** | Latest | Available globally via binary or npm package. | Compiles Rust core to Browser WASM package |
+| **Node.js** | ≥ 18 | LTS release recommended. | Native addon execution environment |
+| **npm** | ≥ 9 | Packaged with Node.js. | Node package dependencies |
+| **C/C++ Build Tools** | Current | **Windows:** Visual Studio C++ Build Tools.<br>**macOS:** Xcode Command Line Tools (`xcode-select --install`).<br>**Linux:** GCC/G++ (`build-essential`). | Compiling native node bindings |
+| **LLVM / Clang** | Latest | Required by binding generators. Add `LIBCLANG_PATH` environment variable pointing to LLVM bin folder if missing. | Header parsing for `napi-rs` |
+
+### Compilation Steps
 
 ```bash
 # Clone the repository
 git clone https://github.com/BeratVural/vollcrypt.git
 cd vollcrypt
 
-# Run all workspace cargo tests (core and file modules)
+# 1. Run all workspace Rust tests
 cargo test --workspace
 
-# Check formatting and lints
+# 2. Format and Lint checks
 cargo fmt --all -- --check
 cargo clippy --workspace -- -D warnings
 
-# Build Node.js native addon for messages
-cd vollcrypt-messages/node && npm install && npm run build && cd ../..
+# 3. Build Node.js Native Addon for Messages
+cd vollcrypt-messages/node
+npm install
+npm run build
+cd ../..
 
-# Build WebAssembly package for messages
-cd vollcrypt-messages/wasm && wasm-pack build --target web --out-dir pkg && cd ../..
+# 4. Build WebAssembly target for Messages
+cd vollcrypt-messages/wasm
+wasm-pack build --target web --out-dir pkg
+cd ../..
 ```
+
+### Troubleshooting Common Build Issues
+
+*   **Error: `ClangNotFound` or `could not find libclang`**
+    *   *Cause:* The Rust package generator cannot locate Clang for parsing headers.
+    *   *Resolution:* 
+        *   **Windows:** Install LLVM via winget: `winget install LLVM.LLVM` or chocolatey: `choco install llvm`. Then add a system environment variable `LIBCLANG_PATH` pointing to the directory containing `libclang.dll` (typically `C:\Program Files\LLVM\bin`).
+        *   **macOS:** Install Xcode Command Line Tools. Clang is bundled.
+        *   **Linux:** Install clang and development headers: `sudo apt-get install clang libclang-dev` (Ubuntu/Debian) or `sudo dnf install clang clang-devel` (Fedora).
+*   **Error: `wasm-pack target directory locked`**
+    *   *Cause:* Concurrent builds or crashed builds holding the compiler lock file.
+    *   *Resolution:* Run `cargo clean` in the root workspace folder to clear target lock files, then rerun the `wasm-pack` command.
+*   **Error: `MSB4019: The imported project ... was not found`**
+    *   *Cause:* Visual Studio build tools are missing or not properly configured for Node native module generation on Windows.
+    *   *Resolution:* Run a powershell instance as administrator and install desktop build tools: `npm install --global --production windows-build-tools` or install manually via Visual Studio Installer.
 
 ---
 
 ## Licensing
 
-Vollcrypt is licensed under the GPL-3.0 License.
+Vollcrypt is licensed under the GPL-3.0 License. See the [LICENSE](LICENSE) file for details.

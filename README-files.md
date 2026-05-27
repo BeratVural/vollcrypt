@@ -6,11 +6,47 @@ High-performance, chunk-based End-to-End Encrypted (E2EE) file/stream encryption
 
 This module provides high-performance stream encryption, cryptographic access control, and chunk integrity verification, designed for handling large files safely without loading them entirely into memory.
 
-## Workspace Structure
+## Architecture and Stream Design
 
-*   `vollcrypt-file/core/`: The core Rust implementation containing file format serialization, streaming cipher utilities, post-quantum hybrid KEM, and the signed group manifest.
-*   `vollcrypt-file/node/` (Planned): Native Node.js bindings for stream encryption (compatible with Node `stream.Readable` and `stream.Writable`).
-*   `vollcrypt-file/wasm/` (Planned): WebAssembly bindings for client-side browser file encryption (supporting browser Streams API and `File` object chunking).
+Vollcrypt Files operates on a chunk-by-chunk processing paradigm. Below is the block layout visualizing the relationship between the File Header, chunk envelopes, the Merkle Tree, and out-of-order seekability:
+
+```mermaid
+graph TD
+    classDef file fill:#eee,stroke:#333,stroke-width:1px;
+    classDef chunk fill:#df5c3f,stroke:#333,stroke-width:1px,color:#fff;
+    classDef node fill:#99c2ff,stroke:#333,stroke-width:1px;
+    classDef root fill:#4b0082,stroke:#333,stroke-width:1px,color:#fff;
+
+    subgraph MerkleTree ["Merkle Tree Integrity Chain (SHA-256)"]
+        Root["Merkle Root (Header offset 39)"]:::root
+        H_12["Node H(1..2)"]:::node
+        H_34["Node H(3..4)"]:::node
+        Tag1["Leaf 1: H(Auth Tag 1)"]:::node
+        Tag2["Leaf 2: H(Auth Tag 2)"]:::node
+        Tag3["Leaf 3: H(Auth Tag 3)"]:::node
+        Tag4["Leaf 4: H(Auth Tag 4)"]:::node
+        
+        Root --> H_12
+        Root --> H_34
+        H_12 --> Tag1
+        H_12 --> Tag2
+        H_34 --> Tag3
+        H_34 --> Tag4
+    end
+
+    subgraph FileStorage ["Encrypted Chunk Envelopes on Disk"]
+        Header["Header (VOLLVALT Magic, DEK wraps, Merkle Root)"]:::file
+        Chunk1["Chunk 1 Envelope (Index 0, IV1, Ciphertext1, Auth Tag 1)"]:::chunk
+        Chunk2["Chunk 2 Envelope (Index 1, IV2, Ciphertext2, Auth Tag 2)"]:::chunk
+        Chunk3["Chunk 3 Envelope (Index 2, IV3, Ciphertext3, Auth Tag 3)"]:::chunk
+        Chunk4["Chunk 4 Envelope (Index 3, IV4, Ciphertext4, Auth Tag 4)"]:::chunk
+    end
+
+    Tag1 -.- Chunk1
+    Tag2 -.- Chunk2
+    Tag3 -.- Chunk3
+    Tag4 -.- Chunk4
+```
 
 ---
 
@@ -23,9 +59,13 @@ Vollcrypt Files supports multiple ways to wrap and protect the file-specific Dat
 *   **Group wrapping:** Supports encrypting the DEK under a symmetric Group Key (GK), which is itself managed and rotated through a signed, hash-linked Group Manifest.
 
 ### 2. Stream-Friendly Symmetric Engine
-*   **Chunk-Based Encryption:** Files are split into standard chunks (default: 4096 bytes). Each chunk is encrypted independently using AES-256-GCM.
+*   **Chunk-Based Encryption:** Files are split into standard chunks (default: 1,048,576 bytes). Each chunk is encrypted independently using AES-256-GCM.
 *   **Cryptographic Domain Separation:** Rather than using the DEK directly, each chunk is encrypted using a unique subkey derived via HKDF-SHA256 from the DEK, the 16-byte random file ID, and the chunk index.
 *   **Out-of-Order Decryption:** Allows instant random-access seeking. Any chunk can be decrypted independently given its index, without decrypting preceding chunks.
+
+> [!NOTE]
+> **Stream-Friendly vs. Two-Pass Encryption:**
+> Since the Merkle Root of all chunk authentication tags is stored in the **File Header**, file/stream encryption is a **Two-Pass** operation (or requires a seekable output). For live, non-seekable streams (e.g., streaming over a network socket directly as it is encrypted), the sender must process the entire payload to compute the Merkle Root before transmitting the header. For seekable streams (like local disk writes), a placeholder header can be written first, chunks encrypted in a single pass, and the header rewritten once the Merkle Root is computed.
 
 ### 3. Signed, Hash-Linked Group Manifest
 To support multi-member groups:
@@ -33,6 +73,19 @@ To support multi-member groups:
 *   **Ed25519 Signatures:** Every operation in the log must be signed by the group's founder/admin.
 *   **Cryptographic Chaining:** Each operation contains the SHA-256 hash of the complete preceding operation, forming an immutable hash chain starting from the Genesis block.
 *   **Lazy Revocation:** Removing a member does not require immediate re-encryption of all historical files. The removed member is immediately blocked from acquiring future keys from the manifest, while historical access is technically retained via previously cached keys.
+
+```mermaid
+graph LR
+    classDef gen fill:#4b0082,stroke:#333,stroke-width:1px,color:#fff;
+    classDef op fill:#99c2ff,stroke:#333,stroke-width:1px;
+
+    Genesis["Genesis Block<br/>(prev_hash: [0;32])<br/>Signed by Founder"]:::gen
+    Add["AddMember Block<br/>(prev_hash: H(Genesis))<br/>Signed by Admin"]:::op
+    Remove["RemoveMember Block<br/>(prev_hash: H(Add))<br/>Signed by Admin"]:::op
+    
+    Genesis --> Add
+    Add --> Remove
+```
 
 ### 4. Merkle Tree Integrity Verification
 *   **Chunk-Substitution Protection:** To prevent malicious storage servers from replacing or swapping chunks, a Merkle Tree is constructed over the authentication tags of all chunk envelopes.
@@ -43,47 +96,155 @@ To support multi-member groups:
 ## Technical Specifications
 
 ### File Header Binary Layout
-The header contains critical file metadata and the wraps protecting the DEK:
+The header contains critical file metadata and the wraps protecting the DEK. All multibyte integers are written in Big-Endian (BE) format.
 
 | Offset | Length | Type | Description |
 | :--- | :--- | :--- | :--- |
-| 0 | 8 | Bytes | Magic Bytes (`VOLLCRYPT`) |
+| 0 | 8 | Bytes | Magic Bytes (`VOLLVALT`) |
 | 8 | 1 | u8 | Version (1) |
 | 9 | 1 | u8 | Mode (0: Password, 1: Recipient, 2: Group) |
 | 10 | 1 | u8 | Cipher ID (0: AES-256-GCM) |
-| 11 | 4 | u32 BE | Chunk Size (e.g. 4096) |
-| 15 | 8 | u64 BE | Plaintext Size (in bytes) |
-| 23 | 16 | Bytes | File ID (Randomly generated) |
+| 11 | 16 | Bytes | File ID (Randomly generated) |
+| 27 | 4 | u32 BE | Chunk Size (default: 1,048,576) |
+| 31 | 8 | u64 BE | Plaintext Size (in bytes) |
 | 39 | 32 | Bytes | Merkle Root |
-| 71 | 2 | u16 BE | Wrap Count |
-| 73 | Var | Structs | Concatenated list of `WrapEntry` |
+| 71 | 1 | u8 | Wrap Count |
+| 72 | 4 | Bytes | Reserved (All zeroes) |
+| 76 | 4 | u32 BE | Variable Length (Length of wrapped keys) |
+| 80 | Var | Structs | Concatenated list of `WrapEntry` |
 
 ### Wrap Entry Binary Layouts
 Each wrap entry starts with a 1-byte `wrap_type` and a 2-byte BE `payload_len`.
 
 #### Type 0: Password PBKDF2 (Payload Length = 60)
-*   `0..4`: Iterations (u32 BE)
-*   `4..20`: Salt (16 bytes)
-*   `20..60`: Wrapped DEK (40 bytes AES-KW)
+*   `0..1`: Wrap Type (0x00)
+*   `1..3`: Payload Length (0x003C - 60 bytes)
+*   `3..7`: Iterations (u32 BE, typically 600,000)
+*   `7..23`: Salt (16 bytes)
+*   `23..63`: Wrapped DEK (40 bytes AES-KW)
 
 #### Type 1: Password Argon2id (Payload Length = 68)
-*   `0..4`: Memory Cost (u32 BE)
-*   `4..8`: Time Cost (u32 BE)
-*   `8..12`: Parallelism Cost (u32 BE)
-*   `12..28`: Salt (16 bytes)
-*   `28..68`: Wrapped DEK (40 bytes AES-KW)
+*   `0..1`: Wrap Type (0x01)
+*   `1..3`: Payload Length (0x0044 - 68 bytes)
+*   `3..7`: Memory Cost (u32 BE)
+*   `7..11`: Time Cost (u32 BE)
+*   `11..15`: Parallelism Cost (u32 BE)
+*   `15..31`: Salt (16 bytes)
+*   `31..71`: Wrapped DEK (40 bytes AES-KW)
 
 #### Type 2: Hybrid KEM (Payload Length = 1180)
-*   `0..16`: Recipient ID (16 bytes)
-*   `16..20`: Group Key Version (u32 BE)
-*   `20..52`: X25519 Ephemeral Public Key (32 bytes)
-*   `52..1140`: ML-KEM-768 Ciphertext (1088 bytes)
-*   `1140..1180`: Wrapped Key (40 bytes AES-KW)
+*   `0..1`: Wrap Type (0x02)
+*   `1..3`: Payload Length (0x049C - 1180 bytes)
+*   `3..19`: Recipient ID (16 bytes)
+*   `19..23`: Group Key Version (u32 BE)
+*   `23..55`: X25519 Ephemeral Public Key (32 bytes)
+*   `55..1143`: ML-KEM-768 Ciphertext (1088 bytes)
+*   `1143..1183`: Wrapped Key (40 bytes AES-KW)
 
 #### Type 3: Group Wrap (Payload Length = 60)
-*   `0..16`: Group ID (16 bytes)
-*   `16..20`: Group Key Version (u32 BE)
-*   `20..60`: Wrapped DEK (40 bytes AES-KW)
+*   `0..1`: Wrap Type (0x03)
+*   `1..3`: Payload Length (0x003C - 60 bytes)
+*   `3..19`: Group ID (16 bytes)
+*   `19..23`: Group Key Version (u32 BE)
+*   `23..63`: Wrapped DEK (40 bytes AES-KW)
+
+### Chunk Envelope Binary Layout
+Each encrypted chunk is stored as a sequential binary chunk envelope:
+
+| Offset | Length | Type | Description |
+| :--- | :--- | :--- | :--- |
+| 0 | 4 | u32 BE | Chunk Index (0-based) |
+| 4 | 12 | Bytes | IV / Nonce (12 bytes) |
+| 16 | Var | Bytes | Ciphertext (Plaintext size) |
+| 16 + Var | 16 | Bytes | AES-256-GCM Authentication Tag |
+
+---
+
+## Programmatic Integration Example (Out-of-Order Seek & Verify)
+
+This TypeScript pseudocode details how an integrator reads any random chunk offset from an encrypted file, verifies its Merkle proof, and decrypts it independently.
+
+```ts
+import { 
+  Header, 
+  decryptChunk, 
+  verifyMerkleProof, 
+  chunkLeafHash 
+} from '@vollcrypt/file';
+import * as fs from 'fs/promises';
+
+interface FileHandle {
+  read(buffer: Buffer, offset: number, length: number, position: number): Promise<{ bytesRead: number }>;
+}
+
+async function seekAndDecryptChunk(
+  file: FileHandle,
+  targetByteOffset: number,
+  dek: Buffer,
+  merkleProofs: Buffer[][] // Pre-calculated or fetched from metadata server
+): Promise<Buffer> {
+  // 1. Read and parse the File Header
+  const headerBuffer = Buffer.alloc(10000); // Max possible header size
+  await file.read(headerBuffer, 0, 10000, 0);
+  const (header, headerLen) = Header.parse(headerBuffer);
+
+  const chunkSize = header.chunkSize;
+  const plaintextLength = header.plaintextSize;
+  const fileId = header.fileId;
+  const merkleRoot = header.merkleRoot;
+
+  // 2. Map the byte offset to the chunk index
+  const chunkIndex = Math.floor(targetByteOffset / chunkSize);
+  const totalChunks = Math.ceil(plaintextLength / chunkSize);
+
+  if (chunkIndex >= totalChunks) {
+    throw new Error("Target offset exceeds file size");
+  }
+
+  // 3. Calculate envelope positions on disk
+  // Standard chunk envelopes have a size of: 32 + ciphertextLength (which equals plaintext size)
+  const isLastChunk = chunkIndex === totalChunks - 1;
+  const chunkPlaintextLen = isLastChunk 
+    ? (plaintextLength % chunkSize || chunkSize) 
+    : chunkSize;
+  
+  const envelopeSize = 32 + chunkPlaintextLen;
+
+  // Compute offset by summing all preceding chunk envelopes
+  // Since standard chunks are uniform, we can calculate directly:
+  const targetEnvelopeDiskPos = headerLen + chunkIndex * (32 + chunkSize);
+
+  // 4. Read the target chunk envelope from disk
+  const envelopeBuffer = Buffer.alloc(envelopeSize);
+  await file.read(envelopeBuffer, 0, envelopeSize, targetEnvelopeDiskPos);
+
+  // Parse the envelope
+  const parsedIndex = envelopeBuffer.readUInt32BE(0);
+  const iv = envelopeBuffer.subarray(4, 16);
+  const ciphertext = envelopeBuffer.subarray(16, 16 + chunkPlaintextLen);
+  const authTag = envelopeBuffer.subarray(16 + chunkPlaintextLen, envelopeSize);
+
+  // 5. Verify the integrity of the chunk tag using the Merkle Root
+  const leafHash = chunkLeafHash(authTag);
+  const proof = merkleProofs[chunkIndex];
+
+  const isIntegrityValid = verifyMerkleProof(leafHash, proof, merkleRoot, chunkIndex, totalChunks);
+  if (!isIntegrityValid) {
+    throw new Error(`Security Exception: Chunk ${chunkIndex} authentication tag failed Merkle Tree validation!`);
+  }
+
+  // 6. Decrypt the verified chunk
+  const chunkEnvelope = {
+    chunkIndex: parsedIndex,
+    iv,
+    ciphertext,
+    tag: authTag
+  };
+
+  const decryptedPlaintext = decryptChunk(dek, fileId, chunkIndex, chunkEnvelope);
+  return decryptedPlaintext;
+}
+```
 
 ---
 
