@@ -11,3 +11,7 @@ pub mod test_key_log;
 pub mod test_wrap;
 pub mod test_cross_module;
 pub mod test_panic_safety;
+pub mod test_adversarial_suites;
+pub mod test_dos_stress;
+
+

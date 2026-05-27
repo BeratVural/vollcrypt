@@ -122,7 +122,7 @@ fn pbkdf2_timing_consistency() {
     for i in 0..10 {
         let pw = format!("password{}", i);
         let start = Instant::now();
-        let _ = derive_pbkdf2(pw.as_bytes(), salt, 100_000, 32);
+        let _ = derive_pbkdf2(pw.as_bytes(), salt, 600_000, 32);
         timings.push(start.elapsed().as_micros() as f64);
     }
     
