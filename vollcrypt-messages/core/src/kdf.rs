@@ -5,7 +5,7 @@ use zeroize::Zeroize;
 
 /// Derives a key using PBKDF2-HMAC-SHA256.
 /// Useful for legacy compatibility or when a password is the source.
-/// Default VollChat config: Iterations = 100,000, Key Length = 32 bytes (for AES-256)
+/// Default VollChat config: Iterations = 600,000, Key Length = 32 bytes (for AES-256)
 ///
 /// # Security
 /// The returned key material is sensitive. Caller must call `.zeroize()` 
