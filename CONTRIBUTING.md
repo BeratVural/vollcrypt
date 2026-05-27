@@ -115,8 +115,6 @@ vollcrypt/
 │   └── device.rs       Device registry
 ├── node/               N-API binding (@vollcrypt/node)
 ├── wasm/               wasm-bindgen binding (@vollcrypt/wasm)
-├── packages/
-│   └── license-server/ License validation and MAU tracking server
 └── vollcrypt-example/  Runnable examples (01_keypair.ts → 10_verification.ts)
 ```
 

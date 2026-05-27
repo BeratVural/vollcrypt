@@ -25,7 +25,7 @@ Vollcrypt strictly adheres to modern, "Best-Practice" cryptographic suites. Lega
 | **Symmetric Encryption**          | **AES-256-GCM**          | Used for bulk data and message encryption. Provides Authenticated Encryption with Associated Data (AEAD). It utilizes a 12-byte random IV (Nonce) and a 16-byte Authentication Tag (MAC).         |
 | **Asymmetric / Key Exchange**     | **X25519 + ML-KEM-768**  | Hybrid Key Encapsulation Mechanism. Combines classical Elliptic Curve Diffie-Hellman (X25519) with NIST's FIPS 203 standardized Post-Quantum KEM (Module-Lattice KEM).                            |
 | **Digital Signatures & Identity** | **Ed25519**              | Used for user/device identity verification and guaranteeing message origin authenticity. Ed25519 was chosen over ECDSA to prevent random number generator vulnerabilities.                        |
-| **Key Derivation (KDF)**          | **HKDF-SHA256 & PBKDF2** | HKDF is used to derive sub-keys from shared secrets. PBKDF2 (with 100,000 iterations) is used exclusively for deriving operational keys from user passwords.                                      |
+| **Key Derivation (KDF)**          | **HKDF-SHA256 & PBKDF2** | HKDF is used to derive sub-keys from shared secrets. PBKDF2 is used for password KDF (100k iterations for messages, 600k for files).                                                              |
 | **Entropy & Recovery**            | **BIP39**                | Standardized 24-word (256-bit entropy) English mnemonic phrases used for paper keys and disaster recovery of the master identity.                                                                 |
 | **Key Wrapping**                  | **AES-256-KW**           | Compliant with RFC 3394. Used to safely encrypt and wrap highly sensitive keys (like the DEK or SRK) before they are stored on disk (IndexedDB or LocalStorage) using the user's Master Password. |
 
@@ -114,7 +114,7 @@ For those contributing to the internal cryptography:
 
 - `pqc.rs`: Contains the ML-KEM-768 logic and the `hybrid_kem_encapsulate()` / `hybrid_kem_decapsulate()` functions combining ECDH and KEM.
 - `symmetric.rs`: AES-256-GCM functions for payload encryption (`encrypt_aes256gcm`, `decrypt_aes256gcm`).
-- `kdf.rs`: Key Derivation Functions including `derive_hkdf`, `derive_pbkdf2` (fixed to 100k iterations), and `derive_window_key`.
+- `kdf.rs`: Key Derivation Functions including `derive_hkdf`, `derive_pbkdf2`, and `derive_window_key`.
 - `keys.rs`: Operations for Ed25519 signing, verification, and classical X25519 ECDH keypair generation.
 - `envelope.rs`: Logic for packing and unpacking the binary envelope (`[WindowIndex][IV][AAD][Ciphertext][Tag]`).
 - `bip39.rs`: Mnemonic phrase generation and dictionary validation.

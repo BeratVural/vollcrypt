@@ -46,7 +46,7 @@ This repository is organized as a monorepo containing the following modules:
 | **Sender Privacy** | Messages | Sealed Sender (ECDH + AES-GCM) | The server routes messages without knowing the sender's identity. |
 | **Key Auditability** | Messages | Key Transparency log (signed hash chain) | Key modifications are append-only and public, preventing silent backdating of keys. |
 | **MITM Detection** | Messages | Out-of-band Verification Codes (Numeric/Emoji) | Humans can easily verify the fingerprint of their keys to ensure no MITM is present. |
-| **Password Derivation** | Messages & Files | Argon2id & PBKDF2 (100k iterations) | Derives high-entropy wrapping keys from user passwords to secure recovery seeds and keys. |
+| **Password Derivation** | Messages & Files | PBKDF2 (100k for messages, 600k for files) & Argon2id (files only) | Derives high-entropy wrapping keys from user passwords to secure recovery seeds and keys. |
 | **Key Wrapping** | Messages & Files | AES-256-KW (RFC 3394) | Protects sensitive keys (DEK, SRK, Mnemonics) when stored in insecure local storage. |
 
 ---
@@ -63,19 +63,6 @@ This repository is organized as a monorepo containing the following modules:
 | **Password Hashing / KDF** | Argon2id & PBKDF2-SHA256 | OWASP Recommendation / RFC 8018 |
 | **Key Wrapping** | AES-256-KW | RFC 3394 |
 | **Recovery Phrase** | BIP-39 (24 words, 256-bit entropy) | BIP-39 |
-
----
-
-## License Configuration
-
-Create a `.env` file in your application root using the template below:
-
-```env
-VOLLCRYPT_LICENSE_KEY=your_license_key
-VOLLCRYPT_LICENSE_SERVER=https://api.vollcrypt.com
-VOLLCRYPT_LICENSE_REPORT_INTERVAL_MS=3600000
-VOLLCRYPT_LICENSE_OFFLINE_FALLBACK=true
-```
 
 ---
 

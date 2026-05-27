@@ -59,7 +59,7 @@ This document covers the security design of the following components:
 | `vollcrypt-node` | Node.js N-API binding (`node/`)       |
 | `vollcrypt-wasm` | WebAssembly binding (`wasm/`)         |
 
-The license server (`packages/license-server/`) is out of scope for this document. Its security relies on standard web application practices (HTTPS, parameterized queries, Stripe webhook signature verification) rather than custom cryptographic design.
+
 
 ---
 
@@ -261,19 +261,19 @@ All HKDF derivations in Vollcrypt use distinct, versioned `info` context strings
 
 Context string versioning ensures that a future change to a derivation can be deployed without ambiguity about which version produced a given key.
 
-### 3.6 Password-Based Derivation — PBKDF2-SHA256
+### 3.6 Password-Based Derivation — PBKDF2 & Argon2id
 
-**Chosen over:** Argon2id, bcrypt, scrypt.
+Password-based derivation is used for deriving key wrapping keys (KEK) from low-entropy user passwords to secure master seeds and keys. The library implements different strategies depending on the module:
 
-PBKDF2 with 100,000 iterations is used exclusively for deriving the key wrapping key from the user's master password. This is the only place in the library where a low-entropy human-chosen secret is processed.
+#### Messages (`vollcrypt-messages`)
+PBKDF2 with 100,000 iterations is used for deriving the key wrapping key from the user's master password. Argon2id is not used in the messages module due to WebAssembly memory constraints in client-side browser environments, although its migration is planned for a future version.
 
-Argon2id is the current recommendation for new designs due to its memory-hardness. It was considered but not adopted for the following reasons:
-
-1. Memory-hard functions are more difficult to deploy consistently across all target platforms (particularly WASM with its memory constraints).
-2. The primary threat model for password-derived keys is offline brute force after a server breach. 100,000 PBKDF2-SHA256 iterations provides reasonable resistance for this scenario given current hardware.
-3. Argon2id's parameter selection (memory, parallelism, iterations) requires careful tuning and is more likely to be misconfigured.
-
-Migration to Argon2id is tracked as future work and will require a versioned key derivation scheme.
+#### Files (`vollcrypt-file`)
+Files support both PBKDF2 and Argon2id:
+1. **PBKDF2-SHA256:** Uses a default of 600,000 iterations for password-based key wrapping, providing high resistance to brute-force attacks in desktop and server environments.
+2. **Argon2id:** Fully implemented and supported for file encryption with:
+   - **Default parameters:** memory = 65,536 KB, iterations (t_cost) = 3, parallelism = 4.
+   - **Interactive parameters:** memory = 19,456 KB, iterations (t_cost) = 2, parallelism = 1.
 
 ### 3.7 Key Wrapping — AES-256-KW
 
@@ -572,7 +572,7 @@ Ed25519(signing_key, canonical_body)
 | Limitation                                                     | Impact                                                                                                                                 | Mitigation / Future Work                                                                                                                                  |
 | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Ed25519 is quantum-vulnerable**                        | A cryptographically relevant quantum computer could forge signatures on Key Transparency log entries and authenticated KEM ciphertexts | Migration to ML-DSA (NIST FIPS 204) is planned. Session confidentiality is quantum-resistant via ML-KEM-768; only authentication is affected.             |
-| **PBKDF2 instead of Argon2id**                           | PBKDF2 is less resistant to GPU/ASIC brute force than memory-hard functions                                                            | 100,000 iterations provides reasonable resistance for current hardware. Argon2id migration is tracked for a future version.                               |
+| **PBKDF2 instead of Argon2id**                           | PBKDF2 is less resistant to GPU/ASIC brute force than memory-hard functions                                                            | 100,000 iterations (messages) and 600,000 iterations (files) provide reasonable resistance. Files also fully support Argon2id. |
 | **No transcript mismatch recovery**                      | The library detects transcript chain mismatches but does not define a recovery protocol                                                | Recovery is the responsibility of the application layer.                                                                                                  |
 | **Sealed sender provides sender privacy, not anonymity** | A powerful network adversary with timing correlation capabilities may be able to link sealed packets to senders via traffic analysis   | Sealed sender is not designed to defeat global passive adversaries. Applications requiring stronger anonymity should use a mixnet or onion routing layer. |
 | **Key Transparency log requires server availability**    | The log is served by the server. A malicious server could serve a stale or truncated log                                               | Future work: gossip protocol between clients to cross-check log state.                                                                                    |
