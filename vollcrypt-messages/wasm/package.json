@@ -1,5 +1,5 @@
 {
-  "name": "@vollcrypt/wasm",
+  "name": "@vollcrypt-messages/wasm",
   "version": "0.1.6",
   "description": "Cross-platform, quantum-resistant cryptography engine - WebAssembly binding",
   "type": "module",

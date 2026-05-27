@@ -1,5 +1,5 @@
 {
-  "name": "@vollcrypt/node",
+  "name": "@vollcrypt-messages/node",
   "version": "0.1.6",
   "description": "Cross-platform, quantum-resistant cryptography engine for Node.js - native binding",
   "main": "index.js",
