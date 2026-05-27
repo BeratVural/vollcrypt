@@ -1,4 +1,4 @@
-name: CI
+name: Vollcrypt Messages CI
 
 on:
   push:
@@ -32,9 +32,8 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Run Core Tests
-        working-directory: core
-        run: cargo test
+      - name: Run Workspace Tests
+        run: cargo test --workspace
 
   build-node:
     name: Build Node Bindings

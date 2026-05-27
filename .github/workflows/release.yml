@@ -1,4 +1,4 @@
-name: Release
+name: Vollcrypt Messages Release
 
 on:
   push:
@@ -51,16 +51,16 @@ jobs:
           sudo apt-get install -y musl-tools
 
       - name: Install Dependencies
-        run: cd node && npm install
+        run: cd vollcrypt-messages/node && npm install
 
       - name: Build Node
-        run: cd node && npx @napi-rs/cli build --platform --release --target ${{ matrix.target }}
+        run: cd vollcrypt-messages/node && npx @napi-rs/cli build --platform --release --target ${{ matrix.target }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.target }}
-          path: node/vollcrypt.*.node
+          path: vollcrypt-messages/node/vollcrypt.*.node
           if-no-files-found: error
 
   publish-node:
@@ -79,15 +79,15 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: node/
+          path: vollcrypt-messages/node/
           pattern: bindings-*
           merge-multiple: true
 
       - name: List binaries
-        run: ls -la node/vollcrypt.*.node
+        run: ls -la vollcrypt-messages/node/vollcrypt.*.node
 
       - name: Publish to NPM
-        run: cd node && npm publish --access public
+        run: cd vollcrypt-messages/node && npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -118,6 +118,6 @@ jobs:
         run: npm run build:wasm
 
       - name: Publish to NPM
-        run: cd wasm && npm publish --access public
+        run: cd vollcrypt-messages/wasm && npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
