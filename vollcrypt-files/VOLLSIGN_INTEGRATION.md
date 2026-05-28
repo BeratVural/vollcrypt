@@ -1,12 +1,12 @@
-# VollSign Document Lifecycle Integration Guide
+# DoccA Document Lifecycle Integration Guide
 
-This guide details how to integrate the `@vollcrypt/files-node` or `@vollcrypt/files-wasm` bindings into a digital signature platform like **VollSign** to achieve both eIDAS compliance and GDPR alignment.
+This guide details how to integrate the `@vollcrypt/files-node` or `@vollcrypt/files-wasm` bindings into a digital signature platform like **DoccA** to achieve both eIDAS compliance and GDPR alignment.
 
 ---
 
 ## 1. Cryptographic Key Hierarchy
 
-VollSign uses a three-tier key management architecture:
+DoccA uses a three-tier key management architecture:
 
 1. **Data Encryption Key (DEK)**: A symmetric AES-256 key generated per document. It encrypts the actual PDF payload chunks.
 2. **Group Key (GK)**: A symmetric AES-256 key representing an organization or tenant group. It encrypts the DEK.
@@ -20,7 +20,7 @@ VollSign uses a three-tier key management architecture:
 
 ### Phase A: Document Creation and Encryption (Sender)
 
-When a lawyer uploads a secret PDF document to VollSign:
+When a lawyer uploads a secret PDF document to DoccA:
 1. **Generate Keys**: Generate a unique `DEK` and `File ID` using `generateDek()` and `generateFileId()`.
 2. **Chunk Payload**: Split the PDF into chunks (e.g., 64KB blocks).
 3. **Encrypt Chunks**: Encrypt each chunk using `encryptChunk(dek, fileId, chunkIndex, chunkData)`.

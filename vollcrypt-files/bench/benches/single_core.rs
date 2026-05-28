@@ -1,5 +1,4 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use rand::{rngs::OsRng, RngCore};
 use vollcrypt_files_core::*;
 
 fn bench_chunk_encrypt_decrypt(c: &mut Criterion) {
@@ -117,9 +116,7 @@ fn bench_aes_kw(c: &mut Criterion) {
 }
 
 fn bench_ed25519(c: &mut Criterion) {
-    let mut seed = [0u8; 32];
-    OsRng.fill_bytes(&mut seed);
-    let (pk, sk) = ed25519_keypair_generate(&seed);
+    let (pk, sk) = ed25519_keypair_generate();
     let msg = vec![0u8; 1024];
     let sig = ed25519_sign(&sk, &msg);
 
