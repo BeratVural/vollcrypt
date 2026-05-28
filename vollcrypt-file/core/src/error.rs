@@ -80,4 +80,52 @@ pub enum FileFormatError {
 
     #[error("Unknown manifest operation type: {0}")]
     UnknownOperationType(u8),
+
+    #[error("Group key version {0} has been shredded")]
+    GroupKeyShredded(u32),
+
+    #[error("Wrap entry version not found: version {gk_version}")]
+    WrapVersionNotFound { gk_version: u32 },
+
+    #[error("Group key version has already been shredded")]
+    AlreadyShredded,
+
+    #[error("Invalid shred reason (must be <= 256 bytes)")]
+    InvalidShredReason,
+
+    #[error("Header is not signed")]
+    HeaderNotSigned,
+
+    #[error("Header is sealed")]
+    HeaderSealed,
+
+    #[error("Header is not sealed")]
+    HeaderNotSealed,
+
+    #[error("Invalid sealed payload")]
+    InvalidSealedPayload,
+
+    #[error("Label too long")]
+    LabelTooLong,
+
+    #[error("Device not found")]
+    DeviceNotFound,
+
+    #[error("Device already revoked")]
+    DeviceAlreadyRevoked,
+
+    #[error("Key log entry not found")]
+    KeyLogEntryNotFound,
+
+    #[error("Invalid key log magic")]
+    InvalidKeyLogMagic,
+
+    #[error("Unsupported key log version: {0}")]
+    UnsupportedKeyLogVersion(u8),
+
+    #[error("Invalid key log chain / hash link")]
+    InvalidKeyLogChain,
+
+    #[error("Sealed group key required")]
+    SealedGkRequired,
 }

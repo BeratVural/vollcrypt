@@ -30,6 +30,8 @@ fn encrypt_decrypt_small_file_hybrid_kem() {
         plaintext_size: plaintext.len() as u64,
         merkle_root,
         wraps: vec![wrap],
+        signed_metadata: None,
+        signature: None,
     };
 
     // 2. Serialize header and envelope
@@ -67,9 +69,9 @@ fn encrypt_decrypt_multi_recipient() {
     let merkle_root = MerkleTree::from_leaves(vec![leaf]).root();
 
     let mut wraps = Vec::new();
-    for i in 0..3 {
+    for rec_pk in &recipients_pks {
         let recipient_id = generate_file_id();
-        let wrap = wrap_key_to_recipient(&dek, recipient_id, 0, &recipients_pks[i]).unwrap();
+        let wrap = wrap_key_to_recipient(&dek, recipient_id, 0, rec_pk).unwrap();
         wraps.push(wrap);
     }
 
@@ -82,6 +84,8 @@ fn encrypt_decrypt_multi_recipient() {
         plaintext_size: plaintext.len() as u64,
         merkle_root,
         wraps,
+        signed_metadata: None,
+        signature: None,
     };
 
     let mut serialized = header.write();
@@ -91,9 +95,8 @@ fn encrypt_decrypt_multi_recipient() {
     let (parsed_header, header_len) = Header::parse(&serialized).unwrap();
     let parsed_envelope = ChunkEnvelope::parse(&serialized[header_len..], 1000).unwrap();
 
-    for i in 0..3 {
-        let recovered_dek =
-            unwrap_key_with_recipient_key(&parsed_header.wraps[i], &recipients_sks[i]).unwrap();
+    for (i, rec_sk) in recipients_sks.iter().enumerate() {
+        let recovered_dek = unwrap_key_with_recipient_key(&parsed_header.wraps[i], rec_sk).unwrap();
         let recovered =
             decrypt_chunk(&recovered_dek, &parsed_header.file_id, 0, &parsed_envelope).unwrap();
 
@@ -131,6 +134,8 @@ fn mixed_password_and_recipient_header() {
         plaintext_size: plaintext.len() as u64,
         merkle_root,
         wraps: vec![wrap_pw, wrap_kem],
+        signed_metadata: None,
+        signature: None,
     };
 
     let mut serialized = header.write();

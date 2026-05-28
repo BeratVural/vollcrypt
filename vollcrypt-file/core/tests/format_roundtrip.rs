@@ -20,6 +20,8 @@ fn header_roundtrip_password_pbkdf2() {
         plaintext_size: 1024 * 1024,
         merkle_root: [0x04; 32],
         wraps: vec![wrap],
+        signed_metadata: None,
+        signature: None,
     };
 
     let serialized = header.write();
@@ -49,6 +51,8 @@ fn header_roundtrip_password_argon2id() {
         plaintext_size: 2048 * 1024,
         merkle_root: [0x08; 32],
         wraps: vec![wrap],
+        signed_metadata: None,
+        signature: None,
     };
 
     let serialized = header.write();
@@ -78,6 +82,8 @@ fn header_roundtrip_hybrid_kem_single() {
         plaintext_size: 512,
         merkle_root: [0x0E; 32],
         wraps: vec![wrap],
+        signed_metadata: None,
+        signature: None,
     };
 
     let serialized = header.write();
@@ -110,6 +116,8 @@ fn header_roundtrip_multi_recipient() {
         plaintext_size: 50 * 1024 * 1024,
         merkle_root: [0xEE; 32],
         wraps,
+        signed_metadata: None,
+        signature: None,
     };
 
     let serialized = header.write();
@@ -149,6 +157,8 @@ fn header_roundtrip_mixed() {
         plaintext_size: 4096,
         merkle_root: [0xBB; 32],
         wraps,
+        signed_metadata: None,
+        signature: None,
     };
 
     let serialized = header.write();
