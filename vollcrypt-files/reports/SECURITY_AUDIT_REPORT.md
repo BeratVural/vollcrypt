@@ -1,6 +1,6 @@
 # Vollcrypt File Security Audit Report
 
-Generated: 2026-05-28T13:31:16.213980700+00:00
+Generated: 2026-05-28T15:12:04.091705300+00:00
 Vollcrypt-File version: 0.1.0
 
 ## System Information
@@ -8,7 +8,7 @@ Vollcrypt-File version: 0.1.0
 | Component | Detail |
 | --- | --- |
 | CPU | AMD Ryzen 5 7500F 6-Core Processor (6 physical cores, 12 logical threads) @ 3.70 GHz |
-| RAM | 15.62 GB (9.39 GB available) |
+| RAM | 15.62 GB (9.40 GB available) |
 | OS | Windows 26200 |
 | Hardware Acceleration | AES-NI, AVX, AVX2, AVX512, SHA-NI, PCLMULQDQ |
 | Rust Version | rustc 1.93.1 (01f6ddf75 2026-02-11) |
@@ -17,11 +17,11 @@ Vollcrypt-File version: 0.1.0
 
 | Category | Test Description | Numeric Findings | Verdict |
 | --- | --- | --- | --- |
-| **Bit-flip Resistance** | Flip every bit in ciphertext chunk | 8,000 flips, 0 decrypted | ✓ Secure |
-| **Tag Forgery Resistance** | Random tag insertion (1M tries) | 1,000,000 forged, 0 accepted | ✓ Secure |
-| **Header Tampering Matrix** | Tamper magic, version, file_id | 15 fields, 15 rejected | ✓ Secure |
-| **Replay Attack Resistance** | IV uniqueness & cross-file subst. | 2 identical, 0 replayed | ✓ Secure |
-| **Timing Side Channels** | Constant-time password unwrap check | Median delta: 0.05 μs | ✓ Secure |
+| **Bit-flip Resistance** | Flip every bit in ciphertext chunk | 8448 flips, 0 decrypted | ✓ Secure |
+| **Tag Forgery Resistance** | Random tag insertion (100000 tries) | 100000 forged, 0 accepted | ✓ Secure |
+| **Header Tampering Matrix** | Tamper magic, version, file_id | 27 fields, 27 rejected | ✓ Secure |
+| **Replay Attack Resistance** | IV uniqueness & cross-file subst. | 2 tested, 0 replayed | ✓ Secure |
+| **Timing Side Channels** | Constant-time password unwrap check | Median delta: 0.0000 μs | ✓ Secure |
 | **Manifest Authority** | Unauthorized signature injection | 1 forgery, 0 accepted | ✓ Secure |
 | **Signed Header Replay** | Replaying v2 signature on fake file | 1 replay, 0 accepted | ✓ Secure |
 

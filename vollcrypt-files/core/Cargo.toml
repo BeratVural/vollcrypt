@@ -11,6 +11,7 @@ argon2 = "0.5"
 aes-gcm = "0.10"
 hkdf = "0.12"
 sha2 = "0.10"
+blake3 = "1"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 subtle = "2"
 aes-kw = { version = "0.2.1", features = ["alloc"] }

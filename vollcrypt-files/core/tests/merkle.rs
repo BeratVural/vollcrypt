@@ -166,3 +166,37 @@ fn leaf_hash_changes_with_tag() {
     env2.tag[0] ^= 1;
     assert_ne!(chunk_leaf_hash(&env1), chunk_leaf_hash(&env2));
 }
+
+#[test]
+fn test_blake3_merkle_tree() {
+    use vollcrypt_files_core::HashAlgorithm;
+
+    let env = ChunkEnvelope {
+        chunk_index: 0,
+        iv: [0xAA; 12],
+        ciphertext: vec![0x11, 0x22, 0x33],
+        tag: [0xBB; 16],
+    };
+
+    let leaf = vollcrypt_files_core::chunk_leaf_hash_with_algo(&env, HashAlgorithm::Blake3);
+    assert_ne!(leaf, [0u8; 32]);
+
+    let leaves = vec![leaf, leaf, leaf];
+    let tree = MerkleTree::from_leaves_with_algo(leaves.clone(), HashAlgorithm::Blake3);
+    let root = tree.root();
+    assert_ne!(root, [0u8; 32]);
+    assert_ne!(root, leaf);
+
+    let proof = tree.proof(0);
+    assert_eq!(proof.len(), 2);
+
+    let is_valid = vollcrypt_files_core::verify_merkle_proof_with_algo(
+        &leaf,
+        0,
+        3,
+        &proof,
+        &root,
+        HashAlgorithm::Blake3,
+    );
+    assert!(is_valid);
+}

@@ -23,7 +23,7 @@ This package is dual-licensed under:
 - **Key Derivation (KDF)**: Argon2id (default) or PBKDF2 (SHA-256) (legacy compatibility)
 - **Asymmetric Exchange (Hybrid KEM)**: ML-KEM-768 (Kyber) combined with X25519
 - **Signatures**: Ed25519 (RFC 8032)
-- **Integrity**: Merkle Tree leaf hashing over chunk metadata and authentication tags
+- **Integrity**: Merkle Tree leaf hashing over chunk metadata and authentication tags (SHA-256 by default, with optional BLAKE3 support for high-performance profiles)
 
 ---
 
@@ -234,10 +234,23 @@ header_hash = SHA-256(canonical_header_without_mutable_fields)
 ### Merkle Tree Integrity Verification
 To prevent malicious storage servers from replacing, reordering, or swapping chunk envelopes, Vollcrypt Files constructs a Merkle Tree over canonical chunk leaf hashes.
 
-For format version 1, each leaf is computed as:
+For format version 1, each leaf is computed using SHA-256 by default:
 ```
-LeafHashV1 =
+LeafHashV1_Sha256 =
 SHA-256(
+  "vollcrypt-file-merkle-leaf-v1" ||
+  file_id[16] ||
+  chunk_index_u32_be ||
+  chunk_plaintext_len_u32_be ||
+  iv[12] ||
+  auth_tag[16]
+)
+```
+
+For the optional BLAKE3 high-performance profile, `LeafHashV1` and internal Merkle tree nodes are computed using BLAKE3:
+```
+LeafHashV1_Blake3 =
+BLAKE3(
   "vollcrypt-file-merkle-leaf-v1" ||
   file_id[16] ||
   chunk_index_u32_be ||
@@ -443,11 +456,17 @@ npm test
 ```
 
 ### Build WebAssembly Crate
+By default, the WebAssembly module compiles with 128-bit SIMD acceleration enabled (`target-feature=+simd128`).
+To compile:
 ```bash
 cd wasm
 npm install
 npm run build
 npm test
+```
+To compile a portable fallback build without SIMD features, override the target flags:
+```bash
+RUSTFLAGS="" npm run build
 ```
 
 ---
@@ -458,6 +477,8 @@ Vollcrypt File has undergone targeted performance optimizations to achieve peak 
 
 - **Merkle Leaf Hash Optimization:** Omits ciphertext payload from Merkle tree leaf hashing, only hashing the canonical chunk metadata and authentication tag: `domain || file_id || chunk_index || chunk_plaintext_len || iv || tag`. This avoids double-pass processing (AES-GCM + SHA-256) of full file contents.
 - **Deterministic IV Derivation:** Derives chunk key material and IV material from the DEK using domain-separated HKDF labels, avoiding per-chunk `OsRng` calls while preserving nonce uniqueness under the file-specific DEK and file ID.
+- **Optional BLAKE3 Hashing Profile:** Supports swapping SHA-256 for BLAKE3 within the Merkle tree verification process, yielding massive speedups on systems without hardware-accelerated SHA-NI instructions.
+- **WebAssembly 128-bit SIMD Acceleration:** Compiles the browser WebAssembly package with the `+simd128` target feature flag, allowing Rust cryptographic primitives to run with SIMD parallel hardware instructions directly inside modern browsers.
 - **Architecture-Specific Speedups:** Set default compilation profile targeting `x86-64-v3`, allowing optional native overrides (`RUSTFLAGS="-C target-cpu=native"`) to fully unlock hardware acceleration (AVX2, AES-NI, SHA-NI).
 
 ### Benchmark Results (AMD Ryzen 5 7500F @ 3.70 GHz)
