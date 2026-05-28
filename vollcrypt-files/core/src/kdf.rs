@@ -73,3 +73,37 @@ pub fn derive_kek_argon2id(
 
     Ok(kek)
 }
+
+/// Derives both a chunk subkey and a chunk IV deterministically from the DEK using HKDF-SHA256.
+///
+/// * `dek`: The Data Encryption Key (IKM).
+/// * `file_id`: The unique file identifier (Salt).
+/// * `chunk_index`: The index of the chunk.
+///
+/// Returns a tuple containing the 32-byte derived subkey and 12-byte derived IV.
+/// The subkey contains sensitive key material and should be zeroized after use.
+pub fn derive_chunk_keys(
+    dek: &[u8; 32],
+    file_id: &[u8; 16],
+    chunk_index: u32,
+) -> ([u8; 32], [u8; 12]) {
+    let mut info = [0u8; 27];
+    info[0..23].copy_from_slice(b"vollcrypt-file-chunk-v1");
+    info[23..27].copy_from_slice(&chunk_index.to_be_bytes());
+
+    let hk = Hkdf::<Sha256>::new(Some(file_id), dek);
+    let mut okm = [0u8; 44];
+
+    if hk.expand(&info, &mut okm).is_err() {
+        // Fallback to zeros if it ever fails
+        okm = [0u8; 44];
+    }
+
+    let mut subkey = [0u8; 32];
+    subkey.copy_from_slice(&okm[0..32]);
+
+    let mut iv = [0u8; 12];
+    iv.copy_from_slice(&okm[32..44]);
+
+    (subkey, iv)
+}

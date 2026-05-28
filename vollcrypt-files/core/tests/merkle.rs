@@ -1,6 +1,6 @@
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use sha2::{Digest, Sha256};
-use vollcrypt_files_core::{verify_merkle_proof, MerkleTree};
+use vollcrypt_files_core::{chunk_leaf_hash, verify_merkle_proof, ChunkEnvelope, MerkleTree};
 
 fn hash_two(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
     let mut hasher = Sha256::new();
@@ -118,4 +118,51 @@ fn large_tree_1000_leaves() {
             &root
         ));
     }
+}
+
+#[test]
+fn leaf_hash_ignores_ciphertext() {
+    let env1 = ChunkEnvelope {
+        chunk_index: 42,
+        iv: [0xAA; 12],
+        ciphertext: vec![0x11, 0x22, 0x33],
+        tag: [0xBB; 16],
+    };
+    let env2 = ChunkEnvelope {
+        chunk_index: 42,
+        iv: [0xAA; 12],
+        ciphertext: vec![0x99, 0x88, 0x77, 0x66],
+        tag: [0xBB; 16],
+    };
+    assert_eq!(chunk_leaf_hash(&env1), chunk_leaf_hash(&env2));
+}
+
+#[test]
+fn leaf_hash_changes_with_index() {
+    let env1 = ChunkEnvelope {
+        chunk_index: 42,
+        iv: [0xAA; 12],
+        ciphertext: vec![0x11, 0x22, 0x33],
+        tag: [0xBB; 16],
+    };
+    let env2 = ChunkEnvelope {
+        chunk_index: 43,
+        iv: [0xAA; 12],
+        ciphertext: vec![0x11, 0x22, 0x33],
+        tag: [0xBB; 16],
+    };
+    assert_ne!(chunk_leaf_hash(&env1), chunk_leaf_hash(&env2));
+}
+
+#[test]
+fn leaf_hash_changes_with_tag() {
+    let env1 = ChunkEnvelope {
+        chunk_index: 42,
+        iv: [0xAA; 12],
+        ciphertext: vec![0x11, 0x22, 0x33],
+        tag: [0xBB; 16],
+    };
+    let mut env2 = env1.clone();
+    env2.tag[0] ^= 1;
+    assert_ne!(chunk_leaf_hash(&env1), chunk_leaf_hash(&env2));
 }

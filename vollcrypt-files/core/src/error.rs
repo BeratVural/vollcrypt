@@ -128,4 +128,7 @@ pub enum FileFormatError {
 
     #[error("Sealed group key required")]
     SealedGkRequired,
+
+    #[error("I/O error: {0}")]
+    IoError(String),
 }

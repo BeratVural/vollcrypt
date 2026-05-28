@@ -120,11 +120,16 @@ mod tests {
         let file_id_b = [2u8; 16];
         let plaintext = vec![0u8; 100];
 
-        // Unique IVs: Encrypting same plaintext twice must produce different envelopes
+        // Deterministic IVs: Encrypting same plaintext with different indices/file_ids produces different envelopes.
+        // Identical inputs produce the same envelope under deterministic IV.
         let env1 = encrypt_chunk(&dek, &file_id_a, 0, &plaintext).unwrap();
-        let env2 = encrypt_chunk(&dek, &file_id_a, 0, &plaintext).unwrap();
-        assert_ne!(env1.iv, env2.iv, "IV reuse detected on consecutive encryption calls!");
-        assert_ne!(env1.ciphertext, env2.ciphertext, "Identical ciphertext produced twice!");
+        let env2 = encrypt_chunk(&dek, &file_id_a, 1, &plaintext).unwrap();
+        assert_ne!(env1.iv, env2.iv, "IV must differ across chunk indices!");
+        assert_ne!(env1.ciphertext, env2.ciphertext, "Ciphertext must differ across chunk indices!");
+
+        let env3 = encrypt_chunk(&dek, &file_id_b, 0, &plaintext).unwrap();
+        assert_ne!(env1.iv, env3.iv, "IV must differ across file IDs!");
+        assert_ne!(env1.ciphertext, env3.ciphertext, "Ciphertext must differ across file IDs!");
 
         // Cross-file chunk substitution
         let env_a = encrypt_chunk(&dek, &file_id_a, 0, &plaintext).unwrap();

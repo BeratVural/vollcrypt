@@ -18,6 +18,7 @@ pub mod resolver;
 pub mod signature;
 pub mod signing;
 pub mod wrap;
+pub mod pipelined_io;
 
 pub use aead::{aes256_gcm_decrypt, aes256_gcm_encrypt};
 pub use chunk::ChunkEnvelope;
@@ -29,7 +30,7 @@ pub use group::{
     wrap_dek_for_group,
 };
 pub use header::{CipherId, Header, Mode, SignedMetadata};
-pub use kdf::{derive_chunk_subkey, derive_kek_argon2id, derive_kek_pbkdf2};
+pub use kdf::{derive_chunk_keys, derive_chunk_subkey, derive_kek_argon2id, derive_kek_pbkdf2};
 pub use keylog::{KeyLog, KeyLogEntry, KeyLogEntryType};
 pub use keywrap::{aes256_kw_unwrap, aes256_kw_wrap};
 pub use manifest::{GroupManifest, Operation, SignedOperation};
@@ -49,3 +50,4 @@ pub use signature::{
 };
 pub use signing::{ed25519_keypair_generate, ed25519_sign, ed25519_verify};
 pub use wrap::WrapEntry;
+pub use pipelined_io::{encrypt_file_pipelined, decrypt_file_pipelined, PipelinedSignInfo};

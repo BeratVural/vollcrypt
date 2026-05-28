@@ -379,3 +379,139 @@ test('ed25519 sign/verify', () => {
   const isValid = api.ed25519Verify(keypair.publicKey, message, signature);
   assert.strictEqual(isValid, true);
 });
+
+test('pipelined file encryption and decryption roundtrip', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const os = await import('node:os');
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vollcrypt-test-'));
+  const srcPath = path.join(tempDir, 'source.bin');
+  const encPath = path.join(tempDir, 'encrypted.bin');
+  const decPath = path.join(tempDir, 'decrypted.bin');
+
+  // Create a source file with some data (1 MB)
+  const dataSize = 1024 * 1024;
+  const originalData = Buffer.alloc(dataSize);
+  for (let i = 0; i < dataSize; i++) {
+    originalData[i] = i % 256;
+  }
+  fs.writeFileSync(srcPath, originalData);
+
+  const dek = api.generateDek();
+  const fileId = api.generateFileId();
+  const chunkSize = 65536; // 64 KB
+
+  // Wrap DEK
+  const kdf = {
+    kind: 'Pbkdf2',
+    rounds: 1000,
+    salt: api.generateSalt(),
+    mCost: undefined,
+    tCost: undefined,
+    pCost: undefined,
+  };
+  const wrap = api.wrapDekWithPassword(dek, 'pipelined-password', kdf);
+
+  // Encrypt file
+  const header = await api.encryptFilePipelinedAsync(
+    srcPath,
+    encPath,
+    dek,
+    fileId,
+    chunkSize,
+    [wrap],
+    0, // Mode::Password
+    4, // num_workers
+    null // sign_info
+  );
+
+  assert.strictEqual(header.version, 1);
+  assert.deepStrictEqual(header.fileId, fileId);
+  assert.strictEqual(header.chunkSize, chunkSize);
+
+  // Decrypt file
+  const decHeader = await api.decryptFilePipelinedAsync(
+    encPath,
+    decPath,
+    dek,
+    4 // num_workers
+  );
+
+  assert.deepStrictEqual(decHeader.fileId, fileId);
+
+  // Compare original vs decrypted data
+  const decryptedData = fs.readFileSync(decPath);
+  assert.deepStrictEqual(decryptedData, originalData);
+
+  // Cleanup
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('pipelined file encryption with signing', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const os = await import('node:os');
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vollcrypt-test-sign-'));
+  const srcPath = path.join(tempDir, 'source.bin');
+  const encPath = path.join(tempDir, 'encrypted.bin');
+  const decPath = path.join(tempDir, 'decrypted.bin');
+
+  const originalData = Buffer.from('Testing file signing with pipelined encryption');
+  fs.writeFileSync(srcPath, originalData);
+
+  const dek = api.generateDek();
+  const fileId = api.generateFileId();
+  const chunkSize = 4096;
+
+  // Sign info setup (Plain)
+  const signerKeys = api.ed25519KeypairGenerate();
+  const keyLogId = api.generateDek();
+  const timestamp = Math.floor(Date.now() / 1000);
+
+  const signInfo = {
+    kind: 'Plain',
+    signerEd25519Pk: signerKeys.publicKey,
+    signerEd25519Sk: signerKeys.secretKey,
+    keyLogId: keyLogId,
+    timestamp: timestamp,
+    sealedGroupId: undefined,
+    sealedGkVersion: undefined,
+    sealedGk: undefined,
+  };
+
+  // Encrypt file
+  const header = await api.encryptFilePipelinedAsync(
+    srcPath,
+    encPath,
+    dek,
+    fileId,
+    chunkSize,
+    [],
+    0, // Mode::Password
+    2, // num_workers
+    signInfo
+  );
+
+  assert.strictEqual(header.version, 2);
+  assert.ok(header.signature);
+  assert.strictEqual(header.signedMetadata?.kind, 'Plain');
+
+  // Verify header signature
+  const signerPubkey = api.verifyHeaderSignaturePlain(header);
+  assert.deepStrictEqual(signerPubkey, signerKeys.publicKey);
+
+  // Decrypt file
+  await api.decryptFilePipelinedAsync(
+    encPath,
+    decPath,
+    dek,
+    2 // num_workers
+  );
+
+  const decryptedData = fs.readFileSync(decPath);
+  assert.deepStrictEqual(decryptedData, originalData);
+
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
