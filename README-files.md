@@ -442,9 +442,9 @@ Vollcrypt Files has undergone targeted performance optimizations to achieve peak
 #### Pipelined Performance Metrics Suite
 | Metric | Balanced Profile (256MB, 1MB chunk) | Max Profile (1GB, 8MB chunk) | Detail |
 | --- | --- | --- | --- |
-| Throughput | 1.56 GB/s | 1.79 GB/s | Aggregate gigabytes per second |
-| Cycles/Byte | 2.21 | 1.92 | CPU clock cycles per byte encrypted |
-| Instructions/Byte | 2.77 | 2.40 | CPU instructions executed per byte |
+| Throughput | 1.60 GB/s | 0.76 GB/s | Aggregate gigabytes per second |
+| Cycles/Byte | 2.15 | 4.51 | CPU clock cycles per byte encrypted |
+| Instructions/Byte | 2.69 | 5.64 | CPU instructions executed per byte |
 | Allocations/Chunk | 2 | 2 | Number of heap allocations per chunk |
 | Bytes Copied/Byte Encrypted | 2.0 | 2.0 | Total buffer copy amplification ratio |
 | Cache Misses/GB | 150,122 | 150,015 | Modeled cache misses per gigabyte |
@@ -452,31 +452,31 @@ Vollcrypt Files has undergone targeted performance optimizations to achieve peak
 | Worker Idle Time | 0.0% | 0.0% | Time workers spent waiting for queue |
 | Queue Wait Time | 0.1% | 0.1% | Average time chunks spent in queue |
 | I/O Wait Time | 0.5% | 0.5% | Average time spent in disk/stream I/O |
-| Merkle Time / Total | 0.02% | 0.01% | Percentage of time spent in Merkle tree |
-| HKDF Time / Total | 0.06% | 0.01% | Percentage of time spent in HKDF subkeys |
-| AEAD Time / Total | 112.08% | 124.65% | Percentage of time spent in AEAD crypto |
-| Energy Estimate | 48.13 J/GB | 41.85 J/GB | Estimated energy consumption per GB |
-| Time to First Verified Plaintext | 0.47 ms | 3.64 ms | Latency to verify and decrypt chunk 0 |
+| Merkle Time / Total | 0.02% | 0.00% | Percentage of time spent in Merkle tree |
+| HKDF Time / Total | 0.06% | 0.00% | Percentage of time spent in HKDF subkeys |
+| AEAD Time / Total | 114.91% | 52.69% | Percentage of time spent in AEAD crypto |
+| Energy Estimate | 46.79 J/GB | 98.23 J/GB | Estimated energy consumption per GB |
+| Time to First Verified Plaintext | 0.51 ms | 9.31 ms | Latency to verify and decrypt chunk 0 |
 
 #### Chunk Latency & Throughput (Single-Core)
 | Operation | Input Size | Latency (median) | Latency (p99) | Throughput |
 | --- | --- | --- | --- | --- |
-| `encrypt_chunk` | 4 KB | 2.80 μs | 6.70 μs | 1395.09 MB/s |
-| `decrypt_chunk` | 4 KB | 2.90 μs | 4.10 μs | 1346.98 MB/s |
-| `encrypt_chunk` | 64 KB | 36.00 μs | 55.20 μs | 1736.11 MB/s |
-| `decrypt_chunk` | 64 KB | 36.90 μs | 55.10 μs | 1693.77 MB/s |
-| `encrypt_chunk` | 1 MB | 880.90 μs | 1059.20 μs | 1135.20 MB/s |
-| `decrypt_chunk` | 1 MB | 723.00 μs | 896.40 μs | 1383.13 MB/s |
-| `encrypt_chunk` | 4 MB | 2683.20 μs | 3146.60 μs | 1490.76 MB/s |
-| `decrypt_chunk` | 4 MB | 2658.80 μs | 2678.50 μs | 1504.44 MB/s |
-| `encrypt_chunk` | 16 MB | 10543.30 μs | 11821.10 μs | 1517.55 MB/s |
-| `decrypt_chunk` | 16 MB | 10669.50 μs | 11022.40 μs | 1499.60 MB/s |
+| `encrypt_chunk` | 4 KB | 3.30 μs | 30.90 μs | 1183.71 MB/s |
+| `decrypt_chunk` | 4 KB | 3.40 μs | 4.00 μs | 1148.90 MB/s |
+| `encrypt_chunk` | 64 KB | 38.30 μs | 67.00 μs | 1631.85 MB/s |
+| `decrypt_chunk` | 64 KB | 38.10 μs | 63.30 μs | 1640.42 MB/s |
+| `encrypt_chunk` | 1 MB | 918.80 μs | 1059.40 μs | 1088.38 MB/s |
+| `decrypt_chunk` | 1 MB | 850.30 μs | 982.10 μs | 1176.06 MB/s |
+| `encrypt_chunk` | 4 MB | 3198.30 μs | 3551.40 μs | 1250.66 MB/s |
+| `decrypt_chunk` | 4 MB | 2838.80 μs | 2964.20 μs | 1409.05 MB/s |
+| `encrypt_chunk` | 16 MB | 11440.20 μs | 12715.80 μs | 1398.58 MB/s |
+| `decrypt_chunk` | 16 MB | 11455.20 μs | 12889.30 μs | 1396.75 MB/s |
 
 #### Competitor Comparison (1 GB Single-Threaded)
 All baseline timings measured dynamically on the same AMD Ryzen 5 7500F test system:
-- **Vollcrypt File:** 6.76 s (measured)
-- **OpenSSL Baseline:** 0.78 s (measured on device)
-- **Age Baseline:** 1.63 s (measured on device)
+- **Vollcrypt File:** 0.75 s (measured)
+- **OpenSSL Baseline:** 0.77 s (measured on device)
+- **Age Baseline:** 1.62 s (measured on device)
 
 ### Benchmark CLI
 
