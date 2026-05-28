@@ -1,0 +1,225 @@
+#[cfg(test)]
+mod tests {
+    use vollcrypt_files_core::*;
+
+    #[test]
+    fn test_boundary_sizes() {
+        let dek = [0u8; 32];
+        let file_id = [0u8; 16];
+
+        // 0 byte plaintext
+        let res_0 = encrypt_chunk(&dek, &file_id, 0, &[]);
+        assert!(res_0.is_ok());
+        let env_0 = res_0.unwrap();
+        assert_eq!(decrypt_chunk(&dek, &file_id, 0, &env_0).unwrap().len(), 0);
+
+        // 1 byte plaintext
+        let res_1 = encrypt_chunk(&dek, &file_id, 0, &[42]);
+        assert!(res_1.is_ok());
+        let env_1 = res_1.unwrap();
+        assert_eq!(decrypt_chunk(&dek, &file_id, 0, &env_1).unwrap(), vec![42]);
+
+        // Boundary chunk sizes
+        let chunk_size = 64 * 1024;
+        
+        // chunk_size - 1
+        let pt_minus_1 = vec![1u8; chunk_size - 1];
+        let env = encrypt_chunk(&dek, &file_id, 0, &pt_minus_1).unwrap();
+        assert_eq!(decrypt_chunk(&dek, &file_id, 0, &env).unwrap(), pt_minus_1);
+
+        // chunk_size
+        let pt_exact = vec![2u8; chunk_size];
+        let env = encrypt_chunk(&dek, &file_id, 0, &pt_exact).unwrap();
+        assert_eq!(decrypt_chunk(&dek, &file_id, 0, &env).unwrap(), pt_exact);
+
+        // chunk_size + 1 (split into two chunks)
+        let pt_plus_1 = vec![3u8; chunk_size + 1];
+        let env_a = encrypt_chunk(&dek, &file_id, 0, &pt_plus_1[..chunk_size]).unwrap();
+        let env_b = encrypt_chunk(&dek, &file_id, 1, &pt_plus_1[chunk_size..]).unwrap();
+        assert_eq!(decrypt_chunk(&dek, &file_id, 0, &env_a).unwrap().len(), chunk_size);
+        assert_eq!(decrypt_chunk(&dek, &file_id, 1, &env_b).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_extreme_values() {
+        // chunk_size = 1 byte
+        let dek = [0u8; 32];
+        let file_id = [0u8; 16];
+        let pt = vec![7u8; 1];
+        let env = encrypt_chunk(&dek, &file_id, 0, &pt).unwrap();
+        assert_eq!(decrypt_chunk(&dek, &file_id, 0, &env).unwrap(), pt);
+
+        // Header with chunk_size = 4 GB (maximum u32)
+        let header = Header {
+            version: 1,
+            mode: Mode::Password,
+            cipher_id: CipherId::Aes256Gcm,
+            file_id,
+            chunk_size: u32::MAX,
+            plaintext_size: 100,
+            merkle_root: [0u8; 32],
+            wraps: vec![WrapEntry::PasswordPbkdf2 {
+                iterations: 1000,
+                salt: [0u8; 16],
+                wrapped_dek: [0u8; 40],
+            }],
+            signed_metadata: None,
+            signature: None,
+        };
+        let serialized = header.write();
+        let (parsed, len) = Header::parse(&serialized).unwrap();
+        assert_eq!(parsed.chunk_size, u32::MAX);
+        assert_eq!(len, serialized.len());
+    }
+
+    #[test]
+    fn test_manifest_extremes() {
+        let group_id = [0u8; 16];
+        let founder_id = [1u8; 16];
+        let (admin_pk, admin_sk) = ed25519_keypair_generate();
+        let (rec_pk, _) = generate_recipient_keypair();
+        let gk_wrap = wrap_key_to_recipient(&[0u8; 32], founder_id, 1, &rec_pk).unwrap();
+
+        // 0 members manifest (just genesis founder)
+        let mut manifest = GroupManifest::genesis(
+            group_id,
+            founder_id,
+            &admin_sk,
+            admin_pk,
+            rec_pk.clone(),
+            gk_wrap.clone(),
+        );
+        assert_eq!(manifest.current_members().len(), 1);
+        assert!(manifest.verify().is_ok());
+
+        // Add member twice (duplicate handling)
+        let member_id = [2u8; 16];
+        manifest.add_member(&admin_sk, member_id, admin_pk, rec_pk.clone(), gk_wrap.clone()).unwrap();
+        // Try adding the same member again
+        let res_dup = manifest.add_member(&admin_sk, member_id, admin_pk, rec_pk.clone(), gk_wrap.clone());
+        assert!(res_dup.is_ok());
+        let active = manifest.current_members();
+        assert_eq!(active.len(), 2);
+
+        // Remove members sequentially until empty
+        manifest.remove_member(&admin_sk, member_id).unwrap();
+        manifest.remove_member(&admin_sk, founder_id).unwrap();
+        assert!(manifest.current_members().is_empty());
+    }
+
+    #[test]
+    fn test_group_key_extremes() {
+        let group_id = [0u8; 16];
+        let founder_id = [1u8; 16];
+        let (admin_pk, admin_sk) = ed25519_keypair_generate();
+        let (rec_pk, _) = generate_recipient_keypair();
+        let gk_wrap = wrap_key_to_recipient(&[0u8; 32], founder_id, 1, &rec_pk).unwrap();
+
+        let mut manifest = GroupManifest::genesis(
+            group_id,
+            founder_id,
+            &admin_sk,
+            admin_pk,
+            rec_pk.clone(),
+            gk_wrap.clone(),
+        );
+
+        // 5 Rotations and some shredding in between to test mixed valid/shredded versions
+        for version in 2..=6 {
+            let new_gk = [version as u8; 32];
+            manifest.rotate_group_key(&new_gk, &admin_pk, &admin_sk, version as u64).unwrap();
+            
+            if version == 3 || version == 5 {
+                manifest.shred_group_key(version - 1, "Shredded for test", &admin_pk, &admin_sk, version as u64).unwrap();
+            }
+        }
+
+        assert_eq!(manifest.current_gk_version(), 6);
+        assert!(manifest.is_version_shredded(2));
+        assert!(manifest.is_version_shredded(4));
+        assert!(!manifest.is_version_shredded(5));
+        assert!(manifest.verify().is_ok());
+    }
+
+    #[test]
+    fn test_wrap_entry_extremes() {
+        // Header with 0 wraps (degenerate/shredded)
+        let file_id = [0u8; 16];
+        let header_0 = Header {
+            version: 1,
+            mode: Mode::Password,
+            cipher_id: CipherId::Aes256Gcm,
+            file_id,
+            chunk_size: 1024,
+            plaintext_size: 100,
+            merkle_root: [0u8; 32],
+            wraps: vec![],
+            signed_metadata: None,
+            signature: None,
+        };
+        let serialized_0 = header_0.write();
+        let (parsed_0, _) = Header::parse(&serialized_0).unwrap();
+        assert_eq!(parsed_0.wraps.len(), 0);
+
+        // Header with 100 wraps
+        let wraps_100 = vec![WrapEntry::PasswordPbkdf2 {
+            iterations: 1000,
+            salt: [0u8; 16],
+            wrapped_dek: [0u8; 40],
+        }; 100];
+        let header_100 = Header {
+            version: 1,
+            mode: Mode::Recipient,
+            cipher_id: CipherId::Aes256Gcm,
+            file_id,
+            chunk_size: 1024,
+            plaintext_size: 100,
+            merkle_root: [0u8; 32],
+            wraps: wraps_100,
+            signed_metadata: None,
+            signature: None,
+        };
+        let serialized_100 = header_100.write();
+        let (parsed_100, _) = Header::parse(&serialized_100).unwrap();
+        assert_eq!(parsed_100.wraps.len(), 100);
+
+        // Mixed wraps in the same header
+        let mixed_wraps = vec![
+            WrapEntry::PasswordPbkdf2 {
+                iterations: 1000,
+                salt: [1u8; 16],
+                wrapped_dek: [1u8; 40],
+            },
+            WrapEntry::PasswordArgon2id {
+                m_cost: 4096,
+                t_cost: 3,
+                p_cost: 1,
+                salt: [2u8; 16],
+                wrapped_dek: [2u8; 40],
+            },
+            WrapEntry::GroupWrap {
+                group_id: [3u8; 16],
+                gk_version: 1,
+                wrapped_dek: [3u8; 40],
+            }
+        ];
+        let header_mixed = Header {
+            version: 1,
+            mode: Mode::Recipient,
+            cipher_id: CipherId::Aes256Gcm,
+            file_id,
+            chunk_size: 1024,
+            plaintext_size: 100,
+            merkle_root: [0u8; 32],
+            wraps: mixed_wraps,
+            signed_metadata: None,
+            signature: None,
+        };
+        let serialized_mixed = header_mixed.write();
+        let (parsed_mixed, _) = Header::parse(&serialized_mixed).unwrap();
+        assert_eq!(parsed_mixed.wraps.len(), 3);
+        assert!(matches!(parsed_mixed.wraps[0], WrapEntry::PasswordPbkdf2 { .. }));
+        assert!(matches!(parsed_mixed.wraps[1], WrapEntry::PasswordArgon2id { .. }));
+        assert!(matches!(parsed_mixed.wraps[2], WrapEntry::GroupWrap { .. }));
+    }
+}

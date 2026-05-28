@@ -1,0 +1,17 @@
+[package]
+name = "vollcrypt-files-stress"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vollcrypt-files-core = { path = "../core" }
+proptest = "1"
+arbitrary = { version = "1", features = ["derive"] }
+sysinfo = "0.30"
+rand = "0.8"
+rayon = "1"
+subtle = "2"
+sha2 = "0.10"
+aes-gcm = "0.10"
+ed25519-dalek = { version = "2", features = ["fast"] }
+num_cpus = "1"
