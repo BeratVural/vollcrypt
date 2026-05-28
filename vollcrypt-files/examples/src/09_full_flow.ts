@@ -23,14 +23,14 @@ import {
 } from "@vollcrypt/files-node";
 
 async function main() {
-  console.log("=== Example 09: VollSign Compliant Enterprise End-to-End Document Lifecycle ===");
+  console.log("=== Example 09: DoccA Compliant Enterprise End-to-End Document Lifecycle ===");
 
   // 1. System Setup: KeyLog and Group/Organization Manifest
   const authorityKp = ed25519KeypairGenerate();
   const keyLog = KeyLog.create(authorityKp.publicKey);
 
   const groupId = Buffer.alloc(16);
-  groupId.write("VollSign_Org_001");
+  groupId.write("DoccA_Org_001");
   const gkV1 = generateGk();
 
   // Founder Member: Alice (Admin)
@@ -82,7 +82,7 @@ async function main() {
 
   // 2. Document Preparation and Encryption (3-page/chunk PDF Simulation)
   const pdfChunks = [
-    Buffer.from("PDF Page 1: Confidential Commercial Agreement Details. Party A: VollSign, Party B: Kanzlei."),
+    Buffer.from("PDF Page 1: Confidential Commercial Agreement Details. Party A: DoccA, Party B: OfficeB."),
     Buffer.from("PDF Page 2: Service Fees and Payment Terms. Stripe Integration Details."),
     Buffer.from("PDF Page 3: beA Safe-ID and Electronic Signature Protocol. ISO-27001 Standards.")
   ];
@@ -192,7 +192,7 @@ async function main() {
     console.log(`  Error Message: ${err.message}`);
   }
 
-  console.log("\nEnd-to-End VollSign Enterprise Document Lifecycle successfully simulated and verified.");
+  console.log("\nEnd-to-End DoccA Enterprise Document Lifecycle successfully simulated and verified.");
 }
 
 main().catch((err) => {

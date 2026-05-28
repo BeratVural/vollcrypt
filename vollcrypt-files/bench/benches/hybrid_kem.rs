@@ -1,7 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use vollcrypt_files_core::pqc::*;
 use vollcrypt_files_core::recipient::*;
-use vollcrypt_files_core::wrap::WrapEntry;
 
 fn bench_hybrid_kem_breakdown(c: &mut Criterion) {
     let mut g = c.benchmark_group("hybrid_kem_operations");
@@ -15,7 +14,7 @@ fn bench_hybrid_kem_breakdown(c: &mut Criterion) {
     });
 
     // 2. Classical ECDH alone
-    let (x_pk1, x_sk1) = x25519_keypair_generate();
+    let (_x_pk1, x_sk1) = x25519_keypair_generate();
     let (x_pk2, _x_sk2) = x25519_keypair_generate();
     g.bench_function("x25519_dh_only", |b| {
         b.iter(|| {
@@ -76,12 +75,12 @@ fn bench_pure_vs_hybrid(c: &mut Criterion) {
     // (ECDH -> HKDF -> AES-KW) against the hybrid wrap.
     let mut g = c.benchmark_group("pure_vs_hybrid");
 
-    let (x_pk, x_sk) = x25519_keypair_generate();
+    let (x_pk, _x_sk) = x25519_keypair_generate();
     let key = [0u8; 32];
 
     g.bench_function("pure_x25519_wrap_sim", |b| {
         b.iter(|| {
-            let (eph_pk, eph_sk) = x25519_keypair_generate();
+            let (_eph_pk, eph_sk) = x25519_keypair_generate();
             let ss = x25519_diffie_hellman(&eph_sk, &x_pk);
             let mut info = [0u8; 48];
             info[0..28].copy_from_slice(b"vollcrypt-file-hybrid-kem-v1");

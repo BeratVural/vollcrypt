@@ -222,4 +222,37 @@ mod tests {
         assert!(matches!(parsed_mixed.wraps[1], WrapEntry::PasswordArgon2id { .. }));
         assert!(matches!(parsed_mixed.wraps[2], WrapEntry::GroupWrap { .. }));
     }
+
+    #[test]
+    fn test_four_megabyte_chunk_size() {
+        let dek = [0u8; 32];
+        let file_id = [0u8; 16];
+        let chunk_size = 4 * 1024 * 1024; // 4 MB
+
+        let pt = vec![0xAB; chunk_size];
+        let env = encrypt_chunk(&dek, &file_id, 0, &pt).unwrap();
+        let dec = decrypt_chunk(&dek, &file_id, 0, &env).unwrap();
+        assert_eq!(dec, pt);
+
+        // Header check with 4 MB
+        let header = Header {
+            version: 1,
+            mode: Mode::Password,
+            cipher_id: CipherId::Aes256Gcm,
+            file_id,
+            chunk_size: chunk_size as u32,
+            plaintext_size: chunk_size as u64,
+            merkle_root: [0u8; 32],
+            wraps: vec![WrapEntry::PasswordPbkdf2 {
+                iterations: 1000,
+                salt: [0u8; 16],
+                wrapped_dek: [0u8; 40],
+            }],
+            signed_metadata: None,
+            signature: None,
+        };
+        let serialized = header.write();
+        let (parsed, _) = Header::parse(&serialized).unwrap();
+        assert_eq!(parsed.chunk_size, chunk_size as u32);
+    }
 }
