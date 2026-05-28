@@ -1,3 +1,4 @@
+use crate::padding::{pad_message_with_len, unpad_message_with_len};
 #[cfg(not(feature = "fast-aes"))]
 use aes_gcm::{
     Aes256Gcm, Nonce,
@@ -5,10 +6,9 @@ use aes_gcm::{
 };
 use rand::{RngCore, rngs::OsRng};
 use zeroize::Zeroize;
-use crate::padding::{pad_message_with_len, unpad_message_with_len};
 
 #[cfg(feature = "fast-aes")]
-use ring::aead::{Aad, LessSafeKey, Nonce as RingNonce, UnboundKey, AES_256_GCM};
+use ring::aead::{AES_256_GCM, Aad, LessSafeKey, Nonce as RingNonce, UnboundKey};
 
 /// Encrypts data using AES-256-GCM.
 /// Automatically generates a secure 12-byte random IV (nonce) and prepends it to the cipher text.
@@ -19,7 +19,10 @@ pub fn encrypt_aes256gcm(
     associated_data: Option<&[u8]>,
 ) -> Result<Vec<u8>, &'static str> {
     if key.len() != 32 {
-        log::error!("encrypt_aes256gcm: Invalid AES key length (expected 32, got {})", key.len());
+        log::error!(
+            "encrypt_aes256gcm: Invalid AES key length (expected 32, got {})",
+            key.len()
+        );
         return Err("Invalid AES key length, must be 32 bytes");
     }
 
@@ -28,7 +31,10 @@ pub fn encrypt_aes256gcm(
     let aad = associated_data.unwrap_or(b"");
     #[cfg(feature = "fast-aes")]
     {
-        log::debug!("encrypt_aes256gcm: Encrypting plaintext of length {}", plaintext.len());
+        log::debug!(
+            "encrypt_aes256gcm: Encrypting plaintext of length {}",
+            plaintext.len()
+        );
         let unbound = UnboundKey::new(&AES_256_GCM, key).map_err(|_| {
             log::error!("encrypt_aes256gcm: Failed to create AES cipher");
             "Failed to create AES cipher"
@@ -36,20 +42,24 @@ pub fn encrypt_aes256gcm(
         let key = LessSafeKey::new(unbound);
         let mut in_out = plaintext.to_vec();
         let nonce = RingNonce::assume_unique_for_key(nonce_bytes);
-        key.seal_in_place_append_tag(nonce, Aad::from(aad), &mut in_out).map_err(|_| {
-            log::error!("encrypt_aes256gcm: Encryption failed");
-            "Encryption failed"
-        })?;
+        key.seal_in_place_append_tag(nonce, Aad::from(aad), &mut in_out)
+            .map_err(|_| {
+                log::error!("encrypt_aes256gcm: Encryption failed");
+                "Encryption failed"
+            })?;
         let mut result = Vec::with_capacity(nonce_bytes.len() + in_out.len());
         result.extend_from_slice(&nonce_bytes);
         result.extend_from_slice(&in_out);
         nonce_bytes.zeroize();
-        return Ok(result);
+        Ok(result)
     }
 
     #[cfg(not(feature = "fast-aes"))]
     {
-        log::debug!("encrypt_aes256gcm: Encrypting plaintext of length {}", plaintext.len());
+        log::debug!(
+            "encrypt_aes256gcm: Encrypting plaintext of length {}",
+            plaintext.len()
+        );
         let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| {
             log::error!("encrypt_aes256gcm: Failed to create AES cipher");
             "Failed to create AES cipher"
@@ -67,7 +77,7 @@ pub fn encrypt_aes256gcm(
         result.extend_from_slice(&nonce_bytes);
         result.extend_from_slice(&ciphertext);
         nonce_bytes.zeroize();
-        return Ok(result);
+        Ok(result)
     }
 }
 
@@ -92,7 +102,10 @@ pub fn decrypt_aes256gcm(
 
     #[cfg(feature = "fast-aes")]
     {
-        log::debug!("decrypt_aes256gcm: Decrypting ciphertext of length {}", encrypted_data.len());
+        log::debug!(
+            "decrypt_aes256gcm: Decrypting ciphertext of length {}",
+            encrypted_data.len()
+        );
         let unbound = UnboundKey::new(&AES_256_GCM, key).map_err(|_| {
             log::error!("decrypt_aes256gcm: Failed to create AES cipher");
             "Failed to create AES cipher"
@@ -103,16 +116,21 @@ pub fn decrypt_aes256gcm(
             "Invalid nonce length"
         })?);
         let mut in_out = ciphertext.to_vec();
-        let plaintext = key.open_in_place(nonce, Aad::from(aad), &mut in_out).map_err(|_| {
-            log::error!("decrypt_aes256gcm: Decryption failed or MAC mismatch");
-            "Decryption failed or MAC mismatch"
-        })?;
-        return Ok(plaintext.to_vec());
+        let plaintext = key
+            .open_in_place(nonce, Aad::from(aad), &mut in_out)
+            .map_err(|_| {
+                log::error!("decrypt_aes256gcm: Decryption failed or MAC mismatch");
+                "Decryption failed or MAC mismatch"
+            })?;
+        Ok(plaintext.to_vec())
     }
 
     #[cfg(not(feature = "fast-aes"))]
     {
-        log::debug!("decrypt_aes256gcm: Decrypting ciphertext of length {}", encrypted_data.len());
+        log::debug!(
+            "decrypt_aes256gcm: Decrypting ciphertext of length {}",
+            encrypted_data.len()
+        );
         let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| {
             log::error!("decrypt_aes256gcm: Failed to create AES cipher");
             "Failed to create AES cipher"
@@ -126,7 +144,7 @@ pub fn decrypt_aes256gcm(
             log::error!("decrypt_aes256gcm: Decryption failed or MAC mismatch");
             "Decryption failed or MAC mismatch"
         })?;
-        return Ok(plaintext);
+        Ok(plaintext)
     }
 }
 
@@ -172,7 +190,10 @@ pub fn encrypt_aes256gcm_chunked(
         return Err("Invalid chunk size, must be greater than 0");
     }
     if key.len() != 32 {
-        log::error!("encrypt_aes256gcm_chunked: Invalid AES key length (expected 32, got {})", key.len());
+        log::error!(
+            "encrypt_aes256gcm_chunked: Invalid AES key length (expected 32, got {})",
+            key.len()
+        );
         return Err("Invalid AES key length, must be 32 bytes");
     }
 
@@ -180,7 +201,7 @@ pub fn encrypt_aes256gcm_chunked(
     let chunk_count = if total_len == 0 {
         1usize
     } else {
-        (total_len + chunk_size - 1) / chunk_size
+        total_len.div_ceil(chunk_size)
     };
 
     if chunk_count > u32::MAX as usize {
@@ -193,7 +214,11 @@ pub fn encrypt_aes256gcm_chunked(
 
     for i in 0..chunk_count {
         let start = i * chunk_size;
-        let end = if total_len == 0 { 0 } else { (start + chunk_size).min(total_len) };
+        let end = if total_len == 0 {
+            0
+        } else {
+            (start + chunk_size).min(total_len)
+        };
         let chunk = &plaintext[start..end];
         let mut aad = build_chunk_aad(associated_data, i as u32);
         let encrypted = encrypt_aes256gcm(key, chunk, Some(&aad))?;
@@ -226,7 +251,12 @@ pub fn decrypt_aes256gcm_chunked(
         return Err("Encrypted data too short");
     }
 
-    let chunk_count = u32::from_be_bytes([encrypted_data[0], encrypted_data[1], encrypted_data[2], encrypted_data[3]]) as usize;
+    let chunk_count = u32::from_be_bytes([
+        encrypted_data[0],
+        encrypted_data[1],
+        encrypted_data[2],
+        encrypted_data[3],
+    ]) as usize;
     if chunk_count == 0 {
         log::error!("decrypt_aes256gcm_chunked: Invalid chunk count");
         return Err("Invalid chunk count");
@@ -361,7 +391,6 @@ mod tests {
         let decrypted = decrypt_aes256gcm_chunked_padded(&key, &encrypted, None).unwrap();
         assert_eq!(decrypted, plaintext);
     }
-
 
     #[test]
     fn test_aes_chunked_empty_roundtrip() {

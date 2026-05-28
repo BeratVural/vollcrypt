@@ -1,8 +1,8 @@
-use sha2::{Sha256, Digest};
-use zeroize::Zeroize;
-use serde::{Serialize, Deserialize};
-use crate::ratchet::CryptoError;
 use crate::keys::{sign_message, verify_signature};
+use crate::ratchet::CryptoError;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use zeroize::Zeroize;
 
 /// Genesis kaydının prev_hash alanı için sabit değer.
 /// Zincirin başlangıcını işaretler.
@@ -20,7 +20,7 @@ pub enum KeyAction {
 }
 
 mod array64 {
-    use serde::{Deserializer, Serializer, Deserialize};
+    use serde::{Deserialize, Deserializer, Serializer};
     pub fn serialize<S>(arr: &[u8; 64], serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -97,7 +97,7 @@ impl KeyLogEntry {
         body.extend_from_slice(&self.timestamp.to_be_bytes());
         body.extend_from_slice(&self.prev_entry_hash);
         body.push(match self.action {
-            KeyAction::Add    => 0x01,
+            KeyAction::Add => 0x01,
             KeyAction::Update => 0x02,
             KeyAction::Revoke => 0x03,
         });
@@ -121,11 +121,7 @@ impl KeyLogEntry {
     ///                  Genellikle bu kaydın `public_key` alanının kendisi
     ///                  (Add/Update için) veya önceki geçerli key (Revoke için).
     pub fn verify_signature(&self, verifying_key: &[u8; 32]) -> Result<bool, CryptoError> {
-        let is_valid = verify_signature(
-            verifying_key,
-            &self.compute_entry_body(),
-            &self.signature,
-        );
+        let is_valid = verify_signature(verifying_key, &self.compute_entry_body(), &self.signature);
         if is_valid {
             Ok(true)
         } else {
@@ -165,11 +161,12 @@ pub fn create_entry(
     };
 
     let body = entry.compute_entry_body();
-    
+
     // Copy secret and zeroize it after use
     let mut secret = [0u8; 32];
     secret.copy_from_slice(signing_key);
-    let signature = sign_message(&secret, &body).map_err(|_| CryptoError::RatchetComputationFailed)?;
+    let signature =
+        sign_message(&secret, &body).map_err(|_| CryptoError::RatchetComputationFailed)?;
     secret.zeroize();
 
     let mut sig_array = [0u8; 64];
@@ -187,7 +184,9 @@ impl Default for KeyLog {
 impl KeyLog {
     /// Boş log oluşturur.
     pub fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     /// Zincire yeni kayıt ekler.
@@ -203,7 +202,7 @@ impl KeyLog {
         if entry.prev_entry_hash != expected_prev_hash {
             return Err(CryptoError::KeyLogHashMismatch);
         }
-        
+
         // Also check if timestamp is monotonic
         if self
             .entries
@@ -225,7 +224,7 @@ impl KeyLog {
     /// Zincirin belirli bir noktasına kadar olan kısmını doğrular.
     pub fn verify_up_to(&self, limit: usize) -> Result<(), CryptoError> {
         let mut current_hash = GENESIS_HASH;
-        
+
         for (i, entry) in self.entries.iter().take(limit).enumerate() {
             if entry.prev_entry_hash != current_hash {
                 return Err(CryptoError::KeyLogChainBroken { at_index: i });
@@ -235,7 +234,8 @@ impl KeyLog {
                 // Find previous valid key for the same user
                 let mut prev_key = None;
                 for prev_entry in self.entries[..i].iter().rev() {
-                    if prev_entry.user_id == entry.user_id && prev_entry.action != KeyAction::Revoke {
+                    if prev_entry.user_id == entry.user_id && prev_entry.action != KeyAction::Revoke
+                    {
                         prev_key = Some(&prev_entry.public_key);
                         break;
                     }
@@ -248,11 +248,8 @@ impl KeyLog {
                 &entry.public_key
             };
 
-            let is_valid = verify_signature(
-                verifying_key,
-                &entry.compute_entry_body(),
-                &entry.signature,
-            );
+            let is_valid =
+                verify_signature(verifying_key, &entry.compute_entry_body(), &entry.signature);
 
             if !is_valid {
                 return Err(CryptoError::KeyLogInvalidSignature { at_index: i });
@@ -279,15 +276,14 @@ impl KeyLog {
 
     /// Belirli bir kullanıcının tüm key değişiklik geçmişini döndürür.
     pub fn history_for(&self, user_id: &[u8]) -> Vec<&KeyLogEntry> {
-        self.entries.iter().filter(|e| e.user_id == user_id).collect()
+        self.entries
+            .iter()
+            .filter(|e| e.user_id == user_id)
+            .collect()
     }
 
     /// Belirli bir timestamp anında geçerli olan public key'i döndürür.
-    pub fn key_at_timestamp(
-        &self,
-        user_id: &[u8],
-        timestamp: u64,
-    ) -> Option<&[u8; 32]> {
+    pub fn key_at_timestamp(&self, user_id: &[u8], timestamp: u64) -> Option<&[u8; 32]> {
         let mut current_key = None;
         for entry in &self.entries {
             if entry.user_id == user_id {
@@ -311,7 +307,7 @@ mod tests {
 
     fn make_entry(
         user_id: &[u8],
-        keypair: &(Vec<u8>, Vec<u8>),  // (secret, public)
+        keypair: &(Vec<u8>, Vec<u8>), // (secret, public)
         prev_hash: &[u8; 32],
         action: KeyAction,
         timestamp: u64,
@@ -396,7 +392,10 @@ mod tests {
         let mut expected_pk = [0u8; 32];
         expected_pk.copy_from_slice(&kp2.1);
         let current = log.current_key_for(b"alice").unwrap();
-        assert_eq!(current, &expected_pk, "Güncel key en son Update'teki key olmalı");
+        assert_eq!(
+            current, &expected_pk,
+            "Güncel key en son Update'teki key olmalı"
+        );
     }
 
     #[test]
@@ -410,8 +409,10 @@ mod tests {
         log.append(e0).unwrap();
         log.append(e1).unwrap();
 
-        assert!(log.current_key_for(b"alice").is_none(),
-            "Revoke sonrası current_key None olmalı");
+        assert!(
+            log.current_key_for(b"alice").is_none(),
+            "Revoke sonrası current_key None olmalı"
+        );
     }
 
     #[test]
@@ -429,14 +430,14 @@ mod tests {
 
         let mut expected_pk1 = [0u8; 32];
         expected_pk1.copy_from_slice(&kp1.1);
-        
+
         // timestamp=1500: kp1 geçerliydi
         let key_before = log.key_at_timestamp(b"alice", 1500).unwrap();
         assert_eq!(key_before, &expected_pk1);
 
         let mut expected_pk2 = [0u8; 32];
         expected_pk2.copy_from_slice(&kp2.1);
-        
+
         // timestamp=4000: kp2 geçerli
         let key_after = log.key_at_timestamp(b"alice", 4000).unwrap();
         assert_eq!(key_after, &expected_pk2);
@@ -457,15 +458,15 @@ mod tests {
         assert!(log.verify_chain().is_ok());
 
         let alice_key = log.current_key_for(b"alice").unwrap();
-        let bob_key   = log.current_key_for(b"bob").unwrap();
+        let bob_key = log.current_key_for(b"bob").unwrap();
 
         let mut expected_pk_a = [0u8; 32];
         expected_pk_a.copy_from_slice(&kp_a.1);
         let mut expected_pk_b = [0u8; 32];
         expected_pk_b.copy_from_slice(&kp_b.1);
-        
+
         assert_eq!(alice_key, &expected_pk_a);
-        assert_eq!(bob_key,   &expected_pk_b);
+        assert_eq!(bob_key, &expected_pk_b);
         assert_ne!(alice_key, bob_key);
     }
 
@@ -496,7 +497,10 @@ mod tests {
     fn test_entry_hash_deterministic() {
         let kp = generate_ed25519_keypair();
         let e = make_entry(b"alice", &kp, &GENESIS_HASH, KeyAction::Add, 1000);
-        assert_eq!(e.compute_hash(), e.compute_hash(),
-            "Entry hash deterministik olmalı");
+        assert_eq!(
+            e.compute_hash(),
+            e.compute_hash(),
+            "Entry hash deterministik olmalı"
+        );
     }
 }

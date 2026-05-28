@@ -27,13 +27,13 @@ pub fn unpack_envelope(envelope: &[u8]) -> Result<(u32, [u8; 32], Vec<u8>), &'st
     if envelope.len() < 4 + 12 + 32 + 16 {
         return Err("Envelope too small");
     }
-    
+
     let mut window_index_bytes = [0u8; 4];
     window_index_bytes.copy_from_slice(&envelope[0..4]);
     let window_index = u32::from_be_bytes(window_index_bytes);
 
     let iv = &envelope[4..16];
-    
+
     let mut aad_hash = [0u8; 32];
     aad_hash.copy_from_slice(&envelope[16..48]);
 
@@ -57,7 +57,7 @@ mod tests {
         let aad_hash = [0x55u8; 32];
         let mut mock_encrypted_blob = vec![0x00u8; 12]; // IV
         mock_encrypted_blob.extend_from_slice(b"ciphertext_body!"); // Cipher + Tag (16)
-        
+
         let envelope = pack_envelope(window_index, &aad_hash, &mock_encrypted_blob).unwrap();
         assert_eq!(envelope.len(), 4 + 12 + 32 + 16);
 

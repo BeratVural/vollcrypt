@@ -1,5 +1,5 @@
-use sha2::{Sha256, Digest};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 /// Numeric representation of the verification code.
 /// 60 digits, in 12 groups (5 digits each), separated by spaces.
@@ -31,7 +31,7 @@ pub struct EmojiVerificationCode {
 #[derive(Debug, Clone, Serialize)]
 pub struct VerificationCode {
     pub numeric: NumericVerificationCode,
-    pub emoji:   EmojiVerificationCode,
+    pub emoji: EmojiVerificationCode,
     /// Raw 32-byte fingerprint (for high-level use)
     pub fingerprint: [u8; 32],
 }
@@ -42,14 +42,10 @@ pub struct VerificationCode {
 ///   - Easily distinguishable from each other
 ///   - Culturally neutral
 pub const EMOJI_PALETTE: [&str; 64] = [
-    "🔥", "💧", "🌊", "⚡", "🎯", "🦋", "🌸", "🍀",
-    "🌙", "☀️", "🎵", "🎸", "🎹", "🎺", "🎻", "🦁",
-    "🐯", "🐻", "🦊", "🐺", "🌵", "🍄", "🌴", "🌺",
-    "🍁", "❄️", "🌈", "🔮", "💎", "🗝️", "⚓", "🧭",
-    "🏔️", "🌋", "🏝️", "🌌", "🎃", "🎄", "🎋", "🎍",
-    "🎐", "🎑", "🎀", "🎁", "🎈", "🎉", "🎊", "🎠",
-    "🚀", "🛸", "⛵", "🚂", "🏆", "🥇", "🎲", "�",
-    "🧩", "🎭", "🎨", "🖼️", "📿", "🧿", "🪬", "🔑",
+    "🔥", "💧", "🌊", "⚡", "🎯", "🦋", "🌸", "🍀", "🌙", "☀️", "🎵", "🎸", "🎹", "🎺", "🎻", "🦁",
+    "🐯", "🐻", "🦊", "🐺", "🌵", "🍄", "🌴", "🌺", "🍁", "❄️", "🌈", "🔮", "💎", "🗝️", "⚓", "🧭",
+    "🏔️", "🌋", "🏝️", "🌌", "🎃", "🎄", "🎋", "🎍", "🎐", "🎑", "🎀", "🎁", "🎈", "🎉", "🎊", "🎠",
+    "🚀", "🛸", "⛵", "🚂", "🏆", "🥇", "🎲", "�", "🧩", "🎭", "🎨", "🖼️", "📿", "🧿", "🪬", "🔑",
 ];
 
 /// Generates a verification code from two users' public keys.
@@ -93,11 +89,7 @@ pub fn generate_verification_code(
 ///   max(key_a, key_b) ||
 ///   conversation_id
 /// )
-pub fn compute_fingerprint(
-    key_a: &[u8; 32],
-    key_b: &[u8; 32],
-    conversation_id: &[u8],
-) -> [u8; 32] {
+pub fn compute_fingerprint(key_a: &[u8; 32], key_b: &[u8; 32], conversation_id: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(b"vollchat-key-verification-v1");
 
@@ -120,7 +112,7 @@ pub fn compute_fingerprint(
 /// 1. fingerprint (32 bytes = 256 bits)
 /// 2. Map every 5 bits → 0-99999 range (256 bits / ~4.4 bits/digit ≈ 60 digits)
 ///    Simpler way: every byte pair (2 bytes = 16 bits) → 5 digits (00000-65535, mod 100000)
-///    16 bytes → 8 groups × 5 digits = 40 digits... 
+///    16 bytes → 8 groups × 5 digits = 40 digits...
 ///    32 bytes → every 2 bytes = 1 group: 16 groups × 4 digits (0000-9999) = 64 digits → take 60
 ///
 ///    Exact algorithm:
@@ -130,10 +122,10 @@ pub fn compute_fingerprint(
 ///    - groups: split 60 digits into 12 groups (5 digits each)
 pub fn fingerprint_to_numeric(fingerprint: &[u8; 32]) -> NumericVerificationCode {
     let mut digits = String::with_capacity(75);
-    
+
     // Create 15 chunks of 2 bytes using 30 bytes
     for i in 0..15 {
-        let chunk_bytes = [fingerprint[2*i], fingerprint[2*i+1]];
+        let chunk_bytes = [fingerprint[2 * i], fingerprint[2 * i + 1]];
         let chunk_val = u16::from_be_bytes(chunk_bytes);
         // Reduce to 0-99999 range
         let val = (chunk_val as u32) % 100000;
@@ -143,11 +135,11 @@ pub fn fingerprint_to_numeric(fingerprint: &[u8; 32]) -> NumericVerificationCode
 
     // Take the first 60 digits
     let digits = digits[..60].to_string();
-    
+
     // Group (12 groups, 5 digits each)
     let mut groups = Vec::new();
     for i in 0..12 {
-        groups.push(digits[i*5..(i+1)*5].to_string());
+        groups.push(digits[i * 5..(i + 1) * 5].to_string());
     }
 
     let formatted = groups.join(" ");
@@ -169,34 +161,38 @@ pub fn fingerprint_to_numeric(fingerprint: &[u8; 32]) -> NumericVerificationCode
 /// 3. groups: split 20 emojis into 4 groups (5 emojis each)
 pub fn fingerprint_to_emoji(fingerprint: &[u8; 32]) -> EmojiVerificationCode {
     let mut emojis = Vec::new();
-    
+
     // Process as bit stream
     // Total 256 bits. One emoji for every 6 bits.
     // 20 emojis * 6 bits = 120 bits. (First 15 bytes are sufficient)
-    
+
     // Simple bit reading logic:
     // 32 bytes = 256 bits
     // Bit range for i-th emoji: [i*6 .. i*6+6]
-    
+
     for i in 0..20 {
         let bit_offset = i * 6;
         let byte_index = bit_offset / 8;
         let bit_index = bit_offset % 8; // start bit within byte (MSB=0)
-        
+
         // We might need to read at least 2 bytes (if straddling boundary)
         // fingerprint[byte_index] and fingerprint[byte_index+1]
-        
+
         let b0 = fingerprint[byte_index];
-        let b1 = if byte_index + 1 < 32 { fingerprint[byte_index + 1] } else { 0 };
-        
+        let b1 = if byte_index + 1 < 32 {
+            fingerprint[byte_index + 1]
+        } else {
+            0
+        };
+
         // 16-bit window: [b0][b1]
         let word = ((b0 as u16) << 8) | (b1 as u16);
-        
+
         // Extract relevant 6 bits.
         // Shift amount = 16 - 6 - bit_index = 10 - bit_index
         let shift = 10 - bit_index;
         let index = (word >> shift) & 0x3F; // 6-bit mask (63)
-        
+
         emojis.push(EMOJI_PALETTE[index as usize]);
     }
 
@@ -246,38 +242,42 @@ mod tests {
         // generate(alice, bob) == generate(bob, alice)
         // Same code regardless of which party calculates it
         let alice = get_keypair();
-        let bob   = get_keypair();
-        let conv  = b"conv-001";
+        let bob = get_keypair();
+        let conv = b"conv-001";
 
         let code_ab = generate_verification_code(&alice.1, &bob.1, conv);
         let code_ba = generate_verification_code(&bob.1, &alice.1, conv);
 
-        assert_eq!(code_ab.fingerprint, code_ba.fingerprint,
-            "Alice->Bob and Bob->Alice must produce the same code");
+        assert_eq!(
+            code_ab.fingerprint, code_ba.fingerprint,
+            "Alice->Bob and Bob->Alice must produce the same code"
+        );
         assert_eq!(code_ab.numeric.digits, code_ba.numeric.digits);
         assert_eq!(code_ab.emoji.formatted, code_ba.emoji.formatted);
     }
 
     #[test]
     fn test_different_keys_different_codes() {
-        let alice   = get_keypair();
-        let bob     = get_keypair();
+        let alice = get_keypair();
+        let bob = get_keypair();
         let mallory = get_keypair();
         let conv = b"conv-001";
 
-        let code_real  = generate_verification_code(&alice.1, &bob.1, conv);
-        let code_mitm  = generate_verification_code(&alice.1, &mallory.1, conv);
+        let code_real = generate_verification_code(&alice.1, &bob.1, conv);
+        let code_mitm = generate_verification_code(&alice.1, &mallory.1, conv);
 
-        assert_ne!(code_real.fingerprint, code_mitm.fingerprint,
-            "Different keys (MITM) must produce different codes");
+        assert_ne!(
+            code_real.fingerprint, code_mitm.fingerprint,
+            "Different keys (MITM) must produce different codes"
+        );
     }
 
     #[test]
     fn test_deterministic() {
         // Same inputs must always produce the same code
         let alice = get_keypair();
-        let bob   = get_keypair();
-        let conv  = b"conv-001";
+        let bob = get_keypair();
+        let conv = b"conv-001";
 
         let code1 = generate_verification_code(&alice.1, &bob.1, conv);
         let code2 = generate_verification_code(&alice.1, &bob.1, conv);
@@ -291,28 +291,35 @@ mod tests {
         // Same key pair, different conversation -> different code
         // (Code from one conversation cannot be ported to another)
         let alice = get_keypair();
-        let bob   = get_keypair();
+        let bob = get_keypair();
 
         let code_c1 = generate_verification_code(&alice.1, &bob.1, b"conv-001");
         let code_c2 = generate_verification_code(&alice.1, &bob.1, b"conv-002");
 
-        assert_ne!(code_c1.fingerprint, code_c2.fingerprint,
-            "Different conversation ID must produce different codes");
+        assert_ne!(
+            code_c1.fingerprint, code_c2.fingerprint,
+            "Different conversation ID must produce different codes"
+        );
     }
 
     #[test]
     fn test_numeric_code_format() {
         let alice = get_keypair();
-        let bob   = get_keypair();
-        let code  = generate_verification_code(&alice.1, &bob.1, b"conv");
+        let bob = get_keypair();
+        let code = generate_verification_code(&alice.1, &bob.1, b"conv");
 
         // 60 digits (no spaces)
-        assert_eq!(code.numeric.digits.len(), 60,
-            "Numeric code must contain 60 digits");
+        assert_eq!(
+            code.numeric.digits.len(),
+            60,
+            "Numeric code must contain 60 digits"
+        );
 
         // All characters are digits
-        assert!(code.numeric.digits.chars().all(|c| c.is_ascii_digit()),
-            "All characters must be digits");
+        assert!(
+            code.numeric.digits.chars().all(|c| c.is_ascii_digit()),
+            "All characters must be digits"
+        );
 
         // 12 groups * 5 digits
         assert_eq!(code.numeric.groups.len(), 12);
@@ -324,16 +331,19 @@ mod tests {
     #[test]
     fn test_emoji_code_format() {
         let alice = get_keypair();
-        let bob   = get_keypair();
-        let code  = generate_verification_code(&alice.1, &bob.1, b"conv");
+        let bob = get_keypair();
+        let code = generate_verification_code(&alice.1, &bob.1, b"conv");
 
         // 20 emojis
-        assert_eq!(code.emoji.emojis.len(), 20,
-            "Emoji code must contain 20 emojis");
+        assert_eq!(
+            code.emoji.emojis.len(),
+            20,
+            "Emoji code must contain 20 emojis"
+        );
 
         // 4 groups * 5 emojis
         assert_eq!(code.emoji.groups.len(), 4);
-        
+
         // Check total length via emojis vector
         assert_eq!(code.emoji.emojis.len(), 20);
     }
@@ -341,27 +351,31 @@ mod tests {
     #[test]
     fn test_verify_codes_match_positive() {
         let alice = get_keypair();
-        let bob   = get_keypair();
-        let conv  = b"conv-001";
+        let bob = get_keypair();
+        let conv = b"conv-001";
 
         let code_alice = generate_verification_code(&alice.1, &bob.1, conv);
-        let code_bob   = generate_verification_code(&bob.1, &alice.1, conv);
+        let code_bob = generate_verification_code(&bob.1, &alice.1, conv);
 
-        assert!(verify_codes_match(&code_alice, &code_bob),
-            "Codes must match for the same key pair");
+        assert!(
+            verify_codes_match(&code_alice, &code_bob),
+            "Codes must match for the same key pair"
+        );
     }
 
     #[test]
     fn test_verify_codes_match_negative() {
-        let alice   = get_keypair();
-        let bob     = get_keypair();
+        let alice = get_keypair();
+        let bob = get_keypair();
         let mallory = get_keypair();
 
         let code_real = generate_verification_code(&alice.1, &bob.1, b"conv");
         let code_fake = generate_verification_code(&alice.1, &mallory.1, b"conv");
 
-        assert!(!verify_codes_match(&code_real, &code_fake),
-            "Different key pairs must not match");
+        assert!(
+            !verify_codes_match(&code_real, &code_fake),
+            "Different key pairs must not match"
+        );
     }
 
     #[test]
@@ -369,8 +383,11 @@ mod tests {
         // Dictionary must not contain duplicates
         let mut seen = std::collections::HashSet::new();
         for emoji in EMOJI_PALETTE.iter() {
-            assert!(seen.insert(*emoji),
-                "Duplicate found in emoji dictionary: {}", emoji);
+            assert!(
+                seen.insert(*emoji),
+                "Duplicate found in emoji dictionary: {}",
+                emoji
+            );
         }
         assert_eq!(seen.len(), 64);
     }
@@ -379,10 +396,11 @@ mod tests {
     fn test_same_key_pair_different_length_conversation_ids() {
         // Different length conversation_ids must work consistently
         let alice = get_keypair();
-        let bob   = get_keypair();
+        let bob = get_keypair();
 
         let code_short = generate_verification_code(&alice.1, &bob.1, b"a");
-        let code_long  = generate_verification_code(&alice.1, &bob.1, b"a-very-long-conversation-id-string");
+        let code_long =
+            generate_verification_code(&alice.1, &bob.1, b"a-very-long-conversation-id-string");
 
         // Both are valid (no panic, correct format)
         assert_eq!(code_short.numeric.digits.len(), 60);

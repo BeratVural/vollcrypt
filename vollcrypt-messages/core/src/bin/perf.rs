@@ -1,17 +1,19 @@
-use std::time::{Duration, Instant};
-use rand::{RngCore, rngs::OsRng};
+#![allow(clippy::all)]
 #[cfg(not(feature = "fast-aes"))]
-use aes_gcm::{Aes256Gcm, Nonce, aead::{AeadInPlace, KeyInit}};
-#[cfg(feature = "fast-aes")]
-use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM};
-use vollcrypt_core::{
-    derive_pbkdf2, derive_hkdf,
-    ml_kem_keygen, ml_kem_encapsulate, ml_kem_decapsulate,
-    generate_ratchet_keypair, ratchet_srk_sender,
-    generate_x25519_keypair, generate_ed25519_keypair,
-    sign_message, verify_signature, mnemonic_to_seed,
+use aes_gcm::{
+    Aes256Gcm, Nonce,
+    aead::{AeadInPlace, KeyInit},
 };
+use rand::{RngCore, rngs::OsRng};
+#[cfg(feature = "fast-aes")]
+use ring::aead::{AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
+use std::time::{Duration, Instant};
 use vollcrypt_core::sealed_sender::{seal, unseal};
+use vollcrypt_core::{
+    derive_hkdf, derive_pbkdf2, generate_ed25519_keypair, generate_ratchet_keypair,
+    generate_x25519_keypair, ml_kem_decapsulate, ml_kem_encapsulate, ml_kem_keygen,
+    mnemonic_to_seed, ratchet_srk_sender, sign_message, verify_signature,
+};
 
 fn mb_per_sec(bytes: usize, elapsed: Duration) -> f64 {
     if elapsed.as_secs_f64() == 0.0 {
@@ -64,7 +66,8 @@ fn bench_aesgcm_raw(size: usize, iterations: usize) {
             work.clear();
             work.extend_from_slice(&base);
             let nonce = Nonce::assume_unique_for_key(nonces[i]);
-            key.seal_in_place_append_tag(nonce, Aad::empty(), &mut work).unwrap();
+            key.seal_in_place_append_tag(nonce, Aad::empty(), &mut work)
+                .unwrap();
             total_enc += size;
         }
         let enc_elapsed = start_enc.elapsed();
@@ -72,7 +75,8 @@ fn bench_aesgcm_raw(size: usize, iterations: usize) {
         let mut ciphertext = Vec::with_capacity(size + 16);
         ciphertext.extend_from_slice(&base);
         let nonce0 = Nonce::assume_unique_for_key(nonces[0]);
-        key.seal_in_place_append_tag(nonce0, Aad::empty(), &mut ciphertext).unwrap();
+        key.seal_in_place_append_tag(nonce0, Aad::empty(), &mut ciphertext)
+            .unwrap();
 
         let mut work_dec = vec![0u8; ciphertext.len()];
         let start_dec = Instant::now();
@@ -80,7 +84,9 @@ fn bench_aesgcm_raw(size: usize, iterations: usize) {
         for _ in 0..iterations {
             work_dec.copy_from_slice(&ciphertext);
             let nonce = Nonce::assume_unique_for_key(nonces[0]);
-            let _ = key.open_in_place(nonce, Aad::empty(), &mut work_dec).unwrap();
+            let _ = key
+                .open_in_place(nonce, Aad::empty(), &mut work_dec)
+                .unwrap();
             total_dec += size;
         }
         let dec_elapsed = start_dec.elapsed();
@@ -96,14 +102,18 @@ fn bench_aesgcm_raw(size: usize, iterations: usize) {
         for i in 0..iterations {
             work.copy_from_slice(&base);
             let nonce = Nonce::from_slice(&nonces[i]);
-            let _ = cipher.encrypt_in_place_detached(nonce, b"", &mut work).unwrap();
+            let _ = cipher
+                .encrypt_in_place_detached(nonce, b"", &mut work)
+                .unwrap();
             total_enc += size;
         }
         let enc_elapsed = start_enc.elapsed();
 
         work.copy_from_slice(&base);
         let nonce0 = Nonce::from_slice(&nonces[0]);
-        let tag0 = cipher.encrypt_in_place_detached(nonce0, b"", &mut work).unwrap();
+        let tag0 = cipher
+            .encrypt_in_place_detached(nonce0, b"", &mut work)
+            .unwrap();
         let ciphertext = work.clone();
 
         let mut work_dec = vec![0u8; size];
@@ -111,7 +121,9 @@ fn bench_aesgcm_raw(size: usize, iterations: usize) {
         let mut total_dec = 0usize;
         for _ in 0..iterations {
             work_dec.copy_from_slice(&ciphertext);
-            let _ = cipher.decrypt_in_place_detached(nonce0, b"", &mut work_dec, &tag0).unwrap();
+            let _ = cipher
+                .decrypt_in_place_detached(nonce0, b"", &mut work_dec, &tag0)
+                .unwrap();
             total_dec += size;
         }
         let dec_elapsed = start_dec.elapsed();
@@ -120,7 +132,9 @@ fn bench_aesgcm_raw(size: usize, iterations: usize) {
 
     println!(
         "AES-GCM-RAW size={} bytes enc={} MB/s dec={} MB/s",
-        size, mb_per_sec(total_enc, enc_elapsed), mb_per_sec(total_dec, dec_elapsed)
+        size,
+        mb_per_sec(total_enc, enc_elapsed),
+        mb_per_sec(total_dec, dec_elapsed)
     );
 }
 
@@ -134,11 +148,11 @@ fn bench_encrypt_decrypt(size: usize, iterations: usize) {
     let (enc_elapsed, dec_elapsed, total_enc, total_dec) = {
         let unbound = UnboundKey::new(&AES_256_GCM, &key).unwrap();
         let key = LessSafeKey::new(unbound);
-        
+
         let mut buffer = vec![0u8; 12 + size + 16];
         let mut iv = [0u8; 12];
         let mut work = Vec::with_capacity(size + 16);
-        
+
         let start_enc = Instant::now();
         let mut total_enc = 0usize;
         for _ in 0..iterations {
@@ -146,7 +160,8 @@ fn bench_encrypt_decrypt(size: usize, iterations: usize) {
             work.clear();
             work.extend_from_slice(&plaintext);
             let nonce = Nonce::assume_unique_for_key(iv);
-            key.seal_in_place_append_tag(nonce, Aad::empty(), &mut work).unwrap();
+            key.seal_in_place_append_tag(nonce, Aad::empty(), &mut work)
+                .unwrap();
             buffer[..12].copy_from_slice(&iv);
             buffer[12..].copy_from_slice(&work);
             total_enc += buffer.len();
@@ -170,22 +185,24 @@ fn bench_encrypt_decrypt(size: usize, iterations: usize) {
     #[cfg(not(feature = "fast-aes"))]
     let (enc_elapsed, dec_elapsed, total_enc, total_dec) = {
         let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
-        
+
         let mut buffer = vec![0u8; 12 + size + 16];
         let mut iv = [0u8; 12];
         let mut work = vec![0u8; size];
         let mut tag = [0u8; 16];
-        
+
         let start_enc = Instant::now();
         let mut total_enc = 0usize;
         for _ in 0..iterations {
             OsRng.fill_bytes(&mut iv);
             work.copy_from_slice(&plaintext);
             let nonce = Nonce::from_slice(&iv);
-            let t = cipher.encrypt_in_place_detached(nonce, b"", &mut work).unwrap();
+            let t = cipher
+                .encrypt_in_place_detached(nonce, b"", &mut work)
+                .unwrap();
             buffer[..12].copy_from_slice(&iv);
-            buffer[12..12+size].copy_from_slice(&work);
-            buffer[12+size..].copy_from_slice(&t);
+            buffer[12..12 + size].copy_from_slice(&work);
+            buffer[12 + size..].copy_from_slice(&t);
             total_enc += buffer.len();
         }
         let enc_elapsed = start_enc.elapsed();
@@ -194,17 +211,24 @@ fn bench_encrypt_decrypt(size: usize, iterations: usize) {
         let mut total_dec = 0usize;
         for _ in 0..iterations {
             iv.copy_from_slice(&buffer[..12]);
-            work.copy_from_slice(&buffer[12..12+size]);
-            tag.copy_from_slice(&buffer[12+size..]);
+            work.copy_from_slice(&buffer[12..12 + size]);
+            tag.copy_from_slice(&buffer[12 + size..]);
             let nonce = Nonce::from_slice(&iv);
-            cipher.decrypt_in_place_detached(nonce, b"", &mut work, &tag.into()).unwrap();
+            cipher
+                .decrypt_in_place_detached(nonce, b"", &mut work, &tag.into())
+                .unwrap();
             total_dec += work.len();
         }
         let dec_elapsed = start_dec.elapsed();
         (enc_elapsed, dec_elapsed, total_enc, total_dec)
     };
 
-    println!("AES-GCM size={} bytes enc={} MB/s dec={} MB/s", size, mb_per_sec(total_enc, enc_elapsed), mb_per_sec(total_dec, dec_elapsed));
+    println!(
+        "AES-GCM size={} bytes enc={} MB/s dec={} MB/s",
+        size,
+        mb_per_sec(total_enc, enc_elapsed),
+        mb_per_sec(total_dec, dec_elapsed)
+    );
 }
 
 fn bench_chunked(size: usize, iterations: usize, chunk_size: usize) {
@@ -213,7 +237,11 @@ fn bench_chunked(size: usize, iterations: usize, chunk_size: usize) {
     let mut plaintext = vec![0u8; size];
     OsRng.fill_bytes(&mut plaintext);
 
-    let chunk_count = if size == 0 { 1 } else { (size + chunk_size - 1) / chunk_size };
+    let chunk_count = if size == 0 {
+        1
+    } else {
+        (size + chunk_size - 1) / chunk_size
+    };
     let mut encrypted_buffer = vec![0u8; 4 + chunk_count * 36 + size];
 
     #[cfg(feature = "fast-aes")]
@@ -235,21 +263,23 @@ fn bench_chunked(size: usize, iterations: usize, chunk_size: usize) {
                 let start = i * chunk_size;
                 let end = (start + chunk_size).min(size);
                 let chunk = &plaintext[start..end];
-                
+
                 aad.copy_from_slice(&(i as u32).to_be_bytes());
                 OsRng.fill_bytes(&mut iv);
-                
+
                 work_enc.clear();
                 work_enc.extend_from_slice(chunk);
                 let nonce = Nonce::assume_unique_for_key(iv);
-                key.seal_in_place_append_tag(nonce, Aad::from(&aad), &mut work_enc).unwrap();
-                
-                encrypted_buffer[offset..offset+4].copy_from_slice(&(i as u32).to_be_bytes());
+                key.seal_in_place_append_tag(nonce, Aad::from(&aad), &mut work_enc)
+                    .unwrap();
+
+                encrypted_buffer[offset..offset + 4].copy_from_slice(&(i as u32).to_be_bytes());
                 offset += 4;
                 let enc_len = 12 + work_enc.len();
-                encrypted_buffer[offset..offset+4].copy_from_slice(&(enc_len as u32).to_be_bytes());
+                encrypted_buffer[offset..offset + 4]
+                    .copy_from_slice(&(enc_len as u32).to_be_bytes());
                 offset += 4;
-                encrypted_buffer[offset..offset+12].copy_from_slice(&iv);
+                encrypted_buffer[offset..offset + 12].copy_from_slice(&iv);
                 offset += 12;
                 encrypted_buffer[offset..offset + work_enc.len()].copy_from_slice(&work_enc);
                 offset += work_enc.len();
@@ -277,21 +307,24 @@ fn bench_chunked(size: usize, iterations: usize, chunk_size: usize) {
                     encrypted_buffer[offset + 7],
                 ]) as usize;
                 offset += 8;
-                
+
                 let mut iv_bytes = [0u8; 12];
-                iv_bytes.copy_from_slice(&encrypted_buffer[offset..offset+12]);
+                iv_bytes.copy_from_slice(&encrypted_buffer[offset..offset + 12]);
                 let ciphertext_offset = offset + 12;
                 let ct_tag_len = chunk_len - 12;
                 let ct_tag = &encrypted_buffer[ciphertext_offset..ciphertext_offset + ct_tag_len];
-                
+
                 aad.copy_from_slice(&chunk_index.to_be_bytes());
-                
+
                 work_dec.clear();
                 work_dec.extend_from_slice(ct_tag);
-                
+
                 let nonce = Nonce::assume_unique_for_key(iv_bytes);
-                let decrypted = key.open_in_place(nonce, Aad::from(&aad), &mut work_dec).unwrap();
-                decrypted_buffer[out_offset..out_offset + decrypted.len()].copy_from_slice(decrypted);
+                let decrypted = key
+                    .open_in_place(nonce, Aad::from(&aad), &mut work_dec)
+                    .unwrap();
+                decrypted_buffer[out_offset..out_offset + decrypted.len()]
+                    .copy_from_slice(decrypted);
                 out_offset += decrypted.len();
                 offset += chunk_len;
             }
@@ -320,24 +353,28 @@ fn bench_chunked(size: usize, iterations: usize, chunk_size: usize) {
                 let end = (start + chunk_size).min(size);
                 let chunk = &plaintext[start..end];
                 let chunk_len = end - start;
-                
+
                 aad.copy_from_slice(&(i as u32).to_be_bytes());
                 OsRng.fill_bytes(&mut iv);
-                
+
                 work_enc[..chunk_len].copy_from_slice(chunk);
-                                let nonce = Nonce::from_slice(&iv);
-                let tag = cipher.encrypt_in_place_detached(nonce, &aad, &mut work_enc[..chunk_len]).unwrap();
-                
-                encrypted_buffer[offset..offset+4].copy_from_slice(&(i as u32).to_be_bytes());
+                let nonce = Nonce::from_slice(&iv);
+                let tag = cipher
+                    .encrypt_in_place_detached(nonce, &aad, &mut work_enc[..chunk_len])
+                    .unwrap();
+
+                encrypted_buffer[offset..offset + 4].copy_from_slice(&(i as u32).to_be_bytes());
                 offset += 4;
                 let enc_len = 12 + chunk_len + 16;
-                encrypted_buffer[offset..offset+4].copy_from_slice(&(enc_len as u32).to_be_bytes());
+                encrypted_buffer[offset..offset + 4]
+                    .copy_from_slice(&(enc_len as u32).to_be_bytes());
                 offset += 4;
-                encrypted_buffer[offset..offset+12].copy_from_slice(&iv);
+                encrypted_buffer[offset..offset + 12].copy_from_slice(&iv);
                 offset += 12;
-                encrypted_buffer[offset..offset+chunk_len].copy_from_slice(&work_enc[..chunk_len]);
+                encrypted_buffer[offset..offset + chunk_len]
+                    .copy_from_slice(&work_enc[..chunk_len]);
                 offset += chunk_len;
-                encrypted_buffer[offset..offset+16].copy_from_slice(&tag);
+                encrypted_buffer[offset..offset + 16].copy_from_slice(&tag);
                 offset += 16;
             }
             total_enc += offset;
@@ -363,19 +400,28 @@ fn bench_chunked(size: usize, iterations: usize, chunk_size: usize) {
                     encrypted_buffer[offset + 7],
                 ]) as usize;
                 offset += 8;
-                
-                let iv_bytes = &encrypted_buffer[offset..offset+12];
+
+                let iv_bytes = &encrypted_buffer[offset..offset + 12];
                 let ciphertext_offset = offset + 12;
                 let real_chunk_len = chunk_len - 28;
                 let ct = &encrypted_buffer[ciphertext_offset..ciphertext_offset + real_chunk_len];
-                let tag_bytes = &encrypted_buffer[ciphertext_offset + real_chunk_len..ciphertext_offset + real_chunk_len + 16];
-                
+                let tag_bytes = &encrypted_buffer
+                    [ciphertext_offset + real_chunk_len..ciphertext_offset + real_chunk_len + 16];
+
                 aad.copy_from_slice(&chunk_index.to_be_bytes());
-                
+
                 work_dec[..real_chunk_len].copy_from_slice(ct);
-                                let nonce = Nonce::from_slice(iv_bytes);
-                cipher.decrypt_in_place_detached(nonce, &aad, &mut work_dec[..real_chunk_len], tag_bytes.into()).unwrap();
-                decrypted_buffer[out_offset..out_offset + real_chunk_len].copy_from_slice(&work_dec[..real_chunk_len]);
+                let nonce = Nonce::from_slice(iv_bytes);
+                cipher
+                    .decrypt_in_place_detached(
+                        nonce,
+                        &aad,
+                        &mut work_dec[..real_chunk_len],
+                        tag_bytes.into(),
+                    )
+                    .unwrap();
+                decrypted_buffer[out_offset..out_offset + real_chunk_len]
+                    .copy_from_slice(&work_dec[..real_chunk_len]);
                 out_offset += real_chunk_len;
                 offset += chunk_len;
             }
@@ -387,7 +433,10 @@ fn bench_chunked(size: usize, iterations: usize, chunk_size: usize) {
 
     println!(
         "AES-GCM-CHUNKED size={} bytes chunk={} bytes enc={} MB/s dec={} MB/s",
-        size, chunk_size, mb_per_sec(total_enc, enc_elapsed), mb_per_sec(total_dec, dec_elapsed)
+        size,
+        chunk_size,
+        mb_per_sec(total_enc, enc_elapsed),
+        mb_per_sec(total_dec, dec_elapsed)
     );
 }
 
@@ -494,7 +543,8 @@ fn bench_pcs_ratchet(iterations: usize) {
             &bob_kp.public_key,
             chat_id,
             i as u64,
-        ).unwrap();
+        )
+        .unwrap();
     }
     let ratchet_elapsed = start_ratchet.elapsed();
     let ratchet_ops = iterations as f64 / ratchet_elapsed.as_secs_f64();
@@ -510,7 +560,11 @@ fn bench_key_verification(iterations: usize) {
 
     let start_ver = Instant::now();
     for _ in 0..iterations {
-        let _ = vollcrypt_core::verification::generate_verification_code(&key_a, &key_b, conversation_id);
+        let _ = vollcrypt_core::verification::generate_verification_code(
+            &key_a,
+            &key_b,
+            conversation_id,
+        );
     }
     let ver_elapsed = start_ver.elapsed();
     let ver_ops = iterations as f64 / ver_elapsed.as_secs_f64();
@@ -519,8 +573,8 @@ fn bench_key_verification(iterations: usize) {
 }
 
 fn bench_key_transparency_log(iterations: usize) {
-    use vollcrypt_core::key_log::{create_entry, KeyAction, KeyLog, GENESIS_HASH};
-    
+    use vollcrypt_core::key_log::{GENESIS_HASH, KeyAction, KeyLog, create_entry};
+
     let mut log = KeyLog::new();
     let mut prev_hash = GENESIS_HASH;
     let kp = generate_ed25519_keypair();
@@ -528,16 +582,21 @@ fn bench_key_transparency_log(iterations: usize) {
     let mut public_key = [0u8; 32];
     signing_key.copy_from_slice(&kp.0);
     public_key.copy_from_slice(&kp.1);
-    
+
     for i in 0..100 {
         let entry = create_entry(
             b"alice",
             &public_key,
             1000 + i,
             &prev_hash,
-            if i == 0 { KeyAction::Add } else { KeyAction::Update },
+            if i == 0 {
+                KeyAction::Add
+            } else {
+                KeyAction::Update
+            },
             &signing_key,
-        ).unwrap();
+        )
+        .unwrap();
         prev_hash = entry.compute_hash();
         log.append(entry).unwrap();
     }
@@ -549,7 +608,10 @@ fn bench_key_transparency_log(iterations: usize) {
     let verify_elapsed = start_verify.elapsed();
     let verify_ops = iterations as f64 / verify_elapsed.as_secs_f64();
 
-    println!("Key Transparency Log verify chain (100 entries) ops/s={:.2}", verify_ops);
+    println!(
+        "Key Transparency Log verify chain (100 entries) ops/s={:.2}",
+        verify_ops
+    );
 }
 
 fn bench_ed25519(iterations: usize) {
@@ -606,7 +668,7 @@ fn bench_ed25519(iterations: usize) {
 
 fn bench_bip39(iterations: usize) {
     let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
-    
+
     let start = Instant::now();
     for _ in 0..iterations {
         let _ = mnemonic_to_seed(mnemonic, Some("perf-passphrase")).unwrap();
@@ -619,9 +681,14 @@ fn bench_bip39(iterations: usize) {
 
 fn bench_multithreaded_handshake(iterations_per_thread: usize) {
     use std::sync::Arc;
-    
-    let num_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
-    println!("Multi-threaded scaling benchmark using {} threads...", num_threads);
+
+    let num_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    println!(
+        "Multi-threaded scaling benchmark using {} threads...",
+        num_threads
+    );
 
     let (bob_sk_vec, bob_pk_vec) = generate_x25519_keypair();
     let bob_pk: [u8; 32] = bob_pk_vec.try_into().unwrap();
@@ -643,7 +710,7 @@ fn bench_multithreaded_handshake(iterations_per_thread: usize) {
         let sealed_clone = Arc::clone(&shared_sealed);
         let ek_clone = Arc::clone(&shared_ek);
         let sk_clone = Arc::clone(&bob_sk_arc);
-        
+
         handles.push(std::thread::spawn(move || {
             let mut ok = 0usize;
             for _ in 0..iterations_per_thread {
@@ -663,7 +730,10 @@ fn bench_multithreaded_handshake(iterations_per_thread: usize) {
     let total_crypto_ops = total_ops * 2;
     let ops_per_sec = total_crypto_ops as f64 / elapsed.as_secs_f64();
 
-    println!("Multi-threaded Handshake Scaling ({} threads) aggregate ops/s={:.2}", num_threads, ops_per_sec);
+    println!(
+        "Multi-threaded Handshake Scaling ({} threads) aggregate ops/s={:.2}",
+        num_threads, ops_per_sec
+    );
 }
 
 struct ReplayPreventionStore {
@@ -689,7 +759,7 @@ impl ReplayPreventionStore {
 fn bench_replay_prevention_store(iterations: usize) {
     let mut store = ReplayPreventionStore::new();
     let mut existing_hashes = Vec::with_capacity(100_000);
-    
+
     for _ in 0..100_000 {
         let mut h = [0u8; 32];
         OsRng.fill_bytes(&mut h);
@@ -739,8 +809,14 @@ fn bench_replay_prevention_store(iterations: usize) {
     let insert_elapsed = start_insert.elapsed();
     let insert_ns = insert_elapsed.as_nanos() as f64 / iterations as f64;
 
-    println!("Replay Store Lookup (Hit) avg_latency={:.2} ns", lookup_hit_ns);
-    println!("Replay Store Lookup (Miss) avg_latency={:.2} ns", lookup_miss_ns);
+    println!(
+        "Replay Store Lookup (Hit) avg_latency={:.2} ns",
+        lookup_hit_ns
+    );
+    println!(
+        "Replay Store Lookup (Miss) avg_latency={:.2} ns",
+        lookup_miss_ns
+    );
     println!("Replay Store Insertion avg_latency={:.2} ns", insert_ns);
 }
 
@@ -765,7 +841,7 @@ fn main() {
     bench_pcs_ratchet(500);
     bench_key_verification(1000);
     bench_key_transparency_log(100);
-    
+
     bench_ed25519(500);
     bench_bip39(200);
     bench_multithreaded_handshake(200);

@@ -216,21 +216,30 @@ mod tests {
 
     #[test]
     fn test_compute_message_hash_deterministic() {
-        let h1 = TranscriptState::compute_message_hash(b"msg-001", b"alice", 1700000000, b"ciphertext");
-        let h2 = TranscriptState::compute_message_hash(b"msg-001", b"alice", 1700000000, b"ciphertext");
+        let h1 =
+            TranscriptState::compute_message_hash(b"msg-001", b"alice", 1700000000, b"ciphertext");
+        let h2 =
+            TranscriptState::compute_message_hash(b"msg-001", b"alice", 1700000000, b"ciphertext");
         assert_eq!(h1, h2, "Identical inputs must produce the same hash");
     }
 
     #[test]
     fn test_compute_message_hash_sensitive_to_inputs() {
-        let base = TranscriptState::compute_message_hash(b"msg-001", b"alice", 1700000000, b"ciphertext");
-        
+        let base =
+            TranscriptState::compute_message_hash(b"msg-001", b"alice", 1700000000, b"ciphertext");
+
         // Changed timestamp
-        let diff_time = TranscriptState::compute_message_hash(b"msg-001", b"alice", 1700000001, b"ciphertext");
-        
+        let diff_time =
+            TranscriptState::compute_message_hash(b"msg-001", b"alice", 1700000001, b"ciphertext");
+
         // Changed sender
-        let diff_sender = TranscriptState::compute_message_hash(b"msg-001", b"mallory", 1700000000, b"ciphertext");
-        
+        let diff_sender = TranscriptState::compute_message_hash(
+            b"msg-001",
+            b"mallory",
+            1700000000,
+            b"ciphertext",
+        );
+
         assert_ne!(base, diff_time, "Changing timestamp should change the hash");
         assert_ne!(base, diff_sender, "Changing sender should change the hash");
     }

@@ -1,5 +1,5 @@
-use std::time::Instant;
 use crate::transcript::TranscriptState;
+use std::time::Instant;
 
 // ── Chain Manipulation ────────────────────────────────────────────────────
 
@@ -70,21 +70,27 @@ fn transcript_message_hash_collision_attempt() {
     let hash1 = TranscriptState::compute_message_hash(b"msg1", b"sender", 1000, b"data_a");
     let hash2 = TranscriptState::compute_message_hash(b"msg1", b"sender", 1000, b"data_b");
 
-    assert_ne!(hash1, hash2, "Different ciphertexts must produce different message hashes");
+    assert_ne!(
+        hash1, hash2,
+        "Different ciphertexts must produce different message hashes"
+    );
 }
 
 #[test]
 fn transcript_from_bytes_invalid_length() {
     // TranscriptState::from_bytes expects a [u8; 32] directly.
     // In Rust, providing a 31-byte array to a function expecting [u8; 32] is a compile-time error.
-    // 
+    //
     // let bad_input = [0u8; 31];
     // TranscriptState::from_bytes(bad_input); // Compile Error
     // This satisfies the "compile-time enforcement" requirement of the prompt.
     // To test runtime conversion if coming from a Vec:
     let vec_31 = vec![0u8; 31];
     let result: Result<[u8; 32], _> = vec_31.try_into();
-    assert!(result.is_err(), "Cannot safely convert 31 bytes to a 32-byte array");
+    assert!(
+        result.is_err(),
+        "Cannot safely convert 31 bytes to a 32-byte array"
+    );
 }
 
 #[test]
@@ -95,7 +101,11 @@ fn transcript_update_with_all_zeros_hash() {
     // All zero hash is a valid input type ([u8; 32])
     ts.update(&[0u8; 32]);
 
-    assert_ne!(before, *ts.current_hash(), "Updating with zero hash must change the chain state");
+    assert_ne!(
+        before,
+        *ts.current_hash(),
+        "Updating with zero hash must change the chain state"
+    );
 }
 
 #[test]
@@ -111,7 +121,11 @@ fn transcript_large_number_of_messages() {
     }
     let duration = start.elapsed();
 
-    assert!(duration.as_secs() < 5, "100k transcript updates took too long ({}ms)", duration.as_millis());
+    assert!(
+        duration.as_secs() < 5,
+        "100k transcript updates took too long ({}ms)",
+        duration.as_millis()
+    );
 }
 
 #[test]
@@ -141,5 +155,9 @@ fn transcript_verify_sync_timing() {
 
     let diff = (avg_equal - avg_unequal).abs();
     // Less than 10µs difference
-    assert!(diff < 10000.0, "Verify sync timing divergence too high (diff: {}ns)", diff);
+    assert!(
+        diff < 10000.0,
+        "Verify sync timing divergence too high (diff: {}ns)",
+        diff
+    );
 }

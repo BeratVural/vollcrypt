@@ -1,4 +1,7 @@
-use napi::{Error, Result, bindgen_prelude::{Buffer, Uint8Array}};
+use napi::{
+    bindgen_prelude::{Buffer, Uint8Array},
+    Error, Result,
+};
 use napi_derive::napi;
 
 #[napi]
@@ -45,12 +48,20 @@ pub fn sign_message(secret_key: Uint8Array, message: Uint8Array) -> Result<Buffe
 }
 
 #[napi]
-pub fn verify_signature(public_key: Uint8Array, message: Uint8Array, signature: Uint8Array) -> bool {
+pub fn verify_signature(
+    public_key: Uint8Array,
+    message: Uint8Array,
+    signature: Uint8Array,
+) -> bool {
     vollcrypt_core::verify_signature(public_key.as_ref(), message.as_ref(), signature.as_ref())
 }
 
 #[napi]
-pub fn encrypt_aes_gcm(key: Uint8Array, plaintext: Uint8Array, aad: Option<Uint8Array>) -> Result<Buffer> {
+pub fn encrypt_aes_gcm(
+    key: Uint8Array,
+    plaintext: Uint8Array,
+    aad: Option<Uint8Array>,
+) -> Result<Buffer> {
     let aad_ref = aad.as_ref().map(|x| x.as_ref());
     match vollcrypt_core::encrypt_aes256gcm(key.as_ref(), plaintext.as_ref(), aad_ref) {
         Ok(v) => Ok(Buffer::from(v)),
@@ -59,7 +70,11 @@ pub fn encrypt_aes_gcm(key: Uint8Array, plaintext: Uint8Array, aad: Option<Uint8
 }
 
 #[napi]
-pub fn decrypt_aes_gcm(key: Uint8Array, ciphertext: Uint8Array, aad: Option<Uint8Array>) -> Result<Buffer> {
+pub fn decrypt_aes_gcm(
+    key: Uint8Array,
+    ciphertext: Uint8Array,
+    aad: Option<Uint8Array>,
+) -> Result<Buffer> {
     let aad_ref = aad.as_ref().map(|x| x.as_ref());
     match vollcrypt_core::decrypt_aes256gcm(key.as_ref(), ciphertext.as_ref(), aad_ref) {
         Ok(v) => Ok(Buffer::from(v)),
@@ -68,7 +83,11 @@ pub fn decrypt_aes_gcm(key: Uint8Array, ciphertext: Uint8Array, aad: Option<Uint
 }
 
 #[napi]
-pub fn encrypt_aes_gcm_padded(key: Uint8Array, plaintext: Uint8Array, aad: Option<Uint8Array>) -> Result<Buffer> {
+pub fn encrypt_aes_gcm_padded(
+    key: Uint8Array,
+    plaintext: Uint8Array,
+    aad: Option<Uint8Array>,
+) -> Result<Buffer> {
     let aad_ref = aad.as_ref().map(|x| x.as_ref());
     match vollcrypt_core::encrypt_aes256gcm_padded(key.as_ref(), plaintext.as_ref(), aad_ref) {
         Ok(v) => Ok(Buffer::from(v)),
@@ -77,7 +96,11 @@ pub fn encrypt_aes_gcm_padded(key: Uint8Array, plaintext: Uint8Array, aad: Optio
 }
 
 #[napi]
-pub fn decrypt_aes_gcm_padded(key: Uint8Array, ciphertext: Uint8Array, aad: Option<Uint8Array>) -> Result<Buffer> {
+pub fn decrypt_aes_gcm_padded(
+    key: Uint8Array,
+    ciphertext: Uint8Array,
+    aad: Option<Uint8Array>,
+) -> Result<Buffer> {
     let aad_ref = aad.as_ref().map(|x| x.as_ref());
     match vollcrypt_core::decrypt_aes256gcm_padded(key.as_ref(), ciphertext.as_ref(), aad_ref) {
         Ok(v) => Ok(Buffer::from(v)),
@@ -143,20 +166,39 @@ pub fn decrypt_aes_gcm_chunked_padded(
     aad: Option<Uint8Array>,
 ) -> Result<Buffer> {
     let aad_ref = aad.as_ref().map(|x| x.as_ref());
-    match vollcrypt_core::decrypt_aes256gcm_chunked_padded(key.as_ref(), ciphertext.as_ref(), aad_ref) {
+    match vollcrypt_core::decrypt_aes256gcm_chunked_padded(
+        key.as_ref(),
+        ciphertext.as_ref(),
+        aad_ref,
+    ) {
         Ok(v) => Ok(Buffer::from(v)),
         Err(e) => Err(Error::from_reason(e.to_string())),
     }
 }
 
 #[napi]
-pub fn derive_pbkdf2(password: Uint8Array, salt: Uint8Array, iterations: u32, key_len: u32) -> Buffer {
-    let key = vollcrypt_core::derive_pbkdf2(password.as_ref(), salt.as_ref(), iterations, key_len as usize);
+pub fn derive_pbkdf2(
+    password: Uint8Array,
+    salt: Uint8Array,
+    iterations: u32,
+    key_len: u32,
+) -> Buffer {
+    let key = vollcrypt_core::derive_pbkdf2(
+        password.as_ref(),
+        salt.as_ref(),
+        iterations,
+        key_len as usize,
+    );
     Buffer::from(key)
 }
 
 #[napi]
-pub fn derive_hkdf(ikm: Uint8Array, salt: Option<Uint8Array>, info: Option<Uint8Array>, key_len: u32) -> Result<Buffer> {
+pub fn derive_hkdf(
+    ikm: Uint8Array,
+    salt: Option<Uint8Array>,
+    info: Option<Uint8Array>,
+    key_len: u32,
+) -> Result<Buffer> {
     let salt_ref = salt.as_ref().map(|x| x.as_ref());
     let info_ref = info.as_ref().map(|x| x.as_ref());
     match vollcrypt_core::derive_hkdf(ikm.as_ref(), salt_ref, info_ref, key_len as usize) {
@@ -189,26 +231,26 @@ pub fn generate_verification_code(
 ) -> Result<String> {
     let key_a_slice = key_a.as_ref();
     let key_b_slice = key_b.as_ref();
-    
+
     if key_a_slice.len() != 32 {
         return Err(Error::from_reason("key_a must be 32 bytes"));
     }
     if key_b_slice.len() != 32 {
         return Err(Error::from_reason("key_b must be 32 bytes"));
     }
-    
+
     let mut ka = [0u8; 32];
     ka.copy_from_slice(key_a_slice);
-    
+
     let mut kb = [0u8; 32];
     kb.copy_from_slice(key_b_slice);
-    
+
     let code = vollcrypt_core::verification::generate_verification_code(
-        &ka, 
-        &kb, 
-        conversation_id.as_ref()
+        &ka,
+        &kb,
+        conversation_id.as_ref(),
     );
-    
+
     serde_json::to_string(&code)
         .map_err(|e| Error::from_reason(format!("Serialization failed: {}", e)))
 }
@@ -231,16 +273,12 @@ pub fn compute_fingerprint(
 
     let mut ka = [0u8; 32];
     ka.copy_from_slice(key_a_slice);
-    
+
     let mut kb = [0u8; 32];
     kb.copy_from_slice(key_b_slice);
 
-    let fp = vollcrypt_core::verification::compute_fingerprint(
-        &ka,
-        &kb,
-        conversation_id.as_ref()
-    );
-    
+    let fp = vollcrypt_core::verification::compute_fingerprint(&ka, &kb, conversation_id.as_ref());
+
     Ok(Buffer::from(fp.to_vec()))
 }
 
@@ -261,11 +299,13 @@ pub fn verify_fingerprints_match(
 
     let mut fa = [0u8; 32];
     fa.copy_from_slice(fa_slice);
-    
+
     let mut fb = [0u8; 32];
     fb.copy_from_slice(fb_slice);
 
-    Ok(vollcrypt_core::verification::verify_fingerprints_match(&fa, &fb))
+    Ok(vollcrypt_core::verification::verify_fingerprints_match(
+        &fa, &fb,
+    ))
 }
 
 #[napi]
@@ -291,7 +331,11 @@ pub fn pad_message(content: Uint8Array) -> Buffer {
 }
 
 #[napi]
-pub fn pack_envelope(window_index: u32, aad_hash: Uint8Array, encrypted_blob: Uint8Array) -> Result<Buffer> {
+pub fn pack_envelope(
+    window_index: u32,
+    aad_hash: Uint8Array,
+    encrypted_blob: Uint8Array,
+) -> Result<Buffer> {
     if aad_hash.as_ref().len() != 32 {
         return Err(Error::from_reason("AAD hash must be exactly 32 bytes"));
     }
@@ -441,7 +485,9 @@ pub fn authenticated_kem_decapsulate(
 #[napi]
 pub fn registry_empty() -> String {
     let registry = vollcrypt_core::DefaultDeviceRegistry::new();
-    registry.to_json().unwrap_or_else(|_| "{\"devices\":[]}".to_string())
+    registry
+        .to_json()
+        .unwrap_or_else(|_| "{\"devices\":[]}".to_string())
 }
 
 #[napi]
@@ -454,7 +500,7 @@ pub fn registry_add_device(
 ) -> Result<String> {
     let mut registry = vollcrypt_core::DefaultDeviceRegistry::from_json(&registry_json)
         .map_err(|e| Error::from_reason(e.to_string()))?;
-        
+
     let device = vollcrypt_core::Device {
         device_id,
         name,
@@ -462,28 +508,38 @@ pub fn registry_add_device(
         public_key,
         is_revoked: false,
     };
-    
-    registry.add_device(device).map_err(|e| Error::from_reason(e.to_string()))?;
-    
-    registry.to_json().map_err(|e| Error::from_reason(e.to_string()))
+
+    registry
+        .add_device(device)
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+
+    registry
+        .to_json()
+        .map_err(|e| Error::from_reason(e.to_string()))
 }
 
 #[napi]
 pub fn registry_revoke_device(registry_json: String, device_id: String) -> Result<String> {
     let mut registry = vollcrypt_core::DefaultDeviceRegistry::from_json(&registry_json)
         .map_err(|e| Error::from_reason(e.to_string()))?;
-        
-    registry.revoke_device(&device_id).map_err(|e| Error::from_reason(e.to_string()))?;
-    
-    registry.to_json().map_err(|e| Error::from_reason(e.to_string()))
+
+    registry
+        .revoke_device(&device_id)
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+
+    registry
+        .to_json()
+        .map_err(|e| Error::from_reason(e.to_string()))
 }
 
 #[napi]
 pub fn registry_get_active_devices(registry_json: String) -> Result<String> {
     let registry = vollcrypt_core::DefaultDeviceRegistry::from_json(&registry_json)
         .map_err(|e| Error::from_reason(e.to_string()))?;
-        
-    registry.get_active_devices_json().map_err(|e| Error::from_reason(e.to_string()))
+
+    registry
+        .get_active_devices_json()
+        .map_err(|e| Error::from_reason(e.to_string()))
 }
 
 // ==================== Post-Compromise Security (PCS) ====================
@@ -491,7 +547,10 @@ pub fn registry_get_active_devices(registry_json: String) -> Result<String> {
 #[napi]
 pub fn generate_ratchet_keypair() -> Result<Vec<Buffer>> {
     match vollcrypt_core::generate_ratchet_keypair() {
-        Ok(kp) => Ok(vec![Buffer::from(kp.secret_key().to_vec()), Buffer::from(kp.public_key.to_vec())]),
+        Ok(kp) => Ok(vec![
+            Buffer::from(kp.secret_key().to_vec()),
+            Buffer::from(kp.public_key.to_vec()),
+        ]),
         Err(e) => Err(Error::from_reason(e.to_string())),
     }
 }
@@ -563,12 +622,11 @@ pub fn transcript_new(session_id: Uint8Array) -> Buffer {
 }
 
 #[napi]
-pub fn transcript_update(
-    chain_state: Uint8Array,
-    message_hash: Uint8Array,
-) -> Result<Buffer> {
+pub fn transcript_update(chain_state: Uint8Array, message_hash: Uint8Array) -> Result<Buffer> {
     if chain_state.len() != 32 || message_hash.len() != 32 {
-        return Err(Error::from_reason("chain_state and message_hash must be 32 bytes".to_string()));
+        return Err(Error::from_reason(
+            "chain_state and message_hash must be 32 bytes".to_string(),
+        ));
     }
     let mut state_bytes = [0u8; 32];
     state_bytes.copy_from_slice(chain_state.as_ref());
@@ -597,10 +655,7 @@ pub fn transcript_compute_message_hash(
 }
 
 #[napi]
-pub fn transcript_verify_sync(
-    hash_a: Uint8Array,
-    hash_b: Uint8Array,
-) -> Result<bool> {
+pub fn transcript_verify_sync(hash_a: Uint8Array, hash_b: Uint8Array) -> Result<bool> {
     if hash_a.len() != 32 || hash_b.len() != 32 {
         return Err(Error::from_reason("Hashes must be 32 bytes".to_string()));
     }
@@ -609,7 +664,9 @@ pub fn transcript_verify_sync(
     let mut b_bytes = [0u8; 32];
     b_bytes.copy_from_slice(hash_b.as_ref());
 
-    Ok(vollcrypt_core::transcript::TranscriptState::verify_sync(&a_bytes, &b_bytes))
+    Ok(vollcrypt_core::transcript::TranscriptState::verify_sync(
+        &a_bytes, &b_bytes,
+    ))
 }
 
 // ==================== Sealed Sender ====================
@@ -621,7 +678,9 @@ pub fn seal_message(
     content: Uint8Array,
 ) -> Result<Buffer> {
     if recipient_x25519_pub.len() != 32 {
-        return Err(Error::from_reason("recipient_x25519_pub must be 32 bytes".to_string()));
+        return Err(Error::from_reason(
+            "recipient_x25519_pub must be 32 bytes".to_string(),
+        ));
     }
 
     let mut pub_bytes = [0u8; 32];
@@ -634,12 +693,11 @@ pub fn seal_message(
 }
 
 #[napi]
-pub fn unseal_message(
-    sealed_packet: Uint8Array,
-    our_x25519_sk: Uint8Array,
-) -> Result<Vec<Buffer>> {
+pub fn unseal_message(sealed_packet: Uint8Array, our_x25519_sk: Uint8Array) -> Result<Vec<Buffer>> {
     if our_x25519_sk.len() != 32 {
-        return Err(Error::from_reason("our_x25519_sk must be 32 bytes".to_string()));
+        return Err(Error::from_reason(
+            "our_x25519_sk must be 32 bytes".to_string(),
+        ));
     }
 
     let mut sk_bytes = [0u8; 32];
@@ -663,7 +721,9 @@ pub fn key_log_create_entry(
     signing_key: Uint8Array,
 ) -> Result<String> {
     if public_key.len() != 32 || prev_entry_hash.len() != 32 || signing_key.len() != 32 {
-        return Err(Error::from_reason("Key lengths must be exactly 32 bytes".to_string()));
+        return Err(Error::from_reason(
+            "Key lengths must be exactly 32 bytes".to_string(),
+        ));
     }
 
     let mut pk = [0u8; 32];
@@ -680,10 +740,15 @@ pub fn key_log_create_entry(
         _ => return Err(Error::from_reason("Invalid action type".to_string())),
     };
 
-    match vollcrypt_core::key_log::create_entry(user_id.as_ref(), &pk, timestamp as u64, &prev_hash, act, &sign_key) {
-        Ok(entry) => {
-            serde_json::to_string(&entry).map_err(|e| Error::from_reason(e.to_string()))
-        },
+    match vollcrypt_core::key_log::create_entry(
+        user_id.as_ref(),
+        &pk,
+        timestamp as u64,
+        &prev_hash,
+        act,
+        &sign_key,
+    ) {
+        Ok(entry) => serde_json::to_string(&entry).map_err(|e| Error::from_reason(e.to_string())),
         Err(e) => Err(Error::from_reason(e.to_string())),
     }
 }
@@ -692,7 +757,7 @@ pub fn key_log_create_entry(
 pub fn key_log_verify_chain(entries_json: String) -> Result<bool> {
     let entries: Vec<vollcrypt_core::key_log::KeyLogEntry> = serde_json::from_str(&entries_json)
         .map_err(|e| Error::from_reason(format!("Invalid JSON array: {}", e)))?;
-    
+
     let log = vollcrypt_core::key_log::KeyLog { entries };
     match log.verify_chain() {
         Ok(_) => Ok(true),
@@ -701,13 +766,10 @@ pub fn key_log_verify_chain(entries_json: String) -> Result<bool> {
 }
 
 #[napi]
-pub fn key_log_current_key(
-    entries_json: String,
-    user_id: Uint8Array,
-) -> Result<Option<Buffer>> {
+pub fn key_log_current_key(entries_json: String, user_id: Uint8Array) -> Result<Option<Buffer>> {
     let entries: Vec<vollcrypt_core::key_log::KeyLogEntry> = serde_json::from_str(&entries_json)
         .map_err(|e| Error::from_reason(format!("Invalid JSON array: {}", e)))?;
-    
+
     let log = vollcrypt_core::key_log::KeyLog { entries };
     match log.current_key_for(user_id.as_ref()) {
         Some(k) => Ok(Some(Buffer::from(k.to_vec()))),
@@ -723,7 +785,7 @@ pub fn key_log_key_at_timestamp(
 ) -> Result<Option<Buffer>> {
     let entries: Vec<vollcrypt_core::key_log::KeyLogEntry> = serde_json::from_str(&entries_json)
         .map_err(|e| Error::from_reason(format!("Invalid JSON array: {}", e)))?;
-    
+
     let log = vollcrypt_core::key_log::KeyLog { entries };
     match log.key_at_timestamp(user_id.as_ref(), timestamp as u64) {
         Some(k) => Ok(Some(Buffer::from(k.to_vec()))),
@@ -735,7 +797,7 @@ pub fn key_log_key_at_timestamp(
 pub fn key_log_compute_entry_hash(entry_json: String) -> Result<Buffer> {
     let entry: vollcrypt_core::key_log::KeyLogEntry = serde_json::from_str(&entry_json)
         .map_err(|e| Error::from_reason(format!("Invalid JSON object: {}", e)))?;
-    
+
     let hash = entry.compute_hash();
     Ok(Buffer::from(hash.to_vec()))
 }

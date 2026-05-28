@@ -50,7 +50,10 @@ fn aes_gcm_flip_single_bit_in_ciphertext() {
     encrypted[20] ^= 0x01;
 
     let result = decrypt_aes256gcm(&key, &encrypted, None);
-    assert!(result.is_err(), "Tampered ciphertext should fail decryption");
+    assert!(
+        result.is_err(),
+        "Tampered ciphertext should fail decryption"
+    );
 }
 
 #[test]
@@ -87,7 +90,10 @@ fn aes_gcm_truncated_ciphertext_1_byte() {
     encrypted.pop();
 
     let result = decrypt_aes256gcm(&key, &encrypted, None);
-    assert!(result.is_err(), "Truncated ciphertext should fail decryption without panicking");
+    assert!(
+        result.is_err(),
+        "Truncated ciphertext should fail decryption without panicking"
+    );
 }
 
 #[test]
@@ -96,7 +102,10 @@ fn aes_gcm_truncated_ciphertext_to_zero() {
     let _ = encrypt_aes256gcm(&key, b"test message", None).expect("Encryption failed");
 
     let result = decrypt_aes256gcm(&key, &[], None);
-    assert!(result.is_err(), "Zero-length ciphertext should fail decryption");
+    assert!(
+        result.is_err(),
+        "Zero-length ciphertext should fail decryption"
+    );
 }
 
 #[test]
@@ -108,7 +117,10 @@ fn aes_gcm_extended_ciphertext() {
     encrypted.extend_from_slice(&[0x42; 100]);
 
     let result = decrypt_aes256gcm(&key, &encrypted, None);
-    assert!(result.is_err(), "Extended ciphertext should fail decryption");
+    assert!(
+        result.is_err(),
+        "Extended ciphertext should fail decryption"
+    );
 }
 
 // ── AAD (Additional Authenticated Data) Attacks ──────────────────────────
@@ -116,10 +128,14 @@ fn aes_gcm_extended_ciphertext() {
 #[test]
 fn aes_gcm_aad_mismatch() {
     let key = [0u8; 32];
-    let encrypted = encrypt_aes256gcm(&key, b"test", Some(b"message-001")).expect("Encryption failed");
+    let encrypted =
+        encrypt_aes256gcm(&key, b"test", Some(b"message-001")).expect("Encryption failed");
 
     let result = decrypt_aes256gcm(&key, &encrypted, Some(b"message-002"));
-    assert!(result.is_err(), "Decryption should fail when AAD mismatches");
+    assert!(
+        result.is_err(),
+        "Decryption should fail when AAD mismatches"
+    );
 }
 
 #[test]
@@ -128,7 +144,10 @@ fn aes_gcm_aad_present_on_encrypt_absent_on_decrypt() {
     let encrypted = encrypt_aes256gcm(&key, b"test", Some(b"data")).expect("Encryption failed");
 
     let result = decrypt_aes256gcm(&key, &encrypted, None);
-    assert!(result.is_err(), "Decryption should fail when AAD is omitted");
+    assert!(
+        result.is_err(),
+        "Decryption should fail when AAD is omitted"
+    );
 }
 
 #[test]
@@ -137,7 +156,10 @@ fn aes_gcm_aad_absent_on_encrypt_present_on_decrypt() {
     let encrypted = encrypt_aes256gcm(&key, b"test", None).expect("Encryption failed");
 
     let result = decrypt_aes256gcm(&key, &encrypted, Some(b"data"));
-    assert!(result.is_err(), "Decryption should fail when unexpected AAD is provided");
+    assert!(
+        result.is_err(),
+        "Decryption should fail when unexpected AAD is provided"
+    );
 }
 
 #[test]
@@ -162,7 +184,10 @@ fn aes_gcm_empty_aad_vs_none_aad() {
 fn aes_gcm_empty_plaintext() {
     let key = [0u8; 32];
     let encrypted = encrypt_aes256gcm(&key, b"", None).expect("Encryption failed");
-    assert!(!encrypted.is_empty(), "Encrypted output of empty plaintext should not be empty (due to IV + tag)");
+    assert!(
+        !encrypted.is_empty(),
+        "Encrypted output of empty plaintext should not be empty (due to IV + tag)"
+    );
 
     let decrypted = decrypt_aes256gcm(&key, &encrypted, None).expect("Decryption failed");
     assert_eq!(decrypted, b"", "Decryption should yield empty message");
@@ -182,8 +207,10 @@ fn aes_gcm_large_plaintext_10mb() {
     let key = [0u8; 32];
     let plaintext = vec![0x42u8; 10 * 1024 * 1024]; // 10 MB
 
-    let encrypted = encrypt_aes256gcm(&key, &plaintext, None).expect("Encryption of large plaintext failed");
-    let decrypted = decrypt_aes256gcm(&key, &encrypted, None).expect("Decryption of large plaintext failed");
+    let encrypted =
+        encrypt_aes256gcm(&key, &plaintext, None).expect("Encryption of large plaintext failed");
+    let decrypted =
+        decrypt_aes256gcm(&key, &encrypted, None).expect("Decryption of large plaintext failed");
 
     assert_eq!(decrypted, plaintext, "Large plaintext roundtrip failed");
 }
@@ -197,7 +224,10 @@ fn aes_gcm_all_zeros_plaintext() {
     // Ensure the ciphertext part is not just zeros
     let ciphertext_only = &encrypted[12..encrypted.len() - 16];
     let all_zeros = ciphertext_only.iter().all(|&b| b == 0);
-    assert!(!all_zeros, "Ciphertext should not be all zeros due to encryption");
+    assert!(
+        !all_zeros,
+        "Ciphertext should not be all zeros due to encryption"
+    );
 
     let decrypted = decrypt_aes256gcm(&key, &encrypted, None).expect("Decryption failed");
     assert_eq!(decrypted, plaintext, "Roundtrip failed for all zeros");
@@ -212,7 +242,10 @@ fn aes_gcm_repeated_encryption_different_ciphertexts() {
     for _ in 0..100 {
         let encrypted = encrypt_aes256gcm(&key, plaintext, None).expect("Encryption failed");
         let current_ciphertext = encrypted.clone();
-        assert_ne!(current_ciphertext, prev_ciphertext, "Ciphertexts should differ due to IV randomness");
+        assert_ne!(
+            current_ciphertext, prev_ciphertext,
+            "Ciphertexts should differ due to IV randomness"
+        );
         prev_ciphertext = current_ciphertext;
 
         let decrypted = decrypt_aes256gcm(&key, &encrypted, None).expect("Decryption failed");
@@ -226,7 +259,10 @@ fn aes_gcm_ciphertext_reuse_attack() {
     let ct1 = encrypt_aes256gcm(&key, b"alice pays bob $10", None).unwrap();
     let ct2 = encrypt_aes256gcm(&key, b"alice pays bob $99", None).unwrap();
 
-    assert_ne!(ct1, ct2, "Different messages should yield different ciphertexts");
+    assert_ne!(
+        ct1, ct2,
+        "Different messages should yield different ciphertexts"
+    );
 
     let pt1 = decrypt_aes256gcm(&key, &ct1, None).unwrap();
     let pt2 = decrypt_aes256gcm(&key, &ct2, None).unwrap();

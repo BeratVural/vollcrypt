@@ -15,7 +15,9 @@ pub fn wrap_key(kek: &[u8], key_to_wrap: &[u8]) -> Result<Vec<u8>, &'static str>
     kek_arr.copy_from_slice(kek);
     let kek_obj = KekAes256::from(kek_arr);
 
-    kek_obj.wrap_vec(key_to_wrap).map_err(|_| "Failed to wrap key")
+    kek_obj
+        .wrap_vec(key_to_wrap)
+        .map_err(|_| "Failed to wrap key")
 }
 
 /// Unwraps a wrapped cryptographic key using AES-256-KW.
@@ -32,7 +34,9 @@ pub fn unwrap_key(kek: &[u8], wrapped_key: &[u8]) -> Result<Vec<u8>, &'static st
     kek_arr.copy_from_slice(kek);
     let kek_obj = KekAes256::from(kek_arr);
 
-    kek_obj.unwrap_vec(wrapped_key).map_err(|_| "Failed to unwrap key")
+    kek_obj
+        .unwrap_vec(wrapped_key)
+        .map_err(|_| "Failed to unwrap key")
 }
 
 #[cfg(test)]
@@ -43,7 +47,7 @@ mod tests {
     fn test_wrap_unwrap() {
         let kek = b"0123456789abcdef0123456789abcdef"; // 32 bytes
         let key_item = b"some_sensitive_key_material_32_b"; // 32 bytes
-        
+
         let wrapped = wrap_key(kek, key_item).unwrap();
         assert_eq!(wrapped.len(), key_item.len() + 8); // AES-KW adds 8 bytes overhead
 

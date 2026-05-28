@@ -1,18 +1,16 @@
+use rand::seq::SliceRandom;
+use rand::thread_rng;
+use sha2::Digest;
 use std::collections::BTreeMap;
 use std::panic;
 use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
-use rand::seq::SliceRandom;
-use rand::thread_rng;
 use zeroize::{Zeroize, ZeroizeOnDrop};
-use sha2::Digest;
 
-use crate::transcript::TranscriptState;
-use crate::ratchet::{
-    generate_ratchet_keypair, ratchet_srk_sender, CryptoError,
-};
-use crate::sealed_sender::{seal, unseal};
 use crate::keys::generate_x25519_keypair;
+use crate::ratchet::{CryptoError, generate_ratchet_keypair, ratchet_srk_sender};
+use crate::sealed_sender::{seal, unseal};
+use crate::transcript::TranscriptState;
 
 // =========================================================================
 // 1. The "Network Chaos & Out-of-Order" Stress Test
@@ -43,7 +41,8 @@ fn test_network_chaos_and_out_of_order() {
         let sender_id = b"alice".to_vec();
         let timestamp = 1700000000 + i;
         let ciphertext = vec![i as u8; 32];
-        let hash = TranscriptState::compute_message_hash(&msg_id, &sender_id, timestamp, &ciphertext);
+        let hash =
+            TranscriptState::compute_message_hash(&msg_id, &sender_id, timestamp, &ciphertext);
 
         messages.push(NetworkMessage {
             sequence_number: i,
@@ -64,7 +63,7 @@ fn test_network_chaos_and_out_of_order() {
     // 3. Simulate Network Chaos (shuffle, duplicate, delay)
     let mut network_queue = Vec::new();
     let mut rng = thread_rng();
-    
+
     // Duplicate some messages (e.g. sequence 5, 10, 15)
     for msg in &messages {
         network_queue.push(msg.clone());
@@ -95,7 +94,7 @@ fn test_network_chaos_and_out_of_order() {
 
     for msg in &network_queue {
         let seq = msg.sequence_number;
-        
+
         // Ignore duplicates (replay detection)
         if seq < next_expected_seq {
             continue;
@@ -113,7 +112,10 @@ fn test_network_chaos_and_out_of_order() {
 
     // Ensure all 50 messages were processed and no gaps remain
     assert_eq!(next_expected_seq, 50, "All 50 messages should be processed");
-    assert!(recovery_buffer.is_empty(), "Recovery buffer must be empty at the end");
+    assert!(
+        recovery_buffer.is_empty(),
+        "Recovery buffer must be empty at the end"
+    );
 
     // Verify Bob's recovered state matches Alice's final state
     assert_eq!(
@@ -157,7 +159,7 @@ impl RatchetSession {
             &self.chat_id,
             self.step + 1,
         )?;
-        
+
         // Commit changes only after successful computation
         self.srk = new_srk;
         self.step += 1;
@@ -184,13 +186,13 @@ fn test_ratchet_race_condition_and_state_corruption() {
         let alice_kp = generate_ratchet_keypair().unwrap();
         // Wait for other threads to align
         barrier_alice.wait();
-        
+
         // Alice attempts to ratchet using a dummy public key because she hasn't received Bob's new key yet
         let dummy_pub = [0u8; 32];
-        let result = alice_session_clone.lock().unwrap().try_ratchet(
-            alice_kp.secret_key(),
-            &dummy_pub,
-        );
+        let result = alice_session_clone
+            .lock()
+            .unwrap()
+            .try_ratchet(alice_kp.secret_key(), &dummy_pub);
         (result, alice_kp)
     });
 
@@ -201,13 +203,13 @@ fn test_ratchet_race_condition_and_state_corruption() {
         let bob_kp = generate_ratchet_keypair().unwrap();
         // Wait for other threads to align
         barrier_bob.wait();
-        
+
         // Bob attempts to ratchet using a dummy public key
         let dummy_pub = [0u8; 32];
-        let result = bob_session_clone.lock().unwrap().try_ratchet(
-            bob_kp.secret_key(),
-            &dummy_pub,
-        );
+        let result = bob_session_clone
+            .lock()
+            .unwrap()
+            .try_ratchet(bob_kp.secret_key(), &dummy_pub);
         (result, bob_kp)
     });
 
@@ -228,7 +230,10 @@ fn test_ratchet_race_condition_and_state_corruption() {
         if alice_result.is_ok() {
             assert_ne!(alice_lock.srk, initial_srk);
         } else {
-            assert_eq!(alice_lock.srk, initial_srk, "State must roll back on failure");
+            assert_eq!(
+                alice_lock.srk, initial_srk,
+                "State must roll back on failure"
+            );
         }
     }
 
@@ -236,12 +241,12 @@ fn test_ratchet_race_condition_and_state_corruption() {
     // We will supply an invalid key length/type if possible or trigger a manual error.
     // Let's perform a ratchet that we force to fail by simulating a network failure.
     // If we call try_ratchet with a valid keypair but intercept and inject an invalid operation:
-    // Actually, x25519-dalek does not fail on random public keys, but it would fail if we passed 
+    // Actually, x25519-dalek does not fail on random public keys, but it would fail if we passed
     // an invalid key size (though Rust's type system enforces `[u8; 32]`).
     // Let's verify that if we manually simulate a failing ratchet step, the SRK is untouched:
     let mut test_session = RatchetSession::new(initial_srk, chat_id);
     let keypair = generate_ratchet_keypair().unwrap();
-    
+
     // Simulate a failure: We pass a helper function that returns Err
     fn failing_ratchet_step(
         session: &mut RatchetSession,
@@ -255,7 +260,7 @@ fn test_ratchet_race_condition_and_state_corruption() {
             &session.chat_id,
             session.step + 1,
         )?;
-        
+
         // Simulating an unexpected network interruption or verification failure here
         Err(CryptoError::RatchetComputationFailed)
     }
@@ -266,12 +271,15 @@ fn test_ratchet_race_condition_and_state_corruption() {
         test_session.srk, initial_srk,
         "Session SRK must remain unchanged if the ratchet operation fails halfway"
     );
-    assert_eq!(test_session.step, 0, "Session step must not increment on failure");
+    assert_eq!(
+        test_session.step, 0,
+        "Session step must not increment on failure"
+    );
 
     // Finally, let's verify that Alice and Bob can correctly synchronize once they exchange actual public keys
     let mut alice_final = alice_session.lock().unwrap();
     let mut bob_final = bob_session.lock().unwrap();
-    
+
     // Reset to initial state for a clean run
     alice_final.srk = initial_srk;
     alice_final.step = 0;
@@ -322,8 +330,7 @@ impl ReplayPreventionStore {
         }
 
         // Unseal the packet
-        let decrypted = unseal(packet, recipient_sk)
-            .map_err(|_| "Decryption/Unseal failed")?;
+        let decrypted = unseal(packet, recipient_sk).map_err(|_| "Decryption/Unseal failed")?;
 
         // Record the hash on successful decryption
         self.processed_packet_hashes.insert(packet_hash);
@@ -351,11 +358,12 @@ fn test_sealed_sender_malleability_and_replay() {
         let mut corrupted_packet = sealed_packet.clone();
 
         // Attack 1: Bit flip
-        corrupted_packet[i] = original_val ^ 0x01; 
+        corrupted_packet[i] = original_val ^ 0x01;
         let result = unseal(&corrupted_packet, &bob_sk);
         assert!(
             result.is_err(),
-            "Decryption must fail when byte {} is flipped", i
+            "Decryption must fail when byte {} is flipped",
+            i
         );
 
         // Attack 2: Ensure the byte is modified to a different value (e.g. add 117)
@@ -367,7 +375,9 @@ fn test_sealed_sender_malleability_and_replay() {
         let result_rand = unseal(&corrupted_packet, &bob_sk);
         assert!(
             result_rand.is_err(),
-            "Decryption must fail when byte {} is randomized to {}", i, alt_val
+            "Decryption must fail when byte {} is randomized to {}",
+            i,
+            alt_val
         );
     }
 
@@ -388,7 +398,8 @@ fn test_sealed_sender_malleability_and_replay() {
         let replay_delivery = receiver_store.process_packet(&sealed_packet, &bob_sk);
         assert!(
             replay_delivery.is_err(),
-            "Delivery attempt {} (replay) should have been rejected", i
+            "Delivery attempt {} (replay) should have been rejected",
+            i
         );
         assert_eq!(
             replay_delivery.unwrap_err(),
@@ -449,11 +460,11 @@ impl<T> Drop for ObservedBox<T> {
 #[test]
 fn test_panic_memory_zeroization() {
     let original_key = [0x99u8; 32];
-    
+
     // Allocate the container using our custom ObservedBox
     let container = ObservedBox::new(SecretKeyContainer::new(original_key));
     let raw_ptr = container.as_ptr();
-    
+
     unsafe {
         // Confirm the memory initially holds the original key data
         let initial_slice = std::slice::from_raw_parts(raw_ptr as *const u8, 32);
@@ -464,7 +475,7 @@ fn test_panic_memory_zeroization() {
     let panic_result = panic::catch_unwind(panic::AssertUnwindSafe(move || {
         // Reference the container to keep it alive in the closure's scope
         let _active_container = container;
-        
+
         // Deliberately panic (simulate a boundary condition panic or invalid slice access)
         panic!("Forced panic for zeroization test");
     }));
@@ -475,11 +486,10 @@ fn test_panic_memory_zeroization() {
     // We check the memory to verify it has been zeroized.
     unsafe {
         let zeroized_slice = std::slice::from_raw_parts(raw_ptr as *const u8, 32);
-        
+
         // Verify that the memory was zeroized, despite the panic
         assert_eq!(
-            zeroized_slice,
-            [0u8; 32],
+            zeroized_slice, [0u8; 32],
             "Memory containing key must be zeroized during panic unwinding"
         );
 

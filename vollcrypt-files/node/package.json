@@ -1,0 +1,65 @@
+{
+  "name": "@vollcrypt/files-node",
+  "version": "0.2.0",
+  "description": "Cross-platform, quantum-resistant file encryption engine for Node.js - native binding",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "name": "vollcrypt-files-node",
+    "triples": {
+      "defaults": true,
+      "additional": [
+        "aarch64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "aarch64-unknown-linux-musl"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "npx @napi-rs/cli build --platform --release",
+    "build:debug": "npx @napi-rs/cli build --platform",
+    "test": "node --import tsx --test tests/api.test.ts"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BeratVural/vollcrypt.git",
+    "directory": "vollcrypt-files/node"
+  },
+  "homepage": "https://github.com/BeratVural/vollcrypt#readme",
+  "bugs": {
+    "url": "https://github.com/BeratVural/vollcrypt/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "index.d.ts",
+    "index.js",
+    "vollcrypt-files-node.*.node"
+  ],
+  "keywords": [
+    "vollcrypt",
+    "cryptography",
+    "encryption",
+    "file-encryption",
+    "aes-gcm",
+    "ed25519",
+    "x25519",
+    "ml-kem",
+    "post-quantum",
+    "pqc",
+    "e2ee",
+    "napi"
+  ],
+  "author": "Berat Vural <berat.vural.tr@gmail.com>",
+  "license": "GPL-3.0-only",
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.4",
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}

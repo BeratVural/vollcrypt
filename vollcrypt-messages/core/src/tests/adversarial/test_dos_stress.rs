@@ -1,10 +1,9 @@
+use rand::{RngCore, rngs::OsRng};
 use std::collections::HashSet;
 use std::time::Instant;
-use rand::{RngCore, rngs::OsRng};
 
-
+use crate::ratchet::{generate_ratchet_keypair, ratchet_srk_receiver};
 use crate::transcript::TranscriptState;
-use crate::ratchet::{ratchet_srk_receiver, generate_ratchet_keypair};
 
 // =========================================================================
 // 1. The "AES-GCM Nonce Reuse & Counter Exhaustion" Test
@@ -35,9 +34,15 @@ fn test_aes_gcm_nonce_collision_probability() {
 
     let avg_attempts = total_attempts_to_collision / target_collisions;
     // Theoretical average for 24-bit space (16,777,216 values) is sqrt(pi/2 * 2^24) approx 5135.
-    println!("Average messages before a 24-bit nonce collision: {}", avg_attempts);
-    assert!(avg_attempts > 1000 && avg_attempts < 10000, 
-            "Empirical average {} should align with birthday paradox expectations (~5135)", avg_attempts);
+    println!(
+        "Average messages before a 24-bit nonce collision: {}",
+        avg_attempts
+    );
+    assert!(
+        avg_attempts > 1000 && avg_attempts < 10000,
+        "Empirical average {} should align with birthday paradox expectations (~5135)",
+        avg_attempts
+    );
 
     // B. Mathematical Verification of 96-bit (12-byte) Nonce Space
     // We compute the probability of a collision after N messages.
@@ -46,12 +51,24 @@ fn test_aes_gcm_nonce_collision_probability() {
     let prob_2_16 = calculate_collision_probability(n_values[0]);
     let prob_2_32 = calculate_collision_probability(n_values[1]);
 
-    println!("Theoretical collision probability for 96-bit nonce at N=2^16 (65,536 msgs): {:.2e}", prob_2_16);
-    println!("Theoretical collision probability for 96-bit nonce at N=2^32 (4.29B msgs): {:.2e}", prob_2_32);
+    println!(
+        "Theoretical collision probability for 96-bit nonce at N=2^16 (65,536 msgs): {:.2e}",
+        prob_2_16
+    );
+    println!(
+        "Theoretical collision probability for 96-bit nonce at N=2^32 (4.29B msgs): {:.2e}",
+        prob_2_32
+    );
 
     // Assert that the probability of a collision for 2^16 messages is cryptographically negligible.
-    assert!(prob_2_16 < 1e-15, "Collision probability must be negligible for standard conversations");
-    assert!(prob_2_32 < 1e-9, "Collision probability must be negligible even for 4 billion messages");
+    assert!(
+        prob_2_16 < 1e-15,
+        "Collision probability must be negligible for standard conversations"
+    );
+    assert!(
+        prob_2_32 < 1e-9,
+        "Collision probability must be negligible even for 4 billion messages"
+    );
 }
 
 fn calculate_collision_probability(n: u64) -> f64 {
@@ -77,7 +94,7 @@ fn test_massive_skipped_keys_dos_performance() {
     let massive_leap_step = 10_000_000u64;
 
     let start_time = Instant::now();
-    
+
     // Process the receiver ratchet step with the massive leap
     let result = ratchet_srk_receiver(
         &initial_srk,
@@ -88,12 +105,17 @@ fn test_massive_skipped_keys_dos_performance() {
     );
 
     let duration = start_time.elapsed();
-    println!("Time taken to compute ratchet step leap of 10M: {} µs", duration.as_micros());
+    println!(
+        "Time taken to compute ratchet step leap of 10M: {} µs",
+        duration.as_micros()
+    );
 
     // Assert that the receiver does not hang or consume excessive time
     assert!(result.is_ok(), "Ratchet step computation must succeed");
-    assert!(duration.as_millis() < 50, 
-            "A massive ratchet step leap must execute in O(1) time (< 50ms), proving it does not loop over skipped keys");
+    assert!(
+        duration.as_millis() < 50,
+        "A massive ratchet step leap must execute in O(1) time (< 50ms), proving it does not loop over skipped keys"
+    );
 }
 
 // =========================================================================
@@ -131,22 +153,33 @@ fn test_replay_store_memory_bloat_stress() {
         let mut hash = [0u8; 32];
         hash[0..8].copy_from_slice(&(i as u64).to_be_bytes());
         let inserted = store.check_and_add(hash);
-        assert!(inserted, "Each hash should be unique and inserted successfully");
+        assert!(
+            inserted,
+            "Each hash should be unique and inserted successfully"
+        );
     }
 
     let duration = start_time.elapsed();
-    println!("Time taken to insert {} hashes: {} ms", num_hashes, duration.as_millis());
+    println!(
+        "Time taken to insert {} hashes: {} ms",
+        num_hashes,
+        duration.as_millis()
+    );
 
     // Document memory overhead.
-    // In Rust, HashSet has overhead per entry. 
+    // In Rust, HashSet has overhead per entry.
     // For HashSet<[u8; 32]>, each entry is at least 32 bytes for the key plus hash-table metadata (typically ~24 bytes).
     // Minimum memory footprint = 500k * (32 + 24) = 28 MB.
     let num_entries = store.processed_packet_hashes.len();
     assert_eq!(num_entries, num_hashes);
     println!("Replay prevention store size: {} entries", num_entries);
-    
+
     // Assert that insertion completes within a reasonable timeframe, confirming O(1) average lookup/insert
-    assert!(duration.as_secs() < 3, "Flooding 500k hashes took too long ({}s)", duration.as_secs());
+    assert!(
+        duration.as_secs() < 3,
+        "Flooding 500k hashes took too long ({}s)",
+        duration.as_secs()
+    );
 }
 
 // =========================================================================
@@ -167,7 +200,7 @@ struct ForkedMessage {
 #[test]
 fn test_simultaneous_offline_messaging_and_transcript_fork() {
     let session_id = b"offline-fork-session";
-    
+
     // Initialize identical transcript chains for Alice and Bob
     let mut alice_chain = TranscriptState::new(session_id);
     let mut bob_chain = TranscriptState::new(session_id);
@@ -182,7 +215,12 @@ fn test_simultaneous_offline_messaging_and_transcript_fork() {
         let alice_sender = b"alice".to_vec();
         let alice_time = 1000 + i * 2; // e.g. 1000, 1002, 1004...
         let alice_cipher = vec![i as u8; 16];
-        let alice_hash = TranscriptState::compute_message_hash(&alice_msg_id, &alice_sender, alice_time, &alice_cipher);
+        let alice_hash = TranscriptState::compute_message_hash(
+            &alice_msg_id,
+            &alice_sender,
+            alice_time,
+            &alice_cipher,
+        );
         alice_offline_messages.push(ForkedMessage {
             sequence_number: i,
             message_id: alice_msg_id,
@@ -197,7 +235,8 @@ fn test_simultaneous_offline_messaging_and_transcript_fork() {
         let bob_sender = b"bob".to_vec();
         let bob_time = 1001 + i * 2; // e.g. 1001, 1003, 1005...
         let bob_cipher = vec![i as u8; 16];
-        let bob_hash = TranscriptState::compute_message_hash(&bob_msg_id, &bob_sender, bob_time, &bob_cipher);
+        let bob_hash =
+            TranscriptState::compute_message_hash(&bob_msg_id, &bob_sender, bob_time, &bob_cipher);
         bob_offline_messages.push(ForkedMessage {
             sequence_number: i,
             message_id: bob_msg_id,
@@ -248,7 +287,8 @@ fn test_simultaneous_offline_messaging_and_transcript_fork() {
 
     // Sort by timestamp, break ties by sender_id and message_id to ensure a deterministic global order
     all_messages.sort_by(|a, b| {
-        a.timestamp.cmp(&b.timestamp)
+        a.timestamp
+            .cmp(&b.timestamp)
             .then_with(|| a.sender_id.cmp(&b.sender_id))
             .then_with(|| a.message_id.cmp(&b.message_id))
     });
@@ -270,7 +310,10 @@ fn test_simultaneous_offline_messaging_and_transcript_fork() {
     );
 
     assert!(
-        TranscriptState::verify_sync(alice_chain_resolved.current_hash(), bob_chain_resolved.current_hash()),
+        TranscriptState::verify_sync(
+            alice_chain_resolved.current_hash(),
+            bob_chain_resolved.current_hash()
+        ),
         "Transcript synchronization check must succeed after linearization resolution"
     );
 }

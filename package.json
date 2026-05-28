@@ -4,9 +4,13 @@
   "description": "Cross-platform Rust cryptography core",
   "private": true,
   "scripts": {
-    "build:node": "cd vollcrypt-messages/node && npm install && npm run build",
-    "build:wasm": "wasm-pack build vollcrypt-messages/wasm --target web --out-dir pkg",
-    "build": "npm run build:node && npm run build:wasm",
+    "build:messages:node": "cd vollcrypt-messages/node && npm install && npm run build",
+    "build:messages:wasm": "wasm-pack build vollcrypt-messages/wasm --target web --out-dir pkg",
+    "build:files:node": "cd vollcrypt-files/node && npm install && npm run build",
+    "build:files:wasm": "wasm-pack build vollcrypt-files/wasm --target web --out-dir pkg",
+    "build:messages": "npm run build:messages:node && npm run build:messages:wasm",
+    "build:files": "npm run build:files:node && npm run build:files:wasm",
+    "build": "npm run build:messages && npm run build:files",
     "test:cargo": "cargo test --all",
     "format": "cargo fmt --all"
   },

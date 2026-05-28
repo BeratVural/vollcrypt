@@ -1,7 +1,7 @@
-use zeroize::{Zeroize, ZeroizeOnDrop};
 use crate::kdf::derive_hkdf_combined;
 use rand::rngs::OsRng;
 use x25519_dalek::{PublicKey, StaticSecret};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 #[derive(Debug)]
 pub enum CryptoError {
@@ -26,8 +26,12 @@ impl core::fmt::Display for CryptoError {
             CryptoError::InvalidKeyLength => write!(f, "Invalid key length"),
             CryptoError::InvalidSealedPacketFormat => write!(f, "Invalid sealed packet format"),
             CryptoError::DecryptionFailed => write!(f, "Decryption failed or MAC mismatch"),
-            CryptoError::KeyLogChainBroken { at_index } => write!(f, "Key log chain broken at index {}", at_index),
-            CryptoError::KeyLogInvalidSignature { at_index } => write!(f, "Key log invalid signature at index {}", at_index),
+            CryptoError::KeyLogChainBroken { at_index } => {
+                write!(f, "Key log chain broken at index {}", at_index)
+            }
+            CryptoError::KeyLogInvalidSignature { at_index } => {
+                write!(f, "Key log invalid signature at index {}", at_index)
+            }
             CryptoError::KeyLogHashMismatch => write!(f, "Key log hash mismatch"),
             CryptoError::KeyLogEmpty => write!(f, "Key log empty"),
         }
@@ -38,8 +42,8 @@ impl core::fmt::Display for CryptoError {
 /// Automatically zeroized after usage.
 #[derive(ZeroizeOnDrop, Zeroize)]
 pub struct RatchetKeyPair {
-    pub public_key: [u8; 32],   // Sent to the other party
-    secret_key: [u8; 32],       // Never leaves the local context
+    pub public_key: [u8; 32], // Sent to the other party
+    secret_key: [u8; 32],     // Never leaves the local context
 }
 
 impl RatchetKeyPair {
@@ -51,12 +55,12 @@ impl RatchetKeyPair {
 /// Bir PCS ratchet adımının çıktısı.
 #[derive(ZeroizeOnDrop, Zeroize)]
 pub struct RatchetOutput {
-    pub new_srk: [u8; 32],          // New Session Root Key
+    pub new_srk: [u8; 32], // New Session Root Key
 }
 
 /// Ratchet trigger conditions.
 pub struct RatchetConfig {
-    pub messages_per_ratchet: u32,   // Number of messages between ratchets (default: 50)
+    pub messages_per_ratchet: u32, // Number of messages between ratchets (default: 50)
     pub ratchet_on_new_window: bool, // Ratchet on every new WindowKey period (default: true)
 }
 
@@ -95,7 +99,6 @@ pub fn ratchet_srk_sender(
     _chat_id: &[u8], // maintained for API compatibility based on prompt
     ratchet_step: u64,
 ) -> Result<[u8; 32], CryptoError> {
-    
     // Step 1: ECDH
     let secret = StaticSecret::from(*our_ratchet_secret);
     let public = PublicKey::from(*their_ratchet_pub);
@@ -104,14 +107,15 @@ pub fn ratchet_srk_sender(
 
     // Step 2-4: input_material = current_srk || ephemeral_shared, then HKDF
     let salt = ratchet_step.to_be_bytes();
-    
+
     let new_srk_vec = derive_hkdf_combined(
         current_srk,
         &ephemeral_shared_bytes,
         Some(&salt),
         Some(b"vollchat-pcs-ratchet-v1"),
         32,
-    ).map_err(|_| CryptoError::RatchetComputationFailed)?;
+    )
+    .map_err(|_| CryptoError::RatchetComputationFailed)?;
 
     // Step 5: zeroize intermediate
     ephemeral_shared_bytes.zeroize();
@@ -131,19 +135,21 @@ pub fn ratchet_srk_receiver(
     ratchet_step: u64,
 ) -> Result<[u8; 32], CryptoError> {
     // Receiver and sender execute the same math (ECDH property)
-    ratchet_srk_sender(current_srk, our_ratchet_secret, their_ratchet_pub, chat_id, ratchet_step)
+    ratchet_srk_sender(
+        current_srk,
+        our_ratchet_secret,
+        their_ratchet_pub,
+        chat_id,
+        ratchet_step,
+    )
 }
 
 /// Should we ratchet? Decides based on message count and window state.
-pub fn should_ratchet(
-    message_count: u32,
-    window_changed: bool,
-    config: &RatchetConfig,
-) -> bool {
+pub fn should_ratchet(message_count: u32, window_changed: bool, config: &RatchetConfig) -> bool {
     if config.ratchet_on_new_window && window_changed {
         return true;
     }
-    
+
     message_count >= config.messages_per_ratchet
 }
 
@@ -163,7 +169,8 @@ mod tests {
             &keypair_b.public_key,
             b"test-chat-id",
             1,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_ne!(old_srk, new_srk, "SRK must change after ratchet");
         old_srk.zeroize(); // zeroize test cleanup
@@ -184,7 +191,8 @@ mod tests {
             &bob_kp.public_key,
             chat_id,
             ratchet_step,
-        ).unwrap();
+        )
+        .unwrap();
 
         let bob_new_srk = ratchet_srk_receiver(
             &current_srk,
@@ -192,9 +200,13 @@ mod tests {
             &alice_kp.public_key,
             chat_id,
             ratchet_step,
-        ).unwrap();
+        )
+        .unwrap();
 
-        assert_eq!(alice_new_srk, bob_new_srk, "Alice and Bob must independently produce the same SRK");
+        assert_eq!(
+            alice_new_srk, bob_new_srk,
+            "Alice and Bob must independently produce the same SRK"
+        );
     }
 
     #[test]
@@ -204,15 +216,18 @@ mod tests {
         let kp_b = generate_ratchet_keypair().unwrap();
         let chat_id = b"test-chat";
 
-        let srk_step_1 = ratchet_srk_sender(
-            &current_srk, &kp_a.secret_key, &kp_b.public_key, chat_id, 1
-        ).unwrap();
+        let srk_step_1 =
+            ratchet_srk_sender(&current_srk, &kp_a.secret_key, &kp_b.public_key, chat_id, 1)
+                .unwrap();
 
-        let srk_step_2 = ratchet_srk_sender(
-            &current_srk, &kp_a.secret_key, &kp_b.public_key, chat_id, 2
-        ).unwrap();
+        let srk_step_2 =
+            ratchet_srk_sender(&current_srk, &kp_a.secret_key, &kp_b.public_key, chat_id, 2)
+                .unwrap();
 
-        assert_ne!(srk_step_1, srk_step_2, "Different ratchet steps must produce different SRKs");
+        assert_ne!(
+            srk_step_1, srk_step_2,
+            "Different ratchet steps must produce different SRKs"
+        );
     }
 
     #[test]
@@ -221,22 +236,28 @@ mod tests {
         let kp_a = generate_ratchet_keypair().unwrap();
         let kp_b = generate_ratchet_keypair().unwrap();
 
-        let new_srk = ratchet_srk_sender(
-            &current_srk, &kp_a.secret_key, &kp_b.public_key, b"chat", 1
-        ).unwrap();
+        let new_srk =
+            ratchet_srk_sender(&current_srk, &kp_a.secret_key, &kp_b.public_key, b"chat", 1)
+                .unwrap();
 
         let kp_c = generate_ratchet_keypair().unwrap();
         let kp_d = generate_ratchet_keypair().unwrap();
-        let attempted_srk = ratchet_srk_sender(
-            &current_srk, &kp_c.secret_key, &kp_d.public_key, b"chat", 1
-        ).unwrap();
+        let attempted_srk =
+            ratchet_srk_sender(&current_srk, &kp_c.secret_key, &kp_d.public_key, b"chat", 1)
+                .unwrap();
 
-        assert_ne!(new_srk, attempted_srk, "Cannot derive the same SRK with a different ephemeral key pair");
+        assert_ne!(
+            new_srk, attempted_srk,
+            "Cannot derive the same SRK with a different ephemeral key pair"
+        );
     }
 
     #[test]
     fn test_should_ratchet_by_message_count() {
-        let config = RatchetConfig { messages_per_ratchet: 50, ratchet_on_new_window: false };
+        let config = RatchetConfig {
+            messages_per_ratchet: 50,
+            ratchet_on_new_window: false,
+        };
         assert!(!should_ratchet(49, false, &config));
         assert!(should_ratchet(50, false, &config));
         assert!(should_ratchet(100, false, &config));
@@ -244,8 +265,17 @@ mod tests {
 
     #[test]
     fn test_should_ratchet_on_new_window() {
-        let config = RatchetConfig { messages_per_ratchet: 1000, ratchet_on_new_window: true };
-        assert!(should_ratchet(1, true, &config), "Ratchet should trigger on new window");
-        assert!(!should_ratchet(1, false, &config), "Ratchet should not trigger on same window");
+        let config = RatchetConfig {
+            messages_per_ratchet: 1000,
+            ratchet_on_new_window: true,
+        };
+        assert!(
+            should_ratchet(1, true, &config),
+            "Ratchet should trigger on new window"
+        );
+        assert!(
+            !should_ratchet(1, false, &config),
+            "Ratchet should not trigger on same window"
+        );
     }
 }

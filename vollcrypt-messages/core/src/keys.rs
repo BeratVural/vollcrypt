@@ -27,10 +27,13 @@ pub fn generate_x25519_keypair() -> (Vec<u8>, Vec<u8>) {
 /// Signs a message using an Ed25519 Secret Key (32 bytes).
 pub fn sign_message(secret_key_bytes: &[u8], message: &[u8]) -> Result<Vec<u8>, &'static str> {
     if secret_key_bytes.len() != 32 {
-        log::error!("sign_message: Invalid secret key length (expected 32, got {})", secret_key_bytes.len());
+        log::error!(
+            "sign_message: Invalid secret key length (expected 32, got {})",
+            secret_key_bytes.len()
+        );
         return Err("Invalid secret key length");
     }
-    
+
     log::debug!("sign_message: Signing message of length {}", message.len());
 
     // We expect a 32-byte secret seed to reconstruct the SigningKey
@@ -52,7 +55,10 @@ pub fn verify_signature(public_key_bytes: &[u8], message: &[u8], signature_bytes
         return false;
     }
 
-    log::debug!("verify_signature: Verifying signature against message of length {}", message.len());
+    log::debug!(
+        "verify_signature: Verifying signature against message of length {}",
+        message.len()
+    );
 
     let mut pk_bytes = [0u8; 32];
     pk_bytes.copy_from_slice(public_key_bytes);
@@ -79,7 +85,7 @@ pub fn ecdh_shared_secret(
         log::error!("ecdh_shared_secret: Invalid key length");
         return Err("Invalid key length");
     }
-    
+
     log::debug!("ecdh_shared_secret: Computing shared secret");
 
     let mut secret_arr = [0u8; 32];
