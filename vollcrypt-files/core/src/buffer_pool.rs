@@ -85,7 +85,7 @@ impl PooledBuffer {
 
 impl Zeroize for PooledBuffer {
     fn zeroize(&mut self) {
-        self.data.zeroize();
+        self.data.as_mut_slice().zeroize();
     }
 }
 
