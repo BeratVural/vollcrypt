@@ -1,0 +1,45 @@
+{
+  "name": "@vollcrypt/files-wasm",
+  "version": "0.2.0",
+  "description": "Cross-platform, quantum-resistant file encryption engine for the browser/Node via WebAssembly",
+  "type": "module",
+  "main": "pkg/vollcrypt_files_wasm.js",
+  "types": "pkg/vollcrypt_files_wasm.d.ts",
+  "scripts": {
+    "build": "wasm-pack build --target web --out-dir pkg",
+    "build:node": "wasm-pack build --target nodejs --out-dir pkg-node",
+    "test": "wasm-pack test --node"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BeratVural/vollcrypt.git",
+    "directory": "vollcrypt-files/wasm"
+  },
+  "homepage": "https://github.com/BeratVural/vollcrypt#readme",
+  "bugs": {
+    "url": "https://github.com/BeratVural/vollcrypt/issues"
+  },
+  "files": [
+    "pkg/"
+  ],
+  "keywords": [
+    "vollcrypt",
+    "cryptography",
+    "encryption",
+    "file-encryption",
+    "wasm",
+    "webassembly",
+    "aes-gcm",
+    "ed25519",
+    "x25519",
+    "ml-kem",
+    "post-quantum",
+    "pqc",
+    "e2ee"
+  ],
+  "author": "Berat Vural <berat.vural.tr@gmail.com>",
+  "license": "GPL-3.0-only"
+}

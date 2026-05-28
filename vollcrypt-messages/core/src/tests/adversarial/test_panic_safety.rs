@@ -1,8 +1,8 @@
-use std::panic;
-use crate::symmetric::decrypt_aes256gcm;
-use crate::kdf::{derive_hkdf, derive_pbkdf2, derive_srk};
 use crate::envelope::{pack_envelope, unpack_envelope};
+use crate::kdf::{derive_hkdf, derive_pbkdf2, derive_srk};
 use crate::pqc::ml_kem_decapsulate;
+use crate::symmetric::decrypt_aes256gcm;
+use std::panic;
 
 // ── Fuzzing / Iteration ───────────────────────────────────────────────────
 
@@ -13,10 +13,10 @@ fn panic_safety_aes256gcm() {
         let key = [0u8; 32];
         let mut ct = vec![0x42; 100];
         let _ = decrypt_aes256gcm(&key, &ct, None);
-        
+
         ct.truncate(10);
         let _ = decrypt_aes256gcm(&key, &ct, None);
-        
+
         let _ = decrypt_aes256gcm(&key, &[], None);
     });
 }
@@ -62,7 +62,7 @@ fn panic_safety_pqc_decap() {
     let _ = panic::catch_unwind(|| {
         let bad_sk = [0u8; 2400]; // ML-KEM-768 SK len
         let bad_ct = [0u8; 1088]; // ML-KEM-768 CT len
-        
+
         // They might cause validation failures and return Err
         let _ = ml_kem_decapsulate(&bad_sk, &bad_ct);
     });

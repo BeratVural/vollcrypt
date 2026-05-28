@@ -3,7 +3,9 @@ members = [
     "vollcrypt-messages/core",
     "vollcrypt-messages/node",
     "vollcrypt-messages/wasm",
-    "vollcrypt-file/core"
+    "vollcrypt-files/core",
+    "vollcrypt-files/node",
+    "vollcrypt-files/wasm"
 ]
 resolver = "2"
 

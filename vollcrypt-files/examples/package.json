@@ -1,0 +1,25 @@
+{
+  "name": "@vollcrypt/files-examples",
+  "version": "0.1.0",
+  "description": "Runnable TypeScript examples demonstrating vollcrypt-files capabilities",
+  "private": true,
+  "scripts": {
+    "01": "tsx src/01_password.ts",
+    "02": "tsx src/02_recipient.ts",
+    "03": "tsx src/03_multi_recipient.ts",
+    "04": "tsx src/04_group.ts",
+    "05": "tsx src/05_rotation.ts",
+    "06": "tsx src/06_crypto_shred.ts",
+    "07": "tsx src/07_signed_header.ts",
+    "08": "tsx src/08_sender_resolution.ts",
+    "09": "tsx src/09_full_flow.ts"
+  },
+  "dependencies": {
+    "@vollcrypt/files-node": "file:../node"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}

@@ -1,17 +1,15 @@
-pub mod test_pqc;
-pub mod test_symmetric;
-pub mod test_keys;
-pub mod test_kdf;
-pub mod test_envelope;
-pub mod test_ratchet;
-pub mod test_transcript;
-pub mod test_sealed_sender;
-pub mod test_verification;
-pub mod test_key_log;
-pub mod test_wrap;
-pub mod test_cross_module;
-pub mod test_panic_safety;
 pub mod test_adversarial_suites;
+pub mod test_cross_module;
 pub mod test_dos_stress;
-
-
+pub mod test_envelope;
+pub mod test_kdf;
+pub mod test_key_log;
+pub mod test_keys;
+pub mod test_panic_safety;
+pub mod test_pqc;
+pub mod test_ratchet;
+pub mod test_sealed_sender;
+pub mod test_symmetric;
+pub mod test_transcript;
+pub mod test_verification;
+pub mod test_wrap;

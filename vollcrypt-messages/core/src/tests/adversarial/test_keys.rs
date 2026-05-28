@@ -1,6 +1,6 @@
 use crate::keys::{
-    generate_ed25519_keypair, generate_x25519_keypair, sign_message, verify_signature,
-    ecdh_shared_secret,
+    ecdh_shared_secret, generate_ed25519_keypair, generate_x25519_keypair, sign_message,
+    verify_signature,
 };
 
 // ── Ed25519 Attacks ───────────────────────────────────────────────────────
@@ -110,7 +110,10 @@ fn verify_different_message_same_signature() {
 
     let sig = sign_message(&sk, msg1).unwrap();
     let result = verify_signature(&pk, msg2, &sig);
-    assert!(!result, "Verification of different message with same signature must fail");
+    assert!(
+        !result,
+        "Verification of different message with same signature must fail"
+    );
 }
 
 #[test]
@@ -125,7 +128,10 @@ fn signature_malleability_check() {
     sig[s_high_byte_idx] ^= 0x80;
 
     let result = verify_signature(&pk, msg, &sig);
-    assert!(!result, "Strict verification must reject modified signatures (prevent malleability)");
+    assert!(
+        !result,
+        "Strict verification must reject modified signatures (prevent malleability)"
+    );
 }
 
 // ── X25519 Attacks ────────────────────────────────────────────────────────

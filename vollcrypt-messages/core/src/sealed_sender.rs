@@ -3,8 +3,8 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use zeroize::Zeroize;
 
 use crate::kdf::derive_hkdf;
-use crate::symmetric::{decrypt_aes256gcm_padded, encrypt_aes256gcm_padded};
 use crate::ratchet::CryptoError;
+use crate::symmetric::{decrypt_aes256gcm_padded, encrypt_aes256gcm_padded};
 
 /// Creates a sealed sender packet.
 ///
@@ -45,7 +45,8 @@ pub fn seal(
         Some(ephemeral_pk.as_bytes()),
         Some(b"vollchat-sealed-sender-v1"),
         32,
-    ).map_err(|_| CryptoError::InvalidKeyLength)?;
+    )
+    .map_err(|_| CryptoError::InvalidKeyLength)?;
 
     // Ensure shared_secret is zeroized immediately after key derivation
     shared_secret.zeroize();
@@ -60,7 +61,7 @@ pub fn seal(
     // 5. Encrypt with AES-256-GCM (returns [12B IV][ciphertext][16B tag])
     let encrypted_inner = encrypt_aes256gcm_padded(&encryption_key, &inner_plaintext, None)
         .map_err(|_| CryptoError::InvalidKeyLength)?;
-    
+
     // Zeroize intermediate encryption key and plaintext
     encryption_key.zeroize();
     inner_plaintext.zeroize();
@@ -109,11 +110,13 @@ pub fn unseal(
         Some(&ephemeral_pk_bytes),
         Some(b"vollchat-sealed-sender-v1"),
         32,
-    ).map_err(|_| CryptoError::InvalidKeyLength)?;
+    )
+    .map_err(|_| CryptoError::InvalidKeyLength)?;
     shared_secret.zeroize();
 
     // 5. Decrypt AES-256-GCM
-    let mut inner_plaintext = match decrypt_aes256gcm_padded(&encryption_key, encrypted_inner, None) {
+    let mut inner_plaintext = match decrypt_aes256gcm_padded(&encryption_key, encrypted_inner, None)
+    {
         Ok(pt) => pt,
         Err(_) => {
             encryption_key.zeroize();
@@ -129,7 +132,7 @@ pub fn unseal(
     }
 
     let sender_id_len = u16::from_be_bytes([inner_plaintext[0], inner_plaintext[1]]) as usize;
-    
+
     if inner_plaintext.len() < 2 + sender_id_len {
         inner_plaintext.zeroize();
         return Err(CryptoError::InvalidSealedPacketFormat);
@@ -172,7 +175,7 @@ mod tests {
         // Every seal call should generate a different ephemeral key, thus a different packet
         let bob_kp = generate_x25519_keypair();
         let bob_pk: [u8; 32] = bob_kp.1.clone().try_into().unwrap();
-        
+
         let sender_id = b"alice";
         let content = b"same content";
 

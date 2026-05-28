@@ -2,10 +2,10 @@
 // FIPS 203: ML-KEM-768 (Module Lattice-based Key Encapsulation Mechanism)
 // Hybrid KEM: X25519 + ML-KEM combined via HKDF for quantum-resistant key exchange
 
-use ml_kem::{MlKem768, KemCore, EncodedSizeUser};
-use ml_kem::kem::{Encapsulate, Decapsulate};
-use rand::rngs::OsRng;
 use crate::kdf::derive_hkdf;
+use ml_kem::kem::{Decapsulate, Encapsulate};
+use ml_kem::{EncodedSizeUser, KemCore, MlKem768};
+use rand::rngs::OsRng;
 
 // ==================== ML-KEM Primitives ====================
 
@@ -28,20 +28,18 @@ pub fn ml_kem_encapsulate(ek_bytes: &[u8]) -> Result<(Vec<u8>, Vec<u8>), &'stati
     let _ = ek_encoded; // just for type inference
 
     // Try to build the encapsulation key from raw bytes
-    let ek_array = ml_kem::array::Array::try_from(ek_bytes)
-        .map_err(|_| {
-            log::error!("ml_kem_encapsulate: Invalid encapsulation key length");
-            "Invalid encapsulation key length"
-        })?;
+    let ek_array = ml_kem::array::Array::try_from(ek_bytes).map_err(|_| {
+        log::error!("ml_kem_encapsulate: Invalid encapsulation key length");
+        "Invalid encapsulation key length"
+    })?;
     let ek = <EK as EncodedSizeUser>::from_bytes(&ek_array);
 
     log::debug!("ml_kem_encapsulate: Encapsulating shared secret");
-    let (ct, shared_secret): (ml_kem::Ciphertext<MlKem768>, ml_kem::SharedKey<MlKem768>) = 
-        ek.encapsulate(&mut OsRng)
-            .map_err(|_| {
-                log::error!("ml_kem_encapsulate: ML-KEM encapsulation failed");
-                "ML-KEM encapsulation failed"
-            })?;
+    let (ct, shared_secret): (ml_kem::Ciphertext<MlKem768>, ml_kem::SharedKey<MlKem768>) =
+        ek.encapsulate(&mut OsRng).map_err(|_| {
+            log::error!("ml_kem_encapsulate: ML-KEM encapsulation failed");
+            "ML-KEM encapsulation failed"
+        })?;
 
     Ok((ct.as_slice().to_vec(), shared_secret.as_slice().to_vec()))
 }
@@ -54,25 +52,22 @@ pub fn ml_kem_decapsulate(dk_bytes: &[u8], ct_bytes: &[u8]) -> Result<Vec<u8>, &
     type DK = <MlKem768 as KemCore>::DecapsulationKey;
     type CT = ml_kem::Ciphertext<MlKem768>;
 
-    let dk_array = ml_kem::array::Array::try_from(dk_bytes)
-        .map_err(|_| {
-            log::error!("ml_kem_decapsulate: Invalid decapsulation key length");
-            "Invalid decapsulation key length"
-        })?;
+    let dk_array = ml_kem::array::Array::try_from(dk_bytes).map_err(|_| {
+        log::error!("ml_kem_decapsulate: Invalid decapsulation key length");
+        "Invalid decapsulation key length"
+    })?;
     let dk = <DK as EncodedSizeUser>::from_bytes(&dk_array);
 
-    let ct = CT::try_from(ct_bytes)
-        .map_err(|_| {
-            log::error!("ml_kem_decapsulate: Invalid ciphertext length");
-            "Invalid ciphertext length"
-        })?;
+    let ct = CT::try_from(ct_bytes).map_err(|_| {
+        log::error!("ml_kem_decapsulate: Invalid ciphertext length");
+        "Invalid ciphertext length"
+    })?;
 
     log::debug!("ml_kem_decapsulate: Decapsulating ciphertext");
-    let shared_secret: ml_kem::SharedKey<MlKem768> = dk.decapsulate(&ct)
-        .map_err(|_| {
-            log::error!("ml_kem_decapsulate: ML-KEM decapsulation failed");
-            "ML-KEM decapsulation failed"
-        })?;
+    let shared_secret: ml_kem::SharedKey<MlKem768> = dk.decapsulate(&ct).map_err(|_| {
+        log::error!("ml_kem_decapsulate: ML-KEM decapsulation failed");
+        "ML-KEM decapsulation failed"
+    })?;
 
     Ok(shared_secret.as_slice().to_vec())
 }
@@ -89,7 +84,7 @@ pub fn hybrid_kem_encapsulate(
     ml_kem_ek_bytes: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>), &'static str> {
     log::debug!("hybrid_kem_encapsulate: Starting hybrid encapsulation");
-    
+
     // Step 1: X25519 ECDH shared secret
     let x25519_shared = crate::ecdh_shared_secret(x25519_our_secret, x25519_their_public)?;
 
@@ -101,12 +96,7 @@ pub fn hybrid_kem_encapsulate(
     combined_ikm.extend_from_slice(&x25519_shared);
     combined_ikm.extend_from_slice(&ml_kem_shared);
 
-    let hybrid_key = derive_hkdf(
-        &combined_ikm,
-        None,
-        Some(b"vollchat-hybrid-kem-v1"),
-        32,
-    )?;
+    let hybrid_key = derive_hkdf(&combined_ikm, None, Some(b"vollchat-hybrid-kem-v1"), 32)?;
 
     Ok((hybrid_key, ml_kem_ct))
 }
@@ -121,7 +111,7 @@ pub fn hybrid_kem_decapsulate(
     ml_kem_ct_bytes: &[u8],
 ) -> Result<Vec<u8>, &'static str> {
     log::debug!("hybrid_kem_decapsulate: Starting hybrid decapsulation");
-    
+
     // Step 1: X25519 ECDH shared secret
     let x25519_shared = crate::ecdh_shared_secret(x25519_our_secret, x25519_their_public)?;
 
@@ -133,12 +123,7 @@ pub fn hybrid_kem_decapsulate(
     combined_ikm.extend_from_slice(&x25519_shared);
     combined_ikm.extend_from_slice(&ml_kem_shared);
 
-    let hybrid_key = derive_hkdf(
-        &combined_ikm,
-        None,
-        Some(b"vollchat-hybrid-kem-v1"),
-        32,
-    )?;
+    let hybrid_key = derive_hkdf(&combined_ikm, None, Some(b"vollchat-hybrid-kem-v1"), 32)?;
 
     Ok(hybrid_key)
 }
@@ -166,11 +151,8 @@ pub fn authenticated_kem_encapsulate(
     sender_identity_sk: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>), &'static str> {
     // 1. hybrid_kem_encapsulate
-    let (hybrid_shared_key, kem_ct) = hybrid_kem_encapsulate(
-        x25519_our_secret,
-        x25519_their_public,
-        ml_kem_ek_bytes,
-    )?;
+    let (hybrid_shared_key, kem_ct) =
+        hybrid_kem_encapsulate(x25519_our_secret, x25519_their_public, ml_kem_ek_bytes)?;
 
     // 2. Compute Ed25519 signature over the ciphertext
     let signature = crate::keys::sign_message(sender_identity_sk, &kem_ct)?;
@@ -205,7 +187,8 @@ pub fn authenticated_kem_decapsulate(
     }
 
     // 1. Parse lengths
-    let kem_ct_len = u16::from_be_bytes([authenticated_ciphertext[0], authenticated_ciphertext[1]]) as usize;
+    let kem_ct_len =
+        u16::from_be_bytes([authenticated_ciphertext[0], authenticated_ciphertext[1]]) as usize;
     if authenticated_ciphertext.len() != 2 + kem_ct_len + 64 {
         log::error!("authenticated_kem_decapsulate: Invalid ciphertext format (length mismatch)");
         return Err("Invalid authenticated ciphertext format");
@@ -257,18 +240,12 @@ mod tests {
         let (recipient_secret, recipient_public) = generate_x25519_keypair();
         let (ml_kem_dk, ml_kem_ek) = ml_kem_keygen();
 
-        let (shared_enc, ml_kem_ct) = hybrid_kem_encapsulate(
-            &sender_secret,
-            &recipient_public,
-            &ml_kem_ek,
-        ).unwrap();
+        let (shared_enc, ml_kem_ct) =
+            hybrid_kem_encapsulate(&sender_secret, &recipient_public, &ml_kem_ek).unwrap();
 
-        let shared_dec = hybrid_kem_decapsulate(
-            &recipient_secret,
-            &sender_public,
-            &ml_kem_dk,
-            &ml_kem_ct,
-        ).unwrap();
+        let shared_dec =
+            hybrid_kem_decapsulate(&recipient_secret, &sender_public, &ml_kem_dk, &ml_kem_ct)
+                .unwrap();
 
         assert_eq!(shared_enc, shared_dec);
         assert_eq!(shared_enc.len(), 32);
@@ -280,20 +257,13 @@ mod tests {
         let (_recipient_secret, recipient_public) = generate_x25519_keypair();
         let (ml_kem_dk, ml_kem_ek) = ml_kem_keygen();
 
-        let (shared_enc, ml_kem_ct) = hybrid_kem_encapsulate(
-            &sender_secret,
-            &recipient_public,
-            &ml_kem_ek,
-        ).unwrap();
+        let (shared_enc, ml_kem_ct) =
+            hybrid_kem_encapsulate(&sender_secret, &recipient_public, &ml_kem_ek).unwrap();
 
         // Use a wrong X25519 key for decapsulation
         let (wrong_secret, _wrong_public) = generate_x25519_keypair();
-        let shared_dec = hybrid_kem_decapsulate(
-            &wrong_secret,
-            &sender_public,
-            &ml_kem_dk,
-            &ml_kem_ct,
-        ).unwrap();
+        let shared_dec =
+            hybrid_kem_decapsulate(&wrong_secret, &sender_public, &ml_kem_dk, &ml_kem_ct).unwrap();
 
         // Hybrid key should NOT match when classical key is wrong
         assert_ne!(shared_enc, shared_dec);
@@ -302,7 +272,7 @@ mod tests {
     #[test]
     fn test_authenticated_kem_roundtrip() {
         let (alice_identity_sk, alice_identity_pk) = crate::keys::generate_ed25519_keypair();
-        
+
         // Alice sending to Bob
         let (alice_x25519_sk, alice_x25519_pk) = generate_x25519_keypair();
         let (bob_x25519_sk, bob_x25519_pk) = generate_x25519_keypair();
@@ -314,7 +284,8 @@ mod tests {
             &bob_x25519_pk,
             &bob_mlkem_ek,
             &alice_identity_sk,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Bob verifies and decapsulates
         let bob_shared = authenticated_kem_decapsulate(
@@ -323,9 +294,13 @@ mod tests {
             &bob_mlkem_dk,
             &auth_ct,
             &alice_identity_pk,
-        ).unwrap();
+        )
+        .unwrap();
 
-        assert_eq!(alice_shared, bob_shared, "Alice and Bob must compute the same shared secret");
+        assert_eq!(
+            alice_shared, bob_shared,
+            "Alice and Bob must compute the same shared secret"
+        );
     }
 
     #[test]
@@ -343,7 +318,8 @@ mod tests {
             &bob_x25519_pk,
             &bob_mlkem_ek,
             &mallory_identity_sk,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Bob attempts to decapsulate, checking against Alice's identity
         let result = authenticated_kem_decapsulate(
@@ -370,7 +346,8 @@ mod tests {
             &bob_x25519_pk,
             &bob_mlkem_ek,
             &alice_identity_sk,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Tamper with the ciphertext (e.g., flip a byte in the KEM CT)
         let mid = auth_ct.len() / 2;
@@ -400,7 +377,8 @@ mod tests {
             &bob_x25519_pk,
             &bob_mlkem_ek,
             &alice_identity_sk,
-        ).unwrap();
+        )
+        .unwrap();
 
         let truncated = &auth_ct[..auth_ct.len() / 2];
 
@@ -413,7 +391,10 @@ mod tests {
         );
 
         assert!(result.is_err(), "Must reject truncated ciphertext");
-        assert_eq!(result.unwrap_err(), "Invalid authenticated ciphertext format");
+        assert_eq!(
+            result.unwrap_err(),
+            "Invalid authenticated ciphertext format"
+        );
     }
 
     #[test]
@@ -428,12 +409,17 @@ mod tests {
             &bob_x25519_pk,
             &bob_mlkem_ek,
             &alice_identity_sk,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert!(auth_ct.len() > 66, "Ciphertext is too short");
 
         // The first 2 bytes must specify the kem_ct length
         let kem_ct_len = u16::from_be_bytes([auth_ct[0], auth_ct[1]]) as usize;
-        assert_eq!(auth_ct.len(), 2 + kem_ct_len + 64, "Total length must match 2 + kem_ct_len + 64 byte signature");
+        assert_eq!(
+            auth_ct.len(),
+            2 + kem_ct_len + 64,
+            "Total length must match 2 + kem_ct_len + 64 byte signature"
+        );
     }
 }

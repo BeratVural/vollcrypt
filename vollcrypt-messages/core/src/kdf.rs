@@ -8,8 +8,8 @@ use zeroize::Zeroize;
 /// Default VollChat config: Iterations = 600,000, Key Length = 32 bytes (for AES-256)
 ///
 /// # Security
-/// The returned key material is sensitive. Caller must call `.zeroize()` 
-/// on the returned `Vec<u8>` after use to prevent key material from 
+/// The returned key material is sensitive. Caller must call `.zeroize()`
+/// on the returned `Vec<u8>` after use to prevent key material from
 /// remaining in memory.
 pub fn derive_pbkdf2(password: &[u8], salt: &[u8], iterations: u32, key_len: usize) -> Vec<u8> {
     let mut derived_key = vec![0u8; key_len];
@@ -25,8 +25,8 @@ pub fn derive_pbkdf2(password: &[u8], salt: &[u8], iterations: u32, key_len: usi
 /// Info is optional application-specific context (e.g., "vollchat-e2ee-v1").
 ///
 /// # Security
-/// The returned key material is sensitive. Caller must call `.zeroize()` 
-/// on the returned `Vec<u8>` after use to prevent key material from 
+/// The returned key material is sensitive. Caller must call `.zeroize()`
+/// on the returned `Vec<u8>` after use to prevent key material from
 /// remaining in memory.
 pub fn derive_hkdf(
     ikm: &[u8],
@@ -44,7 +44,7 @@ pub fn derive_hkdf(
 }
 
 /// Derives a Session Root Key (SRK) from a DEK and a conversation identifier.
-/// 
+///
 /// The SRK is unique per conversation and never leaves the client.
 /// It is used as input material for window key derivation.
 ///
@@ -55,12 +55,7 @@ pub fn derive_hkdf(
 /// # Security
 /// Caller must zeroize the returned Vec<u8> after use.
 pub fn derive_srk(dek: &[u8], chat_id: &[u8]) -> Result<Vec<u8>, &'static str> {
-    derive_hkdf(
-        dek,
-        Some(chat_id),
-        Some(b"vollchat-srk-v1"),
-        32,
-    )
+    derive_hkdf(dek, Some(chat_id), Some(b"vollchat-srk-v1"), 32)
 }
 
 /// Derives a time-windowed encryption key from a Session Root Key.
@@ -77,12 +72,7 @@ pub fn derive_srk(dek: &[u8], chat_id: &[u8]) -> Result<Vec<u8>, &'static str> {
 /// Caller must zeroize the returned Vec<u8> after use.
 pub fn derive_window_key(srk: &[u8], window_index: u64) -> Result<Vec<u8>, &'static str> {
     let window_salt = window_index.to_be_bytes(); // 8 byte big-endian
-    derive_hkdf(
-        srk,
-        Some(&window_salt),
-        Some(b"vollchat-window-key-v1"),
-        32,
-    )
+    derive_hkdf(srk, Some(&window_salt), Some(b"vollchat-window-key-v1"), 32)
 }
 
 /// Combines two key materials and passes them through HKDF.
@@ -138,41 +128,47 @@ mod tests {
     fn test_derive_srk_determinism() {
         let dek = [0xABu8; 32];
         let chat_id = b"test-conversation-id";
-        
+
         let srk1 = derive_srk(&dek, chat_id).unwrap();
         let srk2 = derive_srk(&dek, chat_id).unwrap();
-        
+
         assert_eq!(srk1, srk2, "SRK derivation must be deterministic");
     }
 
     #[test]
     fn test_derive_srk_different_chats_produce_different_keys() {
         let dek = [0xABu8; 32];
-        
+
         let srk_chat_a = derive_srk(&dek, b"chat-a").unwrap();
         let srk_chat_b = derive_srk(&dek, b"chat-b").unwrap();
-        
-        assert_ne!(srk_chat_a, srk_chat_b, "Different chat_id must produce different SRK");
+
+        assert_ne!(
+            srk_chat_a, srk_chat_b,
+            "Different chat_id must produce different SRK"
+        );
     }
 
     #[test]
     fn test_derive_window_key_determinism() {
         let srk = [0xCDu8; 32];
-        
+
         let wk1 = derive_window_key(&srk, 1000).unwrap();
         let wk2 = derive_window_key(&srk, 1000).unwrap();
-        
+
         assert_eq!(wk1, wk2, "WindowKey derivation must be deterministic");
     }
 
     #[test]
     fn test_derive_window_key_different_windows_produce_different_keys() {
         let srk = [0xCDu8; 32];
-        
+
         let wk_window_1 = derive_window_key(&srk, 1000).unwrap();
         let wk_window_2 = derive_window_key(&srk, 1001).unwrap();
-        
-        assert_ne!(wk_window_1, wk_window_2, "Different window_index must produce different WindowKey");
+
+        assert_ne!(
+            wk_window_1, wk_window_2,
+            "Different window_index must produce different WindowKey"
+        );
     }
 
     #[test]
@@ -181,10 +177,13 @@ mod tests {
         let dek_a = [0xAAu8; 32];
         let dek_b = [0xBBu8; 32];
         let chat_id = b"same-chat";
-        
+
         let srk_a = derive_srk(&dek_a, chat_id).unwrap();
         let srk_b = derive_srk(&dek_b, chat_id).unwrap();
-        
-        assert_ne!(srk_a, srk_b, "Different DEK with same chat_id must produce different SRK");
+
+        assert_ne!(
+            srk_a, srk_b,
+            "Different DEK with same chat_id must produce different SRK"
+        );
     }
 }

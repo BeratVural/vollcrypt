@@ -38,7 +38,10 @@ fn hkdf_output_exceeds_maximum() {
     let ikm = [0x42u8; 32];
     // max size + 1
     let result = derive_hkdf(&ikm, None, None, 8161);
-    assert!(result.is_err(), "Must fail when output length exceeds HKDF limit");
+    assert!(
+        result.is_err(),
+        "Must fail when output length exceeds HKDF limit"
+    );
 }
 
 #[test]
@@ -60,9 +63,15 @@ fn hkdf_same_ikm_same_info_same_output() {
 #[test]
 fn hkdf_context_collision_attempt() {
     let ikm = [0x42u8; 32];
-    // Usually, info strings should be delimited. 
+    // Usually, info strings should be delimited.
     // This is to verify behavior when collision domains might overlap.
-    let okm1 = derive_hkdf(&ikm, None, Some(b"vollchat-srk-v1vollchat-window-key-v1"), 32).unwrap();
+    let okm1 = derive_hkdf(
+        &ikm,
+        None,
+        Some(b"vollchat-srk-v1vollchat-window-key-v1"),
+        32,
+    )
+    .unwrap();
     let okm2 = derive_hkdf(&ikm, None, Some(b"vollchat-srk-v1"), 32).unwrap();
     assert_ne!(okm1, okm2, "Different total info strings prevent collision");
 }
@@ -118,20 +127,23 @@ fn pbkdf2_same_password_different_salt_different_output() {
 fn pbkdf2_timing_consistency() {
     let mut timings = Vec::new();
     let salt = b"static_salt";
-    
+
     for i in 0..10 {
         let pw = format!("password{}", i);
         let start = Instant::now();
         let _ = derive_pbkdf2(pw.as_bytes(), salt, 600_000, 32);
         timings.push(start.elapsed().as_micros() as f64);
     }
-    
+
     let mean = timings.iter().sum::<f64>() / timings.len() as f64;
     let variance = timings.iter().map(|&t| (t - mean).powi(2)).sum::<f64>() / timings.len() as f64;
     let std_dev = variance.sqrt();
-    
+
     // Std dev < 10%
-    assert!(std_dev < mean * 0.1, "Timing deviance too high, possible timing attack surface");
+    assert!(
+        std_dev < mean * 0.1,
+        "Timing deviance too high, possible timing attack surface"
+    );
 }
 
 // ── WindowKey Attacks ─────────────────────────────────────────────────────

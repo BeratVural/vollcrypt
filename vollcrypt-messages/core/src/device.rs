@@ -123,7 +123,7 @@ mod tests {
 
         // Revoke missing
         assert!(registry.revoke_device("dev-999").is_err());
-        
+
         // Revoke already revoked
         assert!(registry.revoke_device("dev-001").is_err());
     }
@@ -142,7 +142,8 @@ mod tests {
             .unwrap();
 
         let json = registry.to_json().expect("Should serialize");
-        let restored_registry = DefaultDeviceRegistry::from_json(&json).expect("Should deserialize");
+        let restored_registry =
+            DefaultDeviceRegistry::from_json(&json).expect("Should deserialize");
 
         assert_eq!(restored_registry.devices.len(), 1);
         assert_eq!(restored_registry.devices[0].name, "Phone");
