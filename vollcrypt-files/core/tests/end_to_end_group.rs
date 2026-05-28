@@ -2,7 +2,7 @@ use vollcrypt_files_core::{
     chunk_leaf_hash, decrypt_chunk, ed25519_keypair_generate, encrypt_chunk, generate_dek,
     generate_file_id, generate_gk, generate_recipient_keypair, unwrap_dek_with_group_key,
     unwrap_key_with_recipient_key, wrap_dek_for_group, wrap_key_to_recipient, ChunkEnvelope,
-    CipherId, FileFormatError, GroupManifest, Header, MerkleTree, Mode, VERSION,
+    CipherId, FileFormatError, GroupManifest, Header, MerkleTree, Mode, HashAlgorithm, VERSION,
 };
 
 #[test]
@@ -72,6 +72,7 @@ fn encrypt_decrypt_three_members() {
         chunk_size: 4096,
         plaintext_size: plaintext.len() as u64,
         merkle_root,
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![group_wrap],
         signed_metadata: None,
         signature: None,
@@ -174,6 +175,7 @@ fn removed_member_lazy_still_works() {
         chunk_size: 4096,
         plaintext_size: plaintext.len() as u64,
         merkle_root,
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![group_wrap],
         signed_metadata: None,
         signature: None,

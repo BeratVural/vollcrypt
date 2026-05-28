@@ -312,6 +312,23 @@ impl CryptoProvider for WasmWebCryptoProvider {
         let aad = aad.to_vec();
         
         Box::pin(async move {
+            // Determine if we should use zero-copy
+            let use_zero_copy = match USE_ZERO_COPY.get() {
+                Some(&val) => val,
+                None => {
+                    let val = check_zero_copy_support().await;
+                    let _ = USE_ZERO_COPY.set(val);
+                    val
+                }
+            };
+
+            if !use_zero_copy {
+                let provider = crate::provider::NativeCryptoProvider;
+                let mut buffer = buffer;
+                let tag = provider.encrypt_in_place(&key, &iv, &aad, buffer.as_plaintext_mut(len))?;
+                return Ok((buffer, tag));
+            }
+
             let subtle = get_subtle_crypto()?;
             
             // 1. Import Key
@@ -353,58 +370,28 @@ impl CryptoProvider for WasmWebCryptoProvider {
             js_sys::Reflect::set(&encrypt_params, &JsValue::from_str("tagLength"), &JsValue::from_f64(128.0))
                 .map_err(|e| FileFormatError::IoError(format!("Reflect error: {:?}", e)))?;
 
-            // Determine if we should use zero-copy
-            let use_zero_copy = match USE_ZERO_COPY.get() {
-                Some(&val) => val,
-                None => {
-                    let val = check_zero_copy_support().await;
-                    let _ = USE_ZERO_COPY.set(val);
-                    val
-                }
-            };
+            // Get direct WASM memory view
+            let memory = wasm_bindgen::memory();
+            let memory: js_sys::WebAssembly::Memory = wasm_bindgen::JsCast::dyn_into(memory)
+                .map_err(|e| FileFormatError::IoError(format!("Memory cast error: {:?}", e)))?;
+            let plain_js = js_sys::Uint8Array::new_with_byte_offset_and_length(
+                &memory.buffer(),
+                buffer.plaintext_ptr() as u32,
+                len as u32,
+            );
 
-            let enc_val = if use_zero_copy {
-                // Get direct WASM memory view
-                let memory = wasm_bindgen::memory();
-                let memory: js_sys::WebAssembly::Memory = wasm_bindgen::JsCast::dyn_into(memory)
-                    .map_err(|e| FileFormatError::IoError(format!("Memory cast error: {:?}", e)))?;
-                let plain_js = js_sys::Uint8Array::new_with_byte_offset_and_length(
-                    &memory.buffer(),
-                    buffer.plaintext_ptr() as u32,
-                    len as u32,
-                );
+            let encrypt_fn = js_sys::Reflect::get(&subtle, &JsValue::from_str("encrypt"))
+                .map_err(|e| FileFormatError::IoError(format!("Reflect error: {:?}", e)))?
+                .dyn_into::<js_sys::Function>()
+                .map_err(|e| FileFormatError::IoError(format!("Cast to function error: {:?}", e)))?;
 
-                let encrypt_fn = js_sys::Reflect::get(&subtle, &JsValue::from_str("encrypt"))
-                    .map_err(|e| FileFormatError::IoError(format!("Reflect error: {:?}", e)))?
-                    .dyn_into::<js_sys::Function>()
-                    .map_err(|e| FileFormatError::IoError(format!("Cast to function error: {:?}", e)))?;
-
-                let enc_promise = encrypt_fn.call3(&subtle, &encrypt_params, &crypto_key, &plain_js)
-                    .map_err(|e| FileFormatError::IoError(format!("encrypt call error: {:?}", e)))?
-                    .dyn_into::<js_sys::Promise>()
-                    .map_err(|e| FileFormatError::IoError(format!("Cast to promise error: {:?}", e)))?;
-                
-                wasm_bindgen_futures::JsFuture::from(enc_promise).await
-                    .map_err(|e| FileFormatError::IoError(format!("encrypt promise error: {:?}", e)))?
-            } else {
-                // Copy fallback
-                let mut plaintext_copy = vec![0u8; len];
-                plaintext_copy.copy_from_slice(buffer.as_plaintext(len));
-                let plain_js = js_sys::Uint8Array::from(plaintext_copy.as_slice());
-
-                let encrypt_fn = js_sys::Reflect::get(&subtle, &JsValue::from_str("encrypt"))
-                    .map_err(|e| FileFormatError::IoError(format!("Reflect error: {:?}", e)))?
-                    .dyn_into::<js_sys::Function>()
-                    .map_err(|e| FileFormatError::IoError(format!("Cast to function error: {:?}", e)))?;
-
-                let enc_promise = encrypt_fn.call3(&subtle, &encrypt_params, &crypto_key, &plain_js)
-                    .map_err(|e| FileFormatError::IoError(format!("encrypt call error: {:?}", e)))?
-                    .dyn_into::<js_sys::Promise>()
-                    .map_err(|e| FileFormatError::IoError(format!("Cast to promise error: {:?}", e)))?;
-                
-                wasm_bindgen_futures::JsFuture::from(enc_promise).await
-                    .map_err(|e| FileFormatError::IoError(format!("encrypt promise error: {:?}", e)))?
-            };
+            let enc_promise = encrypt_fn.call3(&subtle, &encrypt_params, &crypto_key, &plain_js)
+                .map_err(|e| FileFormatError::IoError(format!("encrypt call error: {:?}", e)))?
+                .dyn_into::<js_sys::Promise>()
+                .map_err(|e| FileFormatError::IoError(format!("Cast to promise error: {:?}", e)))?;
+            
+            let enc_val = wasm_bindgen_futures::JsFuture::from(enc_promise).await
+                .map_err(|e| FileFormatError::IoError(format!("encrypt promise error: {:?}", e)))?;
 
             let array_buffer = js_sys::ArrayBuffer::from(enc_val);
             let uint8_array = js_sys::Uint8Array::new(&array_buffer);
@@ -456,6 +443,23 @@ impl CryptoProvider for WasmWebCryptoProvider {
         let aad = aad.to_vec();
         
         Box::pin(async move {
+            // Determine if we should use zero-copy
+            let use_zero_copy = match USE_ZERO_COPY.get() {
+                Some(&val) => val,
+                None => {
+                    let val = check_zero_copy_support().await;
+                    let _ = USE_ZERO_COPY.set(val);
+                    val
+                }
+            };
+
+            if !use_zero_copy {
+                let provider = crate::provider::NativeCryptoProvider;
+                let mut buffer = buffer;
+                provider.decrypt_in_place(&key, &iv, &aad, buffer.as_ciphertext_mut(len), &tag)?;
+                return Ok(buffer);
+            }
+
             let subtle = get_subtle_crypto()?;
             
             // 1. Import Key
@@ -497,59 +501,28 @@ impl CryptoProvider for WasmWebCryptoProvider {
             js_sys::Reflect::set(&decrypt_params, &JsValue::from_str("tagLength"), &JsValue::from_f64(128.0))
                 .map_err(|e| FileFormatError::IoError(format!("Reflect error: {:?}", e)))?;
 
-            // Determine if we should use zero-copy
-            let use_zero_copy = match USE_ZERO_COPY.get() {
-                Some(&val) => val,
-                None => {
-                    let val = check_zero_copy_support().await;
-                    let _ = USE_ZERO_COPY.set(val);
-                    val
-                }
-            };
+            // Get direct WASM memory view
+            let memory = wasm_bindgen::memory();
+            let memory: js_sys::WebAssembly::Memory = wasm_bindgen::JsCast::dyn_into(memory)
+                .map_err(|e| FileFormatError::IoError(format!("Memory cast error: {:?}", e)))?;
+            let ct_and_tag_js = js_sys::Uint8Array::new_with_byte_offset_and_length(
+                &memory.buffer(),
+                buffer.ciphertext_ptr() as u32,
+                (len + 16) as u32,
+            );
 
-            // In WebCrypto, the decrypt input must have the tag appended to the ciphertext
-            let dec_val = if use_zero_copy {
-                let memory = wasm_bindgen::memory();
-                let memory: js_sys::WebAssembly::Memory = wasm_bindgen::JsCast::dyn_into(memory)
-                    .map_err(|e| FileFormatError::IoError(format!("Memory cast error: {:?}", e)))?;
-                let ct_and_tag_js = js_sys::Uint8Array::new_with_byte_offset_and_length(
-                    &memory.buffer(),
-                    buffer.ciphertext_ptr() as u32,
-                    (len + 16) as u32,
-                );
+            let decrypt_fn = js_sys::Reflect::get(&subtle, &JsValue::from_str("decrypt"))
+                .map_err(|_| FileFormatError::AesGcmDecryptFailed)?
+                .dyn_into::<js_sys::Function>()
+                .map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
 
-                let decrypt_fn = js_sys::Reflect::get(&subtle, &JsValue::from_str("decrypt"))
-                    .map_err(|_| FileFormatError::AesGcmDecryptFailed)?
-                    .dyn_into::<js_sys::Function>()
-                    .map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
-
-                let dec_promise = decrypt_fn.call3(&subtle, &decrypt_params, &crypto_key, &ct_and_tag_js)
-                    .map_err(|_| FileFormatError::AesGcmDecryptFailed)?
-                    .dyn_into::<js_sys::Promise>()
-                    .map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
-                
-                wasm_bindgen_futures::JsFuture::from(dec_promise).await
-                    .map_err(|_| FileFormatError::AesGcmDecryptFailed)?
-            } else {
-                // Copy fallback
-                let mut ct_and_tag = vec![0u8; len];
-                ct_and_tag.copy_from_slice(buffer.as_ciphertext(len));
-                ct_and_tag.extend_from_slice(&tag);
-                let ct_and_tag_js = js_sys::Uint8Array::from(ct_and_tag.as_slice());
-
-                let decrypt_fn = js_sys::Reflect::get(&subtle, &JsValue::from_str("decrypt"))
-                    .map_err(|_| FileFormatError::AesGcmDecryptFailed)?
-                    .dyn_into::<js_sys::Function>()
-                    .map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
-
-                let dec_promise = decrypt_fn.call3(&subtle, &decrypt_params, &crypto_key, &ct_and_tag_js)
-                    .map_err(|_| FileFormatError::AesGcmDecryptFailed)?
-                    .dyn_into::<js_sys::Promise>()
-                    .map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
-                
-                wasm_bindgen_futures::JsFuture::from(dec_promise).await
-                    .map_err(|_| FileFormatError::AesGcmDecryptFailed)?
-            };
+            let dec_promise = decrypt_fn.call3(&subtle, &decrypt_params, &crypto_key, &ct_and_tag_js)
+                .map_err(|_| FileFormatError::AesGcmDecryptFailed)?
+                .dyn_into::<js_sys::Promise>()
+                .map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
+            
+            let dec_val = wasm_bindgen_futures::JsFuture::from(dec_promise).await
+                .map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
 
             let array_buffer = js_sys::ArrayBuffer::from(dec_val);
             let uint8_array = js_sys::Uint8Array::new(&array_buffer);

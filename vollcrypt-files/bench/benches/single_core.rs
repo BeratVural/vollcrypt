@@ -146,6 +146,7 @@ fn bench_header_ops(c: &mut Criterion) {
         chunk_size: 1024 * 1024,
         plaintext_size: 1234567,
         merkle_root: [0u8; 32],
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![WrapEntry::PasswordPbkdf2 {
             iterations: 1000,
             salt: [0u8; 16],
@@ -165,6 +166,7 @@ fn bench_header_ops(c: &mut Criterion) {
         chunk_size: 1024 * 1024,
         plaintext_size: 1234567,
         merkle_root: [0u8; 32],
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![
             WrapEntry::PasswordPbkdf2 {
                 iterations: 1000,

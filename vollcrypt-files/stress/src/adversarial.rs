@@ -73,6 +73,7 @@ mod tests {
             chunk_size: 4096,
             plaintext_size: 10000,
             merkle_root: [9u8; 32],
+            hash_algorithm: HashAlgorithm::Sha256,
             wraps: vec![WrapEntry::PasswordPbkdf2 {
                 iterations: 1000,
                 salt: [0u8; 16],
@@ -201,6 +202,7 @@ mod tests {
             chunk_size: 4096,
             plaintext_size: 100,
             merkle_root: [0u8; 32],
+            hash_algorithm: HashAlgorithm::Sha256,
             wraps: vec![WrapEntry::PasswordPbkdf2 {
                 iterations: 1000,
                 salt: [0u8; 16],

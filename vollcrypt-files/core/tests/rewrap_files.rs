@@ -1,7 +1,7 @@
 use vollcrypt_files_core::{
     decrypt_chunk, encrypt_chunk, generate_dek, generate_file_id, generate_gk,
     rewrap_dek_in_header, unwrap_dek_with_group_key, unwrap_dek_with_password, wrap_dek_for_group,
-    wrap_dek_with_password, CipherId, FileFormatError, Header, KdfChoice, Mode, VERSION,
+    wrap_dek_with_password, CipherId, FileFormatError, Header, KdfChoice, Mode, HashAlgorithm, VERSION,
 };
 
 #[test]
@@ -21,6 +21,7 @@ fn rewrap_updates_gk_version() {
         chunk_size: 4096,
         plaintext_size: 1000,
         merkle_root: [0x55; 32],
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![old_wrap],
         signed_metadata: None,
         signature: None,
@@ -63,6 +64,7 @@ fn rewrap_preserves_dek() {
         chunk_size: 4096,
         plaintext_size: plaintext.len() as u64,
         merkle_root: [0xaa; 32],
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![wrap_dek_for_group(&dek, group_id, 1, &old_gk)],
         signed_metadata: None,
         signature: None,
@@ -101,6 +103,7 @@ fn rewrap_wrong_old_gk_fails() {
         chunk_size: 4096,
         plaintext_size: 1000,
         merkle_root: [0xaa; 32],
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![wrap_dek_for_group(&dek, generate_file_id(), 1, &old_gk)],
         signed_metadata: None,
         signature: None,
@@ -130,6 +133,7 @@ fn rewrap_skips_non_group_wraps() {
         chunk_size: 4096,
         plaintext_size: 1000,
         merkle_root: [0x55; 32],
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![pw_wrap, grp_wrap],
         signed_metadata: None,
         signature: None,

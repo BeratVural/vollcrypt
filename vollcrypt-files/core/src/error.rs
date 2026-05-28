@@ -14,6 +14,9 @@ pub enum FileFormatError {
     #[error("Invalid cipher ID: {0}")]
     InvalidCipherId(u8),
 
+    #[error("Unsupported hash algorithm: {0}")]
+    UnsupportedHashAlgorithm(u8),
+
     #[error("Invalid wrap type: {0}")]
     InvalidWrapType(u8),
 

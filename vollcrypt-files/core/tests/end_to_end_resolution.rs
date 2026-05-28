@@ -1,6 +1,6 @@
 use vollcrypt_files_core::{
     ed25519_keypair_generate, generate_file_id, generate_gk, resolve_sender, sign_header_plain,
-    sign_header_sealed, CipherId, FileFormatError, Header, KeyLog, Mode,
+    sign_header_sealed, CipherId, FileFormatError, Header, KeyLog, Mode, HashAlgorithm,
 };
 
 fn create_test_header() -> Header {
@@ -12,6 +12,7 @@ fn create_test_header() -> Header {
         chunk_size: 4096,
         plaintext_size: 1000,
         merkle_root: [0x55; 32],
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![],
         signed_metadata: None,
         signature: None,

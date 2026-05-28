@@ -1,6 +1,6 @@
 use vollcrypt_files_core::{
     ChunkEnvelope, CipherId, FileFormatError, Header, Mode, WrapEntry, FIXED_HEADER_LEN, MAGIC,
-    VERSION,
+    VERSION, HashAlgorithm,
 };
 
 #[test]
@@ -19,6 +19,7 @@ fn header_roundtrip_password_pbkdf2() {
         chunk_size: 65536,
         plaintext_size: 1024 * 1024,
         merkle_root: [0x04; 32],
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![wrap],
         signed_metadata: None,
         signature: None,
@@ -50,6 +51,7 @@ fn header_roundtrip_password_argon2id() {
         chunk_size: 1024 * 1024,
         plaintext_size: 2048 * 1024,
         merkle_root: [0x08; 32],
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![wrap],
         signed_metadata: None,
         signature: None,
@@ -81,6 +83,7 @@ fn header_roundtrip_hybrid_kem_single() {
         chunk_size: 65536,
         plaintext_size: 512,
         merkle_root: [0x0E; 32],
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![wrap],
         signed_metadata: None,
         signature: None,
@@ -115,6 +118,7 @@ fn header_roundtrip_multi_recipient() {
         chunk_size: 262144,
         plaintext_size: 50 * 1024 * 1024,
         merkle_root: [0xEE; 32],
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps,
         signed_metadata: None,
         signature: None,
@@ -156,6 +160,7 @@ fn header_roundtrip_mixed() {
         chunk_size: 65536,
         plaintext_size: 4096,
         merkle_root: [0xBB; 32],
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps,
         signed_metadata: None,
         signature: None,

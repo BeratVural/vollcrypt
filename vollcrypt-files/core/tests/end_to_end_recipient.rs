@@ -2,7 +2,7 @@ use vollcrypt_files_core::{
     chunk_leaf_hash, decrypt_chunk, encrypt_chunk, generate_dek, generate_file_id,
     generate_recipient_keypair, generate_salt, unwrap_dek_with_password,
     unwrap_key_with_recipient_key, wrap_dek_with_password, wrap_key_to_recipient, ChunkEnvelope,
-    CipherId, Header, KdfChoice, MerkleTree, Mode, VERSION,
+    CipherId, Header, KdfChoice, MerkleTree, Mode, HashAlgorithm, VERSION,
 };
 
 #[test]
@@ -29,6 +29,7 @@ fn encrypt_decrypt_small_file_hybrid_kem() {
         chunk_size: 4096,
         plaintext_size: plaintext.len() as u64,
         merkle_root,
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![wrap],
         signed_metadata: None,
         signature: None,
@@ -83,6 +84,7 @@ fn encrypt_decrypt_multi_recipient() {
         chunk_size: 4096,
         plaintext_size: plaintext.len() as u64,
         merkle_root,
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps,
         signed_metadata: None,
         signature: None,
@@ -133,6 +135,7 @@ fn mixed_password_and_recipient_header() {
         chunk_size: 4096,
         plaintext_size: plaintext.len() as u64,
         merkle_root,
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![wrap_pw, wrap_kem],
         signed_metadata: None,
         signature: None,
