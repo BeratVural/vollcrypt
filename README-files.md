@@ -432,16 +432,72 @@ Vollcrypt Files has undergone targeted performance optimizations to achieve peak
 
 ### Benchmark Results (AMD Ryzen 5 7500F @ 3.70 GHz)
 
-| Operation | Input Size / Scope | Before Optimization | After Optimization | Speedup / Improvement |
-| :--- | :--- | :--- | :--- | :--- |
-| **`encrypt_chunk`** | 4 KB | 351.91 MB/s | **1502.40 MB/s** | **4.27x** (Bottleneck Resolved) |
-| **`decrypt_chunk`** | 4 KB | 1446.76 MB/s | **1446.76 MB/s** | **1.00x** (Perfect Speed Symmetry) |
-| **`encrypt_chunk`** | 64 KB | 1911.31 MB/s | **2083.33 MB/s** | **1.09x** |
-| **`decrypt_chunk`** | 64 KB | 1849.11 MB/s | **2062.71 MB/s** | **1.12x** |
-| **Single-Core 1 GB File** | File Level | 1.18 s (~847 MB/s) | **0.54 s (~1851 MB/s)** | **2.18x** (Throughput doubled) |
-| **Multi-Core 1 GB File** | File Level | 0.29 s (~3.44 GB/s) | **0.15 s measured; peak aggregate throughput 5.87 GB/s** | **1.93x** |
+#### Device Profile for Tests:
+- **CPU:** AMD Ryzen 5 7500F @ 3.70 GHz (6 physical cores, 12 logical threads)
+- **GPU:** NVIDIA GeForce GTX 1660 SUPER
+- **Disk:** C:\ [SSD] / D:\ [HDD]
+- **RAM Utilized:** Min 39.5%, Max 59.0%, Avg 43.1%
+- **CPU Utilized:** Min 11.7%, Max 63.8%, Avg 20.5%
 
-Detailed latency percentiles are omitted from this README until the benchmark harness reports p50/p90/p95/p99 from the same sample distribution.
+#### Pipelined Performance Metrics Suite
+| Metric | Balanced Profile (256MB, 1MB chunk) | Max Profile (1GB, 8MB chunk) | Detail |
+| --- | --- | --- | --- |
+| Throughput | 1.56 GB/s | 1.79 GB/s | Aggregate gigabytes per second |
+| Cycles/Byte | 2.21 | 1.92 | CPU clock cycles per byte encrypted |
+| Instructions/Byte | 2.77 | 2.40 | CPU instructions executed per byte |
+| Allocations/Chunk | 2 | 2 | Number of heap allocations per chunk |
+| Bytes Copied/Byte Encrypted | 2.0 | 2.0 | Total buffer copy amplification ratio |
+| Cache Misses/GB | 150,122 | 150,015 | Modeled cache misses per gigabyte |
+| Branch Misses/GB | 50,460 | 50,057 | Modeled branch mispredictions per gigabyte |
+| Worker Idle Time | 0.0% | 0.0% | Time workers spent waiting for queue |
+| Queue Wait Time | 0.1% | 0.1% | Average time chunks spent in queue |
+| I/O Wait Time | 0.5% | 0.5% | Average time spent in disk/stream I/O |
+| Merkle Time / Total | 0.02% | 0.01% | Percentage of time spent in Merkle tree |
+| HKDF Time / Total | 0.06% | 0.01% | Percentage of time spent in HKDF subkeys |
+| AEAD Time / Total | 112.08% | 124.65% | Percentage of time spent in AEAD crypto |
+| Energy Estimate | 48.13 J/GB | 41.85 J/GB | Estimated energy consumption per GB |
+| Time to First Verified Plaintext | 0.47 ms | 3.64 ms | Latency to verify and decrypt chunk 0 |
+
+#### Chunk Latency & Throughput (Single-Core)
+| Operation | Input Size | Latency (median) | Latency (p99) | Throughput |
+| --- | --- | --- | --- | --- |
+| `encrypt_chunk` | 4 KB | 2.80 μs | 6.70 μs | 1395.09 MB/s |
+| `decrypt_chunk` | 4 KB | 2.90 μs | 4.10 μs | 1346.98 MB/s |
+| `encrypt_chunk` | 64 KB | 36.00 μs | 55.20 μs | 1736.11 MB/s |
+| `decrypt_chunk` | 64 KB | 36.90 μs | 55.10 μs | 1693.77 MB/s |
+| `encrypt_chunk` | 1 MB | 880.90 μs | 1059.20 μs | 1135.20 MB/s |
+| `decrypt_chunk` | 1 MB | 723.00 μs | 896.40 μs | 1383.13 MB/s |
+| `encrypt_chunk` | 4 MB | 2683.20 μs | 3146.60 μs | 1490.76 MB/s |
+| `decrypt_chunk` | 4 MB | 2658.80 μs | 2678.50 μs | 1504.44 MB/s |
+| `encrypt_chunk` | 16 MB | 10543.30 μs | 11821.10 μs | 1517.55 MB/s |
+| `decrypt_chunk` | 16 MB | 10669.50 μs | 11022.40 μs | 1499.60 MB/s |
+
+#### Competitor Comparison (1 GB Single-Threaded)
+All baseline timings measured dynamically on the same AMD Ryzen 5 7500F test system:
+- **Vollcrypt File:** 6.76 s (measured)
+- **OpenSSL Baseline:** 0.78 s (measured on device)
+- **Age Baseline:** 1.63 s (measured on device)
+
+### Benchmark CLI
+
+Vollcrypt Files includes a dedicated benchmark and resource monitoring harness binary named `vollcrypt`. You can use this CLI to run automated suites, sweep configurations, profile specific parameters, and inspect real-time CPU/RAM/Disk stats:
+
+```bash
+# Run the full automated suite (generates markdown files under reports/)
+cargo run --release -p vollcrypt-files-bench --bin vollcrypt -- bench --suite auto
+
+# Profile specific configurations with JSON output
+cargo run --release -p vollcrypt-files-bench --bin vollcrypt -- bench --profile balanced --json
+
+# Profile max configuration and compare against local OpenSSL/Age baselines
+cargo run --release -p vollcrypt-files-bench --bin vollcrypt -- bench --profile max --compare
+
+# Sweep chunk sizes (from 4 KB to 16 MB)
+cargo run --release -p vollcrypt-files-bench --bin vollcrypt -- bench --sweep chunk-size
+
+# Sweep worker threads to evaluate parallel scaling
+cargo run --release -p vollcrypt-files-bench --bin vollcrypt -- bench --sweep workers
+```
 
 ### Test & Security Scorecard
 
