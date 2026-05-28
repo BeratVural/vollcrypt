@@ -1475,6 +1475,25 @@ fn napi_to_pipelined_sign_info(
     }
 }
 
+#[napi(object)]
+#[derive(Clone, Debug)]
+pub struct IoWriteModeObj {
+    pub mode: String,
+    pub batch_size: Option<u32>,
+}
+
+fn napi_to_io_write_mode(obj: IoWriteModeObj) -> Result<vollcrypt_files_core::IoWriteMode> {
+    match obj.mode.as_str() {
+        "Sequential" => Ok(vollcrypt_files_core::IoWriteMode::Sequential),
+        "DirectOffset" => Ok(vollcrypt_files_core::IoWriteMode::DirectOffset),
+        "Batched" => {
+            let batch_size = obj.batch_size.unwrap_or(16) as usize;
+            Ok(vollcrypt_files_core::IoWriteMode::Batched { batch_size })
+        }
+        _ => Err(Error::from_reason(format!("Unknown write mode: {}", obj.mode))),
+    }
+}
+
 pub struct EncryptFilePipelinedTask {
     source_path: String,
     dest_path: String,
@@ -1485,6 +1504,7 @@ pub struct EncryptFilePipelinedTask {
     mode: vollcrypt_files_core::Mode,
     num_workers: usize,
     sign_info: Option<vollcrypt_files_core::PipelinedSignInfo>,
+    write_mode: Option<vollcrypt_files_core::IoWriteMode>,
 }
 
 impl Task for EncryptFilePipelinedTask {
@@ -1514,6 +1534,7 @@ impl Task for EncryptFilePipelinedTask {
             self.mode,
             self.num_workers,
             self.sign_info.clone(),
+            self.write_mode,
         )
         .map_err(|e| Error::from_reason(e.to_string()))
     }
@@ -1572,6 +1593,7 @@ pub fn encrypt_file_pipelined_async(
     mode: u8,
     num_workers: u32,
     sign_info: Option<PipelinedSignInfoObj>,
+    write_mode: Option<IoWriteModeObj>,
 ) -> Result<AsyncTask<EncryptFilePipelinedTask>> {
     let dek_arr = to_arr32(dek.as_ref(), "dek")?;
     let file_id_arr = to_arr16(file_id.as_ref(), "file_id")?;
@@ -1589,6 +1611,11 @@ pub fn encrypt_file_pipelined_async(
         None => None,
     };
 
+    let core_write_mode = match write_mode {
+        Some(w) => Some(napi_to_io_write_mode(w)?),
+        None => None,
+    };
+
     let task = EncryptFilePipelinedTask {
         source_path,
         dest_path,
@@ -1599,6 +1626,7 @@ pub fn encrypt_file_pipelined_async(
         mode: core_mode,
         num_workers: num_workers as usize,
         sign_info: core_sign_info,
+        write_mode: core_write_mode,
     };
 
     Ok(AsyncTask::new(task))

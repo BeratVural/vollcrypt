@@ -19,11 +19,30 @@ pub mod signature;
 pub mod signing;
 pub mod wrap;
 pub mod pipelined_io;
+pub mod provider;
+#[cfg(target_arch = "wasm32")]
+pub mod web_crypto;
+pub mod writer;
+pub mod buffer_pool;
 
-pub use aead::{aes256_gcm_decrypt, aes256_gcm_encrypt};
+pub use aead::{
+    aes256_gcm_decrypt, aes256_gcm_encrypt, aes256_gcm_decrypt_async, aes256_gcm_encrypt_async,
+    aes256_gcm_decrypt_in_place, aes256_gcm_encrypt_in_place, aes256_gcm_decrypt_in_place_async,
+    aes256_gcm_encrypt_in_place_async,
+};
 pub use chunk::ChunkEnvelope;
 pub use constants::{DEFAULT_CHUNK_SIZE, FIXED_HEADER_LEN, MAGIC, VERSION};
-pub use crypt::{decrypt_chunk, encrypt_chunk};
+pub use crypt::{
+    decrypt_chunk, encrypt_chunk, decrypt_chunk_async, encrypt_chunk_async,
+    decrypt_chunk_in_place, encrypt_chunk_in_place, decrypt_chunk_in_place_async,
+    encrypt_chunk_in_place_async,
+};
+pub use provider::{CryptoProvider, NativeCryptoProvider, get_crypto_provider, set_crypto_provider};
+#[cfg(target_arch = "wasm32")]
+pub use web_crypto::WasmWebCryptoProvider;
+pub use writer::{IoWriteMode, ChunkWriter, SequentialChunkWriter, DirectOffsetChunkWriter, BatchedChunkWriter, write_raw_at};
+pub use buffer_pool::{PooledBuffer, BufferPool};
+
 pub use error::FileFormatError;
 pub use group::{
     crypto_shred_header, generate_gk, rewrap_dek_in_header, unwrap_dek_with_group_key,
@@ -35,8 +54,8 @@ pub use keylog::{KeyLog, KeyLogEntry, KeyLogEntryType};
 pub use keywrap::{aes256_kw_unwrap, aes256_kw_wrap};
 pub use manifest::{GroupManifest, Operation, SignedOperation};
 pub use merkle::{
-    check_proof_length, chunk_leaf_hash, chunk_leaf_hash_with_algo, expected_proof_len,
-    verify_merkle_proof, verify_merkle_proof_with_algo, HashAlgorithm, MerkleTree,
+    check_proof_length, chunk_leaf_hash, chunk_leaf_hash_raw, chunk_leaf_hash_with_algo, expected_proof_len,
+    verify_merkle_proof, verify_merkle_proof_with_algo, HashAlgorithm, MerkleTree, StreamingMerkle,
 };
 pub use password::{unwrap_dek_with_password, wrap_dek_with_password, KdfChoice};
 pub use random::{generate_dek, generate_file_id, generate_salt};

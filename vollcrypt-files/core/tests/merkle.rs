@@ -200,3 +200,37 @@ fn test_blake3_merkle_tree() {
     );
     assert!(is_valid);
 }
+
+#[test]
+fn test_streaming_merkle_differential() {
+    use vollcrypt_files_core::{StreamingMerkle, HashAlgorithm};
+
+    for algo in &[HashAlgorithm::Sha256, HashAlgorithm::Blake3] {
+        let counts = [0, 1, 2, 3, 4, 5, 8, 15, 16, 32, 100, 1000];
+        for &count in &counts {
+            let mut leaves = Vec::new();
+            for i in 0..count {
+                let mut leaf = [0u8; 32];
+                leaf[0..4].copy_from_slice(&(i as u32).to_be_bytes());
+                leaves.push(leaf);
+            }
+
+            // Static tree
+            let static_tree = MerkleTree::from_leaves_with_algo(leaves.clone(), *algo);
+            let static_root = static_tree.root();
+
+            // Streaming tree
+            let mut streaming = StreamingMerkle::new_with_algo(*algo);
+            for leaf in leaves {
+                streaming.push_leaf(leaf);
+            }
+            let streaming_root = streaming.finalize();
+
+            assert_eq!(
+                static_root, streaming_root,
+                "Merkle root mismatch for count = {} with algo = {:?}",
+                count, algo
+            );
+        }
+    }
+}

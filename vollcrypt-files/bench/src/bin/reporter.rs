@@ -142,7 +142,8 @@ fn run_profile_bench_internal(
         vec![],
         Mode::Password,
         workers,
-        None
+        None,
+        None,
     ).unwrap();
     let pipe_time = start_pipe.elapsed().as_secs_f64();
 
@@ -365,7 +366,8 @@ fn run_sweep_chunk_size(hw: &hwinfo::HwInfo) {
             vec![],
             Mode::Password,
             workers,
-            None
+            None,
+            None,
         ).unwrap();
         let pipe_time = start_pipe.elapsed().as_secs_f64();
 
@@ -415,7 +417,8 @@ fn run_sweep_workers(hw: &hwinfo::HwInfo) {
             vec![],
             Mode::Password,
             workers,
-            None
+            None,
+            None,
         ).unwrap();
         let pipe_time = start_pipe.elapsed().as_secs_f64();
 

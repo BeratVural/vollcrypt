@@ -7,6 +7,8 @@ use vollcrypt_files_core::{
 };
 use wasm_bindgen::prelude::*;
 
+pub mod wasm_bridge;
+
 // Helper utility to convert errors
 fn to_js_err<E: std::fmt::Display>(e: E) -> JsValue {
     JsValue::from_str(&e.to_string())
@@ -1461,3 +1463,154 @@ pub fn resolve_sender(
         Err(e) => Err(to_js_err(e)),
     }
 }
+
+#[derive(Deserialize)]
+struct SignInfoJs {
+    kind: String, // "Plain" | "Sealed"
+    #[serde(rename = "signerPk")]
+    signer_pk: Vec<u8>,
+    #[serde(rename = "signerSk")]
+    signer_sk: Vec<u8>,
+    #[serde(rename = "keyLogId")]
+    key_log_id: Vec<u8>,
+    timestamp: u64,
+    #[serde(rename = "sealedGroupId")]
+    sealed_group_id: Option<Vec<u8>>,
+    #[serde(rename = "sealedGkVersion")]
+    sealed_gk_version: Option<u32>,
+    #[serde(rename = "sealedGk")]
+    sealed_gk: Option<Vec<u8>>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct IoWriteMode {
+    pub mode: String,
+    #[serde(rename = "batchSize")]
+    pub batch_size: Option<u32>,
+}
+
+#[wasm_bindgen(js_name = encryptFilePipelinedAsync)]
+pub async fn encrypt_file_pipelined_async_wasm(
+    plaintext: &[u8],
+    dek: &[u8],
+    file_id: &[u8],
+    chunk_size: usize,
+    wraps: JsValue,
+    mode_val: u8,
+    sign_info_val: JsValue,
+    write_mode_val: JsValue,
+) -> Result<JsValue, JsValue> {
+    let dek_arr = to_arr32(dek, "dek")?;
+    let file_id_arr = to_arr16(file_id, "file_id")?;
+    
+    let wraps_objs: Vec<WrapEntry> = serde_wasm_bindgen::from_value(wraps).map_err(to_js_err)?;
+    let mut core_wraps = Vec::with_capacity(wraps_objs.len());
+    for w in wraps_objs {
+        core_wraps.push(serde_to_wrap_entry(w)?);
+    }
+    
+    let mode = vollcrypt_files_core::Mode::try_from(mode_val)
+        .map_err(|_| JsValue::from_str("Invalid mode value"))?;
+        
+    let sign_info: Option<vollcrypt_files_core::PipelinedSignInfo> = if sign_info_val.is_null() || sign_info_val.is_undefined() {
+        None
+    } else {
+        let js_info: SignInfoJs = serde_wasm_bindgen::from_value(sign_info_val).map_err(to_js_err)?;
+        let signer_pk = to_arr32(&js_info.signer_pk, "signerPk")?;
+        let signer_sk = to_arr32(&js_info.signer_sk, "signerSk")?;
+        let key_log_id = to_arr32(&js_info.key_log_id, "keyLogId")?;
+        
+        match js_info.kind.as_str() {
+            "Plain" => Some(vollcrypt_files_core::PipelinedSignInfo::Plain {
+                signer_ed25519_pk: signer_pk,
+                signer_ed25519_sk: signer_sk,
+                key_log_id,
+                timestamp: js_info.timestamp,
+            }),
+            "Sealed" => {
+                let group_id_buf = js_info.sealed_group_id.ok_or_else(|| JsValue::from_str("Missing sealedGroupId"))?;
+                let sealed_group_id = to_arr16(&group_id_buf, "sealedGroupId")?;
+                let sealed_gk_version = js_info.sealed_gk_version.ok_or_else(|| JsValue::from_str("Missing sealedGkVersion"))?;
+                let sealed_gk_buf = js_info.sealed_gk.ok_or_else(|| JsValue::from_str("Missing sealedGk"))?;
+                let sealed_gk = to_arr32(&sealed_gk_buf, "sealedGk")?;
+                Some(vollcrypt_files_core::PipelinedSignInfo::Sealed {
+                    signer_ed25519_pk: signer_pk,
+                    signer_ed25519_sk: signer_sk,
+                    key_log_id,
+                    timestamp: js_info.timestamp,
+                    sealed_group_id,
+                    sealed_gk_version,
+                    sealed_gk,
+                })
+            }
+            _ => return Err(JsValue::from_str("Unknown PipelinedSignInfo kind")),
+        }
+    };
+    
+    // Parse write_mode to ensure JS caller passed valid schema, though ignored in in-memory WASM mode
+    let _write_mode: Option<IoWriteMode> = if write_mode_val.is_null() || write_mode_val.is_undefined() {
+        None
+    } else {
+        Some(serde_wasm_bindgen::from_value(write_mode_val).map_err(to_js_err)?)
+    };
+
+    // Register WasmWebCryptoProvider
+    #[cfg(target_arch = "wasm32")]
+    let _ = vollcrypt_files_core::set_crypto_provider(Box::new(vollcrypt_files_core::WasmWebCryptoProvider));
+
+    match vollcrypt_files_core::pipelined_io::encrypt_file_pipelined_async(
+        plaintext,
+        &dek_arr,
+        &file_id_arr,
+        chunk_size,
+        core_wraps,
+        mode,
+        sign_info,
+    ).await {
+        Ok((header, encrypted_data)) => {
+            #[derive(Serialize)]
+            struct EncryptResultJs {
+                header: HeaderObj,
+                ciphertext: Vec<u8>,
+            }
+            let res = EncryptResultJs {
+                header: header_to_serde(header),
+                ciphertext: encrypted_data,
+            };
+            serde_wasm_bindgen::to_value(&res).map_err(to_js_err)
+        }
+        Err(e) => Err(to_js_err(e)),
+    }
+}
+
+#[wasm_bindgen(js_name = decryptFilePipelinedAsync)]
+pub async fn decrypt_file_pipelined_async_wasm(
+    ciphertext: &[u8],
+    dek: &[u8],
+) -> Result<JsValue, JsValue> {
+    let dek_arr = to_arr32(dek, "dek")?;
+    
+    // Register WasmWebCryptoProvider
+    #[cfg(target_arch = "wasm32")]
+    let _ = vollcrypt_files_core::set_crypto_provider(Box::new(vollcrypt_files_core::WasmWebCryptoProvider));
+
+    match vollcrypt_files_core::pipelined_io::decrypt_file_pipelined_async(
+        ciphertext,
+        &dek_arr,
+    ).await {
+        Ok((header, plaintext)) => {
+            #[derive(Serialize)]
+            struct DecryptResultJs {
+                header: HeaderObj,
+                plaintext: Vec<u8>,
+            }
+            let res = DecryptResultJs {
+                header: header_to_serde(header),
+                plaintext,
+            };
+            serde_wasm_bindgen::to_value(&res).map_err(to_js_err)
+        }
+        Err(e) => Err(to_js_err(e)),
+    }
+}
+
