@@ -1,0 +1,34 @@
+[package]
+name = "vollcrypt-files-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+vollcrypt-files-core = { path = "../core" }
+
+[[bin]]
+name = "fuzz_header_parse"
+path = "fuzz_targets/fuzz_header_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_manifest_parse"
+path = "fuzz_targets/fuzz_manifest_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_wrap_entry"
+path = "fuzz_targets/fuzz_wrap_entry.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_roundtrip"
+path = "fuzz_targets/fuzz_roundtrip.rs"
+test = false
+doc = false

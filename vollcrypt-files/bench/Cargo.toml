@@ -1,0 +1,45 @@
+[package]
+name = "vollcrypt-files-bench"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vollcrypt-files-core = { path = "../core" }
+rayon = "1"
+num_cpus = "1"
+sysinfo = "0.30"
+raw-cpuid = "11"
+criterion = { version = "0.5", features = ["html_reports"] }
+aes-gcm = "0.10"
+chrono = "0.4"
+sha2 = "0.10"
+hkdf = "0.12"
+rand = "0.8"
+
+[[bench]]
+name = "single_core"
+harness = false
+
+[[bench]]
+name = "parallel"
+harness = false
+
+[[bench]]
+name = "kdf"
+harness = false
+
+[[bench]]
+name = "hybrid_kem"
+harness = false
+
+[[bench]]
+name = "file_size"
+harness = false
+
+[[bench]]
+name = "scaling"
+harness = false
+
+[[bench]]
+name = "comparison"
+harness = false
