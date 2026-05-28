@@ -5,3 +5,10 @@ rustflags = ["-C", "target-cpu=x86-64-v3"]
 
 [target.wasm32-unknown-unknown]
 rustflags = ["-C", "target-feature=+simd128"]
+
+[target.aarch64-linux-android]
+rustflags = ["-C", "target-feature=+aes,+neon"]
+
+[target.aarch64-apple-ios]
+rustflags = ["-C", "target-feature=+aes,+neon"]
+

@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::io::{Cursor, Read, Seek, SeekFrom};
 use vollcrypt_files_core::{
     encrypt_file_pipelined, decrypt_file_pipelined, generate_dek, generate_file_id,
     wrap_dek_with_password, unwrap_dek_with_password, KdfChoice, Mode, PipelinedSignInfo,
@@ -15,12 +15,12 @@ fn test_pipelined_roundtrip_small() {
     let password = b"pipeline-password";
     let wrap = wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
 
-    let mut dest = Cursor::new(Vec::new());
+    let dest = tempfile::tempfile().unwrap();
     
     // Encrypt
     let encrypt_res = encrypt_file_pipelined(
         Cursor::new(plaintext.clone()),
-        &mut dest,
+        dest.try_clone().unwrap(),
         &dek,
         &file_id,
         chunk_size,
@@ -28,21 +28,26 @@ fn test_pipelined_roundtrip_small() {
         Mode::Password,
         3, // 3 worker threads
         None,
+        None,
     );
     assert!(encrypt_res.is_ok());
 
     // Decrypt
-    let mut decrypted = Cursor::new(Vec::new());
-    dest.set_position(0);
+    let mut decrypted = Vec::new();
+    let mut read_dest = dest;
+    read_dest.seek(SeekFrom::Start(0)).unwrap();
 
     let decrypt_res = decrypt_file_pipelined(
-        dest,
+        read_dest,
         &mut decrypted,
         &dek,
         3, // 3 worker threads
     );
+    if let Err(ref e) = decrypt_res {
+        eprintln!("Decrypt error small: {:?}", e);
+    }
     assert!(decrypt_res.is_ok());
-    assert_eq!(decrypted.into_inner(), plaintext);
+    assert_eq!(decrypted, plaintext);
 }
 
 #[test]
@@ -55,12 +60,12 @@ fn test_pipelined_roundtrip_large() {
     let password = b"pipeline-password-large";
     let wrap = wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
 
-    let mut dest = Cursor::new(Vec::new());
+    let dest = tempfile::tempfile().unwrap();
     
     // Encrypt
     let encrypt_res = encrypt_file_pipelined(
         Cursor::new(plaintext.clone()),
-        &mut dest,
+        dest.try_clone().unwrap(),
         &dek,
         &file_id,
         chunk_size,
@@ -68,21 +73,23 @@ fn test_pipelined_roundtrip_large() {
         Mode::Password,
         4, // 4 worker threads
         None,
+        None,
     );
     assert!(encrypt_res.is_ok());
 
     // Decrypt
-    let mut decrypted = Cursor::new(Vec::new());
-    dest.set_position(0);
+    let mut decrypted = Vec::new();
+    let mut read_dest = dest;
+    read_dest.seek(SeekFrom::Start(0)).unwrap();
 
     let decrypt_res = decrypt_file_pipelined(
-        dest,
+        read_dest,
         &mut decrypted,
         &dek,
         4, // 4 worker threads
     );
     assert!(decrypt_res.is_ok());
-    assert_eq!(decrypted.into_inner(), plaintext);
+    assert_eq!(decrypted, plaintext);
 }
 
 #[test]
@@ -103,12 +110,12 @@ fn test_pipelined_signed_header_plain() {
         timestamp: 9876543210,
     };
 
-    let mut dest = Cursor::new(Vec::new());
+    let dest = tempfile::tempfile().unwrap();
     
     // Encrypt with signing info
     let header = encrypt_file_pipelined(
         Cursor::new(plaintext.clone()),
-        &mut dest,
+        dest.try_clone().unwrap(),
         &dek,
         &file_id,
         chunk_size,
@@ -116,23 +123,25 @@ fn test_pipelined_signed_header_plain() {
         Mode::Password,
         2,
         Some(sign_info),
+        None,
     ).unwrap();
 
     // Verify signature passes
     assert!(verify_header_signature_plain(&header).is_ok());
 
     // Decrypt and verify roundtrip
-    let mut decrypted = Cursor::new(Vec::new());
-    dest.set_position(0);
+    let mut decrypted = Vec::new();
+    let mut read_dest = dest;
+    read_dest.seek(SeekFrom::Start(0)).unwrap();
 
     let decrypt_res = decrypt_file_pipelined(
-        dest,
+        read_dest,
         &mut decrypted,
         &dek,
         2,
     );
     assert!(decrypt_res.is_ok());
-    assert_eq!(decrypted.into_inner(), plaintext);
+    assert_eq!(decrypted, plaintext);
 }
 
 #[test]
@@ -145,10 +154,10 @@ fn test_pipelined_tampered_chunk_rejected() {
     let password = b"tamper-pass";
     let wrap = wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
 
-    let mut dest = Cursor::new(Vec::new());
+    let mut dest = tempfile::tempfile().unwrap();
     encrypt_file_pipelined(
         Cursor::new(plaintext),
-        &mut dest,
+        dest.try_clone().unwrap(),
         &dek,
         &file_id,
         chunk_size,
@@ -156,11 +165,14 @@ fn test_pipelined_tampered_chunk_rejected() {
         Mode::Password,
         2,
         None,
+        None,
     ).unwrap();
 
     // Tamper one byte of the ciphertext in the output buffer.
-    // Chunk envelopes start after header. Let's find header length.
-    let bytes = dest.into_inner();
+    let mut bytes = Vec::new();
+    dest.seek(SeekFrom::Start(0)).unwrap();
+    dest.read_to_end(&mut bytes).unwrap();
+    
     let mut tampered_bytes = bytes.clone();
     
     // Tamper the very last byte of the stream
@@ -168,7 +180,7 @@ fn test_pipelined_tampered_chunk_rejected() {
     tampered_bytes[last_idx] ^= 0xFF;
 
     let tampered_source = Cursor::new(tampered_bytes);
-    let mut decrypted = Cursor::new(Vec::new());
+    let mut decrypted = Vec::new();
 
     let decrypt_res = decrypt_file_pipelined(
         tampered_source,
@@ -193,10 +205,10 @@ fn test_pipelined_wrong_password_fails() {
     let wrong_password = b"wrong-password";
     let wrap = wrap_dek_with_password(&dek, correct_password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
 
-    let mut dest = Cursor::new(Vec::new());
+    let dest = tempfile::tempfile().unwrap();
     let header = encrypt_file_pipelined(
         Cursor::new(plaintext),
-        &mut dest,
+        dest,
         &dek,
         &file_id,
         chunk_size,
@@ -204,9 +216,104 @@ fn test_pipelined_wrong_password_fails() {
         Mode::Password,
         2,
         None,
+        None,
     ).unwrap();
 
     // Try to unwrap the DEK using the parsed header wraps with the wrong password
     let recovered_dek_result = unwrap_dek_with_password(&header.wraps[0], wrong_password);
     assert!(matches!(recovered_dek_result, Err(FileFormatError::WrongPassword)));
+}
+
+#[test]
+fn test_pipelined_write_modes_equivalence() {
+    use std::io::Write as _;
+    let plaintext = vec![0xABu8; 100 * 1024]; // 100 KB
+    let dek = generate_dek();
+    let file_id = generate_file_id();
+    let chunk_size = 4096; // 4 KB chunks
+
+    let password = b"equivalence-password";
+    let wrap = wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+
+    let mut src_file = tempfile::tempfile().unwrap();
+    src_file.write_all(&plaintext).unwrap();
+
+    // 1. Sequential Mode
+    let mut file_seq = tempfile::tempfile().unwrap();
+    src_file.seek(SeekFrom::Start(0)).unwrap();
+    let header_seq = encrypt_file_pipelined(
+        src_file.try_clone().unwrap(),
+        file_seq.try_clone().unwrap(),
+        &dek,
+        &file_id,
+        chunk_size,
+        vec![wrap.clone()],
+        Mode::Password,
+        4,
+        None,
+        Some(vollcrypt_files_core::IoWriteMode::Sequential),
+    ).unwrap();
+
+    let mut data_seq = Vec::new();
+    file_seq.seek(SeekFrom::Start(0)).unwrap();
+    file_seq.read_to_end(&mut data_seq).unwrap();
+
+    // 2. Batched Mode
+    let mut file_batch = tempfile::tempfile().unwrap();
+    src_file.seek(SeekFrom::Start(0)).unwrap();
+    let header_batch = encrypt_file_pipelined(
+        src_file.try_clone().unwrap(),
+        file_batch.try_clone().unwrap(),
+        &dek,
+        &file_id,
+        chunk_size,
+        vec![wrap.clone()],
+        Mode::Password,
+        4,
+        None,
+        Some(vollcrypt_files_core::IoWriteMode::Batched { batch_size: 4 }),
+    ).unwrap();
+
+    let mut data_batch = Vec::new();
+    file_batch.seek(SeekFrom::Start(0)).unwrap();
+    file_batch.read_to_end(&mut data_batch).unwrap();
+
+    // 3. Direct Offset Mode
+    let mut file_direct = tempfile::tempfile().unwrap();
+    src_file.seek(SeekFrom::Start(0)).unwrap();
+    let header_direct = encrypt_file_pipelined(
+        src_file.try_clone().unwrap(),
+        file_direct.try_clone().unwrap(),
+        &dek,
+        &file_id,
+        chunk_size,
+        vec![wrap.clone()],
+        Mode::Password,
+        4,
+        None,
+        Some(vollcrypt_files_core::IoWriteMode::DirectOffset),
+    ).unwrap();
+
+    let mut data_direct = Vec::new();
+    file_direct.seek(SeekFrom::Start(0)).unwrap();
+    file_direct.read_to_end(&mut data_direct).unwrap();
+
+    // Check equivalence of outputs
+    assert_eq!(data_seq, data_batch, "Sequential and Batched outputs differ!");
+    assert_eq!(data_seq, data_direct, "Sequential and DirectOffset outputs differ!");
+    
+    assert_eq!(header_seq.merkle_root, header_batch.merkle_root);
+    assert_eq!(header_seq.merkle_root, header_direct.merkle_root);
+
+    // Decrypt and verify roundtrip
+    let mut decrypted = Vec::new();
+    file_direct.seek(SeekFrom::Start(0)).unwrap();
+    decrypt_file_pipelined(
+        file_direct,
+        &mut decrypted,
+        &dek,
+        4,
+    ).unwrap();
+
+    assert_eq!(decrypted, plaintext);
 }

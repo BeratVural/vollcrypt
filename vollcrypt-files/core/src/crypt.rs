@@ -80,3 +80,194 @@ pub fn decrypt_chunk(
 
     Ok(plaintext)
 }
+
+/// Encrypts a single plaintext chunk asynchronously.
+pub async fn encrypt_chunk_async(
+    dek: &[u8; 32],
+    file_id: &[u8; 16],
+    chunk_index: u32,
+    plaintext: Vec<u8>,
+) -> Result<ChunkEnvelope, FileFormatError> {
+    let (subkey_raw, iv) = derive_chunk_keys(dek, file_id, chunk_index);
+    let subkey = zeroize::Zeroizing::new(subkey_raw);
+
+    let mut aad = [0u8; 20];
+    aad[0..16].copy_from_slice(file_id);
+    aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
+
+    let (ciphertext, tag) = crate::aead::aes256_gcm_encrypt_async(&subkey, &iv, &aad, plaintext).await?;
+
+    Ok(ChunkEnvelope {
+        chunk_index,
+        iv,
+        ciphertext,
+        tag,
+    })
+}
+
+/// Decrypts a single chunk from a `ChunkEnvelope` asynchronously.
+pub async fn decrypt_chunk_async(
+    dek: &[u8; 32],
+    file_id: &[u8; 16],
+    chunk_index: u32,
+    envelope: ChunkEnvelope,
+) -> Result<Vec<u8>, FileFormatError> {
+    if envelope.chunk_index != chunk_index {
+        return Err(FileFormatError::ChunkIndexOutOfOrder {
+            expected: chunk_index,
+            got: envelope.chunk_index,
+        });
+    }
+
+    let subkey = zeroize::Zeroizing::new(derive_chunk_keys(dek, file_id, chunk_index).0);
+
+    let mut aad = [0u8; 20];
+    aad[0..16].copy_from_slice(file_id);
+    aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
+
+    let plaintext = crate::aead::aes256_gcm_decrypt_async(
+        &subkey,
+        &envelope.iv,
+        &aad,
+        envelope.ciphertext,
+        envelope.tag,
+    ).await?;
+
+    Ok(plaintext)
+}
+
+/// Encrypts a chunk in place inside a PooledBuffer.
+pub fn encrypt_chunk_in_place(
+    dek: &[u8; 32],
+    file_id: &[u8; 16],
+    chunk_index: u32,
+    buffer: &mut crate::buffer_pool::PooledBuffer,
+    plaintext_len: usize,
+) -> Result<(), FileFormatError> {
+    let (subkey_raw, iv) = derive_chunk_keys(dek, file_id, chunk_index);
+    let subkey = Zeroizing::new(subkey_raw);
+
+    let mut aad = [0u8; 20];
+    aad[0..16].copy_from_slice(file_id);
+    aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
+
+    buffer.set_index(chunk_index);
+    buffer.set_iv(&iv);
+
+    let tag = crate::aead::aes256_gcm_encrypt_in_place(
+        &subkey,
+        &iv,
+        &aad,
+        buffer.as_plaintext_mut(plaintext_len),
+    )?;
+
+    *buffer.as_tag_mut(plaintext_len) = tag;
+
+    Ok(())
+}
+
+/// Decrypts a chunk in place inside a PooledBuffer.
+pub fn decrypt_chunk_in_place(
+    dek: &[u8; 32],
+    file_id: &[u8; 16],
+    chunk_index: u32,
+    buffer: &mut crate::buffer_pool::PooledBuffer,
+    ciphertext_len: usize,
+) -> Result<(), FileFormatError> {
+    let got_index = buffer.get_index();
+    if got_index != chunk_index {
+        return Err(FileFormatError::ChunkIndexOutOfOrder {
+            expected: chunk_index,
+            got: got_index,
+        });
+    }
+
+    let subkey = Zeroizing::new(derive_chunk_keys(dek, file_id, chunk_index).0);
+
+    let mut aad = [0u8; 20];
+    aad[0..16].copy_from_slice(file_id);
+    aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
+
+    let iv = *buffer.get_iv();
+    let tag = *buffer.as_tag_slice(ciphertext_len);
+
+    crate::aead::aes256_gcm_decrypt_in_place(
+        &subkey,
+        &iv,
+        &aad,
+        buffer.as_ciphertext_mut(ciphertext_len),
+        &tag,
+    )?;
+
+    Ok(())
+}
+
+/// Encrypts a chunk in place asynchronously inside a PooledBuffer.
+pub async fn encrypt_chunk_in_place_async(
+    dek: &[u8; 32],
+    file_id: &[u8; 16],
+    chunk_index: u32,
+    buffer: crate::buffer_pool::PooledBuffer,
+    plaintext_len: usize,
+) -> Result<(crate::buffer_pool::PooledBuffer, [u8; 16]), FileFormatError> {
+    let (subkey_raw, iv) = derive_chunk_keys(dek, file_id, chunk_index);
+    let subkey = Zeroizing::new(subkey_raw);
+
+    let mut aad = [0u8; 20];
+    aad[0..16].copy_from_slice(file_id);
+    aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
+
+    let mut buffer = buffer;
+    buffer.set_index(chunk_index);
+    buffer.set_iv(&iv);
+
+    let (mut buffer, tag) = crate::aead::aes256_gcm_encrypt_in_place_async(
+        &subkey,
+        &iv,
+        &aad,
+        buffer,
+        plaintext_len,
+    ).await?;
+
+    *buffer.as_tag_mut(plaintext_len) = tag;
+
+    Ok((buffer, tag))
+}
+
+/// Decrypts a chunk in place asynchronously inside a PooledBuffer.
+pub async fn decrypt_chunk_in_place_async(
+    dek: &[u8; 32],
+    file_id: &[u8; 16],
+    chunk_index: u32,
+    buffer: crate::buffer_pool::PooledBuffer,
+    ciphertext_len: usize,
+    tag: [u8; 16],
+) -> Result<crate::buffer_pool::PooledBuffer, FileFormatError> {
+    let got_index = buffer.get_index();
+    if got_index != chunk_index {
+        return Err(FileFormatError::ChunkIndexOutOfOrder {
+            expected: chunk_index,
+            got: got_index,
+        });
+    }
+
+    let subkey = Zeroizing::new(derive_chunk_keys(dek, file_id, chunk_index).0);
+
+    let mut aad = [0u8; 20];
+    aad[0..16].copy_from_slice(file_id);
+    aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
+
+    let iv = *buffer.get_iv();
+
+    let buffer = crate::aead::aes256_gcm_decrypt_in_place_async(
+        &subkey,
+        &iv,
+        &aad,
+        buffer,
+        ciphertext_len,
+        tag,
+    ).await?;
+
+    Ok(buffer)
+}
+
