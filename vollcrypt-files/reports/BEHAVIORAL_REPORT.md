@@ -1,6 +1,6 @@
 # Vollcrypt File Behavioral Report
 
-Generated: 2026-05-28T01:07:07.256766900+00:00
+Generated: 2026-05-28T13:31:16.213677500+00:00
 Vollcrypt-File version: 0.1.0
 
 ## System Information
@@ -8,7 +8,7 @@ Vollcrypt-File version: 0.1.0
 | Component | Detail |
 | --- | --- |
 | CPU | AMD Ryzen 5 7500F 6-Core Processor (6 physical cores, 12 logical threads) @ 3.70 GHz |
-| RAM | 15.62 GB (9.23 GB available) |
+| RAM | 15.62 GB (9.39 GB available) |
 | OS | Windows 26200 |
 | Hardware Acceleration | AES-NI, AVX, AVX2, AVX512, SHA-NI, PCLMULQDQ |
 | Rust Version | rustc 1.93.1 (01f6ddf75 2026-02-11) |

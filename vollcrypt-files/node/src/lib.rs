@@ -1413,3 +1413,212 @@ pub fn resolve_sender(
         Err(e) => Err(Error::from_reason(e.to_string())),
     }
 }
+
+// ==================== Pipelined File-Level Operations ====================
+
+#[napi(object)]
+pub struct PipelinedSignInfoObj {
+    pub kind: String, // "Plain" | "Sealed"
+    pub signer_ed25519_pk: Buffer,
+    pub signer_ed25519_sk: Buffer,
+    pub key_log_id: Buffer,
+    pub timestamp: u32,
+    pub sealed_group_id: Option<Buffer>,
+    pub sealed_gk_version: Option<u32>,
+    pub sealed_gk: Option<Buffer>,
+}
+
+fn napi_to_pipelined_sign_info(
+    obj: PipelinedSignInfoObj,
+) -> Result<vollcrypt_files_core::PipelinedSignInfo> {
+    let signer_pk_arr = to_arr32(obj.signer_ed25519_pk.as_ref(), "signer_ed25519_pk")?;
+    let signer_sk_arr = to_arr32(obj.signer_ed25519_sk.as_ref(), "signer_ed25519_sk")?;
+    let key_log_id_arr = to_arr32(obj.key_log_id.as_ref(), "key_log_id")?;
+    let timestamp = obj.timestamp as u64;
+
+    match obj.kind.as_str() {
+        "Plain" => Ok(vollcrypt_files_core::PipelinedSignInfo::Plain {
+            signer_ed25519_pk: signer_pk_arr,
+            signer_ed25519_sk: signer_sk_arr,
+            key_log_id: key_log_id_arr,
+            timestamp,
+        }),
+        "Sealed" => {
+            let sealed_group_id_buf = obj
+                .sealed_group_id
+                .ok_or_else(|| Error::from_reason("Missing sealed_group_id for Sealed signature"))?;
+            let sealed_group_id = to_arr16(sealed_group_id_buf.as_ref(), "sealed_group_id")?;
+
+            let sealed_gk_version = obj.sealed_gk_version.ok_or_else(|| {
+                Error::from_reason("Missing sealed_gk_version for Sealed signature")
+            })?;
+
+            let sealed_gk_buf = obj
+                .sealed_gk
+                .ok_or_else(|| Error::from_reason("Missing sealed_gk for Sealed signature"))?;
+            let sealed_gk = to_arr32(sealed_gk_buf.as_ref(), "sealed_gk")?;
+
+            Ok(vollcrypt_files_core::PipelinedSignInfo::Sealed {
+                signer_ed25519_pk: signer_pk_arr,
+                signer_ed25519_sk: signer_sk_arr,
+                key_log_id: key_log_id_arr,
+                timestamp,
+                sealed_group_id,
+                sealed_gk_version,
+                sealed_gk,
+            })
+        }
+        _ => Err(Error::from_reason(format!(
+            "Unknown PipelinedSignInfo kind: {}",
+            obj.kind
+        ))),
+    }
+}
+
+pub struct EncryptFilePipelinedTask {
+    source_path: String,
+    dest_path: String,
+    dek: [u8; 32],
+    file_id: [u8; 16],
+    chunk_size: usize,
+    wraps: Vec<vollcrypt_files_core::WrapEntry>,
+    mode: vollcrypt_files_core::Mode,
+    num_workers: usize,
+    sign_info: Option<vollcrypt_files_core::PipelinedSignInfo>,
+}
+
+impl Task for EncryptFilePipelinedTask {
+    type Output = vollcrypt_files_core::Header;
+    type JsValue = HeaderObj;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let source_file = std::fs::File::open(&self.source_path)
+            .map_err(|e| Error::from_reason(format!("Failed to open source file: {}", e)))?;
+        let dest_file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&self.dest_path)
+            .map_err(|e| {
+                Error::from_reason(format!("Failed to open/create destination file: {}", e))
+            })?;
+
+        vollcrypt_files_core::encrypt_file_pipelined(
+            source_file,
+            dest_file,
+            &self.dek,
+            &self.file_id,
+            self.chunk_size,
+            self.wraps.clone(),
+            self.mode,
+            self.num_workers,
+            self.sign_info.clone(),
+        )
+        .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(header_to_napi(output))
+    }
+}
+
+pub struct DecryptFilePipelinedTask {
+    source_path: String,
+    dest_path: String,
+    dek: [u8; 32],
+    num_workers: usize,
+}
+
+impl Task for DecryptFilePipelinedTask {
+    type Output = vollcrypt_files_core::Header;
+    type JsValue = HeaderObj;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let source_file = std::fs::File::open(&self.source_path)
+            .map_err(|e| Error::from_reason(format!("Failed to open source file: {}", e)))?;
+        let dest_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&self.dest_path)
+            .map_err(|e| {
+                Error::from_reason(format!("Failed to open/create destination file: {}", e))
+            })?;
+
+        vollcrypt_files_core::decrypt_file_pipelined(
+            source_file,
+            dest_file,
+            &self.dek,
+            self.num_workers,
+        )
+        .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(header_to_napi(output))
+    }
+}
+
+#[napi]
+#[allow(clippy::too_many_arguments)]
+pub fn encrypt_file_pipelined_async(
+    source_path: String,
+    dest_path: String,
+    dek: Uint8Array,
+    file_id: Uint8Array,
+    chunk_size: u32,
+    wraps: Vec<WrapEntry>,
+    mode: u8,
+    num_workers: u32,
+    sign_info: Option<PipelinedSignInfoObj>,
+) -> Result<AsyncTask<EncryptFilePipelinedTask>> {
+    let dek_arr = to_arr32(dek.as_ref(), "dek")?;
+    let file_id_arr = to_arr16(file_id.as_ref(), "file_id")?;
+
+    let mut core_wraps = Vec::with_capacity(wraps.len());
+    for w in wraps {
+        core_wraps.push(napi_to_wrap_entry(w)?);
+    }
+
+    let core_mode = vollcrypt_files_core::Mode::try_from(mode)
+        .map_err(|_| Error::from_reason("Invalid mode value"))?;
+
+    let core_sign_info = match sign_info {
+        Some(s) => Some(napi_to_pipelined_sign_info(s)?),
+        None => None,
+    };
+
+    let task = EncryptFilePipelinedTask {
+        source_path,
+        dest_path,
+        dek: dek_arr,
+        file_id: file_id_arr,
+        chunk_size: chunk_size as usize,
+        wraps: core_wraps,
+        mode: core_mode,
+        num_workers: num_workers as usize,
+        sign_info: core_sign_info,
+    };
+
+    Ok(AsyncTask::new(task))
+}
+
+#[napi]
+pub fn decrypt_file_pipelined_async(
+    source_path: String,
+    dest_path: String,
+    dek: Uint8Array,
+    num_workers: u32,
+) -> Result<AsyncTask<DecryptFilePipelinedTask>> {
+    let dek_arr = to_arr32(dek.as_ref(), "dek")?;
+
+    let task = DecryptFilePipelinedTask {
+        source_path,
+        dest_path,
+        dek: dek_arr,
+        num_workers: num_workers as usize,
+    };
+
+    Ok(AsyncTask::new(task))
+}

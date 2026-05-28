@@ -1,4 +1,4 @@
-use vollcrypt_files_core::{decrypt_chunk, encrypt_chunk, FileFormatError};
+use vollcrypt_files_core::{decrypt_chunk, encrypt_chunk, derive_chunk_keys, derive_chunk_subkey, FileFormatError};
 
 #[test]
 fn single_chunk_roundtrip() {
@@ -140,4 +140,68 @@ fn wrong_dek_fails() {
 
     let result = decrypt_chunk(&dek_decrypt, &file_id, chunk_index, &envelope);
     assert!(matches!(result, Err(FileFormatError::AesGcmDecryptFailed)));
+}
+
+#[test]
+fn derive_chunk_keys_subkey_matches_legacy() {
+    let dek = [0x15; 32];
+    let file_id = [0xAB; 16];
+    let idx = 7;
+    let keys = derive_chunk_keys(&dek, &file_id, idx);
+    let legacy = derive_chunk_subkey(&dek, &file_id, idx);
+    assert_eq!(keys.0, legacy);
+}
+
+#[test]
+fn deterministic_iv_same_inputs() {
+    let dek = [0x16; 32];
+    let file_id = [0xBC; 16];
+    let idx = 13;
+    let keys1 = derive_chunk_keys(&dek, &file_id, idx);
+    let keys2 = derive_chunk_keys(&dek, &file_id, idx);
+    assert_eq!(keys1.1, keys2.1);
+}
+
+#[test]
+fn iv_differs_across_chunk_index() {
+    let dek = [0x17; 32];
+    let file_id = [0xCD; 16];
+    let keys1 = derive_chunk_keys(&dek, &file_id, 1);
+    let keys2 = derive_chunk_keys(&dek, &file_id, 2);
+    assert_ne!(keys1.1, keys2.1);
+}
+
+#[test]
+fn iv_differs_across_file_id() {
+    let dek = [0x18; 32];
+    let file_id1 = [0xDE; 16];
+    let file_id2 = [0xDF; 16];
+    let keys1 = derive_chunk_keys(&dek, &file_id1, 1);
+    let keys2 = derive_chunk_keys(&dek, &file_id2, 1);
+    assert_ne!(keys1.1, keys2.1);
+}
+
+#[test]
+fn encrypt_chunk_no_osrng_determinism() {
+    let dek = [0x19; 32];
+    let file_id = [0xEF; 16];
+    let idx = 4;
+    let pt = b"Deterministic payload";
+    let env1 = encrypt_chunk(&dek, &file_id, idx, pt).unwrap();
+    let env2 = encrypt_chunk(&dek, &file_id, idx, pt).unwrap();
+    assert_eq!(env1.iv, env2.iv);
+    assert_eq!(env1.ciphertext, env2.ciphertext);
+    assert_eq!(env1.tag, env2.tag);
+}
+
+#[test]
+fn different_dek_different_ciphertext() {
+    let dek1 = [0x20; 32];
+    let dek2 = [0x21; 32];
+    let file_id = [0xF0; 16];
+    let idx = 4;
+    let pt = b"Deterministic payload";
+    let env1 = encrypt_chunk(&dek1, &file_id, idx, pt).unwrap();
+    let env2 = encrypt_chunk(&dek2, &file_id, idx, pt).unwrap();
+    assert_ne!(env1.ciphertext, env2.ciphertext);
 }

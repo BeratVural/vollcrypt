@@ -8,12 +8,18 @@ use crate::error::FileFormatError;
 ///
 /// The hash is computed over the entire serialized binary representation of the envelope.
 pub fn chunk_leaf_hash(envelope: &ChunkEnvelope) -> [u8; 32] {
-    let serialized = envelope.write();
+    // GCM tag'i zaten ciphertext'i kriptografik olarak taahhüt eder. Merkle ağacının
+    // görevi içerik bütünlüğü değil, YAPI bütünlüğüdür (chunk sırası, silme, ekleme,
+    // substitution). chunk_index sırayı, tag ise içeriği benzersiz şekilde bağlar.
+    // İçerik manipülasyonu decrypt sırasında GCM tag verification ile yakalanır.
+    //
+    // SHA-256 over: chunk_index (4B BE) || iv (12B) || tag (16B)
+    // Ciphertext is NOT hashed — GCM tag already commits to it.
     let mut hasher = Sha256::new();
-    hasher.update(&serialized);
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&hasher.finalize());
-    out
+    hasher.update(envelope.chunk_index.to_be_bytes());
+    hasher.update(envelope.iv);
+    hasher.update(envelope.tag);
+    hasher.finalize().into()
 }
 
 /// A binary Merkle Tree built using SHA-256.

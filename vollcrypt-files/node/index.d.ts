@@ -123,6 +123,18 @@ export interface SenderInfo {
   humanLabel?: string
 }
 export declare function resolveSender(header: HeaderObj, keyLog: KeyLog, sealedGk?: Uint8Array | undefined | null): SenderInfo
+export interface PipelinedSignInfoObj {
+  kind: string
+  signerEd25519Pk: Buffer
+  signerEd25519Sk: Buffer
+  keyLogId: Buffer
+  timestamp: number
+  sealedGroupId?: Buffer
+  sealedGkVersion?: number
+  sealedGk?: Buffer
+}
+export declare function encryptFilePipelinedAsync(sourcePath: string, destPath: string, dek: Uint8Array, fileId: Uint8Array, chunkSize: number, wraps: Array<WrapEntry>, mode: number, numWorkers: number, signInfo?: PipelinedSignInfoObj | undefined | null): Promise<unknown>
+export declare function decryptFilePipelinedAsync(sourcePath: string, destPath: string, dek: Uint8Array, numWorkers: number): Promise<unknown>
 export declare class GroupManifest {
   static genesis(groupId: Uint8Array, initialGk: Uint8Array, founderMemberId: Uint8Array, founderRecipientPk: KeySubpair, founderEd25519Pk: Uint8Array, founderEd25519Sk: Uint8Array, timestamp: number): GroupManifest
   static parse(bytes: Uint8Array): GroupManifest

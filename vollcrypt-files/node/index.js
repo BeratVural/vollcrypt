@@ -310,7 +310,7 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { generateDek, generateFileId, generateSalt, generateGk, encryptChunk, decryptChunk, chunkLeafHash, merkleRoot, merkleProof, verifyMerkleProof, wrapDekWithPassword, unwrapDekWithPassword, unwrapDekWithPasswordAsync, generateRecipientKeypair, wrapKeyToRecipient, unwrapKeyWithRecipientKey, wrapDekForGroup, unwrapDekWithGroupKey, ed25519KeypairGenerate, ed25519Sign, ed25519Verify, GroupManifest, HeaderClass, rewrapDekInHeader, cryptoShredHeader, signHeaderPlain, signHeaderSealed, verifyHeaderSignaturePlain, verifyHeaderSignatureSealed, KeyLog, resolveSender } = nativeBinding
+const { generateDek, generateFileId, generateSalt, generateGk, encryptChunk, decryptChunk, chunkLeafHash, merkleRoot, merkleProof, verifyMerkleProof, wrapDekWithPassword, unwrapDekWithPassword, unwrapDekWithPasswordAsync, generateRecipientKeypair, wrapKeyToRecipient, unwrapKeyWithRecipientKey, wrapDekForGroup, unwrapDekWithGroupKey, ed25519KeypairGenerate, ed25519Sign, ed25519Verify, GroupManifest, HeaderClass, rewrapDekInHeader, cryptoShredHeader, signHeaderPlain, signHeaderSealed, verifyHeaderSignaturePlain, verifyHeaderSignatureSealed, KeyLog, resolveSender, encryptFilePipelinedAsync, decryptFilePipelinedAsync } = nativeBinding
 
 module.exports.generateDek = generateDek
 module.exports.generateFileId = generateFileId
@@ -343,3 +343,5 @@ module.exports.verifyHeaderSignaturePlain = verifyHeaderSignaturePlain
 module.exports.verifyHeaderSignatureSealed = verifyHeaderSignatureSealed
 module.exports.KeyLog = KeyLog
 module.exports.resolveSender = resolveSender
+module.exports.encryptFilePipelinedAsync = encryptFilePipelinedAsync
+module.exports.decryptFilePipelinedAsync = decryptFilePipelinedAsync

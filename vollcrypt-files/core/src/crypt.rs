@@ -1,10 +1,9 @@
-use rand::{rngs::OsRng, RngCore};
 use zeroize::Zeroizing;
 
 use crate::aead::{aes256_gcm_decrypt, aes256_gcm_encrypt};
 use crate::chunk::ChunkEnvelope;
 use crate::error::FileFormatError;
-use crate::kdf::derive_chunk_subkey;
+use crate::kdf::derive_chunk_keys;
 
 /// Encrypts a single plaintext chunk and returns a `ChunkEnvelope`.
 ///
@@ -18,11 +17,16 @@ pub fn encrypt_chunk(
     chunk_index: u32,
     plaintext: &[u8],
 ) -> Result<ChunkEnvelope, FileFormatError> {
-    // Derive subkey and wrap it in Zeroizing to guarantee zeroization on scope exit.
-    let subkey = Zeroizing::new(derive_chunk_subkey(dek, file_id, chunk_index));
-
-    let mut iv = [0u8; 12];
-    OsRng.fill_bytes(&mut iv);
+    // GCM'de tehlikeli olan aynı (key, nonce) çiftinin tekrar kullanılmasıdır.
+    // Her chunk'ın subkey'i zaten chunk_index'e bağlı türetildiği için her chunk'ın
+    // ANAHTARI benzersizdir. Nonce tekrarı yalnızca aynı anahtar altında tehlikelidir;
+    // anahtar her chunk'ta farklı olduğundan (subkey, IV) çifti benzersiz kalır.
+    // Dolayısıyla deterministik IV nonce reuse yaratmaz. Bu, age / AWS Encryption SDK /
+    // STREAM construction'da kullanılan standart desendir.
+    // İNVARIANT: Aynı DEK aynı file_id ile farklı içerik için ASLA tekrar kullanılmamalı.
+    // generate_dek() ve generate_file_id() her dosyada taze random ürettiği için bu sağlanır.
+    let (subkey_raw, iv) = derive_chunk_keys(dek, file_id, chunk_index);
+    let subkey = Zeroizing::new(subkey_raw);
 
     let mut aad = [0u8; 20];
     aad[0..16].copy_from_slice(file_id);
@@ -57,13 +61,15 @@ pub fn decrypt_chunk(
         });
     }
 
-    // Derive subkey and wrap it in Zeroizing to guarantee zeroization on scope exit.
-    let subkey = Zeroizing::new(derive_chunk_subkey(dek, file_id, chunk_index));
+    // Derive subkey using derive_chunk_keys (the subkey is the first 32 bytes of the output).
+    // Zeroizing guarantees zeroization on scope exit.
+    let subkey = Zeroizing::new(derive_chunk_keys(dek, file_id, chunk_index).0);
 
     let mut aad = [0u8; 20];
     aad[0..16].copy_from_slice(file_id);
     aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
 
+    // We decrypt using the IV stored in the envelope, not assuming it matches the deterministic IV
     let plaintext = aes256_gcm_decrypt(
         &subkey,
         &envelope.iv,

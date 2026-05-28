@@ -1,6 +1,10 @@
-# Vollcrypt File Cryptography Engine
+# Vollcrypt File Container Engine
 
-Vollcrypt File is a cross-platform, hybrid quantum-resistant file encryption and metadata package. It is designed to secure file payloads and their associated headers for high-security applications, such as digital signature systems and lawyer communication platforms.
+High-performance, chunk-based End-to-End Encrypted (E2EE) file container engine for Node.js, WebAssembly, and Rust.
+
+Vollcrypt Files is designed for local file encryption, cloud object storage, and secure shared-file access. It processes large files incrementally without loading them fully into memory, but it is not a real-time network, audio, or video streaming protocol.
+
+This module provides high-performance chunked file encryption, cryptographic access control, and chunk integrity verification for large encrypted file containers.
 
 ## License
 
@@ -16,67 +20,330 @@ This package is dual-licensed under:
 
 - **Symmetric Encryption**: AES-256-GCM
 - **Key Wrapping**: AES-256-Key-Wrap (AES-KW)
-- **Key Derivation (KDF)**: PBKDF2 (SHA-256) or Argon2id (customizable iterations/memory cost)
+- **Key Derivation (KDF)**: Argon2id (default) or PBKDF2 (SHA-256) (legacy compatibility)
 - **Asymmetric Exchange (Hybrid KEM)**: ML-KEM-768 (Kyber) combined with X25519
 - **Signatures**: Ed25519 (RFC 8032)
-- **Integrity**: Merkle Tree leaf hashing over chunk envelopes
+- **Integrity**: Merkle Tree leaf hashing over chunk metadata and authentication tags
 
-### Binary Layouts
+---
 
-#### Header Format (Version 1 & 2)
+## Use Cases & Non-Goals
 
-Headers are parsed dynamically to maintain backward compatibility. Version 2 introduces Ed25519 signatures and metadata blocks.
+### Use Cases
 
-| Offset (Bytes) | Field Name | Type | Description / Value |
-|:---|:---|:---|:---|
-| 0 | Magic Bytes | `[u8; 4]` | ASCII "VOLL" |
-| 4 | Version | `u8` | `1` (Legacy) or `2` (Signature-supported) |
-| 5 | Mode | `u8` | `0` = Password, `1` = Recipient (Hybrid KEM), `2` = Group |
-| 6 | Cipher ID | `u8` | `0` = AES-256-GCM |
-| 7..23 | File ID | `[u8; 16]` | Universally unique file identifier |
-| 23..27 | Chunk Size | `u32` | Chunk size in bytes (Big Endian) |
-| 27..35 | Plaintext Size | `u64` | Total size of unencrypted payload (Big Endian) |
-| 35..67 | Merkle Root | `[u8; 32]` | Merkle tree root hash of all chunk envelopes |
-| 67..69 | Wraps Count | `u16` | Number of key wrapping entries (Big Endian) |
-| 69.. | Wrap Entries | Variable | Array of serialized wrap entries |
-| Variable | Signed Metadata | Variable | Present only in Version 2 headers |
-| Variable | Signature | `[u8; 64]` | Present only in Version 2 headers |
+Vollcrypt Files is intended for:
+- Encrypting local files before storage.
+- Storing encrypted files in untrusted cloud storage.
+- Sharing encrypted files with multiple recipients.
+- Opening shared encrypted files securely.
+- Random-access reads over cloud range requests.
+- Group-based file access with key rotation and revocation semantics.
 
-#### Wrap Entry Format
+### Non-Goals
 
-Each wrap entry serializes based on its type.
+Vollcrypt Files does not provide real-time transport encryption for live network streams, audio calls, or video calls.
 
-| Field | Type | Password (PBKDF2/Argon2) | Hybrid KEM | Group Wrap |
-|:---|:---|:---|:---|:---|
-| Wrap Type | `u8` | `0` (PBKDF2) / `1` (Argon2) | `2` | `3` |
-| Parameters | Variable | Salt (16B), Iterations / Costs | Recipient ID (16B), GK Version (u32), Ephemeral PK (32B), ML-KEM Ciphertext (1088B) | Group ID (16B), GK Version (u32) |
-| Wrapped DEK | `[u8; 40]` | AES-KW wrapped DEK | AES-KW wrapped DEK | AES-KW wrapped DEK |
+Those use cases require different security properties such as frame ordering, packet-loss tolerance, replay windows, rekeying, jitter handling, and low-latency authentication. They are intended to be handled by separate Vollcrypt protocol profiles such as:
+- `@vollcrypt/streaming`
+- `@vollcrypt/voice`
+
+Vollcrypt Files focuses on encrypted file containers for local storage, cloud storage, and secure file sharing.
+
+---
+
+## Architecture and File Container Design
+
+Vollcrypt Files operates on a chunk-by-chunk file container model. The format is optimized for large local files, cloud-stored encrypted objects, random-access reads, and secure shared-file opening.
+
+```
++-----------------------------------------------------------+
+|                      FILE CONTAINER                       |
++-----------------------------------------------------------+
+| Header:                                                   |
+|   - Magic Bytes ("VOLLVALT")                              |
+|   - Version & Container Flags                             |
+|   - File ID & Merkle Root                                 |
+|   - Wrap Table & Extension Table                          |
+|   - Signature (Optional, v2 only)                         |
++-----------------------------------------------------------+
+| Chunk Envelopes:                                          |
+|   +-----------------------------------------------------+ |
+|   | Chunk 1: Index (4B) | IV (12B) | Cipher | Tag (16B) | |
+|   +-----------------------------------------------------+ |
+|   | Chunk 2: Index (4B) | IV (12B) | Cipher | Tag (16B) | |
+|   +-----------------------------------------------------+ |
+|   | ...                                                 | |
+|   +-----------------------------------------------------+ |
++-----------------------------------------------------------+
+|                  Merkle Root in Header                    |
+|                            /\                             |
+|                           /  \                            |
+|                          /    \                           |
+|                         /      \                          |
+|                        /\      /\                         |
+|                       /  \    /  \                        |
+|                      /    \  /    \                       |
+|                   Leaf 1 Leaf 2 Leaf 3 Leaf 4             |
++-----------------------------------------------------------+
+|  Leaf 1: LeafHashV1(Chunk 1)                              |
+|  LeafHashV1 = SHA-256("vollcrypt-file-merkle-leaf-v1" ||  |
+|                file_id || index || len || IV1 || Tag1)    |
++-----------------------------------------------------------+
+```
+
+### 1. Header Layout
+
+The layout of the file container header is length-prefixed and dynamically parsed.
+
+| Offset | Length | Type | Description |
+| :--- | :--- | :--- | :--- |
+| 0 | 8 | Bytes | Magic Bytes (`VOLLVALT`) |
+| 8 | 1 | u8 | Format Version |
+| 9 | 1 | u8 | Container Flags |
+| 10 | 1 | u8 | Cipher Suite ID |
+| 11 | 1 | u8 | Header Encoding Version |
+| 12 | 4 | u32 BE | Header Length |
+| 16 | 16 | Bytes | File ID |
+| 32 | 4 | u32 BE | Chunk Size |
+| 36 | 8 | u64 BE | Plaintext Size |
+| 44 | 32 | Bytes | Merkle Root |
+| 76 | 4 | u32 BE | Wrap Count |
+| 80 | 4 | u32 BE | Wrap Table Length |
+| 84 | 4 | u32 BE | Extension Table Length |
+| 88 | Var | Structs | Wrap Table |
+| 88 + Wrap Table Length | Var | Structs | Extension Table |
+
+#### Container Flags
+The container does not have a single exclusive wrapping mode. Supported access methods are determined by the list of `WrapEntry` records. A file may contain password, recipient, and group wraps at the same time.
+
+#### Wrap Table Length
+`Wrap Table Length` is the total byte length of all concatenated `WrapEntry` records. Parsers MUST reject headers where the sum of parsed wrap entry sizes does not exactly equal `Wrap Table Length`.
+
+#### Extension Table Length
+Extensions may be marked as critical or non-critical. Implementations MUST reject files containing unknown critical extensions and MAY ignore unknown non-critical extensions.
+
+### 2. Chunked File Container Engine
+
+Vollcrypt Files supports streaming I/O internally, meaning files can be processed incrementally. This should not be confused with real-time transport streaming. Real-time network, media, and voice encryption are separate protocol profiles planned for future Vollcrypt modules.
+
+#### Chunk Size Limits
+Default chunk size: 1 MiB.
+
+Recommended range:
+- Minimum: 4 KiB
+- Typical: 1 MiB to 16 MiB
+- Large-file optimized: 16 MiB to 64 MiB
+
+Very large chunk sizes may increase memory pressure, reduce random-access granularity, and are not recommended for general use even if the parser accepts them.
+
+#### Sequential Full-File Decryption
+The decryption engine can consume encrypted container bytes sequentially for full-file decryption, without requiring random seeks during normal full-file reads. Random-access reads are supported separately by seeking directly to chunk envelope offsets and verifying the selected chunk against the Merkle Root.
+
+#### Cryptographic Access Control (Wrap Entries)
+Each wrap entry starts with a 1-byte `wrap_type` and a 2-byte BE `payload_len`. `payload_len` excludes the 3-byte entry prefix (`wrap_type || payload_len`). Therefore, the total serialized size of a wrap entry is `3 + payload_len`.
+
+- **Type 0: Password PBKDF2**
+  - Payload Length: 60 bytes (Total Entry Length: 63 bytes)
+  - Salt (16B) || Iterations (4B BE) || Wrapped DEK (40B)
+- **Type 1: Password Argon2id**
+  - Payload Length: 68 bytes (Total Entry Length: 71 bytes)
+  - Salt (16B) || m_cost (4B BE) || t_cost (4B BE) || p_cost (4B BE) || Wrapped DEK (40B)
+- **Type 2: Hybrid KEM Recipient Wrap**
+  - Payload Length: 1188 bytes (Total Entry Length: 1191 bytes)
+  - Recipient ID (16B) || Recipient Key Version / Wrap Context Version (4B BE) || Ephemeral X25519 PK (32B) || ML-KEM Ciphertext (1088B) || Wrapped DEK (40B)
+  - For direct recipient wrapping, the version field represents the recipient key version. For group-mediated recipient wrapping, it MAY represent the group key epoch, depending on the wrap profile. Group-mediated recipient wraps MUST use a separate context label.
+- **Type 3: Group Wrap**
+  - Payload Length: 60 bytes (Total Entry Length: 63 bytes)
+  - Group ID (16B) || GK Version (4B BE) || Wrapped DEK (40B)
+
+> [!NOTE]
+> **File Container Write Model**
+> Vollcrypt Files stores the Merkle Root in the file header. During encryption, implementations may either:
+> 1. Write a placeholder header, encrypt chunks sequentially, compute the Merkle Root, and then rewrite the header on seekable outputs such as local files; or
+> 2. Build the encrypted container in a temporary buffer/file and write the final header once the Merkle Root is known.
+>
+> This design is intentional for encrypted file containers. Vollcrypt Files is not intended to be used as a live real-time transport stream protocol.
+
+---
+
+## Technical Foundations
+
+### Password-Based Wrapping
+Derives a Key Encryption Key (KEK) using Argon2id by default. PBKDF2-SHA256 is supported only for compatibility and legacy profiles. The DEK is wrapped using AES-256 Key Wrap (AES-KW).
+
+New containers SHOULD use Argon2id. PBKDF2-based wrapping SHOULD only be used when compatibility with constrained or legacy environments is required.
+
+### Hybrid KEM KEK Derivation
+For Hybrid KEM recipient wraps, the KEK is derived as:
+
+```
+hybrid_secret = x25519_shared_secret || ml_kem_shared_secret
+
+KEK = HKDF-SHA256(
+  ikm = hybrid_secret,
+  salt = file_id,
+  info =
+    "vollcrypt-file-hybrid-kem-v1" ||
+    recipient_id[16] ||
+    recipient_key_version_u32_be ||
+    kem_suite_id ||
+    cipher_suite_id,
+  length = 32
+)
+```
+
+### Chunk Key and IV Derivation
+For chunk `i`, implementations derive separate AEAD key and IV material using domain-separated HKDF labels.
+
+Recommended normative form:
+```
+chunk_key_i = HKDF-SHA256(
+  ikm = DEK,
+  salt = file_id,
+  info = "vollcrypt-file-chunk-key-v1" || chunk_index_u32_be,
+  length = 32
+)
+
+chunk_iv_i = HKDF-SHA256(
+  ikm = DEK,
+  salt = file_id,
+  info = "vollcrypt-file-chunk-iv-v1" || chunk_index_u32_be,
+  length = 12
+)
+```
+The same `(chunk_key, chunk_iv)` pair MUST never be reused for different plaintext chunks.
+
+### Chunk AEAD Associated Data
+Each AES-256-GCM chunk encryption authenticates the following associated data:
+
+```
+AAD_FileChunk_V1 =
+  "vollcrypt-file-chunk-aad-v1" ||
+  header_hash[32] ||
+  file_id[16] ||
+  chunk_index_u32_be ||
+  chunk_size_u32_be ||
+  plaintext_size_u64_be ||
+  chunk_plaintext_len_u32_be
+```
+Implementations MUST reject chunks if AEAD authentication fails. The header hash is derived as:
+```
+header_hash = SHA-256(canonical_header_without_mutable_fields)
+```
+
+### Merkle Tree Integrity Verification
+To prevent malicious storage servers from replacing, reordering, or swapping chunk envelopes, Vollcrypt Files constructs a Merkle Tree over canonical chunk leaf hashes.
+
+For format version 1, each leaf is computed as:
+```
+LeafHashV1 =
+SHA-256(
+  "vollcrypt-file-merkle-leaf-v1" ||
+  file_id[16] ||
+  chunk_index_u32_be ||
+  chunk_plaintext_len_u32_be ||
+  iv[12] ||
+  auth_tag[16]
+)
+```
+The ciphertext payload is intentionally excluded from the Merkle leaf because AES-256-GCM already authenticates the ciphertext through the authentication tag.
+
+### Merkle Proof Storage Modes
+Vollcrypt Files supports the following verification modes:
+
+1. **Full-file verification**: The reader verifies the complete container by processing all chunk tags and recomputing the Merkle Root. No external proof storage is required.
+2. **Embedded proof index**: Merkle proofs or proof indexes are stored inside the encrypted container metadata. This mode is suitable for self-contained shared files and cloud range reads.
+3. **Sidecar proof file**: Proof metadata is stored in a separate `.vproof` sidecar file. The sidecar file hash MUST be bound to the main container header.
+4. **Remote metadata service**: Proofs may be fetched from a metadata service. The service is not trusted; all proofs MUST verify against the Merkle Root stored in the signed/trusted file header.
+
+### Canonical Encoding and Parser Rules
+Implementations MUST:
+- Parse all multibyte integers as Big-Endian.
+- Reject non-canonical header encodings.
+- Reject duplicate critical extensions.
+- Reject headers where `header_len`, `wrap_count`, and `wrap_table_len` disagree.
+- Reject unknown critical extensions.
+- Reject trailing bytes inside the declared header region.
+- Reject chunk envelopes whose encoded chunk index does not match their expected position.
+- Reject containers with zero valid wraps unless explicitly opened in a shredded/deleted-key inspection mode.
+
+A container with zero wraps may be parsed for inspection, but it is not decryptable through normal APIs. Normal encrypted containers MUST contain at least one valid `WrapEntry`. Zero-wrap containers MAY be used to represent key-shredded files whose ciphertext remains stored but whose DEK can no longer be recovered.
+
+### Revocation & Manifest Limits
+
+#### Revocation Model
+Vollcrypt group revocation has multiple modes:
+1. **Lazy Revocation**: Removed members stop receiving future group keys. Historical files may remain decryptable if the removed member previously cached the required keys.
+2. **Forward-Only Revocation**: New files are encrypted under a new group key epoch. Old files are not automatically re-encrypted.
+3. **Strict Revocation**: Existing files are rewrapped or re-encrypted under a new key epoch. This is more expensive but prevents removed members from opening files.
+
+#### Manifest Scaling
+For large groups, manifest size and verification cost grow with the number of operations and members. Applications targeting very large groups should consider checkpointing, manifest compaction, or epoch snapshots.
 
 ---
 
 ## Quick Start
 
-### Node.js Integration
+### High-Level API Usage
+
+```typescript
+import { files } from "@vollcrypt/files";
+
+// Encrypt file
+const header = await files.encryptFile({
+  input: "report.pdf",
+  output: "report.pdf.voll",
+  password: "my-secure-password",
+  recipients: [aliceRecipientId],
+});
+
+// Decrypt file
+await files.decryptFile({
+  input: "report.pdf.voll",
+  output: "report.pdf",
+  password: "my-secure-password",
+});
+
+// Open a shared file
+const keyHandle = await files.openSharedFile({
+  input: "report.pdf.voll",
+  recipientKey: myRecipientKey,
+});
+```
+
+### Advanced Asynchronous Pipelined File API (Zero-Copy)
 
 ```typescript
 import { 
   generateDek, 
   generateFileId, 
-  encryptChunk, 
-  decryptChunk 
+  encryptFilePipelinedAsync, 
+  decryptFilePipelinedAsync 
 } from "@vollcrypt/files-node";
 
-// 1. Generate keys
 const dek = generateDek();
 const fileId = generateFileId();
 
-// 2. Encrypt chunk
-const plaintext = Buffer.from("Sensitive legal document content...");
-const envelope = encryptChunk(dek, fileId, 0, plaintext);
+// Asynchronously encrypt a file using 4 parallel thread workers
+const header = await encryptFilePipelinedAsync(
+  "./input.txt",
+  "./input.enc",
+  dek,
+  fileId,
+  65536, // 64 KB chunk size
+  [],    // wraps
+  0,     // mode (0 = Password)
+  4,     // thread workers
+  null   // optional signInfo
+);
 
-// 3. Decrypt chunk
-const decrypted = decryptChunk(dek, fileId, 0, envelope);
-console.log(decrypted.toString()); // Sensitive legal document content...
+// Asynchronously decrypt the file
+await decryptFilePipelinedAsync(
+  "./input.enc",
+  "./input.dec",
+  dek,
+  4      // thread workers
+);
 ```
 
 ### WebAssembly (Browser) Integration
@@ -96,14 +363,16 @@ run();
 
 ---
 
-## API Reference (Bindings)
+## Advanced API Reference (Bindings)
 
 - `generateDek()`: Generate a cryptographically secure 32-byte Data Encryption Key.
 - `generateFileId()`: Generate a cryptographically secure 16-byte File ID.
 - `generateSalt()`: Generate a cryptographically secure 16-byte Salt.
 - `generateGk()`: Generate a cryptographically secure 32-byte Group Key.
-- `encryptChunk(dek, fileId, chunkIndex, plaintext)`: Encrypt a single block of plaintext.
-- `decryptChunk(dek, fileId, chunkIndex, envelope)`: Decrypt a single chunk envelope.
+- `encryptChunk(dek, file_id, chunkIndex, plaintext)`: Encrypt a single block of plaintext.
+- `decryptChunk(dek, file_id, chunkIndex, envelope)`: Decrypt a single chunk envelope.
+- `encryptFilePipelinedAsync(sourcePath, destPath, dek, fileId, chunkSize, wraps, mode, numWorkers, signInfo)`: Asynchronously encrypts a file from disk using parallel thread workers (Zero-Copy V8 heap footprint).
+- `decryptFilePipelinedAsync(sourcePath, destPath, dek, numWorkers)`: Asynchronously decrypts a file from disk using parallel thread workers (Zero-Copy V8 heap footprint).
 - `wrapDekWithPassword(dek, password, kdf)`: Wrap a DEK with a password.
 - `unwrapDekWithPassword(wrapEntry, password)`: Unwrap a password-wrapped DEK.
 - `generateRecipientKeypair()`: Generate an ML-KEM-768 + X25519 keypair.
@@ -114,6 +383,52 @@ run();
 - `ed25519KeypairGenerate()`: Generate a signing keypair.
 - `ed25519Sign(sk, message)`: Sign a message.
 - `ed25519Verify(pk, message, signature)`: Verify a signature.
+
+#### Low-Level Random-Access Parsing Example:
+```typescript
+const { header, headerLen } = await Header.readFrom(file, {
+  maxHeaderSize: 16 * 1024 * 1024
+});
+
+Implementations MUST NOT assume a fixed small header size. The header is length-prefixed and may grow with the number of recipients, group metadata, and extensions.
+
+const keyHandle = await files.openKeyFromPassword(password, header);
+
+// Fetch a single chunk out-of-order
+const chunkIndex = 42;
+const envelope = await fetchChunkEnvelope(file, header, chunkIndex);
+
+// Validate and check parsed index matches the expectation
+if (envelope.chunkIndex !== chunkIndex) {
+  throw new Error(`Chunk index mismatch: expected ${chunkIndex}, got ${envelope.chunkIndex}`);
+}
+
+const plaintext = await files.decryptChunk(envelope, keyHandle);
+
+// Verify leaf integrity locally
+const leafHash = chunkLeafHash({
+  fileId: header.fileId,
+  chunkIndex: envelope.chunkIndex,
+  chunkPlaintextLen: plaintext.length,
+  iv: envelope.iv,
+  tag: envelope.tag
+});
+assert.ok(verifyMerkleProof(leafHash, chunkIndex, totalChunks, proof, header.merkleRoot));
+
+keyHandle.destroy();
+```
+
+---
+
+## Memory & Sandbox Protection
+
+### JavaScript/WASM Memory Caveat
+Rust-owned secret material is zeroized using `Zeroize` and `ZeroizeOnDrop`.
+
+When using Node.js or WebAssembly bindings, JavaScript runtimes may copy secrets in ways that cannot be fully zeroized by the native library. Callers SHOULD avoid immutable strings for passwords and SHOULD clear user-owned `Uint8Array` / `Buffer` values after use.
+
+### Unsafe Code Scope
+The Rust cryptographic core is implemented without `unsafe` code. Node.js and WebAssembly bindings are thin wrappers around the safe Rust core.
 
 ---
 
@@ -134,3 +449,57 @@ npm install
 npm run build
 npm test
 ```
+
+---
+
+## Performance & Optimizations
+
+Vollcrypt File has undergone targeted performance optimizations to achieve peak single-core throughput and resolve encryption/decryption asymmetry:
+
+- **Merkle Leaf Hash Optimization:** Omits ciphertext payload from Merkle tree leaf hashing, only hashing the canonical chunk metadata and authentication tag: `domain || file_id || chunk_index || chunk_plaintext_len || iv || tag`. This avoids double-pass processing (AES-GCM + SHA-256) of full file contents.
+- **Deterministic IV Derivation:** Derives chunk key material and IV material from the DEK using domain-separated HKDF labels, avoiding per-chunk `OsRng` calls while preserving nonce uniqueness under the file-specific DEK and file ID.
+- **Architecture-Specific Speedups:** Set default compilation profile targeting `x86-64-v3`, allowing optional native overrides (`RUSTFLAGS="-C target-cpu=native"`) to fully unlock hardware acceleration (AVX2, AES-NI, SHA-NI).
+
+### Benchmark Results (AMD Ryzen 5 7500F @ 3.70 GHz)
+
+| Operation | Input Size / Scope | Before Optimization | After Optimization | Speedup / Improvement |
+| :--- | :--- | :--- | :--- | :--- |
+| **`encrypt_chunk`** | 4 KB | 351.91 MB/s | **1502.40 MB/s** | **4.27x** (Bottleneck Resolved) |
+| **`decrypt_chunk`** | 4 KB | 1446.76 MB/s | **1446.76 MB/s** | **1.00x** (Perfect Speed Symmetry) |
+| **`encrypt_chunk`** | 64 KB | 1911.31 MB/s | **2083.33 MB/s** | **1.09x** |
+| **`decrypt_chunk`** | 64 KB | 1849.11 MB/s | **2062.71 MB/s** | **1.12x** |
+| **Single-Core 1 GB File** | File Level | 1.18 s (~847 MB/s) | **0.54 s (~1851 MB/s)** | **2.18x** (Throughput doubled) |
+| **Multi-Core 1 GB File** | File Level | 0.29 s (~3.44 GB/s) | **0.15 s measured; peak aggregate throughput 5.87 GB/s** | **~1.93x** |
+
+Peak all-core throughput observed in the benchmark suite: 5.87 GB/s.
+
+### Measurement Scope Notice
+Benchmark numbers are hardware-specific and were measured on the system listed below. Results may differ depending on CPU, AES-NI/SHA-NI availability, memory bandwidth, storage throughput, runtime target, and build flags.
+
+Comparisons marked as `scaled` are estimates and should not be interpreted as direct same-environment measurements. Detailed latency percentiles are omitted from this README until the benchmark harness reports p50/p90/p95/p99 from the same sample distribution.
+
+### Test & Security Scorecard
+
+The current test suite includes stress, fuzzing, tampering, replay, and forgery-resistance tests. Passing these tests does not constitute a formal proof or third-party audit, but it provides implementation-level hardening coverage for the tested attack classes.
+
+- Bit-flip tests: 8,000 modified ciphertext bits tested, 0 accepted.
+- Tag forgery tests: 1,000,000 random forged tags tested, 0 accepted.
+- Header tampering tests: modified header fields rejected.
+- Replay/substitution tests: tested against cross-file and chunk substitution attempts.
+- Linter: 100% clean Clippy builds under `-- -D warnings` on all target formats.
+
+---
+
+## Vollcrypt Protocol Family
+
+Vollcrypt is designed as a family of interoperable E2EE protocol profiles.
+
+Each profile uses shared cryptographic primitives from `@vollcrypt/core`, but each profile has its own domain separation labels, metadata format, and threat model.
+
+Current profiles:
+- `files`: encrypted file containers;
+- `messages`: message payload encryption.
+
+Planned profiles:
+- `streaming`: real-time stream encryption;
+- `voice`: low-latency media encryption.
