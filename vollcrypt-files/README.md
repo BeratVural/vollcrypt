@@ -1,6 +1,6 @@
 # Vollcrypt File Cryptography Engine
 
-Vollcrypt File is a cross-platform, hybrid quantum-resistant file encryption and metadata package. It is designed to secure file payloads and their associated headers for high-security applications, such as digital signature systems (VollSign) and lawyer communication platforms (KanzleiLink).
+Vollcrypt File is a cross-platform, hybrid quantum-resistant file encryption and metadata package. It is designed to secure file payloads and their associated headers for high-security applications, such as digital signature systems and lawyer communication platforms.
 
 ## License
 
