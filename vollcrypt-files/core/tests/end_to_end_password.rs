@@ -1,7 +1,7 @@
 use vollcrypt_files_core::{
     chunk_leaf_hash, decrypt_chunk, encrypt_chunk, generate_dek, generate_file_id,
     unwrap_dek_with_password, wrap_dek_with_password, ChunkEnvelope, CipherId, FileFormatError,
-    Header, KdfChoice, MerkleTree, Mode, VERSION,
+    Header, KdfChoice, MerkleTree, Mode, HashAlgorithm, VERSION,
 };
 
 #[test]
@@ -28,6 +28,7 @@ fn encrypt_decrypt_small_file_pbkdf2() {
         chunk_size: 4096,
         plaintext_size: plaintext.len() as u64,
         merkle_root,
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![wrap],
         signed_metadata: None,
         signature: None,
@@ -71,6 +72,7 @@ fn encrypt_decrypt_small_file_argon2id_interactive() {
         chunk_size: 4096,
         plaintext_size: plaintext.len() as u64,
         merkle_root,
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![wrap],
         signed_metadata: None,
         signature: None,
@@ -115,6 +117,7 @@ fn wrong_password_end_to_end() {
         chunk_size: 4096,
         plaintext_size: plaintext.len() as u64,
         merkle_root,
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![wrap],
         signed_metadata: None,
         signature: None,

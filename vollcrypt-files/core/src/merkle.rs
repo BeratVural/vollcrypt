@@ -11,6 +11,28 @@ pub enum HashAlgorithm {
     Blake3,
 }
 
+/// Detects if the current CPU supports SHA extensions (SHA-NI) at runtime.
+pub fn detect_sha_ni_support() -> bool {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        std::is_x86_feature_detected!("sha")
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        std::arch::is_aarch64_feature_detected!("sha2")
+    }
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        false
+    }
+}
+
+/// Chooses the optimal hash algorithm.
+/// Always returns SHA-256 as it is the regulated standard, using SHA-NI when available.
+pub fn default_hash_algorithm() -> HashAlgorithm {
+    HashAlgorithm::Sha256
+}
+
 /// Computes the SHA-256 hash of a chunk envelope.
 ///
 /// The hash is computed over the entire serialized binary representation of the envelope.
@@ -20,11 +42,27 @@ pub fn chunk_leaf_hash(envelope: &ChunkEnvelope) -> [u8; 32] {
 
 /// Computes the SHA-256 hash of a chunk's metadata (index, iv, tag) without allocating.
 pub fn chunk_leaf_hash_raw(chunk_index: u32, iv: &[u8; 12], tag: &[u8; 16]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(chunk_index.to_be_bytes());
-    hasher.update(iv);
-    hasher.update(tag);
-    hasher.finalize().into()
+    chunk_leaf_hash_raw_with_algo(chunk_index, iv, tag, HashAlgorithm::Sha256)
+}
+
+/// Computes the hash of a chunk's metadata (index, iv, tag) without allocating using the specified hash algorithm.
+pub fn chunk_leaf_hash_raw_with_algo(chunk_index: u32, iv: &[u8; 12], tag: &[u8; 16], algo: HashAlgorithm) -> [u8; 32] {
+    match algo {
+        HashAlgorithm::Sha256 => {
+            let mut hasher = Sha256::new();
+            hasher.update(chunk_index.to_be_bytes());
+            hasher.update(iv);
+            hasher.update(tag);
+            hasher.finalize().into()
+        }
+        HashAlgorithm::Blake3 => {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(&chunk_index.to_be_bytes());
+            hasher.update(iv);
+            hasher.update(tag);
+            *hasher.finalize().as_bytes()
+        }
+    }
 }
 
 /// Computes the hash of a chunk envelope using the specified hash algorithm.

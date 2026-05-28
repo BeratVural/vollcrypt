@@ -934,6 +934,8 @@ pub struct HeaderObj {
     pub plaintext_size: f64,
     #[serde(rename = "merkleRoot")]
     pub merkle_root: Vec<u8>,
+    #[serde(rename = "hashAlgorithm")]
+    pub hash_algorithm: u8,
     pub wraps: Vec<WrapEntry>,
     #[serde(rename = "signedMetadata")]
     pub signed_metadata: Option<SignedMetadata>,
@@ -1050,6 +1052,7 @@ fn header_to_serde(header: vollcrypt_files_core::Header) -> HeaderObj {
         chunk_size: header.chunk_size,
         plaintext_size: header.plaintext_size as f64,
         merkle_root: header.merkle_root.to_vec(),
+        hash_algorithm: header.hash_algorithm as u8,
         wraps: header.wraps.into_iter().map(wrap_entry_to_serde).collect(),
         signed_metadata: header.signed_metadata.map(signed_metadata_to_serde),
         signature: header.signature.map(|s| s.to_vec()),
@@ -1089,6 +1092,12 @@ fn serde_to_header(obj: HeaderObj) -> Result<vollcrypt_files_core::Header, JsVal
     let cipher_id = vollcrypt_files_core::CipherId::try_from(obj.cipher_id)
         .map_err(|_| JsValue::from_str("Invalid cipherId value"))?;
 
+    let hash_algorithm = match obj.hash_algorithm {
+        0 => vollcrypt_files_core::HashAlgorithm::Sha256,
+        1 => vollcrypt_files_core::HashAlgorithm::Blake3,
+        other => return Err(JsValue::from_str(&format!("Invalid hashAlgorithm value: {}", other))),
+    };
+
     Ok(vollcrypt_files_core::Header {
         version: obj.version,
         mode,
@@ -1097,6 +1106,7 @@ fn serde_to_header(obj: HeaderObj) -> Result<vollcrypt_files_core::Header, JsVal
         chunk_size: obj.chunk_size,
         plaintext_size: obj.plaintext_size as u64,
         merkle_root,
+        hash_algorithm,
         wraps,
         signed_metadata,
         signature,

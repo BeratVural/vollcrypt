@@ -3,7 +3,7 @@ use vollcrypt_files_core::{
     generate_file_id, generate_gk, generate_recipient_keypair, rewrap_dek_in_header,
     unwrap_dek_with_group_key, unwrap_key_with_recipient_key, wrap_dek_for_group,
     wrap_key_to_recipient, CipherId, FileFormatError, GroupManifest, Header, MerkleTree, Mode,
-    VERSION,
+    HashAlgorithm, VERSION,
 };
 
 #[test]
@@ -68,6 +68,7 @@ fn eager_revocation_full_flow() {
         chunk_size: 4096,
         plaintext_size: plaintext.len() as u64,
         merkle_root,
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![old_group_wrap],
         signed_metadata: None,
         signature: None,

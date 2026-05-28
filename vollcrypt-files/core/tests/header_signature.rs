@@ -1,7 +1,7 @@
 use vollcrypt_files_core::{
     aes256_gcm_decrypt, ed25519_keypair_generate, generate_file_id, generate_gk, sign_header_plain,
     sign_header_sealed, verify_header_signature_plain, verify_header_signature_sealed, CipherId,
-    FileFormatError, Header, Mode, SignedMetadata,
+    FileFormatError, Header, Mode, SignedMetadata, HashAlgorithm,
 };
 
 fn create_test_header() -> Header {
@@ -13,6 +13,7 @@ fn create_test_header() -> Header {
         chunk_size: 4096,
         plaintext_size: 1000,
         merkle_root: [0x55; 32],
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![],
         signed_metadata: None,
         signature: None,

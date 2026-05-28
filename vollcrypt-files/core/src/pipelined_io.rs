@@ -11,7 +11,7 @@ use crate::crypt::{
 };
 use crate::error::FileFormatError;
 use crate::header::{Header, Mode, CipherId, SignedMetadata};
-use crate::merkle::{chunk_leaf_hash, chunk_leaf_hash_raw, StreamingMerkle};
+use crate::merkle::{chunk_leaf_hash, chunk_leaf_hash_raw, chunk_leaf_hash_raw_with_algo, chunk_leaf_hash_with_algo, StreamingMerkle, HashAlgorithm};
 use crate::wrap::WrapEntry;
 use crate::signature::{sign_header_plain, sign_header_sealed};
 use crate::constants::FIXED_HEADER_LEN;
@@ -146,6 +146,8 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
         return Err(FileFormatError::IoError("num_workers must be greater than 0".to_string()));
     }
 
+    let hash_algo = crate::merkle::default_hash_algorithm();
+
     // 1. Build a placeholder header to determine the final serialized length.
     let mut header = Header {
         version: if sign_info.is_some() { 2 } else { 1 },
@@ -155,6 +157,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
         chunk_size: chunk_size as u32,
         plaintext_size: 0,
         merkle_root: [0u8; 32],
+        hash_algorithm: hash_algo,
         wraps,
         signed_metadata: None,
         signature: None,
@@ -285,7 +288,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
                                         });
                                         continue;
                                     }
-                                    let leaf = chunk_leaf_hash_raw(idx, t.buffer.get_iv(), t.buffer.as_tag_slice(t.plaintext_len));
+                                    let leaf = chunk_leaf_hash_raw_with_algo(idx, t.buffer.get_iv(), t.buffer.as_tag_slice(t.plaintext_len), hash_algo);
                                     pool_c.return_buffer(t.buffer);
                                     results.push(EncryptResultTask {
                                         index: idx,
@@ -366,7 +369,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
         Ok(total_bytes)
     });
 
-    let mut merkle_reducer = StreamingMerkle::new();
+    let mut merkle_reducer = StreamingMerkle::new_with_algo(hash_algo);
     let plaintext_size;
 
     {
@@ -400,7 +403,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
                         while let Some((buf, len)) = pending.remove(&next_expected) {
                             let iv = *buf.get_iv();
                             let tag = *buf.as_tag_slice(len);
-                            let leaf = chunk_leaf_hash_raw(next_expected, &iv, &tag);
+                            let leaf = chunk_leaf_hash_raw_with_algo(next_expected, &iv, &tag, hash_algo);
                             merkle_reducer.push_leaf(leaf);
                             let dest = dest_opt.as_mut().expect("dest must be present");
                             if let Err(e) = dest.write_all(buf.as_envelope_slice(len)) {
@@ -422,7 +425,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
                                 if let Some((buf, len)) = pending.remove(&next_expected) {
                                     let iv = *buf.get_iv();
                                     let tag = *buf.as_tag_slice(len);
-                                    let leaf = chunk_leaf_hash_raw(next_expected, &iv, &tag);
+                                    let leaf = chunk_leaf_hash_raw_with_algo(next_expected, &iv, &tag, hash_algo);
                                     merkle_reducer.push_leaf(leaf);
                                     let dest = dest_opt.as_mut().expect("dest must be present");
                                     if let Err(e) = dest.write_all(buf.as_envelope_slice(len)) {
@@ -449,7 +452,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
                 while let Some((buf, len)) = pending.remove(&next_expected) {
                     let iv = *buf.get_iv();
                     let tag = *buf.as_tag_slice(len);
-                    let leaf = chunk_leaf_hash_raw(next_expected, &iv, &tag);
+                    let leaf = chunk_leaf_hash_raw_with_algo(next_expected, &iv, &tag, hash_algo);
                     merkle_reducer.push_leaf(leaf);
                     let dest = dest_opt.as_mut().expect("dest must be present");
                     if let Err(e) = dest.write_all(buf.as_envelope_slice(len)) {
@@ -766,6 +769,7 @@ pub async fn encrypt_file_pipelined_async(
     mode: Mode,
     sign_info: Option<PipelinedSignInfo>,
 ) -> Result<(Header, Vec<u8>), FileFormatError> {
+    let hash_algo = crate::merkle::default_hash_algorithm();
     let mut header = Header {
         version: if sign_info.is_some() { 2 } else { 1 },
         mode,
@@ -774,6 +778,7 @@ pub async fn encrypt_file_pipelined_async(
         chunk_size: chunk_size as u32,
         plaintext_size: plaintext.len() as u64,
         merkle_root: [0u8; 32],
+        hash_algorithm: hash_algo,
         wraps,
         signed_metadata: None,
         signature: None,
@@ -804,7 +809,7 @@ pub async fn encrypt_file_pipelined_async(
     }
 
     let chunk_count = if plaintext.is_empty() { 0 } else { plaintext.chunks(chunk_size).count() };
-    let mut merkle_reducer = StreamingMerkle::new();
+    let mut merkle_reducer = StreamingMerkle::new_with_algo(hash_algo);
     let mut encrypted_chunks = vec![Vec::new(); chunk_count];
     
     // Process batches of 16 chunks concurrently
@@ -829,7 +834,7 @@ pub async fn encrypt_file_pipelined_async(
         let results = futures_util::future::join_all(futures).await;
         for (idx, res) in results {
             let env = res?;
-            merkle_reducer.push_leaf(chunk_leaf_hash(&env));
+            merkle_reducer.push_leaf(chunk_leaf_hash_with_algo(&env, hash_algo));
             encrypted_chunks[idx] = env.write();
         }
     }

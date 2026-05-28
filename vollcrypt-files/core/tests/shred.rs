@@ -2,7 +2,7 @@ use vollcrypt_files_core::{
     chunk_leaf_hash, crypto_shred_header, decrypt_chunk, ed25519_keypair_generate, encrypt_chunk,
     generate_dek, generate_file_id, generate_gk, generate_recipient_keypair, wrap_dek_for_group,
     wrap_key_to_recipient, CipherId, FileFormatError, GroupManifest, Header, MerkleTree, Mode,
-    VERSION,
+    HashAlgorithm, VERSION,
 };
 
 #[test]
@@ -106,6 +106,7 @@ fn crypto_shred_header_empties_wraps() {
         chunk_size: 4096,
         plaintext_size: 1000,
         merkle_root: [0x77; 32],
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![
             wrap_dek_for_group(&generate_dek(), generate_file_id(), 1, &generate_gk()),
             wrap_dek_for_group(&generate_dek(), generate_file_id(), 2, &generate_gk()),
@@ -145,6 +146,7 @@ fn decrypt_fails_after_file_shred() {
         chunk_size: 4096,
         plaintext_size: plaintext.len() as u64,
         merkle_root,
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![group_wrap],
         signed_metadata: None,
         signature: None,

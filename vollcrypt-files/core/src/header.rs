@@ -1,6 +1,7 @@
 use crate::constants::{FIXED_HEADER_LEN, MAGIC};
 use crate::error::FileFormatError;
 use crate::wrap::WrapEntry;
+use crate::merkle::HashAlgorithm;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -178,6 +179,7 @@ pub struct Header {
     pub chunk_size: u32,
     pub plaintext_size: u64,
     pub merkle_root: [u8; 32],
+    pub hash_algorithm: HashAlgorithm,
     pub wraps: Vec<WrapEntry>,
     pub signed_metadata: Option<SignedMetadata>,
     pub signature: Option<[u8; 64]>,
@@ -234,6 +236,14 @@ impl Header {
 
         // 9. Parse Wrap Count
         let wrap_count = input[71];
+
+        // Parse Hash Algorithm from the first reserved byte (index 72)
+        let hash_algo_u8 = input[72];
+        let hash_algorithm = match hash_algo_u8 {
+            0 => HashAlgorithm::Sha256,
+            1 => HashAlgorithm::Blake3,
+            other => return Err(FileFormatError::UnsupportedHashAlgorithm(other)),
+        };
 
         // 10. Parse Variable Length
         let mut variable_len_bytes = [0u8; 4];
@@ -315,6 +325,7 @@ impl Header {
             chunk_size,
             plaintext_size,
             merkle_root,
+            hash_algorithm,
             wraps,
             signed_metadata,
             signature,
@@ -344,7 +355,8 @@ impl Header {
         out.extend_from_slice(&self.plaintext_size.to_be_bytes());
         out.extend_from_slice(&self.merkle_root);
         out.push(wrap_count);
-        out.extend_from_slice(&[0u8; 4]); // Reserved
+        out.push(self.hash_algorithm as u8);
+        out.extend_from_slice(&[0u8; 3]); // Remaining 3 reserved bytes
         out.extend_from_slice(&variable_len.to_be_bytes());
         out.extend_from_slice(&wraps_bytes);
 

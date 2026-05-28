@@ -913,6 +913,7 @@ pub struct HeaderObj {
     pub chunk_size: u32,
     pub plaintext_size: f64,
     pub merkle_root: Buffer,
+    pub hash_algorithm: u8,
     pub wraps: Vec<WrapEntry>,
     pub signed_metadata: Option<SignedMetadata>,
     pub signature: Option<Buffer>,
@@ -1027,6 +1028,7 @@ fn header_to_napi(header: vollcrypt_files_core::Header) -> HeaderObj {
         chunk_size: header.chunk_size,
         plaintext_size: header.plaintext_size as f64,
         merkle_root: Buffer::from(header.merkle_root.to_vec()),
+        hash_algorithm: header.hash_algorithm as u8,
         wraps: header.wraps.into_iter().map(wrap_entry_to_napi).collect(),
         signed_metadata: header.signed_metadata.map(signed_metadata_to_napi),
         signature: header.signature.map(|s| Buffer::from(s.to_vec())),
@@ -1066,6 +1068,12 @@ fn napi_to_header(obj: HeaderObj) -> Result<vollcrypt_files_core::Header> {
     let cipher_id = vollcrypt_files_core::CipherId::try_from(obj.cipher_id)
         .map_err(|_| Error::from_reason("Invalid cipher_id value"))?;
 
+    let hash_algorithm = match obj.hash_algorithm {
+        0 => vollcrypt_files_core::HashAlgorithm::Sha256,
+        1 => vollcrypt_files_core::HashAlgorithm::Blake3,
+        other => return Err(Error::from_reason(format!("Invalid hash_algorithm value: {}", other))),
+    };
+
     Ok(vollcrypt_files_core::Header {
         version: obj.version,
         mode,
@@ -1074,6 +1082,7 @@ fn napi_to_header(obj: HeaderObj) -> Result<vollcrypt_files_core::Header> {
         chunk_size: obj.chunk_size,
         plaintext_size: obj.plaintext_size as u64,
         merkle_root,
+        hash_algorithm,
         wraps,
         signed_metadata,
         signature,
