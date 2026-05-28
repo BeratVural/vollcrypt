@@ -1,1 +1,1 @@
-{"rows": ["| parallel_encrypt | 1 | 1.291 GB/s | 1.00x | 100.0% |", "| parallel_encrypt | 2 | 2.554 GB/s | 1.98x | 98.9% |", "| parallel_encrypt | 4 | 4.285 GB/s | 3.32x | 83.0% |", "| parallel_encrypt | 6 | 5.335 GB/s | 4.13x | 68.9% |"]}
+{"rows": ["| parallel_encrypt | 1 | 1.396 GB/s | 1.00x | 100.0% |", "| parallel_encrypt | 2 | 2.609 GB/s | 1.87x | 93.5% |", "| parallel_encrypt | 4 | 4.423 GB/s | 3.17x | 79.2% |", "| parallel_encrypt | 6 | 5.327 GB/s | 3.82x | 63.6% |"]}

@@ -1,6 +1,6 @@
 # Vollcrypt File Behavioral Report
 
-Generated: 2026-05-28T15:12:04.091474100+00:00
+Generated: 2026-05-28T16:19:52.882997500+00:00
 Vollcrypt-File version: 0.1.0
 
 ## System Information
@@ -8,7 +8,9 @@ Vollcrypt-File version: 0.1.0
 | Component | Detail |
 | --- | --- |
 | CPU | AMD Ryzen 5 7500F 6-Core Processor (6 physical cores, 12 logical threads) @ 3.70 GHz |
-| RAM | 15.62 GB (9.40 GB available) |
+| GPU | NVIDIA GeForce GTX 1660 SUPER |
+| RAM | 15.62 GB (9.43 GB available) |
+| Disk | D:\ [HDD] (733.8 GB free / 931.5 GB total); C:\ [SSD] (27.4 GB free / 465.1 GB total) |
 | OS | Windows 26200 |
 | Hardware Acceleration | AES-NI, AVX, AVX2, AVX512, SHA-NI, PCLMULQDQ |
 | Rust Version | rustc 1.93.1 (01f6ddf75 2026-02-11) |
@@ -26,12 +28,12 @@ Vollcrypt-File version: 0.1.0
 
 | Elapsed Time | RSS Usage | Delta |
 | --- | --- | --- |
-| 0.0 s | 89.96 MB | +0.00 MB |
-| 1.0 s | 90.97 MB | +1.00 MB |
-| 2.0 s | 90.97 MB | +1.01 MB |
-| 3.0 s | 90.98 MB | +1.01 MB |
-| 4.0 s | 90.98 MB | +1.02 MB |
-| 5.0 s | 90.98 MB | +1.02 MB |
+| 0.0 s | 91.25 MB | +0.00 MB |
+| 1.0 s | 92.26 MB | +1.01 MB |
+| 2.0 s | 92.26 MB | +1.01 MB |
+| 3.0 s | 92.26 MB | +1.01 MB |
+| 4.0 s | 92.27 MB | +1.02 MB |
+| 5.0 s | 92.27 MB | +1.02 MB |
 
 ## Edge Case Matrix
 

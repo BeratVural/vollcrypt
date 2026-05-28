@@ -12,6 +12,8 @@ pub struct HwInfo {
     pub os: String,
     pub kernel: String,
     pub rust_version: String,
+    pub gpu_brand: String,
+    pub disk_info: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -59,6 +61,80 @@ fn detect_cpu_features() -> CpuFeatures {
     }
 }
 
+fn detect_gpu_brand() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(output) = std::process::Command::new("powershell")
+            .args(&["-NoProfile", "-Command", "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"])
+            .output()
+        {
+            let gpu = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !gpu.is_empty() {
+                return gpu.replace("\r", "").replace("\n", ", ");
+            }
+        }
+        if let Ok(output) = std::process::Command::new("wmic")
+            .args(&["path", "win32_VideoController", "get", "name"])
+            .output()
+        {
+            let gpu_out = String::from_utf8_lossy(&output.stdout);
+            let lines = gpu_out.lines().map(|s| s.trim()).filter(|s| !s.is_empty() && *s != "Name");
+            let gpus: Vec<_> = lines.collect();
+            if !gpus.is_empty() {
+                return gpus.join(", ");
+            }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(output) = std::process::Command::new("sh")
+            .args(&["-c", "lspci | grep -i vga"])
+            .output()
+        {
+            let lspci_out = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !lspci_out.is_empty() {
+                return lspci_out;
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(output) = std::process::Command::new("system_profiler")
+            .args(&["SPDisplaysDataType"])
+            .output()
+        {
+            let sp_out = String::from_utf8_lossy(&output.stdout);
+            for line in sp_out.lines() {
+                if line.contains("Chipset Model:") {
+                    return line.replace("Chipset Model:", "").trim().to_string();
+                }
+            }
+        }
+    }
+    "Unknown GPU / Integrated Graphics".to_string()
+}
+
+fn detect_disk_info() -> String {
+    let disks = sysinfo::Disks::new_with_refreshed_list();
+    if disks.is_empty() {
+        return "Unknown Disk".to_string();
+    }
+    disks.iter().map(|d| {
+        let kind_str = match d.kind() {
+            sysinfo::DiskKind::SSD => "SSD",
+            sysinfo::DiskKind::HDD => "HDD",
+            _ => "Unknown Type",
+        };
+        format!(
+            "{} [{}] ({:.1} GB free / {:.1} GB total)",
+            d.mount_point().to_string_lossy(),
+            kind_str,
+            d.available_space() as f64 / 1_073_741_824.0,
+            d.total_space() as f64 / 1_073_741_824.0
+        )
+    }).collect::<Vec<_>>().join("; ")
+}
+
 pub fn detect() -> HwInfo {
     let mut sys = System::new_all();
     sys.refresh_all();
@@ -101,6 +177,8 @@ pub fn detect() -> HwInfo {
         os,
         kernel,
         rust_version,
+        gpu_brand: detect_gpu_brand(),
+        disk_info: detect_disk_info(),
     }
 }
 
@@ -119,7 +197,9 @@ pub fn render_markdown(info: &HwInfo) -> String {
         "| Component | Detail |\n\
          | --- | --- |\n\
          | CPU | {} ({} physical cores, {} logical threads) @ {:.2} GHz |\n\
+         | GPU | {} |\n\
          | RAM | {:.2} GB ({:.2} GB available) |\n\
+         | Disk | {} |\n\
          | OS | {} {} |\n\
          | Hardware Acceleration | {} |\n\
          | Rust Version | {} |",
@@ -127,11 +207,14 @@ pub fn render_markdown(info: &HwInfo) -> String {
         info.cpu_cores_physical,
         info.cpu_cores_logical,
         info.cpu_freq_mhz as f64 / 1000.0,
+        info.gpu_brand,
         info.total_memory_gb,
         info.available_memory_gb,
+        info.disk_info,
         info.os,
         info.kernel,
         accel_str,
         info.rust_version
     )
 }
+

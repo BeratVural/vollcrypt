@@ -43,3 +43,8 @@ harness = false
 [[bench]]
 name = "comparison"
 harness = false
+
+[[bin]]
+name = "vollcrypt"
+path = "src/bin/reporter.rs"
+
