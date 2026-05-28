@@ -1,6 +1,6 @@
 # GDPR Compliance Matrix for Vollcrypt File
 
-This document outlines how the Vollcrypt File engine enables systems (such as KanzleiLink and VollSign) to satisfy strict European General Data Protection Regulation (GDPR) requirements. By using cryptographic enforcement, Vollcrypt transforms regulatory obligations into mathematical guarantees.
+This document outlines how the Vollcrypt File engine enables systems to satisfy strict European General Data Protection Regulation (GDPR) requirements. By using cryptographic enforcement, Vollcrypt transforms regulatory obligations into mathematical guarantees.
 
 ---
 
