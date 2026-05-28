@@ -4,22 +4,40 @@ use subtle::ConstantTimeEq;
 use crate::chunk::ChunkEnvelope;
 use crate::error::FileFormatError;
 
+/// Supported Merkle tree hash algorithms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HashAlgorithm {
+    Sha256,
+    Blake3,
+}
+
 /// Computes the SHA-256 hash of a chunk envelope.
 ///
 /// The hash is computed over the entire serialized binary representation of the envelope.
 pub fn chunk_leaf_hash(envelope: &ChunkEnvelope) -> [u8; 32] {
-    // GCM tag'i zaten ciphertext'i kriptografik olarak taahhüt eder. Merkle ağacının
-    // görevi içerik bütünlüğü değil, YAPI bütünlüğüdür (chunk sırası, silme, ekleme,
-    // substitution). chunk_index sırayı, tag ise içeriği benzersiz şekilde bağlar.
-    // İçerik manipülasyonu decrypt sırasında GCM tag verification ile yakalanır.
-    //
-    // SHA-256 over: chunk_index (4B BE) || iv (12B) || tag (16B)
-    // Ciphertext is NOT hashed — GCM tag already commits to it.
-    let mut hasher = Sha256::new();
-    hasher.update(envelope.chunk_index.to_be_bytes());
-    hasher.update(envelope.iv);
-    hasher.update(envelope.tag);
-    hasher.finalize().into()
+    chunk_leaf_hash_with_algo(envelope, HashAlgorithm::Sha256)
+}
+
+/// Computes the hash of a chunk envelope using the specified hash algorithm.
+///
+/// The hash is computed over: chunk_index (4B BE) || iv (12B) || tag (16B)
+pub fn chunk_leaf_hash_with_algo(envelope: &ChunkEnvelope, algo: HashAlgorithm) -> [u8; 32] {
+    match algo {
+        HashAlgorithm::Sha256 => {
+            let mut hasher = Sha256::new();
+            hasher.update(envelope.chunk_index.to_be_bytes());
+            hasher.update(envelope.iv);
+            hasher.update(envelope.tag);
+            hasher.finalize().into()
+        }
+        HashAlgorithm::Blake3 => {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(&envelope.chunk_index.to_be_bytes());
+            hasher.update(&envelope.iv);
+            hasher.update(&envelope.tag);
+            *hasher.finalize().as_bytes()
+        }
+    }
 }
 
 /// A binary Merkle Tree built using SHA-256.
@@ -35,6 +53,11 @@ impl MerkleTree {
     /// If there is only one leaf, the root is that leaf.
     /// If a level has an odd number of nodes, the last node is duplicated during hashing.
     pub fn from_leaves(leaves: Vec<[u8; 32]>) -> Self {
+        Self::from_leaves_with_algo(leaves, HashAlgorithm::Sha256)
+    }
+
+    /// Builds a Merkle Tree from a list of leaves using the specified hash algorithm.
+    pub fn from_leaves_with_algo(leaves: Vec<[u8; 32]>, algo: HashAlgorithm) -> Self {
         let mut levels = Vec::new();
 
         if leaves.is_empty() {
@@ -51,11 +74,22 @@ impl MerkleTree {
                 let left = chunk[0];
                 let right = if chunk.len() == 2 { chunk[1] } else { chunk[0] };
 
-                let mut hasher = Sha256::new();
-                hasher.update(left);
-                hasher.update(right);
-                let mut parent = [0u8; 32];
-                parent.copy_from_slice(&hasher.finalize());
+                let parent = match algo {
+                    HashAlgorithm::Sha256 => {
+                        let mut hasher = Sha256::new();
+                        hasher.update(left);
+                        hasher.update(right);
+                        let mut parent = [0u8; 32];
+                        parent.copy_from_slice(&hasher.finalize());
+                        parent
+                    }
+                    HashAlgorithm::Blake3 => {
+                        let mut hasher = blake3::Hasher::new();
+                        hasher.update(&left);
+                        hasher.update(&right);
+                        *hasher.finalize().as_bytes()
+                    }
+                };
                 next_level.push(parent);
             }
             current_level = next_level;
@@ -138,6 +172,27 @@ pub fn verify_merkle_proof(
     proof: &[[u8; 32]],
     expected_root: &[u8; 32],
 ) -> bool {
+    verify_merkle_proof_with_algo(
+        leaf,
+        leaf_index,
+        total_leaves,
+        proof,
+        expected_root,
+        HashAlgorithm::Sha256,
+    )
+}
+
+/// Verifies a Merkle proof against an expected root hash using the specified hash algorithm.
+///
+/// Comparison of the final root hash is performed in constant-time.
+pub fn verify_merkle_proof_with_algo(
+    leaf: &[u8; 32],
+    leaf_index: usize,
+    total_leaves: usize,
+    proof: &[[u8; 32]],
+    expected_root: &[u8; 32],
+    algo: HashAlgorithm,
+) -> bool {
     if leaf_index >= total_leaves {
         return false;
     }
@@ -156,15 +211,32 @@ pub fn verify_merkle_proof(
             return false;
         }
 
-        let mut hasher = Sha256::new();
-        if current_idx.is_multiple_of(2) {
-            hasher.update(current_hash);
-            hasher.update(sibling);
-        } else {
-            hasher.update(sibling);
-            hasher.update(current_hash);
-        }
-        current_hash.copy_from_slice(&hasher.finalize());
+        current_hash = match algo {
+            HashAlgorithm::Sha256 => {
+                let mut hasher = Sha256::new();
+                if current_idx.is_multiple_of(2) {
+                    hasher.update(current_hash);
+                    hasher.update(sibling);
+                } else {
+                    hasher.update(sibling);
+                    hasher.update(current_hash);
+                }
+                let mut parent = [0u8; 32];
+                parent.copy_from_slice(&hasher.finalize());
+                parent
+            }
+            HashAlgorithm::Blake3 => {
+                let mut hasher = blake3::Hasher::new();
+                if current_idx.is_multiple_of(2) {
+                    hasher.update(&current_hash);
+                    hasher.update(sibling);
+                } else {
+                    hasher.update(sibling);
+                    hasher.update(&current_hash);
+                }
+                *hasher.finalize().as_bytes()
+            }
+        };
 
         current_idx /= 2;
         current_total = current_total.div_ceil(2);

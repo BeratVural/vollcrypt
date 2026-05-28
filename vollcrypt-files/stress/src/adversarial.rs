@@ -13,13 +13,9 @@ mod tests {
         let mut serialized = env.write();
         let total_bits = serialized.len() * 8;
         
-        // Sample 500 random bits to flip to keep test fast but statistically significant
-        let mut rng = rand::thread_rng();
-        let sample_size = 500;
         let mut failures = 0;
 
-        for _ in 0..sample_size {
-            let bit_to_flip = rng.gen_range(0..total_bits);
+        for bit_to_flip in 0..total_bits {
             let byte_idx = bit_to_flip / 8;
             let bit_idx = bit_to_flip % 8;
 
@@ -40,8 +36,8 @@ mod tests {
             serialized[byte_idx] ^= 1 << bit_idx;
         }
 
-        assert_eq!(failures, sample_size, "Some tampered ciphertexts successfully decrypted/parsed!");
-        println!("SECURITY AUDIT: Bit-flip resistance verified ({} / {} tampered inputs detected and rejected).", failures, sample_size);
+        assert_eq!(failures, total_bits, "Some tampered ciphertexts successfully decrypted/parsed!");
+        println!("SECURITY AUDIT: Bit-flip resistance verified ({} / {} tampered inputs detected and rejected).", failures, total_bits);
     }
 
     #[test]
