@@ -52,10 +52,10 @@ fn proof_verifies() {
     let tree = MerkleTree::from_leaves(leaves.clone());
     let root = tree.root();
 
-    for i in 0..8 {
+    for (i, leaf) in leaves.iter().enumerate() {
         let proof = tree.proof(i);
         assert_eq!(proof.len(), 3); // 2^3 = 8
-        assert!(verify_merkle_proof(&leaves[i], i, 8, &proof, &root));
+        assert!(verify_merkle_proof(leaf, i, 8, &proof, &root));
     }
 }
 

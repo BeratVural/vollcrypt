@@ -29,6 +29,8 @@ fn encrypt_decrypt_small_file_pbkdf2() {
         plaintext_size: plaintext.len() as u64,
         merkle_root,
         wraps: vec![wrap],
+        signed_metadata: None,
+        signature: None,
     };
 
     // 2. Serialize header and envelope
@@ -70,6 +72,8 @@ fn encrypt_decrypt_small_file_argon2id_interactive() {
         plaintext_size: plaintext.len() as u64,
         merkle_root,
         wraps: vec![wrap],
+        signed_metadata: None,
+        signature: None,
     };
 
     // 2. Serialize header and envelope
@@ -112,6 +116,8 @@ fn wrong_password_end_to_end() {
         plaintext_size: plaintext.len() as u64,
         merkle_root,
         wraps: vec![wrap],
+        signed_metadata: None,
+        signature: None,
     };
 
     // 2. Serialize

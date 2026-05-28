@@ -73,6 +73,8 @@ fn encrypt_decrypt_three_members() {
         plaintext_size: plaintext.len() as u64,
         merkle_root,
         wraps: vec![group_wrap],
+        signed_metadata: None,
+        signature: None,
     };
 
     // Serialize
@@ -173,6 +175,8 @@ fn removed_member_lazy_still_works() {
         plaintext_size: plaintext.len() as u64,
         merkle_root,
         wraps: vec![group_wrap],
+        signed_metadata: None,
+        signature: None,
     };
 
     // Serialize

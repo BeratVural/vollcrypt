@@ -22,6 +22,14 @@ pub enum Operation {
     RemoveMember {
         member_id: [u8; 16],
     },
+    RotateKey {
+        new_gk_version: u32,
+        wraps: Vec<([u8; 16], WrapEntry)>,
+    },
+    ShredGroupKey {
+        shredded_gk_version: u32,
+        reason: String,
+    },
 }
 
 impl Operation {
@@ -61,6 +69,32 @@ impl Operation {
                 out
             }
             Operation::RemoveMember { member_id } => member_id.to_vec(),
+            Operation::RotateKey {
+                new_gk_version,
+                wraps,
+            } => {
+                let mut out = Vec::new();
+                out.extend_from_slice(&new_gk_version.to_be_bytes());
+                let num_wraps = wraps.len() as u16;
+                out.extend_from_slice(&num_wraps.to_be_bytes());
+                for (mid, wrap) in wraps {
+                    out.extend_from_slice(mid);
+                    out.extend_from_slice(&wrap.write());
+                }
+                out
+            }
+            Operation::ShredGroupKey {
+                shredded_gk_version,
+                reason,
+            } => {
+                let mut out = Vec::new();
+                out.extend_from_slice(&shredded_gk_version.to_be_bytes());
+                let reason_bytes = reason.as_bytes();
+                let reason_len = reason_bytes.len() as u16;
+                out.extend_from_slice(&reason_len.to_be_bytes());
+                out.extend_from_slice(reason_bytes);
+                out
+            }
         }
     }
 
@@ -129,6 +163,63 @@ impl Operation {
                 member_id.copy_from_slice(&data[0..16]);
 
                 Ok(Operation::RemoveMember { member_id })
+            }
+            3 => {
+                if data.len() < 6 {
+                    return Err(FileFormatError::InvalidWrapPayload);
+                }
+                let mut version_bytes = [0u8; 4];
+                version_bytes.copy_from_slice(&data[0..4]);
+                let new_gk_version = u32::from_be_bytes(version_bytes);
+
+                let mut num_wraps_bytes = [0u8; 2];
+                num_wraps_bytes.copy_from_slice(&data[4..6]);
+                let num_wraps = u16::from_be_bytes(num_wraps_bytes) as usize;
+
+                let mut offset = 6;
+                let mut wraps = Vec::with_capacity(num_wraps);
+                for _ in 0..num_wraps {
+                    if data.len() < offset + 16 {
+                        return Err(FileFormatError::InvalidWrapPayload);
+                    }
+                    let mut member_id = [0u8; 16];
+                    member_id.copy_from_slice(&data[offset..offset + 16]);
+                    offset += 16;
+
+                    let (wrap, read_bytes) = WrapEntry::parse(&data[offset..])?;
+                    offset += read_bytes;
+                    wraps.push((member_id, wrap));
+                }
+
+                Ok(Operation::RotateKey {
+                    new_gk_version,
+                    wraps,
+                })
+            }
+            4 => {
+                if data.len() < 6 {
+                    return Err(FileFormatError::InvalidWrapPayload);
+                }
+                let mut version_bytes = [0u8; 4];
+                version_bytes.copy_from_slice(&data[0..4]);
+                let shredded_gk_version = u32::from_be_bytes(version_bytes);
+
+                let mut reason_len_bytes = [0u8; 2];
+                reason_len_bytes.copy_from_slice(&data[4..6]);
+                let reason_len = u16::from_be_bytes(reason_len_bytes) as usize;
+
+                if data.len() < 6 + reason_len {
+                    return Err(FileFormatError::InvalidWrapPayload);
+                }
+
+                let reason_str = std::str::from_utf8(&data[6..6 + reason_len])
+                    .map_err(|_| FileFormatError::InvalidWrapPayload)?
+                    .to_string();
+
+                Ok(Operation::ShredGroupKey {
+                    shredded_gk_version,
+                    reason: reason_str,
+                })
             }
             t => Err(FileFormatError::UnknownOperationType(t)),
         }
@@ -425,6 +516,7 @@ impl GroupManifest {
                     Operation::RemoveMember { member_id } => {
                         members.retain(|&m| m != member_id);
                     }
+                    _ => {}
                 }
             }
         }
@@ -467,39 +559,284 @@ impl GroupManifest {
         Err(FileFormatError::MemberNotFound)
     }
 
-    /// Retrieves the highest GK version across all active members.
+    /// Retrieves the current group key version by scanning operations from end to beginning.
     pub fn current_gk_version(&self) -> u32 {
-        let mut current_version = 0;
+        for op_signed in self.operations.iter().rev() {
+            if op_signed.op_type == 3 {
+                if let Ok(Operation::RotateKey { new_gk_version, .. }) =
+                    Operation::parse(op_signed.op_type, &op_signed.data)
+                {
+                    return new_gk_version;
+                }
+            } else if op_signed.op_type == 0 {
+                if let Ok(Operation::Genesis {
+                    founder_gk_wrap, ..
+                }) = Operation::parse(op_signed.op_type, &op_signed.data)
+                {
+                    match founder_gk_wrap {
+                        WrapEntry::HybridKem { gk_version, .. } => return gk_version,
+                        WrapEntry::GroupWrap { gk_version, .. } => return gk_version,
+                        _ => {}
+                    }
+                }
+            }
+        }
+        1
+    }
+
+    /// Rotates the group key to a new group key, creating a RotateKey operation.
+    pub fn rotate_group_key(
+        &mut self,
+        new_gk: &[u8; 32],
+        admin_ed25519_pk: &[u8; 32],
+        admin_ed25519_sk: &[u8; 32],
+        timestamp: u64,
+    ) -> Result<u32, FileFormatError> {
+        let admin_pk_derived = ed25519_dalek::SigningKey::from_bytes(admin_ed25519_sk)
+            .verifying_key()
+            .to_bytes();
+        if admin_pk_derived != *admin_ed25519_pk {
+            return Err(FileFormatError::NotAuthorized);
+        }
+
+        let founder_pk = self.founder_signing_pk()?;
+        if *admin_ed25519_pk != founder_pk {
+            return Err(FileFormatError::NotAuthorized);
+        }
+
+        let new_gk_version = self.current_gk_version() + 1;
+        let mut wraps = Vec::new();
+        for member_id in self.current_members() {
+            let member_pk = self.find_member_pk(&member_id)?;
+            let wrap = crate::recipient::wrap_key_to_recipient(
+                new_gk,
+                member_id,
+                new_gk_version,
+                &member_pk,
+            )?;
+            wraps.push((member_id, wrap));
+        }
+
+        let op = Operation::RotateKey {
+            new_gk_version,
+            wraps,
+        };
+        let data = op.to_bytes();
+
+        let prev_op = self
+            .operations
+            .last()
+            .ok_or(FileFormatError::EmptyManifest)?;
+        let prev_hash = prev_op.hash();
+
+        let mut signed_op = SignedOperation {
+            op_type: 3,
+            prev_hash,
+            timestamp,
+            signer_pubkey: *admin_ed25519_pk,
+            data_len: data.len() as u32,
+            data,
+            signature: [0u8; 64],
+        };
+
+        let msg = signed_op.sig_message();
+        signed_op.signature = crate::signing::ed25519_sign(admin_ed25519_sk, &msg);
+
+        self.operations.push(signed_op);
+        Ok(new_gk_version)
+    }
+
+    /// Shreds a specific group key version, recording it in the manifest operations list.
+    pub fn shred_group_key(
+        &mut self,
+        version_to_shred: u32,
+        reason: &str,
+        admin_ed25519_pk: &[u8; 32],
+        admin_ed25519_sk: &[u8; 32],
+        timestamp: u64,
+    ) -> Result<(), FileFormatError> {
+        if reason.len() > 256 {
+            return Err(FileFormatError::InvalidShredReason);
+        }
+
+        let admin_pk_derived = ed25519_dalek::SigningKey::from_bytes(admin_ed25519_sk)
+            .verifying_key()
+            .to_bytes();
+        if admin_pk_derived != *admin_ed25519_pk {
+            return Err(FileFormatError::NotAuthorized);
+        }
+
+        let founder_pk = self.founder_signing_pk()?;
+        if *admin_ed25519_pk != founder_pk {
+            return Err(FileFormatError::NotAuthorized);
+        }
+
+        if self.is_version_shredded(version_to_shred) {
+            return Err(FileFormatError::AlreadyShredded);
+        }
+
+        let op = Operation::ShredGroupKey {
+            shredded_gk_version: version_to_shred,
+            reason: reason.to_string(),
+        };
+        let data = op.to_bytes();
+
+        let prev_op = self
+            .operations
+            .last()
+            .ok_or(FileFormatError::EmptyManifest)?;
+        let prev_hash = prev_op.hash();
+
+        let mut signed_op = SignedOperation {
+            op_type: 4,
+            prev_hash,
+            timestamp,
+            signer_pubkey: *admin_ed25519_pk,
+            data_len: data.len() as u32,
+            data,
+            signature: [0u8; 64],
+        };
+
+        let msg = signed_op.sig_message();
+        signed_op.signature = crate::signing::ed25519_sign(admin_ed25519_sk, &msg);
+
+        self.operations.push(signed_op);
+        Ok(())
+    }
+
+    /// Finds a member's wrap for a specific version, checking RotateKey, Genesis, and AddMember.
+    pub fn find_member_wrap_for_version(
+        &self,
+        member_id: &[u8; 16],
+        gk_version: u32,
+    ) -> Result<WrapEntry, FileFormatError> {
+        if self.is_version_shredded(gk_version) {
+            return Err(FileFormatError::GroupKeyShredded(gk_version));
+        }
+
+        // First check RotateKey operations
+        for op_signed in &self.operations {
+            if op_signed.op_type == 3 {
+                if let Ok(Operation::RotateKey {
+                    new_gk_version,
+                    wraps,
+                }) = Operation::parse(op_signed.op_type, &op_signed.data)
+                {
+                    if new_gk_version == gk_version {
+                        for (mid, wrap) in wraps {
+                            if mid == *member_id {
+                                return Ok(wrap);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check Genesis and AddMember operations matching version
         for op_signed in &self.operations {
             if let Ok(op) = Operation::parse(op_signed.op_type, &op_signed.data) {
                 match op {
                     Operation::Genesis {
-                        founder_gk_wrap, ..
+                        founder_id,
+                        founder_gk_wrap,
+                        ..
                     } => {
-                        let ver = match founder_gk_wrap {
-                            WrapEntry::HybridKem { gk_version, .. } => gk_version,
-                            WrapEntry::GroupWrap { gk_version, .. } => gk_version,
-                            _ => 0,
-                        };
-                        if ver > current_version {
-                            current_version = ver;
+                        if founder_id == *member_id {
+                            let ver = match &founder_gk_wrap {
+                                WrapEntry::HybridKem { gk_version: v, .. } => *v,
+                                WrapEntry::GroupWrap { gk_version: v, .. } => *v,
+                                _ => 0,
+                            };
+                            if ver == gk_version {
+                                return Ok(founder_gk_wrap);
+                            }
                         }
                     }
-                    Operation::AddMember { gk_wrap, .. } => {
-                        let ver = match gk_wrap {
-                            WrapEntry::HybridKem { gk_version, .. } => gk_version,
-                            WrapEntry::GroupWrap { gk_version, .. } => gk_version,
-                            _ => 0,
-                        };
-                        if ver > current_version {
-                            current_version = ver;
+                    Operation::AddMember {
+                        member_id: mid,
+                        gk_wrap,
+                        ..
+                    } => {
+                        if mid == *member_id {
+                            let ver = match &gk_wrap {
+                                WrapEntry::HybridKem { gk_version: v, .. } => *v,
+                                WrapEntry::GroupWrap { gk_version: v, .. } => *v,
+                                _ => 0,
+                            };
+                            if ver == gk_version {
+                                return Ok(gk_wrap);
+                            }
                         }
                     }
                     _ => {}
                 }
             }
         }
-        current_version
+
+        Err(FileFormatError::WrapVersionNotFound { gk_version })
+    }
+
+    /// Checks if a group key version has been shredded.
+    pub fn is_version_shredded(&self, gk_version: u32) -> bool {
+        for op_signed in &self.operations {
+            if op_signed.op_type == 4 {
+                if let Ok(Operation::ShredGroupKey {
+                    shredded_gk_version,
+                    ..
+                }) = Operation::parse(op_signed.op_type, &op_signed.data)
+                {
+                    if shredded_gk_version == gk_version {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Internal helper to locate the public key of a member.
+    fn find_member_pk(&self, member_id: &[u8; 16]) -> Result<RecipientPublicKey, FileFormatError> {
+        let mut found_pk = None;
+        for op_signed in &self.operations {
+            if let Ok(op) = Operation::parse(op_signed.op_type, &op_signed.data) {
+                match op {
+                    Operation::Genesis {
+                        founder_id,
+                        founder_x25519_pk,
+                        founder_mlkem_pk,
+                        ..
+                    } => {
+                        if founder_id == *member_id {
+                            found_pk = Some(RecipientPublicKey {
+                                x25519: founder_x25519_pk,
+                                ml_kem: founder_mlkem_pk,
+                            });
+                        }
+                    }
+                    Operation::AddMember {
+                        member_id: mid,
+                        member_x25519_pk,
+                        member_mlkem_pk,
+                        ..
+                    } => {
+                        if mid == *member_id {
+                            found_pk = Some(RecipientPublicKey {
+                                x25519: member_x25519_pk,
+                                ml_kem: member_mlkem_pk,
+                            });
+                        }
+                    }
+                    Operation::RemoveMember { member_id: mid } => {
+                        if mid == *member_id {
+                            found_pk = None;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        found_pk.ok_or(FileFormatError::MemberNotFound)
     }
 
     /// Verifies the signature integrity and hash chain links of the manifest.
