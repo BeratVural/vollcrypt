@@ -3,7 +3,8 @@
 **Cross-platform, quantum-resistant cryptography engine - WebAssembly Binding**
 
 [![npm](https://img.shields.io/npm/v/@vollcrypt/messages-wasm.svg)](https://www.npmjs.com/package/@vollcrypt/messages-wasm)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://github.com/BeratVural/vollcrypt/blob/main/LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://github.com/BeratVural/vollcrypt/blob/main/LICENSE-GPL)
+[![License: Commercial](https://img.shields.io/badge/License-Commercial-goldenrod.svg)](https://github.com/BeratVural/vollcrypt/blob/main/LICENSE-COMMERCIAL.md)
 
 This package provides the **WebAssembly (WASM) bindings** for the Vollcrypt cryptography engine. It is compiled directly from Rust using `wasm-pack`, bringing robust, post-quantum cryptography straight to the user's browser or frontend application (React, Next.js, Vue, etc.) without relying on slow JavaScript cryptography implementations.
 
@@ -52,6 +53,8 @@ For full API documentation, architecture details, and the high-performance Nativ
 
 ## License
 
-This project is licensed under the **GNU General Public License v3.0**. 
+This project is dual-licensed under:
+- **GPL-3.0-only** (for open-source distribution) — see the [LICENSE-GPL](https://github.com/BeratVural/vollcrypt/blob/main/LICENSE-GPL) file.
+- **Commercial License** (for proprietary software integrations) — see the [LICENSE-COMMERCIAL.md](https://github.com/BeratVural/vollcrypt/blob/main/LICENSE-COMMERCIAL.md) file.
 
-For commercial use without the GPL copyleft requirement, please contact Berat Vural at [berat.vural.tr@gmail.com](mailto:berat.vural.tr@gmail.com).
+For inquiries regarding commercial license purchases, pricing tiers, or custom enterprise terms, please contact Berat Vural at [berat.vural.tr@gmail.com](mailto:berat.vural.tr@gmail.com).

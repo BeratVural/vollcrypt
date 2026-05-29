@@ -44,7 +44,7 @@
     "napi"
   ],
   "author": "Berat Vural <berat.vural.tr@gmail.com>",
-  "license": "GPL-3.0-only",
+  "license": "GPL-3.0-only OR LicenseRef-Commercial",
   "napi": {
     "name": "vollcrypt",
     "triples": {

@@ -55,7 +55,7 @@
     "napi"
   ],
   "author": "Berat Vural <berat.vural.tr@gmail.com>",
-  "license": "GPL-3.0-only",
+  "license": "GPL-3.0-only OR LicenseRef-Commercial",
   "devDependencies": {
     "@napi-rs/cli": "^2.18.4",
     "@types/node": "^20.11.0",
