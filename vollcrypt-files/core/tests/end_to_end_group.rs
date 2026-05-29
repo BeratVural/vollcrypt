@@ -1,13 +1,13 @@
 use vollcrypt_files_core::{
-    chunk_leaf_hash, decrypt_chunk, ed25519_keypair_generate, encrypt_chunk, generate_dek,
+    chunk_leaf_hash, decrypt_chunk, hybrid_keypair_generate, encrypt_chunk, generate_dek,
     generate_file_id, generate_gk, generate_recipient_keypair, unwrap_dek_with_group_key,
     unwrap_key_with_recipient_key, wrap_dek_for_group, wrap_key_to_recipient, ChunkEnvelope,
-    CipherId, FileFormatError, GroupManifest, Header, MerkleTree, Mode, HashAlgorithm, VERSION,
+    CipherId, FileFormatError, GroupManifest, HashAlgorithm, Header, MerkleTree, Mode, VERSION,
 };
 
 #[test]
 fn encrypt_decrypt_three_members() {
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let group_id = generate_file_id();
 
     // Member 1 (Founder)
@@ -16,12 +16,12 @@ fn encrypt_decrypt_three_members() {
 
     // Member 2
     let member2_id = generate_file_id();
-    let (member2_signing_pk, _member2_signing_sk) = ed25519_keypair_generate();
+    let (member2_signing_pk, _member2_signing_sk) = hybrid_keypair_generate();
     let (rec_pk2, rec_sk2) = generate_recipient_keypair();
 
     // Member 3
     let member3_id = generate_file_id();
-    let (member3_signing_pk, _member3_signing_sk) = ed25519_keypair_generate();
+    let (member3_signing_pk, _member3_signing_sk) = hybrid_keypair_generate();
     let (rec_pk3, rec_sk3) = generate_recipient_keypair();
 
     // Generate GK
@@ -57,7 +57,7 @@ fn encrypt_decrypt_three_members() {
     let dek = generate_dek();
     let file_id = generate_file_id();
 
-    let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext).unwrap();
+    let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext, None).unwrap();
     let leaf = chunk_leaf_hash(&envelope);
     let merkle_root = MerkleTree::from_leaves(vec![leaf]).root();
 
@@ -90,30 +90,48 @@ fn encrypt_decrypt_three_members() {
     let member1_gk_wrap = manifest.find_member_wrap(&founder_id).unwrap();
     let member1_gk = unwrap_key_with_recipient_key(&member1_gk_wrap, &rec_sk1).unwrap();
     let member1_dek = unwrap_dek_with_group_key(&parsed_header.wraps[0], &member1_gk).unwrap();
-    let recovered1 =
-        decrypt_chunk(&member1_dek, &parsed_header.file_id, 0, &parsed_envelope).unwrap();
+    let recovered1 = decrypt_chunk(
+        &member1_dek,
+        &parsed_header.file_id,
+        0,
+        &parsed_envelope,
+        None,
+    )
+    .unwrap();
     assert_eq!(plaintext, recovered1);
 
     // Member 2 decryption
     let member2_gk_wrap = manifest.find_member_wrap(&member2_id).unwrap();
     let member2_gk = unwrap_key_with_recipient_key(&member2_gk_wrap, &rec_sk2).unwrap();
     let member2_dek = unwrap_dek_with_group_key(&parsed_header.wraps[0], &member2_gk).unwrap();
-    let recovered2 =
-        decrypt_chunk(&member2_dek, &parsed_header.file_id, 0, &parsed_envelope).unwrap();
+    let recovered2 = decrypt_chunk(
+        &member2_dek,
+        &parsed_header.file_id,
+        0,
+        &parsed_envelope,
+        None,
+    )
+    .unwrap();
     assert_eq!(plaintext, recovered2);
 
     // Member 3 decryption
     let member3_gk_wrap = manifest.find_member_wrap(&member3_id).unwrap();
     let member3_gk = unwrap_key_with_recipient_key(&member3_gk_wrap, &rec_sk3).unwrap();
     let member3_dek = unwrap_dek_with_group_key(&parsed_header.wraps[0], &member3_gk).unwrap();
-    let recovered3 =
-        decrypt_chunk(&member3_dek, &parsed_header.file_id, 0, &parsed_envelope).unwrap();
+    let recovered3 = decrypt_chunk(
+        &member3_dek,
+        &parsed_header.file_id,
+        0,
+        &parsed_envelope,
+        None,
+    )
+    .unwrap();
     assert_eq!(plaintext, recovered3);
 }
 
 #[test]
 fn removed_member_lazy_still_works() {
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let group_id = generate_file_id();
 
     // Member 1 (Founder)
@@ -122,12 +140,12 @@ fn removed_member_lazy_still_works() {
 
     // Member 2
     let member2_id = generate_file_id();
-    let (member2_signing_pk, _member2_signing_sk) = ed25519_keypair_generate();
+    let (member2_signing_pk, _member2_signing_sk) = hybrid_keypair_generate();
     let (rec_pk2, _rec_sk2) = generate_recipient_keypair();
 
     // Member 3 (will be removed)
     let member3_id = generate_file_id();
-    let (member3_signing_pk, _member3_signing_sk) = ed25519_keypair_generate();
+    let (member3_signing_pk, _member3_signing_sk) = hybrid_keypair_generate();
     let (rec_pk3, rec_sk3) = generate_recipient_keypair();
 
     // Generate GK
@@ -163,7 +181,7 @@ fn removed_member_lazy_still_works() {
     let plaintext = vec![0x77; 1000];
     let dek = generate_dek();
     let file_id = generate_file_id();
-    let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext).unwrap();
+    let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext, None).unwrap();
     let leaf = chunk_leaf_hash(&envelope);
     let merkle_root = MerkleTree::from_leaves(vec![leaf]).root();
     let group_wrap = wrap_dek_for_group(&dek, group_id, 0, &gk);
@@ -198,8 +216,14 @@ fn removed_member_lazy_still_works() {
 
     let recovered_gk = unwrap_key_with_recipient_key(&saved_wrap3, &rec_sk3).unwrap();
     let recovered_dek = unwrap_dek_with_group_key(&parsed_header.wraps[0], &recovered_gk).unwrap();
-    let recovered =
-        decrypt_chunk(&recovered_dek, &parsed_header.file_id, 0, &parsed_envelope).unwrap();
+    let recovered = decrypt_chunk(
+        &recovered_dek,
+        &parsed_header.file_id,
+        0,
+        &parsed_envelope,
+        None,
+    )
+    .unwrap();
 
     assert_eq!(plaintext, recovered);
 }

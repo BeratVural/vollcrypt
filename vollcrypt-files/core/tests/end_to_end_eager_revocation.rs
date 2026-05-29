@@ -1,14 +1,14 @@
 use vollcrypt_files_core::{
-    chunk_leaf_hash, decrypt_chunk, ed25519_keypair_generate, encrypt_chunk, generate_dek,
+    chunk_leaf_hash, decrypt_chunk, hybrid_keypair_generate, encrypt_chunk, generate_dek,
     generate_file_id, generate_gk, generate_recipient_keypair, rewrap_dek_in_header,
     unwrap_dek_with_group_key, unwrap_key_with_recipient_key, wrap_dek_for_group,
-    wrap_key_to_recipient, CipherId, FileFormatError, GroupManifest, Header, MerkleTree, Mode,
-    HashAlgorithm, VERSION,
+    wrap_key_to_recipient, CipherId, FileFormatError, GroupManifest, HashAlgorithm, Header,
+    MerkleTree, Mode, VERSION,
 };
 
 #[test]
 fn eager_revocation_full_flow() {
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let group_id = generate_file_id();
 
     // Member 1 (Founder)
@@ -17,12 +17,12 @@ fn eager_revocation_full_flow() {
 
     // Member 2
     let member2_id = generate_file_id();
-    let (member2_signing_pk, _member2_signing_sk) = ed25519_keypair_generate();
+    let (member2_signing_pk, _member2_signing_sk) = hybrid_keypair_generate();
     let (rec_pk2, rec_sk2) = generate_recipient_keypair();
 
     // Member 3 (Will be revoked)
     let member3_id = generate_file_id();
-    let (member3_signing_pk, _member3_signing_sk) = ed25519_keypair_generate();
+    let (member3_signing_pk, _member3_signing_sk) = hybrid_keypair_generate();
     let (rec_pk3, rec_sk3) = generate_recipient_keypair();
 
     // GK v1
@@ -55,7 +55,7 @@ fn eager_revocation_full_flow() {
     let plaintext = vec![0x99; 4096];
     let dek = generate_dek();
     let file_id = generate_file_id();
-    let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext).unwrap();
+    let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext, None).unwrap();
     let leaf = chunk_leaf_hash(&envelope);
     let merkle_root = MerkleTree::from_leaves(vec![leaf]).root();
     let old_group_wrap = wrap_dek_for_group(&dek, group_id, 1, &gk1);
@@ -83,7 +83,7 @@ fn eager_revocation_full_flow() {
     let d1 = unwrap_dek_with_group_key(&header.wraps[0], &g1_1).unwrap();
     assert_eq!(
         plaintext,
-        decrypt_chunk(&d1, &file_id, 0, &envelope).unwrap()
+        decrypt_chunk(&d1, &file_id, 0, &envelope, None).unwrap()
     );
 
     // Member 2
@@ -94,7 +94,7 @@ fn eager_revocation_full_flow() {
     let d2 = unwrap_dek_with_group_key(&header.wraps[0], &g1_2).unwrap();
     assert_eq!(
         plaintext,
-        decrypt_chunk(&d2, &file_id, 0, &envelope).unwrap()
+        decrypt_chunk(&d2, &file_id, 0, &envelope, None).unwrap()
     );
 
     // Member 3
@@ -105,7 +105,7 @@ fn eager_revocation_full_flow() {
     let d3 = unwrap_dek_with_group_key(&header.wraps[0], &g1_3).unwrap();
     assert_eq!(
         plaintext,
-        decrypt_chunk(&d3, &file_id, 0, &envelope).unwrap()
+        decrypt_chunk(&d3, &file_id, 0, &envelope, None).unwrap()
     );
 
     // EAGER REVOCATION PROCESS:
@@ -115,7 +115,7 @@ fn eager_revocation_full_flow() {
     // 2. Rotate Group Key to gk2 (v2)
     let gk2 = generate_gk();
     let new_gk_version = manifest
-        .rotate_group_key(&gk2, &admin_pk, &admin_sk, 1000)
+        .rotate_group_key(&gk2, &admin_sk, 1000)
         .unwrap();
     assert_eq!(new_gk_version, 2);
 
@@ -132,7 +132,7 @@ fn eager_revocation_full_flow() {
     let d1_v2 = unwrap_dek_with_group_key(&header.wraps[0], &g2_1).unwrap();
     assert_eq!(
         plaintext,
-        decrypt_chunk(&d1_v2, &file_id, 0, &envelope).unwrap()
+        decrypt_chunk(&d1_v2, &file_id, 0, &envelope, None).unwrap()
     );
 
     // Member 2
@@ -143,7 +143,7 @@ fn eager_revocation_full_flow() {
     let d2_v2 = unwrap_dek_with_group_key(&header.wraps[0], &g2_2).unwrap();
     assert_eq!(
         plaintext,
-        decrypt_chunk(&d2_v2, &file_id, 0, &envelope).unwrap()
+        decrypt_chunk(&d2_v2, &file_id, 0, &envelope, None).unwrap()
     );
 
     // Verify Member 3 CANNOT decrypt anymore

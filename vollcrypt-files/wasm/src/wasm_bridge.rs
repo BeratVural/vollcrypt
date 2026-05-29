@@ -1,5 +1,5 @@
+use vollcrypt_files_core::buffer_pool::{BufferPool, PooledBuffer};
 use wasm_bindgen::prelude::*;
-use vollcrypt_files_core::buffer_pool::{PooledBuffer, BufferPool};
 
 #[wasm_bindgen]
 pub struct WasmPooledBuffer {
@@ -103,9 +103,5 @@ impl WasmBufferPool {
 pub fn get_wasm_memory_view(ptr: *const u8, len: usize) -> js_sys::Uint8Array {
     let memory = wasm_bindgen::memory();
     let memory: js_sys::WebAssembly::Memory = wasm_bindgen::JsCast::dyn_into(memory).unwrap();
-    js_sys::Uint8Array::new_with_byte_offset_and_length(
-        &memory.buffer(),
-        ptr as u32,
-        len as u32,
-    )
+    js_sys::Uint8Array::new_with_byte_offset_and_length(&memory.buffer(), ptr as u32, len as u32)
 }

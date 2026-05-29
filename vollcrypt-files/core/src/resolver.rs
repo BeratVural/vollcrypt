@@ -1,5 +1,6 @@
 use crate::error::FileFormatError;
 use crate::header::{Header, SignedMetadata};
+use crate::hybrid_sig::HybridPublicKey;
 use crate::keylog::{KeyLog, KeyLogEntryType};
 use crate::signature::{
     extract_key_log_id_plain, extract_key_log_id_sealed, verify_header_signature_plain,
@@ -8,7 +9,7 @@ use crate::signature::{
 use subtle::ConstantTimeEq;
 
 pub struct SenderInfo {
-    pub signer_pubkey: [u8; 32],
+    pub signer_pubkey: HybridPublicKey,
     pub user_id: [u8; 16],
     pub device_id: [u8; 16],
     pub device_was_active: bool,
@@ -33,7 +34,7 @@ pub fn resolve_sender(
         }
         SignedMetadata::Sealed { timestamp, .. } => {
             let gk = sealed_gk.ok_or(FileFormatError::SealedGkRequired)?;
-            let pk = verify_header_signature_sealed(header, gk)?;
+            let pk = verify_header_signature_sealed(header, gk, key_log)?;
             let kl_id = extract_key_log_id_sealed(header, gk)?;
             (pk, kl_id, *timestamp)
         }

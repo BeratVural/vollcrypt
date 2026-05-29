@@ -99,6 +99,18 @@ pub enum FileFormatError {
     #[error("Header is not signed")]
     HeaderNotSigned,
 
+    #[error("Unsupported KEM suite ID: {0}")]
+    UnsupportedSuite(u8),
+
+    #[error("Integrity error: {0}")]
+    IntegrityError(String),
+
+    #[error("Rollback detected: expected epoch >= {expected}, got {got}")]
+    RollbackError { expected: u64, got: u64 },
+
+    #[error("Manifest epoch out of sequence: expected {expected}, got {got}")]
+    ManifestEpochOutOfSequence { expected: u64, got: u64 },
+
     #[error("Header is sealed")]
     HeaderSealed,
 

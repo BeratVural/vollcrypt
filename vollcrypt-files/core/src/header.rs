@@ -1,7 +1,7 @@
 use crate::constants::{FIXED_HEADER_LEN, MAGIC};
 use crate::error::FileFormatError;
-use crate::wrap::WrapEntry;
 use crate::merkle::HashAlgorithm;
+use crate::wrap::WrapEntry;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -37,10 +37,12 @@ impl TryFrom<u8> for CipherId {
     }
 }
 
+use crate::hybrid_sig::{HybridPublicKey, HybridSignature};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SignedMetadata {
     Plain {
-        signer_pubkey: [u8; 32],
+        signer_pubkey: HybridPublicKey,
         timestamp: u64,
         key_log_id: [u8; 32],
     },
@@ -55,7 +57,7 @@ pub enum SignedMetadata {
 }
 
 impl SignedMetadata {
-    pub fn parse(input: &[u8]) -> Result<Self, FileFormatError> {
+    pub fn parse(input: &[u8], version: u8) -> Result<Self, FileFormatError> {
         if input.len() < 9 {
             return Err(FileFormatError::TruncatedHeader {
                 expected: 9,
@@ -69,21 +71,41 @@ impl SignedMetadata {
 
         match signer_kind {
             0 => {
-                if input.len() < 73 {
-                    return Err(FileFormatError::TruncatedHeader {
-                        expected: 73,
-                        got: input.len(),
-                    });
+                if version == 3 {
+                    let expected = 1 + 8 + 1984 + 32; // 2025
+                    if input.len() < expected {
+                        return Err(FileFormatError::TruncatedHeader {
+                            expected,
+                            got: input.len(),
+                        });
+                    }
+                    let signer_pubkey = HybridPublicKey::parse(&input[9..1993])?;
+                    let mut key_log_id = [0u8; 32];
+                    key_log_id.copy_from_slice(&input[1993..2025]);
+                    Ok(SignedMetadata::Plain {
+                        signer_pubkey,
+                        timestamp,
+                        key_log_id,
+                    })
+                } else {
+                    if input.len() < 73 {
+                        return Err(FileFormatError::TruncatedHeader {
+                            expected: 73,
+                            got: input.len(),
+                        });
+                    }
+                    let mut ed25519 = [0u8; 32];
+                    ed25519.copy_from_slice(&input[9..41]);
+                    let mldsa = [0u8; 1952];
+                    let signer_pubkey = HybridPublicKey { ed25519, mldsa };
+                    let mut key_log_id = [0u8; 32];
+                    key_log_id.copy_from_slice(&input[41..73]);
+                    Ok(SignedMetadata::Plain {
+                        signer_pubkey,
+                        timestamp,
+                        key_log_id,
+                    })
                 }
-                let mut signer_pubkey = [0u8; 32];
-                signer_pubkey.copy_from_slice(&input[9..41]);
-                let mut key_log_id = [0u8; 32];
-                key_log_id.copy_from_slice(&input[41..73]);
-                Ok(SignedMetadata::Plain {
-                    signer_pubkey,
-                    timestamp,
-                    key_log_id,
-                })
             }
             1 => {
                 if input.len() < 61 {
@@ -133,19 +155,28 @@ impl SignedMetadata {
         }
     }
 
-    pub fn write(&self) -> Vec<u8> {
+    pub fn write(&self, version: u8) -> Vec<u8> {
         match self {
             SignedMetadata::Plain {
                 signer_pubkey,
                 timestamp,
                 key_log_id,
             } => {
-                let mut out = Vec::with_capacity(73);
-                out.push(0); // signer_kind
-                out.extend_from_slice(&timestamp.to_be_bytes());
-                out.extend_from_slice(signer_pubkey);
-                out.extend_from_slice(key_log_id);
-                out
+                if version == 3 {
+                    let mut out = Vec::with_capacity(1 + 8 + 1984 + 32);
+                    out.push(0); // signer_kind
+                    out.extend_from_slice(&timestamp.to_be_bytes());
+                    out.extend_from_slice(&signer_pubkey.write());
+                    out.extend_from_slice(key_log_id);
+                    out
+                } else {
+                    let mut out = Vec::with_capacity(73);
+                    out.push(0); // signer_kind
+                    out.extend_from_slice(&timestamp.to_be_bytes());
+                    out.extend_from_slice(&signer_pubkey.ed25519);
+                    out.extend_from_slice(key_log_id);
+                    out
+                }
             }
             SignedMetadata::Sealed {
                 sealed_group_id,
@@ -182,7 +213,7 @@ pub struct Header {
     pub hash_algorithm: HashAlgorithm,
     pub wraps: Vec<WrapEntry>,
     pub signed_metadata: Option<SignedMetadata>,
-    pub signature: Option<[u8; 64]>,
+    pub signature: Option<HybridSignature>,
 }
 
 impl Header {
@@ -203,7 +234,7 @@ impl Header {
 
         // 2. Verify Version
         let version = input[8];
-        if version != 1 && version != 2 {
+        if version != 1 && version != 2 && version != 3 {
             return Err(FileFormatError::UnsupportedVersion(version));
         }
 
@@ -224,6 +255,12 @@ impl Header {
         let mut chunk_size_bytes = [0u8; 4];
         chunk_size_bytes.copy_from_slice(&input[27..31]);
         let chunk_size = u32::from_be_bytes(chunk_size_bytes);
+        if chunk_size > 16_777_216 {
+            return Err(FileFormatError::KdfParameterOutOfRange(format!(
+                "Chunk size exceeds 16MB limit: {}",
+                chunk_size
+            )));
+        }
 
         // 7. Parse Plaintext Size
         let mut plaintext_size_bytes = [0u8; 8];
@@ -286,7 +323,7 @@ impl Header {
         let mut signature = None;
         let mut final_header_len = total_header_len;
 
-        if version == 2 {
+        if version == 2 || version == 3 {
             if input.len() < total_header_len + 4 {
                 return Err(FileFormatError::TruncatedHeader {
                     expected: total_header_len + 4,
@@ -297,24 +334,49 @@ impl Header {
             metadata_len_bytes.copy_from_slice(&input[total_header_len..total_header_len + 4]);
             let metadata_len = u32::from_be_bytes(metadata_len_bytes) as usize;
 
-            let expected_total_len = total_header_len + 4 + metadata_len + 64;
-            if input.len() < expected_total_len {
+            let expected_metadata_len = total_header_len + 4 + metadata_len;
+            if input.len() < expected_metadata_len {
                 return Err(FileFormatError::TruncatedHeader {
-                    expected: expected_total_len,
+                    expected: expected_metadata_len,
                     got: input.len(),
                 });
             }
 
             let metadata_start = total_header_len + 4;
             let metadata_end = metadata_start + metadata_len;
-            let parsed_metadata = SignedMetadata::parse(&input[metadata_start..metadata_end])?;
+            let parsed_metadata = SignedMetadata::parse(&input[metadata_start..metadata_end], version)?;
             signed_metadata = Some(parsed_metadata);
 
-            let mut sig = [0u8; 64];
-            sig.copy_from_slice(&input[metadata_end..expected_total_len]);
-            signature = Some(sig);
-
-            final_header_len = expected_total_len;
+            let signature_start = metadata_end;
+            if version == 3 {
+                let sig = HybridSignature::parse(&input[signature_start..])?;
+                let sig_len = sig.write().len();
+                let expected_total_len = signature_start + sig_len;
+                if input.len() < expected_total_len {
+                    return Err(FileFormatError::TruncatedHeader {
+                        expected: expected_total_len,
+                        got: input.len(),
+                    });
+                }
+                signature = Some(sig);
+                final_header_len = expected_total_len;
+            } else {
+                let expected_total_len = signature_start + 64;
+                if input.len() < expected_total_len {
+                    return Err(FileFormatError::TruncatedHeader {
+                        expected: expected_total_len,
+                        got: input.len(),
+                    });
+                }
+                let mut ed_sig = [0u8; 64];
+                ed_sig.copy_from_slice(&input[signature_start..expected_total_len]);
+                let sig = HybridSignature {
+                    ed25519: ed_sig,
+                    mldsa: Vec::new(),
+                };
+                signature = Some(sig);
+                final_header_len = expected_total_len;
+            }
         }
 
         let header = Header {
@@ -343,7 +405,7 @@ impl Header {
         let variable_len = wraps_bytes.len() as u32;
         let wrap_count = self.wraps.len() as u8;
 
-        let version = if self.signed_metadata.is_some() { 2 } else { 1 };
+        let version = if self.signed_metadata.is_some() { self.version } else { 1 };
 
         let mut out = Vec::with_capacity(FIXED_HEADER_LEN + wraps_bytes.len());
         out.extend_from_slice(&MAGIC);
@@ -361,7 +423,7 @@ impl Header {
         out.extend_from_slice(&wraps_bytes);
 
         if let Some(ref metadata) = self.signed_metadata {
-            let metadata_bytes = metadata.write();
+            let metadata_bytes = metadata.write(version);
             let metadata_len = metadata_bytes.len() as u32;
             out.extend_from_slice(&metadata_len.to_be_bytes());
             out.extend_from_slice(&metadata_bytes);
@@ -373,8 +435,14 @@ impl Header {
     pub fn write(&self) -> Vec<u8> {
         let mut out = self.signed_bytes();
         if self.signed_metadata.is_some() {
-            match self.signature {
-                Some(sig) => out.extend_from_slice(&sig),
+            match &self.signature {
+                Some(sig) => {
+                    if self.version == 3 {
+                        out.extend_from_slice(&sig.write());
+                    } else {
+                        out.extend_from_slice(&sig.ed25519);
+                    }
+                }
                 None => {
                     debug_assert!(
                         false,
@@ -393,9 +461,26 @@ impl Header {
     pub fn serialized_len(&self) -> usize {
         let wraps_len: usize = self.wraps.iter().map(|w| w.wire_size()).sum();
         if let Some(ref metadata) = self.signed_metadata {
-            FIXED_HEADER_LEN + wraps_len + 4 + metadata.write().len() + 64
+            let metadata_size = metadata.write(self.version).len();
+            let sig_size = if self.version == 3 {
+                self.signature.as_ref().map(|s| s.write().len()).unwrap_or(0)
+            } else {
+                64
+            };
+            FIXED_HEADER_LEN + wraps_len + 4 + metadata_size + sig_size
         } else {
             FIXED_HEADER_LEN + wraps_len
         }
+    }
+
+    pub fn canonical_header_hash(&self) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        let mut header_copy = self.clone();
+        header_copy.merkle_root = [0u8; 32];
+        header_copy.plaintext_size = 0;
+        let bytes = header_copy.signed_bytes();
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        hasher.finalize().into()
     }
 }

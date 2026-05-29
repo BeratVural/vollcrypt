@@ -18,7 +18,10 @@ fn bench_parallel_encrypt_decrypt(c: &mut Criterion) {
     let thread_counts = [1, 2, 4, physical_cpus];
 
     for &threads in &thread_counts {
-        let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .unwrap();
         g_enc.bench_with_input(BenchmarkId::new("workers", threads), &threads, |b, _| {
             b.iter(|| {
                 pool.install(|| {
@@ -26,7 +29,7 @@ fn bench_parallel_encrypt_decrypt(c: &mut Criterion) {
                         .par_iter()
                         .enumerate()
                         .map(|(idx, pt)| {
-                            encrypt_chunk(&dek, &file_id, idx as u32, black_box(pt)).unwrap()
+                            encrypt_chunk(&dek, &file_id, idx as u32, black_box(pt), None).unwrap()
                         })
                         .collect();
                     let _ = black_box(res);
@@ -40,14 +43,17 @@ fn bench_parallel_encrypt_decrypt(c: &mut Criterion) {
     let envelopes: Vec<_> = plaintexts
         .iter()
         .enumerate()
-        .map(|(idx, pt)| encrypt_chunk(&dek, &file_id, idx as u32, pt).unwrap())
+        .map(|(idx, pt)| encrypt_chunk(&dek, &file_id, idx as u32, pt, None).unwrap())
         .collect();
 
     let mut g_dec = c.benchmark_group("parallel_chunk_decrypt");
     g_dec.throughput(Throughput::Bytes(total_size as u64));
 
     for &threads in &thread_counts {
-        let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .unwrap();
         g_dec.bench_with_input(BenchmarkId::new("workers", threads), &threads, |b, _| {
             b.iter(|| {
                 pool.install(|| {
@@ -55,7 +61,7 @@ fn bench_parallel_encrypt_decrypt(c: &mut Criterion) {
                         .par_iter()
                         .enumerate()
                         .map(|(idx, env)| {
-                            decrypt_chunk(&dek, &file_id, idx as u32, black_box(env)).unwrap()
+                            decrypt_chunk(&dek, &file_id, idx as u32, black_box(env), None).unwrap()
                         })
                         .collect();
                     let _ = black_box(res);
@@ -112,7 +118,7 @@ fn bench_parallel_merkle(c: &mut Criterion) {
 fn bench_parallel_recipient_wrap(c: &mut Criterion) {
     let count = 100;
     let dek = [0u8; 32];
-    
+
     let recipients: Vec<(RecipientPublicKey, [u8; 16])> = (0..count)
         .map(|idx| {
             let (pk, _) = generate_recipient_keypair();
@@ -127,9 +133,7 @@ fn bench_parallel_recipient_wrap(c: &mut Criterion) {
         b.iter(|| {
             let wraps: Vec<_> = recipients
                 .iter()
-                .map(|(pk, id)| {
-                    wrap_key_to_recipient(&dek, *id, 1, pk).unwrap()
-                })
+                .map(|(pk, id)| wrap_key_to_recipient(&dek, *id, 1, pk).unwrap())
                 .collect();
             let _ = black_box(wraps);
         });
@@ -139,9 +143,7 @@ fn bench_parallel_recipient_wrap(c: &mut Criterion) {
         b.iter(|| {
             let wraps: Vec<_> = recipients
                 .par_iter()
-                .map(|(pk, id)| {
-                    wrap_key_to_recipient(&dek, *id, 1, pk).unwrap()
-                })
+                .map(|(pk, id)| wrap_key_to_recipient(&dek, *id, 1, pk).unwrap())
                 .collect();
             let _ = black_box(wraps);
         });
@@ -168,7 +170,9 @@ fn bench_parallel_manifest_verify(c: &mut Criterion) {
     for idx in 0..100 {
         let mut mid = [0u8; 16];
         mid[0..4].copy_from_slice(&(idx as u32 + 2).to_be_bytes());
-        manifest.add_member(&admin_sk, mid, admin_pk, rec_pk.clone(), gk_wrap.clone()).unwrap();
+        manifest
+            .add_member(&admin_sk, mid, admin_pk, rec_pk.clone(), gk_wrap.clone())
+            .unwrap();
     }
 
     let mut g = c.benchmark_group("parallel_manifest_verify");

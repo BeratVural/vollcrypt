@@ -4,7 +4,7 @@ use vollcrypt_files_core::*;
 fn bench_pbkdf2(c: &mut Criterion) {
     let password = b"SuperSecureMasterPassword123!";
     let salt = [0u8; 16];
-    
+
     // iterations: 10k, 100k, 600k (default is 600k for high security, but we keep runs fast using 10k, 100k, 300k, 600k)
     let pbkdf2_iterations = [10_000, 100_000, 300_000, 600_000];
 
@@ -43,7 +43,7 @@ fn bench_argon2id(c: &mut Criterion) {
                     black_box(&salt),
                     black_box(m),
                     black_box(t),
-                    black_box(p)
+                    black_box(p),
                 );
                 let _ = black_box(res);
             });
@@ -68,7 +68,7 @@ fn bench_argon2id_cores(c: &mut Criterion) {
                     black_box(&salt),
                     black_box(m),
                     black_box(t),
-                    black_box(p_val)
+                    black_box(p_val),
                 );
                 let _ = black_box(res);
             });
@@ -77,10 +77,5 @@ fn bench_argon2id_cores(c: &mut Criterion) {
     g.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_pbkdf2,
-    bench_argon2id,
-    bench_argon2id_cores
-);
+criterion_group!(benches, bench_pbkdf2, bench_argon2id, bench_argon2id_cores);
 criterion_main!(benches);

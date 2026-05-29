@@ -46,10 +46,17 @@ pub fn chunk_leaf_hash_raw(chunk_index: u32, iv: &[u8; 12], tag: &[u8; 16]) -> [
 }
 
 /// Computes the hash of a chunk's metadata (index, iv, tag) without allocating using the specified hash algorithm.
-pub fn chunk_leaf_hash_raw_with_algo(chunk_index: u32, iv: &[u8; 12], tag: &[u8; 16], algo: HashAlgorithm) -> [u8; 32] {
+/// Prepend 0x00 domain separator for leaves.
+pub fn chunk_leaf_hash_raw_with_algo(
+    chunk_index: u32,
+    iv: &[u8; 12],
+    tag: &[u8; 16],
+    algo: HashAlgorithm,
+) -> [u8; 32] {
     match algo {
         HashAlgorithm::Sha256 => {
             let mut hasher = Sha256::new();
+            hasher.update(&[0x00]); // leaf prefix
             hasher.update(chunk_index.to_be_bytes());
             hasher.update(iv);
             hasher.update(tag);
@@ -57,6 +64,7 @@ pub fn chunk_leaf_hash_raw_with_algo(chunk_index: u32, iv: &[u8; 12], tag: &[u8;
         }
         HashAlgorithm::Blake3 => {
             let mut hasher = blake3::Hasher::new();
+            hasher.update(&[0x00]); // leaf prefix
             hasher.update(&chunk_index.to_be_bytes());
             hasher.update(iv);
             hasher.update(tag);
@@ -66,39 +74,61 @@ pub fn chunk_leaf_hash_raw_with_algo(chunk_index: u32, iv: &[u8; 12], tag: &[u8;
 }
 
 /// Computes the hash of a chunk envelope using the specified hash algorithm.
-///
-/// The hash is computed over: chunk_index (4B BE) || iv (12B) || tag (16B)
+/// Prepend 0x00 domain separator for leaves.
 pub fn chunk_leaf_hash_with_algo(envelope: &ChunkEnvelope, algo: HashAlgorithm) -> [u8; 32] {
+    chunk_leaf_hash_raw_with_algo(envelope.chunk_index, &envelope.iv, &envelope.tag, algo)
+}
+
+/// Helper to bind Merkle tree root with leaf count (prevents duplicate-node collisions)
+pub fn bind_root_with_length(
+    tree_root: &[u8; 32],
+    leaf_count: usize,
+    algo: HashAlgorithm,
+) -> [u8; 32] {
     match algo {
         HashAlgorithm::Sha256 => {
             let mut hasher = Sha256::new();
-            hasher.update(envelope.chunk_index.to_be_bytes());
-            hasher.update(envelope.iv);
-            hasher.update(envelope.tag);
+            hasher.update(&[0x02]); // final binding prefix
+            hasher.update(&(leaf_count as u64).to_be_bytes());
+            hasher.update(tree_root);
             hasher.finalize().into()
         }
         HashAlgorithm::Blake3 => {
             let mut hasher = blake3::Hasher::new();
-            hasher.update(&envelope.chunk_index.to_be_bytes());
-            hasher.update(&envelope.iv);
-            hasher.update(&envelope.tag);
+            hasher.update(&[0x02]); // final binding prefix
+            hasher.update(&(leaf_count as u64).to_be_bytes());
+            hasher.update(tree_root);
             *hasher.finalize().as_bytes()
         }
     }
 }
 
-/// A binary Merkle Tree built using SHA-256.
+/// Helper to calculate expected proof length for a specific leaf index under promotion logic
+pub fn expected_proof_len_for_leaf(mut leaf_index: usize, mut total_leaves: usize) -> usize {
+    let mut len = 0;
+    while total_leaves > 1 {
+        let is_odd = total_leaves % 2 != 0;
+        let is_last = leaf_index == total_leaves - 1;
+        if !(is_odd && is_last) {
+            len += 1;
+        }
+        leaf_index /= 2;
+        total_leaves = total_leaves.div_ceil(2);
+    }
+    len
+}
+
+/// A binary Merkle Tree built using SHA-256/Blake3 with node promotion and domain separation.
 #[derive(Debug, Clone)]
 pub struct MerkleTree {
     levels: Vec<Vec<[u8; 32]>>,
+    algo: HashAlgorithm,
 }
 
 impl MerkleTree {
     /// Builds a Merkle Tree from a list of leaves.
     ///
     /// If the list of leaves is empty, the root is `[0u8; 32]`.
-    /// If there is only one leaf, the root is that leaf.
-    /// If a level has an odd number of nodes, the last node is duplicated during hashing.
     pub fn from_leaves(leaves: Vec<[u8; 32]>) -> Self {
         Self::from_leaves_with_algo(leaves, HashAlgorithm::Sha256)
     }
@@ -108,8 +138,7 @@ impl MerkleTree {
         let mut levels = Vec::new();
 
         if leaves.is_empty() {
-            levels.push(vec![[0u8; 32]]);
-            return MerkleTree { levels };
+            return MerkleTree { levels, algo };
         }
 
         let mut current_level = leaves;
@@ -117,65 +146,85 @@ impl MerkleTree {
 
         while current_level.len() > 1 {
             let mut next_level = Vec::with_capacity(current_level.len().div_ceil(2));
-            for chunk in current_level.chunks(2) {
-                let left = chunk[0];
-                let right = if chunk.len() == 2 { chunk[1] } else { chunk[0] };
-
-                let parent = match algo {
-                    HashAlgorithm::Sha256 => {
-                        let mut hasher = Sha256::new();
-                        hasher.update(left);
-                        hasher.update(right);
-                        let mut parent = [0u8; 32];
-                        parent.copy_from_slice(&hasher.finalize());
-                        parent
-                    }
-                    HashAlgorithm::Blake3 => {
-                        let mut hasher = blake3::Hasher::new();
-                        hasher.update(&left);
-                        hasher.update(&right);
-                        *hasher.finalize().as_bytes()
-                    }
-                };
-                next_level.push(parent);
+            let mut chunks = current_level.chunks(2);
+            while let Some(chunk) = chunks.next() {
+                if chunk.len() == 2 {
+                    let left = chunk[0];
+                    let right = chunk[1];
+                    let parent = match algo {
+                        HashAlgorithm::Sha256 => {
+                            let mut hasher = Sha256::new();
+                            hasher.update(&[0x01]); // internal node prefix
+                            hasher.update(left);
+                            hasher.update(right);
+                            let mut parent = [0u8; 32];
+                            parent.copy_from_slice(&hasher.finalize());
+                            parent
+                        }
+                        HashAlgorithm::Blake3 => {
+                            let mut hasher = blake3::Hasher::new();
+                            hasher.update(&[0x01]); // internal node prefix
+                            hasher.update(&left);
+                            hasher.update(&right);
+                            *hasher.finalize().as_bytes()
+                        }
+                    };
+                    next_level.push(parent);
+                } else {
+                    // Carry-over (promote) the odd node to the next level unchanged (prevents collision)
+                    next_level.push(chunk[0]);
+                }
             }
             current_level = next_level;
             levels.push(current_level.clone());
         }
 
-        MerkleTree { levels }
+        MerkleTree { levels, algo }
     }
 
     /// Returns the root hash of the Merkle Tree.
     pub fn root(&self) -> [u8; 32] {
-        self.levels
+        let tree_root = self
+            .levels
             .last()
             .and_then(|lvl| lvl.first())
             .copied()
-            .unwrap_or([0u8; 32])
+            .unwrap_or([0u8; 32]);
+        if self.levels.is_empty() || self.levels[0].is_empty() {
+            tree_root
+        } else {
+            bind_root_with_length(&tree_root, self.levels[0].len(), self.algo)
+        }
     }
 
     /// Generates a Merkle proof (sibling hashes from leaf to root) for a given leaf index.
-    pub fn proof(&self, mut leaf_index: usize) -> Vec<[u8; 32]> {
+    pub fn proof(&self, leaf_index: usize) -> Vec<[u8; 32]> {
         let mut proof = Vec::new();
         if self.levels.is_empty() || self.levels[0].is_empty() || leaf_index >= self.levels[0].len()
         {
             return proof;
         }
 
+        let mut current_idx = leaf_index;
+        let mut current_total = self.levels[0].len();
+
         for level_idx in 0..self.levels.len() - 1 {
             let level = &self.levels[level_idx];
-            let sibling_index = if leaf_index.is_multiple_of(2) {
-                if leaf_index + 1 < level.len() {
-                    leaf_index + 1
-                } else {
-                    leaf_index
-                }
+            let is_odd = current_total % 2 != 0;
+            let is_last = current_idx == current_total - 1;
+
+            if is_odd && is_last {
+                // Promoted node has no sibling at this level
             } else {
-                leaf_index - 1
-            };
-            proof.push(level[sibling_index]);
-            leaf_index /= 2;
+                let sibling_index = if current_idx % 2 == 0 {
+                    current_idx + 1
+                } else {
+                    current_idx - 1
+                };
+                proof.push(level[sibling_index]);
+            }
+            current_idx /= 2;
+            current_total = current_total.div_ceil(2);
         }
 
         proof
@@ -183,6 +232,7 @@ impl MerkleTree {
 }
 
 /// Helper function to calculate the expected proof length for a given number of leaves.
+/// Deprecated in favor of expected_proof_len_for_leaf but kept for backward compatibility.
 pub fn expected_proof_len(total_leaves: usize) -> usize {
     if total_leaves <= 1 {
         0
@@ -244,57 +294,65 @@ pub fn verify_merkle_proof_with_algo(
         return false;
     }
 
-    // Verify proof length first
-    if check_proof_length(total_leaves, proof.len()).is_err() {
+    let expected_len = expected_proof_len_for_leaf(leaf_index, total_leaves);
+    if proof.len() != expected_len {
         return false;
     }
 
     let mut current_hash = *leaf;
     let mut current_idx = leaf_index;
     let mut current_total = total_leaves;
+    let mut proof_iter = proof.iter();
 
-    for sibling in proof {
-        if current_total <= 1 {
-            return false;
+    while current_total > 1 {
+        let is_odd = current_total % 2 != 0;
+        let is_last = current_idx == current_total - 1;
+
+        if is_odd && is_last {
+            // Promoted node, carried over unchanged without sibling
+        } else {
+            let sibling = match proof_iter.next() {
+                Some(s) => s,
+                None => return false,
+            };
+            current_hash = match algo {
+                HashAlgorithm::Sha256 => {
+                    let mut hasher = Sha256::new();
+                    hasher.update(&[0x01]); // internal node prefix
+                    if current_idx % 2 == 0 {
+                        hasher.update(current_hash);
+                        hasher.update(sibling);
+                    } else {
+                        hasher.update(sibling);
+                        hasher.update(current_hash);
+                    }
+                    let mut parent = [0u8; 32];
+                    parent.copy_from_slice(&hasher.finalize());
+                    parent
+                }
+                HashAlgorithm::Blake3 => {
+                    let mut hasher = blake3::Hasher::new();
+                    hasher.update(&[0x01]); // internal node prefix
+                    if current_idx % 2 == 0 {
+                        hasher.update(&current_hash);
+                        hasher.update(sibling);
+                    } else {
+                        hasher.update(sibling);
+                        hasher.update(&current_hash);
+                    }
+                    *hasher.finalize().as_bytes()
+                }
+            };
         }
-
-        current_hash = match algo {
-            HashAlgorithm::Sha256 => {
-                let mut hasher = Sha256::new();
-                if current_idx.is_multiple_of(2) {
-                    hasher.update(current_hash);
-                    hasher.update(sibling);
-                } else {
-                    hasher.update(sibling);
-                    hasher.update(current_hash);
-                }
-                let mut parent = [0u8; 32];
-                parent.copy_from_slice(&hasher.finalize());
-                parent
-            }
-            HashAlgorithm::Blake3 => {
-                let mut hasher = blake3::Hasher::new();
-                if current_idx.is_multiple_of(2) {
-                    hasher.update(&current_hash);
-                    hasher.update(sibling);
-                } else {
-                    hasher.update(sibling);
-                    hasher.update(&current_hash);
-                }
-                *hasher.finalize().as_bytes()
-            }
-        };
 
         current_idx /= 2;
         current_total = current_total.div_ceil(2);
     }
 
-    if current_total != 1 {
-        return false;
-    }
+    let final_computed_root = bind_root_with_length(&current_hash, total_leaves, algo);
 
     // Constant-time comparison
-    current_hash.ct_eq(expected_root).into()
+    final_computed_root.ct_eq(expected_root).into()
 }
 
 /// An incremental (streaming) Merkle Tree accumulator that computes the root hash
@@ -347,9 +405,7 @@ impl StreamingMerkle {
 
     /// Finalizes the Merkle tree accumulator and returns the final Merkle root hash.
     ///
-    /// This folds the remaining active branches bottom-up, duplicating the rightmost node
-    /// at any level where the number of elements is odd and greater than 1 (to replicate
-    /// the static Merkle tree logic).
+    /// This folds the remaining active branches bottom-up with node promotion.
     pub fn finalize(self) -> [u8; 32] {
         if self.total_leaves == 0 {
             return [0u8; 32];
@@ -360,28 +416,18 @@ impl StreamingMerkle {
 
         for level in 0..self.active_branches.len() {
             let active = self.active_branches[level];
-            let is_odd = total_leaves_at_level % 2 != 0;
 
             match (active, current) {
                 (Some(act_val), Some(cur_val)) => {
-                    // Both exist. Merge them bottom-up.
                     current = Some(self.hash_nodes(&act_val, &cur_val));
                 }
                 (Some(act_val), None) => {
-                    if is_odd && total_leaves_at_level > 1 {
-                        // Duplicate rightmost leaf/subtree root
-                        current = Some(self.hash_nodes(&act_val, &act_val));
-                    } else {
-                        current = Some(act_val);
-                    }
+                    // Carry-over (promote)
+                    current = Some(act_val);
                 }
                 (None, Some(cur_val)) => {
-                    if is_odd && total_leaves_at_level > 1 {
-                        // Duplicate carry-over
-                        current = Some(self.hash_nodes(&cur_val, &cur_val));
-                    } else {
-                        current = Some(cur_val);
-                    }
+                    // Carry-over (promote)
+                    current = Some(cur_val);
                 }
                 (None, None) => {}
             }
@@ -389,13 +435,15 @@ impl StreamingMerkle {
             total_leaves_at_level = total_leaves_at_level.div_ceil(2);
         }
 
-        current.unwrap_or([0u8; 32])
+        let tree_root = current.unwrap_or([0u8; 32]);
+        bind_root_with_length(&tree_root, self.total_leaves, self.algo)
     }
 
     fn hash_nodes(&self, left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
         match self.algo {
             HashAlgorithm::Sha256 => {
                 let mut hasher = Sha256::new();
+                hasher.update(&[0x01]); // internal node prefix
                 hasher.update(left);
                 hasher.update(right);
                 let mut parent = [0u8; 32];
@@ -404,6 +452,7 @@ impl StreamingMerkle {
             }
             HashAlgorithm::Blake3 => {
                 let mut hasher = blake3::Hasher::new();
+                hasher.update(&[0x01]); // internal node prefix
                 hasher.update(left);
                 hasher.update(right);
                 *hasher.finalize().as_bytes()

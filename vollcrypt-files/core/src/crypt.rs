@@ -16,23 +16,22 @@ pub fn encrypt_chunk(
     file_id: &[u8; 16],
     chunk_index: u32,
     plaintext: &[u8],
+    header_hash: Option<&[u8; 32]>,
 ) -> Result<ChunkEnvelope, FileFormatError> {
-    // GCM'de tehlikeli olan aynı (key, nonce) çiftinin tekrar kullanılmasıdır.
-    // Her chunk'ın subkey'i zaten chunk_index'e bağlı türetildiği için her chunk'ın
-    // ANAHTARI benzersizdir. Nonce tekrarı yalnızca aynı anahtar altında tehlikelidir;
-    // anahtar her chunk'ta farklı olduğundan (subkey, IV) çifti benzersiz kalır.
-    // Dolayısıyla deterministik IV nonce reuse yaratmaz. Bu, age / AWS Encryption SDK /
-    // STREAM construction'da kullanılan standart desendir.
-    // İNVARIANT: Aynı DEK aynı file_id ile farklı içerik için ASLA tekrar kullanılmamalı.
-    // generate_dek() ve generate_file_id() her dosyada taze random ürettiği için bu sağlanır.
     let (subkey_raw, iv) = derive_chunk_keys(dek, file_id, chunk_index);
     let subkey = Zeroizing::new(subkey_raw);
 
-    let mut aad = [0u8; 20];
+    let mut aad = [0u8; 52];
     aad[0..16].copy_from_slice(file_id);
     aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
+    let aad_slice = if let Some(hash) = header_hash {
+        aad[20..52].copy_from_slice(hash);
+        &aad[0..52]
+    } else {
+        &aad[0..20]
+    };
 
-    let (ciphertext, tag) = aes256_gcm_encrypt(&subkey, &iv, &aad, plaintext)?;
+    let (ciphertext, tag) = aes256_gcm_encrypt(&subkey, &iv, aad_slice, plaintext)?;
 
     Ok(ChunkEnvelope {
         chunk_index,
@@ -53,6 +52,7 @@ pub fn decrypt_chunk(
     file_id: &[u8; 16],
     chunk_index: u32,
     envelope: &ChunkEnvelope,
+    header_hash: Option<&[u8; 32]>,
 ) -> Result<Vec<u8>, FileFormatError> {
     if envelope.chunk_index != chunk_index {
         return Err(FileFormatError::ChunkIndexOutOfOrder {
@@ -65,15 +65,21 @@ pub fn decrypt_chunk(
     // Zeroizing guarantees zeroization on scope exit.
     let subkey = Zeroizing::new(derive_chunk_keys(dek, file_id, chunk_index).0);
 
-    let mut aad = [0u8; 20];
+    let mut aad = [0u8; 52];
     aad[0..16].copy_from_slice(file_id);
     aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
+    let aad_slice = if let Some(hash) = header_hash {
+        aad[20..52].copy_from_slice(hash);
+        &aad[0..52]
+    } else {
+        &aad[0..20]
+    };
 
     // We decrypt using the IV stored in the envelope, not assuming it matches the deterministic IV
     let plaintext = aes256_gcm_decrypt(
         &subkey,
         &envelope.iv,
-        &aad,
+        aad_slice,
         &envelope.ciphertext,
         &envelope.tag,
     )?;
@@ -87,15 +93,23 @@ pub async fn encrypt_chunk_async(
     file_id: &[u8; 16],
     chunk_index: u32,
     plaintext: Vec<u8>,
+    header_hash: Option<&[u8; 32]>,
 ) -> Result<ChunkEnvelope, FileFormatError> {
     let (subkey_raw, iv) = derive_chunk_keys(dek, file_id, chunk_index);
     let subkey = zeroize::Zeroizing::new(subkey_raw);
 
-    let mut aad = [0u8; 20];
+    let mut aad = [0u8; 52];
     aad[0..16].copy_from_slice(file_id);
     aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
+    let aad_slice = if let Some(hash) = header_hash {
+        aad[20..52].copy_from_slice(hash);
+        &aad[0..52]
+    } else {
+        &aad[0..20]
+    };
 
-    let (ciphertext, tag) = crate::aead::aes256_gcm_encrypt_async(&subkey, &iv, &aad, plaintext).await?;
+    let (ciphertext, tag) =
+        crate::aead::aes256_gcm_encrypt_async(&subkey, &iv, aad_slice, plaintext).await?;
 
     Ok(ChunkEnvelope {
         chunk_index,
@@ -111,6 +125,7 @@ pub async fn decrypt_chunk_async(
     file_id: &[u8; 16],
     chunk_index: u32,
     envelope: ChunkEnvelope,
+    header_hash: Option<&[u8; 32]>,
 ) -> Result<Vec<u8>, FileFormatError> {
     if envelope.chunk_index != chunk_index {
         return Err(FileFormatError::ChunkIndexOutOfOrder {
@@ -121,17 +136,24 @@ pub async fn decrypt_chunk_async(
 
     let subkey = zeroize::Zeroizing::new(derive_chunk_keys(dek, file_id, chunk_index).0);
 
-    let mut aad = [0u8; 20];
+    let mut aad = [0u8; 52];
     aad[0..16].copy_from_slice(file_id);
     aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
+    let aad_slice = if let Some(hash) = header_hash {
+        aad[20..52].copy_from_slice(hash);
+        &aad[0..52]
+    } else {
+        &aad[0..20]
+    };
 
     let plaintext = crate::aead::aes256_gcm_decrypt_async(
         &subkey,
         &envelope.iv,
-        &aad,
+        aad_slice,
         envelope.ciphertext,
         envelope.tag,
-    ).await?;
+    )
+    .await?;
 
     Ok(plaintext)
 }
@@ -143,13 +165,20 @@ pub fn encrypt_chunk_in_place(
     chunk_index: u32,
     buffer: &mut crate::buffer_pool::PooledBuffer,
     plaintext_len: usize,
+    header_hash: Option<&[u8; 32]>,
 ) -> Result<(), FileFormatError> {
     let (subkey_raw, iv) = derive_chunk_keys(dek, file_id, chunk_index);
     let subkey = Zeroizing::new(subkey_raw);
 
-    let mut aad = [0u8; 20];
+    let mut aad = [0u8; 52];
     aad[0..16].copy_from_slice(file_id);
     aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
+    let aad_slice = if let Some(hash) = header_hash {
+        aad[20..52].copy_from_slice(hash);
+        &aad[0..52]
+    } else {
+        &aad[0..20]
+    };
 
     buffer.set_index(chunk_index);
     buffer.set_iv(&iv);
@@ -157,7 +186,7 @@ pub fn encrypt_chunk_in_place(
     let tag = crate::aead::aes256_gcm_encrypt_in_place(
         &subkey,
         &iv,
-        &aad,
+        aad_slice,
         buffer.as_plaintext_mut(plaintext_len),
     )?;
 
@@ -173,6 +202,7 @@ pub fn decrypt_chunk_in_place(
     chunk_index: u32,
     buffer: &mut crate::buffer_pool::PooledBuffer,
     ciphertext_len: usize,
+    header_hash: Option<&[u8; 32]>,
 ) -> Result<(), FileFormatError> {
     let got_index = buffer.get_index();
     if got_index != chunk_index {
@@ -184,9 +214,15 @@ pub fn decrypt_chunk_in_place(
 
     let subkey = Zeroizing::new(derive_chunk_keys(dek, file_id, chunk_index).0);
 
-    let mut aad = [0u8; 20];
+    let mut aad = [0u8; 52];
     aad[0..16].copy_from_slice(file_id);
     aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
+    let aad_slice = if let Some(hash) = header_hash {
+        aad[20..52].copy_from_slice(hash);
+        &aad[0..52]
+    } else {
+        &aad[0..20]
+    };
 
     let iv = *buffer.get_iv();
     let tag = *buffer.as_tag_slice(ciphertext_len);
@@ -194,7 +230,7 @@ pub fn decrypt_chunk_in_place(
     crate::aead::aes256_gcm_decrypt_in_place(
         &subkey,
         &iv,
-        &aad,
+        aad_slice,
         buffer.as_ciphertext_mut(ciphertext_len),
         &tag,
     )?;
@@ -209,13 +245,20 @@ pub async fn encrypt_chunk_in_place_async(
     chunk_index: u32,
     buffer: crate::buffer_pool::PooledBuffer,
     plaintext_len: usize,
+    header_hash: Option<&[u8; 32]>,
 ) -> Result<(crate::buffer_pool::PooledBuffer, [u8; 16]), FileFormatError> {
     let (subkey_raw, iv) = derive_chunk_keys(dek, file_id, chunk_index);
     let subkey = Zeroizing::new(subkey_raw);
 
-    let mut aad = [0u8; 20];
+    let mut aad = [0u8; 52];
     aad[0..16].copy_from_slice(file_id);
     aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
+    let aad_slice = if let Some(hash) = header_hash {
+        aad[20..52].copy_from_slice(hash);
+        &aad[0..52]
+    } else {
+        &aad[0..20]
+    };
 
     let mut buffer = buffer;
     buffer.set_index(chunk_index);
@@ -224,10 +267,11 @@ pub async fn encrypt_chunk_in_place_async(
     let (mut buffer, tag) = crate::aead::aes256_gcm_encrypt_in_place_async(
         &subkey,
         &iv,
-        &aad,
+        aad_slice,
         buffer,
         plaintext_len,
-    ).await?;
+    )
+    .await?;
 
     *buffer.as_tag_mut(plaintext_len) = tag;
 
@@ -242,6 +286,7 @@ pub async fn decrypt_chunk_in_place_async(
     buffer: crate::buffer_pool::PooledBuffer,
     ciphertext_len: usize,
     tag: [u8; 16],
+    header_hash: Option<&[u8; 32]>,
 ) -> Result<crate::buffer_pool::PooledBuffer, FileFormatError> {
     let got_index = buffer.get_index();
     if got_index != chunk_index {
@@ -253,21 +298,27 @@ pub async fn decrypt_chunk_in_place_async(
 
     let subkey = Zeroizing::new(derive_chunk_keys(dek, file_id, chunk_index).0);
 
-    let mut aad = [0u8; 20];
+    let mut aad = [0u8; 52];
     aad[0..16].copy_from_slice(file_id);
     aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
+    let aad_slice = if let Some(hash) = header_hash {
+        aad[20..52].copy_from_slice(hash);
+        &aad[0..52]
+    } else {
+        &aad[0..20]
+    };
 
     let iv = *buffer.get_iv();
 
     let buffer = crate::aead::aes256_gcm_decrypt_in_place_async(
         &subkey,
         &iv,
-        &aad,
+        aad_slice,
         buffer,
         ciphertext_len,
         tag,
-    ).await?;
+    )
+    .await?;
 
     Ok(buffer)
 }
-

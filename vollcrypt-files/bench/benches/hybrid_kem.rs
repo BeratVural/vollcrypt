@@ -104,9 +104,5 @@ fn bench_pure_vs_hybrid(c: &mut Criterion) {
     g.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_hybrid_kem_breakdown,
-    bench_pure_vs_hybrid
-);
+criterion_group!(benches, bench_hybrid_kem_breakdown, bench_pure_vs_hybrid);
 criterion_main!(benches);

@@ -1,13 +1,13 @@
 use vollcrypt_files_core::{
-    chunk_leaf_hash, crypto_shred_header, decrypt_chunk, ed25519_keypair_generate, encrypt_chunk,
+    chunk_leaf_hash, crypto_shred_header, decrypt_chunk, hybrid_keypair_generate, encrypt_chunk,
     generate_dek, generate_file_id, generate_gk, generate_recipient_keypair, wrap_dek_for_group,
-    wrap_key_to_recipient, CipherId, FileFormatError, GroupManifest, Header, MerkleTree, Mode,
-    HashAlgorithm, VERSION,
+    wrap_key_to_recipient, CipherId, FileFormatError, GroupManifest, HashAlgorithm, Header,
+    MerkleTree, Mode, VERSION,
 };
 
 #[test]
 fn shred_group_key_marks_version() {
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let (rec_pk, _rec_sk) = generate_recipient_keypair();
     let group_id = generate_file_id();
     let founder_id = generate_file_id();
@@ -26,14 +26,14 @@ fn shred_group_key_marks_version() {
     );
 
     manifest
-        .rotate_group_key(&gk2, &admin_pk, &admin_sk, 100)
+        .rotate_group_key(&gk2, &admin_sk, 100)
         .unwrap();
 
     assert!(!manifest.is_version_shredded(1));
     assert!(!manifest.is_version_shredded(2));
 
     manifest
-        .shred_group_key(1, "GDPR Article 17 request", &admin_pk, &admin_sk, 150)
+        .shred_group_key(1, "GDPR Article 17 request", &admin_sk, 150)
         .unwrap();
 
     assert!(manifest.is_version_shredded(1));
@@ -42,7 +42,7 @@ fn shred_group_key_marks_version() {
 
 #[test]
 fn shredded_version_unwrap_returns_error() {
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let (rec_pk, _rec_sk) = generate_recipient_keypair();
     let group_id = generate_file_id();
     let founder_id = generate_file_id();
@@ -61,7 +61,7 @@ fn shredded_version_unwrap_returns_error() {
 
     // Shred version 1
     manifest
-        .shred_group_key(1, "Revoked", &admin_pk, &admin_sk, 200)
+        .shred_group_key(1, "Revoked", &admin_sk, 200)
         .unwrap();
 
     // Querying the wrap for version 1 should fail with GroupKeyShredded error
@@ -71,7 +71,7 @@ fn shredded_version_unwrap_returns_error() {
 
 #[test]
 fn already_shredded_fails() {
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let (rec_pk, _rec_sk) = generate_recipient_keypair();
     let group_id = generate_file_id();
     let founder_id = generate_file_id();
@@ -89,10 +89,10 @@ fn already_shredded_fails() {
     );
 
     manifest
-        .shred_group_key(1, "Revoked", &admin_pk, &admin_sk, 200)
+        .shred_group_key(1, "Revoked", &admin_sk, 200)
         .unwrap();
 
-    let res = manifest.shred_group_key(1, "Duplicate", &admin_pk, &admin_sk, 300);
+    let res = manifest.shred_group_key(1, "Duplicate", &admin_sk, 300);
     assert!(matches!(res, Err(FileFormatError::AlreadyShredded)));
 }
 
@@ -132,7 +132,7 @@ fn decrypt_fails_after_file_shred() {
     let file_id = generate_file_id();
     let plaintext = vec![0x33; 1000];
 
-    let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext).unwrap();
+    let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext, None).unwrap();
     let leaf = chunk_leaf_hash(&envelope);
     let merkle_root = MerkleTree::from_leaves(vec![leaf]).root();
 
@@ -161,6 +161,6 @@ fn decrypt_fails_after_file_shred() {
     let has_key = !header.wraps.is_empty();
     assert!(!has_key);
 
-    let res = decrypt_chunk(&dek, &header.file_id, 0, &envelope).unwrap();
+    let res = decrypt_chunk(&dek, &header.file_id, 0, &envelope, None).unwrap();
     assert_eq!(plaintext, res); // Symmetric decrypt itself works with dek, but dek wrapping has been shredded.
 }

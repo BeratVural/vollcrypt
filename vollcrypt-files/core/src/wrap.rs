@@ -94,6 +94,13 @@ impl WrapEntry {
                 p_cost_bytes.copy_from_slice(&payload[8..12]);
                 let p_cost = u32::from_be_bytes(p_cost_bytes);
 
+                if m_cost > 65536 || t_cost > 5 || p_cost > 8 {
+                    return Err(FileFormatError::KdfParameterOutOfRange(format!(
+                        "Argon2 parameters exceed safety limits: m_cost={}, t_cost={}, p_cost={}",
+                        m_cost, t_cost, p_cost
+                    )));
+                }
+
                 let mut salt = [0u8; 16];
                 salt.copy_from_slice(&payload[12..28]);
 
@@ -109,9 +116,12 @@ impl WrapEntry {
                 }
             }
             2 => {
+                return Err(FileFormatError::UnsupportedSuite(2));
+            }
+            4 => {
                 if payload_len != 1180 {
                     return Err(FileFormatError::WrapPayloadLengthMismatch {
-                        wrap_type: 2,
+                        wrap_type: 4,
                         expected: 1180,
                         got: payload_len as u16,
                     });
@@ -173,7 +183,7 @@ impl WrapEntry {
         let wrap_type = match self {
             WrapEntry::PasswordPbkdf2 { .. } => 0u8,
             WrapEntry::PasswordArgon2id { .. } => 1u8,
-            WrapEntry::HybridKem { .. } => 2u8,
+            WrapEntry::HybridKem { .. } => 4u8,
             WrapEntry::GroupWrap { .. } => 3u8,
         };
 

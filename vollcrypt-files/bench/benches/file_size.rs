@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rayon::prelude::*;
-use vollcrypt_files_core::*;
 use vollcrypt_files_bench::get_current_rss_mb;
+use vollcrypt_files_core::*;
 
 fn bench_file_size_scaling(c: &mut Criterion) {
     let dek = [0u8; 32];
@@ -20,7 +20,9 @@ fn bench_file_size_scaling(c: &mut Criterion) {
                 let mut leaf_hashes = Vec::with_capacity(num_chunks);
                 let start_rss = get_current_rss_mb();
                 for idx in 0..num_chunks {
-                    let env = encrypt_chunk(&dek, &file_id, idx as u32, black_box(&plain_chunk)).unwrap();
+                    let env =
+                        encrypt_chunk(&dek, &file_id, idx as u32, black_box(&plain_chunk), None)
+                            .unwrap();
                     leaf_hashes.push(chunk_leaf_hash(&env));
                 }
                 let tree = MerkleTree::from_leaves(leaf_hashes);
@@ -44,7 +46,14 @@ fn bench_file_size_scaling(c: &mut Criterion) {
                     let leaf_hashes: Vec<[u8; 32]> = (0..num_chunks)
                         .into_par_iter()
                         .map(|idx| {
-                            let env = encrypt_chunk(&dek, &file_id, idx as u32, black_box(&plain_chunk)).unwrap();
+                            let env = encrypt_chunk(
+                                &dek,
+                                &file_id,
+                                idx as u32,
+                                black_box(&plain_chunk),
+                                None,
+                            )
+                            .unwrap();
                             chunk_leaf_hash(&env)
                         })
                         .collect();
@@ -63,12 +72,7 @@ fn bench_chunk_size_sensitivity(c: &mut Criterion) {
     let file_id = [0u8; 16];
     let file_size = 32 * 1024 * 1024; // 32 MB file for speed
 
-    let chunk_sizes = [
-        64 * 1024,
-        256 * 1024,
-        1024 * 1024,
-        4 * 1024 * 1024,
-    ];
+    let chunk_sizes = [64 * 1024, 256 * 1024, 1024 * 1024, 4 * 1024 * 1024];
 
     let mut g = c.benchmark_group("chunk_size_sensitivity");
     g.throughput(Throughput::Bytes(file_size as u64));
@@ -80,7 +84,9 @@ fn bench_chunk_size_sensitivity(c: &mut Criterion) {
             b.iter(|| {
                 let mut leaf_hashes = Vec::with_capacity(num_chunks);
                 for idx in 0..num_chunks {
-                    let env = encrypt_chunk(&dek, &file_id, idx as u32, black_box(&plain_chunk)).unwrap();
+                    let env =
+                        encrypt_chunk(&dek, &file_id, idx as u32, black_box(&plain_chunk), None)
+                            .unwrap();
                     leaf_hashes.push(chunk_leaf_hash(&env));
                 }
                 let tree = MerkleTree::from_leaves(leaf_hashes);

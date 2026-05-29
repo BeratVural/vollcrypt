@@ -61,6 +61,15 @@ pub fn derive_kek_argon2id(
 ) -> Result<[u8; 32], crate::error::FileFormatError> {
     use argon2::{Algorithm, Argon2, Params, Version};
 
+    if m_cost > 65536 || t_cost > 5 || p_cost > 8 {
+        return Err(crate::error::FileFormatError::KdfParameterOutOfRange(
+            format!(
+                "Argon2 parameters exceed safety limits: m_cost={}, t_cost={}, p_cost={}",
+                m_cost, t_cost, p_cost
+            ),
+        ));
+    }
+
     let params = Params::new(m_cost, t_cost, p_cost, Some(32))
         .map_err(|e| crate::error::FileFormatError::KdfParameterOutOfRange(e.to_string()))?;
 

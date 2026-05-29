@@ -9,6 +9,35 @@ use vollcrypt_files_core::{
     unwrap_key_with_recipient_key as core_unwrap_key_with_recipient_key,
     wrap_key_to_recipient as core_wrap_key_to_recipient, RecipientPublicKey, RecipientSecretKey,
 };
+use vollcrypt_files_core::hybrid_sig::{HybridPublicKey, HybridSecretKey, HybridSignature};
+
+fn to_hybrid_pubkey(slice: &[u8], name: &str) -> Result<HybridPublicKey> {
+    if slice.len() == 32 {
+        let mut ed25519 = [0u8; 32];
+        ed25519.copy_from_slice(slice);
+        Ok(HybridPublicKey {
+            ed25519,
+            mldsa: [0u8; 1952],
+        })
+    } else {
+        HybridPublicKey::parse(slice)
+            .map_err(|e| Error::from_reason(format!("Invalid public key {}: {}", name, e)))
+    }
+}
+
+fn to_hybrid_secret_key(slice: &[u8], name: &str) -> Result<HybridSecretKey> {
+    if slice.len() == 32 {
+        let mut ed25519 = [0u8; 32];
+        ed25519.copy_from_slice(slice);
+        Ok(HybridSecretKey {
+            ed25519,
+            mldsa: [0u8; 4032],
+        })
+    } else {
+        HybridSecretKey::parse(slice)
+            .map_err(|e| Error::from_reason(format!("Invalid secret key {}: {}", name, e)))
+    }
+}
 
 // Helper utilities to parse slices into fixed-size arrays without panicking
 fn to_arr32(slice: &[u8], name: &str) -> Result<[u8; 32]> {
@@ -105,7 +134,13 @@ pub fn encrypt_chunk(
     let dek_arr = to_arr32(dek.as_ref(), "dek")?;
     let file_id_arr = to_arr16(file_id.as_ref(), "file_id")?;
 
-    match core_encrypt_chunk(&dek_arr, &file_id_arr, chunk_index, plaintext.as_ref()) {
+    match core_encrypt_chunk(
+        &dek_arr,
+        &file_id_arr,
+        chunk_index,
+        plaintext.as_ref(),
+        None,
+    ) {
         Ok(envelope) => Ok(ChunkEnvelope {
             chunk_index: envelope.chunk_index,
             iv: Buffer::from(envelope.iv.to_vec()),
@@ -139,7 +174,7 @@ pub fn decrypt_chunk(
         tag: tag_arr,
     };
 
-    match core_decrypt_chunk(&dek_arr, &file_id_arr, chunk_index, &core_envelope) {
+    match core_decrypt_chunk(&dek_arr, &file_id_arr, chunk_index, &core_envelope, None) {
         Ok(plaintext) => Ok(Buffer::from(plaintext)),
         Err(e) => Err(Error::from_reason(e.to_string())),
     }
@@ -659,6 +694,51 @@ pub fn ed25519_verify(pk: Uint8Array, message: Uint8Array, signature: Uint8Array
     Ok(vollcrypt_files_core::ed25519_verify(&pk_arr, message.as_ref(), &sig_arr).is_ok())
 }
 
+// ==================== Hybrid Signatures ====================
+
+#[napi(object)]
+pub struct HybridKeypairObj {
+    pub public_key: Buffer,
+    pub secret_key: Buffer,
+}
+
+#[napi]
+pub fn hybrid_keypair_generate() -> HybridKeypairObj {
+    let (pk, sk) = vollcrypt_files_core::hybrid_keypair_generate();
+    HybridKeypairObj {
+        public_key: Buffer::from(pk.write()),
+        secret_key: Buffer::from(sk.write()),
+    }
+}
+
+#[napi]
+pub fn hybrid_sign(
+    sk: Uint8Array,
+    pk: Uint8Array,
+    domain: String,
+    context: Uint8Array,
+    payload: Uint8Array,
+) -> Result<Buffer> {
+    let sk_val = to_hybrid_secret_key(sk.as_ref(), "sk")?;
+    let pk_val = to_hybrid_pubkey(pk.as_ref(), "pk")?;
+    let sig = vollcrypt_files_core::hybrid_sign(&sk_val, &pk_val, &domain, context.as_ref(), payload.as_ref());
+    Ok(Buffer::from(sig.write()))
+}
+
+#[napi]
+pub fn hybrid_verify(
+    pk: Uint8Array,
+    domain: String,
+    context: Uint8Array,
+    payload: Uint8Array,
+    signature: Uint8Array,
+) -> Result<bool> {
+    let pk_val = to_hybrid_pubkey(pk.as_ref(), "pk")?;
+    let sig_val = HybridSignature::parse(signature.as_ref())
+        .map_err(|e| Error::from_reason(format!("Invalid signature: {}", e)))?;
+    Ok(vollcrypt_files_core::hybrid_verify(&pk_val, &domain, context.as_ref(), payload.as_ref(), &sig_val))
+}
+
 // ==================== GroupManifest Class ====================
 
 #[napi(object)]
@@ -703,8 +783,8 @@ impl GroupManifest {
             ml_kem: Box::new(r_mlkem),
         };
 
-        let f_ed_pk = to_arr32(founder_ed25519_pk.as_ref(), "founder_ed25519_pk")?;
-        let f_ed_sk = to_arr32(founder_ed25519_sk.as_ref(), "founder_ed25519_sk")?;
+        let f_signing_pk = to_hybrid_pubkey(founder_ed25519_pk.as_ref(), "founder_ed25519_pk")?;
+        let f_signing_sk = to_hybrid_secret_key(founder_ed25519_sk.as_ref(), "founder_ed25519_sk")?;
 
         // In manifest genesis, the initial group key is wrapped to the founder's key.
         let gk_wrap = core_wrap_key_to_recipient(&initial_gk_arr, founder_id_arr, 1, &rec_pk)
@@ -713,8 +793,8 @@ impl GroupManifest {
         let inner = vollcrypt_files_core::GroupManifest::genesis(
             group_id_arr,
             founder_id_arr,
-            &f_ed_sk,
-            f_ed_pk,
+            &f_signing_sk,
+            f_signing_pk,
             rec_pk,
             gk_wrap,
         );
@@ -748,13 +828,12 @@ impl GroupManifest {
         new_member_id: Uint8Array,
         new_member_pk: MemberPublicKeyObj,
         current_gk: Uint8Array,
-        admin_pk: Uint8Array,
+        _admin_pk: Uint8Array,
         admin_sk: Uint8Array,
         _timestamp: u32,
     ) -> Result<()> {
         let member_id_arr = to_arr16(new_member_id.as_ref(), "new_member_id")?;
-        let admin_sk_arr = to_arr32(admin_sk.as_ref(), "admin_sk")?;
-        let _admin_pk_arr = to_arr32(admin_pk.as_ref(), "admin_pk")?;
+        let admin_sk_arr = to_hybrid_secret_key(admin_sk.as_ref(), "admin_sk")?;
         let current_gk_arr = to_arr32(current_gk.as_ref(), "current_gk")?;
 
         let rx = to_arr32(
@@ -772,7 +851,7 @@ impl GroupManifest {
             ml_kem: Box::new(rm),
         };
 
-        let signing_pk = to_arr32(
+        let signing_pk = to_hybrid_pubkey(
             new_member_pk.signing_pk.as_ref(),
             "new_member_pk.signing_pk",
         )?;
@@ -797,7 +876,7 @@ impl GroupManifest {
         _timestamp: u32,
     ) -> Result<()> {
         let member_id_arr = to_arr16(removed_member_id.as_ref(), "removed_member_id")?;
-        let admin_sk_arr = to_arr32(admin_sk.as_ref(), "admin_sk")?;
+        let admin_sk_arr = to_hybrid_secret_key(admin_sk.as_ref(), "admin_sk")?;
 
         self.inner
             .remove_member(&admin_sk_arr, member_id_arr)
@@ -808,16 +887,15 @@ impl GroupManifest {
     pub fn rotate_group_key(
         &mut self,
         new_gk: Uint8Array,
-        admin_pk: Uint8Array,
+        _admin_pk: Uint8Array,
         admin_sk: Uint8Array,
         timestamp: u32,
     ) -> Result<u32> {
         let new_gk_arr = to_arr32(new_gk.as_ref(), "new_gk")?;
-        let admin_pk_arr = to_arr32(admin_pk.as_ref(), "admin_pk")?;
-        let admin_sk_arr = to_arr32(admin_sk.as_ref(), "admin_sk")?;
+        let admin_sk_arr = to_hybrid_secret_key(admin_sk.as_ref(), "admin_sk")?;
 
         self.inner
-            .rotate_group_key(&new_gk_arr, &admin_pk_arr, &admin_sk_arr, timestamp as u64)
+            .rotate_group_key(&new_gk_arr, &admin_sk_arr, timestamp as u64)
             .map_err(|e| Error::from_reason(e.to_string()))
     }
 
@@ -826,18 +904,16 @@ impl GroupManifest {
         &mut self,
         version_to_shred: u32,
         reason: String,
-        admin_pk: Uint8Array,
+        _admin_pk: Uint8Array,
         admin_sk: Uint8Array,
         timestamp: u32,
     ) -> Result<()> {
-        let admin_pk_arr = to_arr32(admin_pk.as_ref(), "admin_pk")?;
-        let admin_sk_arr = to_arr32(admin_sk.as_ref(), "admin_sk")?;
+        let admin_sk_arr = to_hybrid_secret_key(admin_sk.as_ref(), "admin_sk")?;
 
         self.inner
             .shred_group_key(
                 version_to_shred,
                 &reason,
-                &admin_pk_arr,
                 &admin_sk_arr,
                 timestamp as u64,
             )
@@ -927,7 +1003,13 @@ fn signed_metadata_to_napi(meta: vollcrypt_files_core::SignedMetadata) -> Signed
             key_log_id,
         } => SignedMetadata {
             kind: "Plain".to_string(),
-            signer_pubkey: Some(Buffer::from(signer_pubkey.to_vec())),
+            signer_pubkey: Some(Buffer::from(
+                if signer_pubkey.mldsa == [0u8; 1952] {
+                    signer_pubkey.ed25519.to_vec()
+                } else {
+                    signer_pubkey.write()
+                }
+            )),
             timestamp: timestamp as u32,
             key_log_id: Some(Buffer::from(key_log_id.to_vec())),
             sealed_group_id: None,
@@ -963,7 +1045,7 @@ fn napi_to_signed_metadata(meta: SignedMetadata) -> Result<vollcrypt_files_core:
             let pk_buf = meta
                 .signer_pubkey
                 .ok_or_else(|| Error::from_reason("Missing signer_pubkey"))?;
-            let signer_pubkey = to_arr32(pk_buf.as_ref(), "signer_pubkey")?;
+            let signer_pubkey = to_hybrid_pubkey(pk_buf.as_ref(), "signer_pubkey")?;
 
             let kl_buf = meta
                 .key_log_id
@@ -1031,7 +1113,13 @@ fn header_to_napi(header: vollcrypt_files_core::Header) -> HeaderObj {
         hash_algorithm: header.hash_algorithm as u8,
         wraps: header.wraps.into_iter().map(wrap_entry_to_napi).collect(),
         signed_metadata: header.signed_metadata.map(signed_metadata_to_napi),
-        signature: header.signature.map(|s| Buffer::from(s.to_vec())),
+        signature: header.signature.map(|s| {
+            if header.version == 3 {
+                Buffer::from(s.write())
+            } else {
+                Buffer::from(s.ed25519.to_vec())
+            }
+        }),
     }
 }
 
@@ -1052,12 +1140,19 @@ fn napi_to_header(obj: HeaderObj) -> Result<vollcrypt_files_core::Header> {
 
     let signature = match obj.signature {
         Some(s) => {
-            if s.len() != 64 {
-                return Err(Error::from_reason("signature must be 64 bytes"));
+            if s.len() == 64 {
+                let mut ed_sig = [0u8; 64];
+                ed_sig.copy_from_slice(s.as_ref());
+                Some(HybridSignature {
+                    ed25519: ed_sig,
+                    mldsa: Vec::new(),
+                })
+            } else {
+                match HybridSignature::parse(s.as_ref()) {
+                    Ok(sig) => Some(sig),
+                    Err(e) => return Err(Error::from_reason(e.to_string())),
+                }
             }
-            let mut sig = [0u8; 64];
-            sig.copy_from_slice(s.as_ref());
-            Some(sig)
         }
         None => None,
     };
@@ -1071,7 +1166,12 @@ fn napi_to_header(obj: HeaderObj) -> Result<vollcrypt_files_core::Header> {
     let hash_algorithm = match obj.hash_algorithm {
         0 => vollcrypt_files_core::HashAlgorithm::Sha256,
         1 => vollcrypt_files_core::HashAlgorithm::Blake3,
-        other => return Err(Error::from_reason(format!("Invalid hash_algorithm value: {}", other))),
+        other => {
+            return Err(Error::from_reason(format!(
+                "Invalid hash_algorithm value: {}",
+                other
+            )))
+        }
     };
 
     Ok(vollcrypt_files_core::Header {
@@ -1173,8 +1273,8 @@ pub fn sign_header_plain(
     timestamp: u32,
 ) -> Result<HeaderObj> {
     let mut core_header = napi_to_header(header)?;
-    let signer_pk_arr = to_arr32(signer_pk.as_ref(), "signer_pk")?;
-    let signer_sk_arr = to_arr32(signer_sk.as_ref(), "signer_sk")?;
+    let signer_pk_arr = to_hybrid_pubkey(signer_pk.as_ref(), "signer_pk")?;
+    let signer_sk_arr = to_hybrid_secret_key(signer_sk.as_ref(), "signer_sk")?;
     let key_log_id_arr = to_arr32(key_log_id.as_ref(), "key_log_id")?;
 
     vollcrypt_files_core::sign_header_plain(
@@ -1202,8 +1302,8 @@ pub fn sign_header_sealed(
     sealed_gk: Uint8Array,
 ) -> Result<HeaderObj> {
     let mut core_header = napi_to_header(header)?;
-    let signer_pk_arr = to_arr32(signer_pk.as_ref(), "signer_pk")?;
-    let signer_sk_arr = to_arr32(signer_sk.as_ref(), "signer_sk")?;
+    let signer_pk_arr = to_hybrid_pubkey(signer_pk.as_ref(), "signer_pk")?;
+    let signer_sk_arr = to_hybrid_secret_key(signer_sk.as_ref(), "signer_sk")?;
     let key_log_id_arr = to_arr32(key_log_id.as_ref(), "key_log_id")?;
     let group_id_arr = to_arr16(sealed_group_id.as_ref(), "sealed_group_id")?;
     let sealed_gk_arr = to_arr32(sealed_gk.as_ref(), "sealed_gk")?;
@@ -1227,17 +1327,17 @@ pub fn sign_header_sealed(
 pub fn verify_header_signature_plain(header: HeaderObj) -> Result<Buffer> {
     let core_header = napi_to_header(header)?;
     match vollcrypt_files_core::verify_header_signature_plain(&core_header) {
-        Ok(pubkey) => Ok(Buffer::from(pubkey.to_vec())),
+        Ok(pubkey) => Ok(Buffer::from(pubkey.write())),
         Err(e) => Err(Error::from_reason(e.to_string())),
     }
 }
 
 #[napi]
-pub fn verify_header_signature_sealed(header: HeaderObj, sealed_gk: Uint8Array) -> Result<Buffer> {
+pub fn verify_header_signature_sealed(header: HeaderObj, sealed_gk: Uint8Array, key_log: &KeyLog) -> Result<Buffer> {
     let core_header = napi_to_header(header)?;
     let gk_arr = to_arr32(sealed_gk.as_ref(), "sealed_gk")?;
-    match vollcrypt_files_core::verify_header_signature_sealed(&core_header, &gk_arr) {
-        Ok(pubkey) => Ok(Buffer::from(pubkey.to_vec())),
+    match vollcrypt_files_core::verify_header_signature_sealed(&core_header, &gk_arr, &key_log.inner) {
+        Ok(pubkey) => Ok(Buffer::from(pubkey.write())),
         Err(e) => Err(Error::from_reason(e.to_string())),
     }
 }
@@ -1267,11 +1367,11 @@ fn entry_to_napi(entry: &vollcrypt_files_core::KeyLogEntry) -> KeyLogEntry {
             kind: "DeviceRegister".to_string(),
             user_id: Some(Buffer::from(user_id.to_vec())),
             device_id: Buffer::from(device_id.to_vec()),
-            device_pubkey: Some(Buffer::from(device_pubkey.to_vec())),
+            device_pubkey: Some(Buffer::from(device_pubkey.write())),
             human_label: Some(human_label.clone()),
             prev_hash: Buffer::from(entry.prev_hash.to_vec()),
             timestamp: entry.timestamp as u32,
-            signature: Buffer::from(entry.signature.to_vec()),
+            signature: Buffer::from(entry.signature.write()),
         },
         vollcrypt_files_core::KeyLogEntryType::DeviceRevoke { device_id } => KeyLogEntry {
             kind: "DeviceRevoke".to_string(),
@@ -1281,7 +1381,7 @@ fn entry_to_napi(entry: &vollcrypt_files_core::KeyLogEntry) -> KeyLogEntry {
             human_label: None,
             prev_hash: Buffer::from(entry.prev_hash.to_vec()),
             timestamp: entry.timestamp as u32,
-            signature: Buffer::from(entry.signature.to_vec()),
+            signature: Buffer::from(entry.signature.write()),
         },
     }
 }
@@ -1295,7 +1395,7 @@ pub struct KeyLog {
 impl KeyLog {
     #[napi]
     pub fn create(authority_pubkey: Uint8Array) -> Result<KeyLog> {
-        let auth_pk = to_arr32(authority_pubkey.as_ref(), "authority_pubkey")?;
+        let auth_pk = to_hybrid_pubkey(authority_pubkey.as_ref(), "authority_pubkey")?;
         Ok(KeyLog {
             inner: vollcrypt_files_core::KeyLog::new(auth_pk),
         })
@@ -1333,8 +1433,8 @@ impl KeyLog {
     ) -> Result<Buffer> {
         let u_id = to_arr16(user_id.as_ref(), "user_id")?;
         let d_id = to_arr16(device_id.as_ref(), "device_id")?;
-        let d_pk = to_arr32(device_pk.as_ref(), "device_pk")?;
-        let auth_sk = to_arr32(authority_sk.as_ref(), "authority_sk")?;
+        let d_pk = to_hybrid_pubkey(device_pk.as_ref(), "device_pk")?;
+        let auth_sk = to_hybrid_secret_key(authority_sk.as_ref(), "authority_sk")?;
 
         match self
             .inner
@@ -1353,7 +1453,7 @@ impl KeyLog {
         timestamp: u32,
     ) -> Result<()> {
         let d_id = to_arr16(device_id.as_ref(), "device_id")?;
-        let auth_sk = to_arr32(authority_sk.as_ref(), "authority_sk")?;
+        let auth_sk = to_hybrid_secret_key(authority_sk.as_ref(), "authority_sk")?;
 
         self.inner
             .revoke_device(d_id, &auth_sk, timestamp as u64)
@@ -1410,10 +1510,13 @@ pub fn resolve_sender(
         core_sealed_gk = Some(gk_arr);
     }
 
-    match vollcrypt_files_core::resolve_sender(&core_header, &key_log.inner, core_sealed_gk.as_ref())
-    {
+    match vollcrypt_files_core::resolve_sender(
+        &core_header,
+        &key_log.inner,
+        core_sealed_gk.as_ref(),
+    ) {
         Ok(info) => Ok(SenderInfo {
-            signer_pubkey: Buffer::from(info.signer_pubkey.to_vec()),
+            signer_pubkey: Buffer::from(info.signer_pubkey.write()),
             user_id: Buffer::from(info.user_id.to_vec()),
             device_id: Buffer::from(info.device_id.to_vec()),
             device_was_active: info.device_was_active,
@@ -1428,8 +1531,8 @@ pub fn resolve_sender(
 #[napi(object)]
 pub struct PipelinedSignInfoObj {
     pub kind: String, // "Plain" | "Sealed"
-    pub signer_ed25519_pk: Buffer,
-    pub signer_ed25519_sk: Buffer,
+    pub signer_pk: Buffer,
+    pub signer_sk: Buffer,
     pub key_log_id: Buffer,
     pub timestamp: u32,
     pub sealed_group_id: Option<Buffer>,
@@ -1440,22 +1543,22 @@ pub struct PipelinedSignInfoObj {
 fn napi_to_pipelined_sign_info(
     obj: PipelinedSignInfoObj,
 ) -> Result<vollcrypt_files_core::PipelinedSignInfo> {
-    let signer_pk_arr = to_arr32(obj.signer_ed25519_pk.as_ref(), "signer_ed25519_pk")?;
-    let signer_sk_arr = to_arr32(obj.signer_ed25519_sk.as_ref(), "signer_ed25519_sk")?;
+    let signer_pk = to_hybrid_pubkey(obj.signer_pk.as_ref(), "signer_pk")?;
+    let signer_sk = to_hybrid_secret_key(obj.signer_sk.as_ref(), "signer_sk")?;
     let key_log_id_arr = to_arr32(obj.key_log_id.as_ref(), "key_log_id")?;
     let timestamp = obj.timestamp as u64;
 
     match obj.kind.as_str() {
         "Plain" => Ok(vollcrypt_files_core::PipelinedSignInfo::Plain {
-            signer_ed25519_pk: signer_pk_arr,
-            signer_ed25519_sk: signer_sk_arr,
+            signer_pk,
+            signer_sk,
             key_log_id: key_log_id_arr,
             timestamp,
         }),
         "Sealed" => {
-            let sealed_group_id_buf = obj
-                .sealed_group_id
-                .ok_or_else(|| Error::from_reason("Missing sealed_group_id for Sealed signature"))?;
+            let sealed_group_id_buf = obj.sealed_group_id.ok_or_else(|| {
+                Error::from_reason("Missing sealed_group_id for Sealed signature")
+            })?;
             let sealed_group_id = to_arr16(sealed_group_id_buf.as_ref(), "sealed_group_id")?;
 
             let sealed_gk_version = obj.sealed_gk_version.ok_or_else(|| {
@@ -1468,8 +1571,8 @@ fn napi_to_pipelined_sign_info(
             let sealed_gk = to_arr32(sealed_gk_buf.as_ref(), "sealed_gk")?;
 
             Ok(vollcrypt_files_core::PipelinedSignInfo::Sealed {
-                signer_ed25519_pk: signer_pk_arr,
-                signer_ed25519_sk: signer_sk_arr,
+                signer_pk,
+                signer_sk,
                 key_log_id: key_log_id_arr,
                 timestamp,
                 sealed_group_id,
@@ -1499,7 +1602,10 @@ fn napi_to_io_write_mode(obj: IoWriteModeObj) -> Result<vollcrypt_files_core::Io
             let batch_size = obj.batch_size.unwrap_or(16) as usize;
             Ok(vollcrypt_files_core::IoWriteMode::Batched { batch_size })
         }
-        _ => Err(Error::from_reason(format!("Unknown write mode: {}", obj.mode))),
+        _ => Err(Error::from_reason(format!(
+            "Unknown write mode: {}",
+            obj.mode
+        ))),
     }
 }
 
