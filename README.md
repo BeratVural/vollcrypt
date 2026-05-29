@@ -5,7 +5,8 @@
 **Cross-platform, quantum-resistant cryptography workspace for Node.js, WebAssembly, and Rust**
 
 [![CI](https://github.com/BeratVural/vollcrypt/actions/workflows/ci.yml/badge.svg)](https://github.com/BeratVural/vollcrypt/actions/workflows/ci.yml)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE-GPL)
+[![License: Commercial](https://img.shields.io/badge/License-Commercial-goldenrod.svg)](LICENSE-COMMERCIAL.md)
 [![FIPS 203](https://img.shields.io/badge/PQC-FIPS%20203%20ML--KEM--768-8A2BE2)](https://csrc.nist.gov/pubs/fips/203/final)
 
 </div>
@@ -163,4 +164,9 @@ cd ../..
 
 ## Licensing
 
-Vollcrypt is licensed under the GPL-3.0 License. See the [LICENSE](LICENSE) file for details.
+Vollcrypt is dual-licensed under:
+*   **Open Source:** GNU General Public License v3.0 ([LICENSE-GPL](LICENSE-GPL))
+*   **Commercial:** Vollcrypt Commercial License ([LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md))
+
+For commercial license purchases, pricing, or custom enterprise terms, please contact [berat.vural.tr@gmail.com](mailto:berat.vural.tr@gmail.com).
+

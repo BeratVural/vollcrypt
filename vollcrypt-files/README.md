@@ -9,8 +9,8 @@ This module provides high-performance chunked file encryption, cryptographic acc
 ## License
 
 This package is dual-licensed under:
-- GPL-3.0-only (for open-source distribution)
-- Commercial License (for proprietary software integrations)
+- GPL-3.0-only (for open-source distribution) — see the [LICENSE-GPL](../LICENSE-GPL) file.
+- Commercial License (for proprietary software integrations) — see the [LICENSE-COMMERCIAL.md](../LICENSE-COMMERCIAL.md) file.
 
 ---
 
