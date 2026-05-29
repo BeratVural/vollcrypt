@@ -1,6 +1,6 @@
+use crate::buffer_pool::PooledBuffer;
 use crate::error::FileFormatError;
 use crate::provider::get_crypto_provider;
-use crate::buffer_pool::PooledBuffer;
 
 /// Encrypts plaintext using AES-256-GCM.
 ///
@@ -35,7 +35,9 @@ pub async fn aes256_gcm_encrypt_async(
     aad: &[u8],
     plaintext: Vec<u8>,
 ) -> Result<(Vec<u8>, [u8; 16]), FileFormatError> {
-    get_crypto_provider().encrypt_async(key, iv, aad, plaintext).await
+    get_crypto_provider()
+        .encrypt_async(key, iv, aad, plaintext)
+        .await
 }
 
 /// Decrypts ciphertext using AES-256-GCM asynchronously.
@@ -46,7 +48,9 @@ pub async fn aes256_gcm_decrypt_async(
     ciphertext: Vec<u8>,
     tag: [u8; 16],
 ) -> Result<Vec<u8>, FileFormatError> {
-    get_crypto_provider().decrypt_async(key, iv, aad, ciphertext, tag).await
+    get_crypto_provider()
+        .decrypt_async(key, iv, aad, ciphertext, tag)
+        .await
 }
 
 /// Encrypts a buffer in place using AES-256-GCM.
@@ -78,7 +82,9 @@ pub async fn aes256_gcm_encrypt_in_place_async(
     buffer: PooledBuffer,
     len: usize,
 ) -> Result<(PooledBuffer, [u8; 16]), FileFormatError> {
-    get_crypto_provider().encrypt_in_place_async(key, iv, aad, buffer, len).await
+    get_crypto_provider()
+        .encrypt_in_place_async(key, iv, aad, buffer, len)
+        .await
 }
 
 /// Decrypts a PooledBuffer in place asynchronously using AES-256-GCM.
@@ -90,7 +96,7 @@ pub async fn aes256_gcm_decrypt_in_place_async(
     len: usize,
     tag: [u8; 16],
 ) -> Result<PooledBuffer, FileFormatError> {
-    get_crypto_provider().decrypt_in_place_async(key, iv, aad, buffer, len, tag).await
+    get_crypto_provider()
+        .decrypt_in_place_async(key, iv, aad, buffer, len, tag)
+        .await
 }
-
-

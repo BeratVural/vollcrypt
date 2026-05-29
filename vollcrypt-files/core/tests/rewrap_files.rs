@@ -1,7 +1,8 @@
 use vollcrypt_files_core::{
     decrypt_chunk, encrypt_chunk, generate_dek, generate_file_id, generate_gk,
     rewrap_dek_in_header, unwrap_dek_with_group_key, unwrap_dek_with_password, wrap_dek_for_group,
-    wrap_dek_with_password, CipherId, FileFormatError, Header, KdfChoice, Mode, HashAlgorithm, VERSION,
+    wrap_dek_with_password, CipherId, FileFormatError, HashAlgorithm, Header, KdfChoice, Mode,
+    VERSION,
 };
 
 #[test]
@@ -50,7 +51,7 @@ fn rewrap_preserves_dek() {
     let dek = generate_dek();
     let file_id = generate_file_id();
 
-    let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext).unwrap();
+    let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext, None).unwrap();
 
     let old_gk = generate_gk();
     let new_gk = generate_gk();
@@ -72,7 +73,7 @@ fn rewrap_preserves_dek() {
 
     // Verify decrypt with v1 works
     let recovered_dek_v1 = unwrap_dek_with_group_key(&header.wraps[0], &old_gk).unwrap();
-    let res_v1 = decrypt_chunk(&recovered_dek_v1, &file_id, 0, &envelope).unwrap();
+    let res_v1 = decrypt_chunk(&recovered_dek_v1, &file_id, 0, &envelope, None).unwrap();
     assert_eq!(plaintext, res_v1);
 
     // Rewrap from v1 to v2
@@ -80,7 +81,7 @@ fn rewrap_preserves_dek() {
 
     // Verify decrypt with v2 works
     let recovered_dek_v2 = unwrap_dek_with_group_key(&header.wraps[0], &new_gk).unwrap();
-    let res_v2 = decrypt_chunk(&recovered_dek_v2, &file_id, 0, &envelope).unwrap();
+    let res_v2 = decrypt_chunk(&recovered_dek_v2, &file_id, 0, &envelope, None).unwrap();
     assert_eq!(plaintext, res_v2);
 
     // Verify decrypt with v1 fails (wrap updated)

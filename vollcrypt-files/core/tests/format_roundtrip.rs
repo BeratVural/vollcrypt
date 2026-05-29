@@ -1,6 +1,6 @@
 use vollcrypt_files_core::{
-    ChunkEnvelope, CipherId, FileFormatError, Header, Mode, WrapEntry, FIXED_HEADER_LEN, MAGIC,
-    VERSION, HashAlgorithm,
+    ChunkEnvelope, CipherId, FileFormatError, HashAlgorithm, Header, Mode, WrapEntry,
+    FIXED_HEADER_LEN, MAGIC, VERSION,
 };
 
 #[test]

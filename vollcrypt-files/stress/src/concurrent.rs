@@ -32,12 +32,12 @@ mod tests {
                     let dek = [i as u8; 32];
                     let file_id = [i as u8; 16];
                     let plaintext = vec![i as u8; 64 * 1024]; // 64 KB
-                    
+
                     // Encrypt
-                    let env = encrypt_chunk(&dek, &file_id, 0, &plaintext).unwrap();
+                    let env = encrypt_chunk(&dek, &file_id, 0, &plaintext, None).unwrap();
                     // Decrypt
-                    let decrypted = decrypt_chunk(&dek, &file_id, 0, &env).unwrap();
-                    
+                    let decrypted = decrypt_chunk(&dek, &file_id, 0, &env, None).unwrap();
+
                     assert_eq!(plaintext, decrypted);
                 }));
             }
@@ -62,7 +62,7 @@ mod tests {
     fn test_concurrent_manifest_reads() {
         let group_id = [0u8; 16];
         let founder_id = [1u8; 16];
-        let (admin_pk, admin_sk) = ed25519_keypair_generate();
+        let (admin_pk, admin_sk) = hybrid_keypair_generate();
         let (rec_pk, _) = generate_recipient_keypair();
         let gk_wrap = wrap_key_to_recipient(&[0u8; 32], founder_id, 1, &rec_pk).unwrap();
 
@@ -70,7 +70,7 @@ mod tests {
             group_id,
             founder_id,
             &admin_sk,
-            admin_pk,
+            admin_pk.clone(),
             rec_pk.clone(),
             gk_wrap.clone(),
         );
@@ -94,7 +94,7 @@ mod tests {
                     let _ = lock.add_member(
                         &writer_admin_sk,
                         mid,
-                        writer_admin_pk,
+                        writer_admin_pk.clone(),
                         writer_rec_pk.clone(),
                         writer_gk_wrap.clone(),
                     );
@@ -175,8 +175,8 @@ mod tests {
         let start_rss = get_rss_mb();
 
         while start.elapsed() < duration {
-            let env = encrypt_chunk(&dek, &file_id, 0, &plaintext).unwrap();
-            let decrypted = decrypt_chunk(&dek, &file_id, 0, &env).unwrap();
+            let env = encrypt_chunk(&dek, &file_id, 0, &plaintext, None).unwrap();
+            let decrypted = decrypt_chunk(&dek, &file_id, 0, &env, None).unwrap();
             assert_eq!(plaintext, decrypted);
             iterations += 1;
         }
@@ -190,6 +190,9 @@ mod tests {
             end_rss,
             end_rss - start_rss
         );
-        assert!(end_rss - start_rss < 20.0, "Potential memory leak detected!");
+        assert!(
+            end_rss - start_rss < 20.0,
+            "Potential memory leak detected!"
+        );
     }
 }

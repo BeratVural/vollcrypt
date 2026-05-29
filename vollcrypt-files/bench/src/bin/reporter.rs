@@ -1,16 +1,16 @@
+use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit};
+use rand::RngCore;
+use rayon::prelude::*;
 use std::fs;
 use std::fs::File;
-use std::time::Instant;
 use std::hint::black_box;
-use rayon::prelude::*;
-use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead};
-use rand::RngCore;
+use std::time::Instant;
 
-use vollcrypt_files_core::*;
-use vollcrypt_files_core::pqc::*;
-use vollcrypt_files_bench::hwinfo;
 use vollcrypt_files_bench::get_current_rss_mb;
+use vollcrypt_files_bench::hwinfo;
 use vollcrypt_files_bench::SystemMonitor;
+use vollcrypt_files_core::pqc::*;
+use vollcrypt_files_core::*;
 
 fn stats(runs: &[f64]) -> (f64, f64, f64) {
     if runs.is_empty() {
@@ -18,9 +18,9 @@ fn stats(runs: &[f64]) -> (f64, f64, f64) {
     }
     let mut sorted = runs.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    
+
     let median = sorted[sorted.len() / 2];
-    
+
     // 99th percentile (p99)
     let p99_idx = ((sorted.len() - 1) as f64 * 0.99).round() as usize;
     let p99 = sorted[p99_idx.min(sorted.len() - 1)];
@@ -56,10 +56,10 @@ fn run_competitor_comparison(_dek: &[u8; 32], raw_sc_elapsed: f64, is_aes_ni: bo
         let _ss = x25519_diffie_hellman(&x_sk, &x_pk);
     }
     let x25519_duration = start_x25519.elapsed().as_secs_f64() / 100.0;
-    
+
     let chacha_speed_ratio = if is_aes_ni { 2.2 } else { 0.95 };
     let age_sc_elapsed = x25519_duration + (raw_sc_elapsed * chacha_speed_ratio);
-    
+
     // OpenSSL Baseline: Raw AES-256-GCM + standard CLI piping overhead
     let openssl_sc_elapsed = raw_sc_elapsed * 1.05;
 
@@ -144,7 +144,8 @@ fn run_profile_bench_internal(
         workers,
         None,
         None,
-    ).unwrap();
+    )
+    .unwrap();
     let pipe_time = start_pipe.elapsed().as_secs_f64();
 
     // Decryption
@@ -154,12 +155,7 @@ fn run_profile_bench_internal(
     let out_cursor = std::io::Cursor::new(out_buf);
 
     let start_dec = Instant::now();
-    let _dec_header = decrypt_file_pipelined(
-        decrypt_reader,
-        out_cursor,
-        &dek,
-        workers
-    ).unwrap();
+    let _dec_header = decrypt_file_pipelined(decrypt_reader, out_cursor, &dek, workers).unwrap();
     let dec_time = start_dec.elapsed().as_secs_f64();
 
     let _ = std::fs::remove_file(temp_path);
@@ -179,8 +175,12 @@ fn run_profile_bench_internal(
     let idle_time = (total_worker_time - active_enc_time).max(0.0);
     let worker_idle_percent = (idle_time / total_worker_time) * 100.0;
 
-    let queue_wait_percent = (((pipe_time - (active_enc_time / workers as f64)).max(0.0) / pipe_time) * 20.0).clamp(0.1, 15.0);
-    let io_wait_percent = (((pipe_time - (active_enc_time / workers as f64)).max(0.0) / pipe_time) * 80.0).clamp(0.5, 95.0);
+    let queue_wait_percent =
+        (((pipe_time - (active_enc_time / workers as f64)).max(0.0) / pipe_time) * 20.0)
+            .clamp(0.1, 15.0);
+    let io_wait_percent = (((pipe_time - (active_enc_time / workers as f64)).max(0.0) / pipe_time)
+        * 80.0)
+        .clamp(0.5, 95.0);
 
     let merkle_ratio = (merkle_time / pipe_time) * 100.0;
     let hkdf_ratio = (hkdf_time / pipe_time) * 100.0;
@@ -208,7 +208,12 @@ fn run_profile_bench_internal(
             energy_estimate,
             time_to_first_verified_ms,
         },
-        ram_min, ram_max, ram_avg, cpu_min, cpu_max, cpu_avg
+        ram_min,
+        ram_max,
+        ram_avg,
+        cpu_min,
+        cpu_max,
+        cpu_avg,
     )
 }
 
@@ -278,8 +283,36 @@ fn run_profile_bench(
                RAM Usage: Min {:.1}%, Max {:.1}%, Avg {:.1}%\n\
                CPU Usage: Min {:.1}%, Max {:.1}%, Avg {:.1}%\n\
              ===================================\n",
-            profile, file_size_str, backend_str, chunk_size, workers, metrics.throughput, metrics.cycles_per_byte, metrics.instructions_per_byte, metrics.allocations, metrics.bytes_copied, metrics.cache_misses, metrics.branch_misses, metrics.worker_idle_percent, metrics.queue_wait_percent, metrics.io_wait_percent, metrics.merkle_ratio, metrics.hkdf_ratio, metrics.aead_ratio, metrics.energy_estimate, metrics.time_to_first_verified_ms,
-            hw.os, hw.cpu_brand, hw.gpu_brand, hw.disk_info, ram_min, ram_max, ram_avg, cpu_min, cpu_max, cpu_avg
+            profile,
+            file_size_str,
+            backend_str,
+            chunk_size,
+            workers,
+            metrics.throughput,
+            metrics.cycles_per_byte,
+            metrics.instructions_per_byte,
+            metrics.allocations,
+            metrics.bytes_copied,
+            metrics.cache_misses,
+            metrics.branch_misses,
+            metrics.worker_idle_percent,
+            metrics.queue_wait_percent,
+            metrics.io_wait_percent,
+            metrics.merkle_ratio,
+            metrics.hkdf_ratio,
+            metrics.aead_ratio,
+            metrics.energy_estimate,
+            metrics.time_to_first_verified_ms,
+            hw.os,
+            hw.cpu_brand,
+            hw.gpu_brand,
+            hw.disk_info,
+            ram_min,
+            ram_max,
+            ram_avg,
+            cpu_min,
+            cpu_max,
+            cpu_avg
         );
 
         if compare {
@@ -288,7 +321,7 @@ fn run_profile_bench(
             let one_gb_bytes = 1024 * 1024 * 1024;
             let num_chunks_1gb = one_gb_bytes / (1024 * 1024);
             let plain_chunk = vec![0u8; 1024 * 1024];
-            
+
             // Raw single-core measurement for 1 GB
             let key = aes_gcm::Key::<Aes256Gcm>::from_slice(&dek);
             let cipher = Aes256Gcm::new(key);
@@ -299,10 +332,12 @@ fn run_profile_bench(
             }
             let raw_sc_elapsed = start_raw_sc.elapsed().as_secs_f64();
 
-            let (openssl_sc_elapsed, age_sc_elapsed) = run_competitor_comparison(&dek, raw_sc_elapsed, is_aes_ni);
-            
+            let (openssl_sc_elapsed, age_sc_elapsed) =
+                run_competitor_comparison(&dek, raw_sc_elapsed, is_aes_ni);
+
             // Vollcrypt Single-Core 1 GB timing estimation
-            let voll_sc_elapsed = pipe_time * (one_gb_bytes as f64 / size_bytes as f64) * (workers as f64);
+            let voll_sc_elapsed =
+                pipe_time * (one_gb_bytes as f64 / size_bytes as f64) * (workers as f64);
 
             output.push_str(&format!(
                 "\n=== Competitor Comparison (1 GB Single-Threaded) ===\n\
@@ -310,7 +345,7 @@ fn run_profile_bench(
                  OpenSSL Baseline: {:.2} s (measured on this device)\n\
                  Age Baseline:     {:.2} s (measured on this device)\n\
                  ===================================================\n",
-                 voll_sc_elapsed, openssl_sc_elapsed, age_sc_elapsed
+                voll_sc_elapsed, openssl_sc_elapsed, age_sc_elapsed
             ));
         }
         output
@@ -319,7 +354,10 @@ fn run_profile_bench(
 
 fn run_sweep_chunk_size(hw: &hwinfo::HwInfo) {
     println!("=== Running Chunk-Size Sweep ===");
-    println!("File Size: 256 MiB, Workers: {}", (hw.cpu_cores_logical / 2).max(1));
+    println!(
+        "File Size: 256 MiB, Workers: {}",
+        (hw.cpu_cores_logical / 2).max(1)
+    );
     println!("| Chunk Size | Throughput (GB/s) | Cycles/Byte | AEAD Time % |");
     println!("| --- | --- | --- | --- |");
 
@@ -327,7 +365,7 @@ fn run_sweep_chunk_size(hw: &hwinfo::HwInfo) {
     let workers = (hw.cpu_cores_logical / 2).max(1);
     let dek = [0u8; 32];
     let file_id = [0u8; 16];
-    
+
     let chunk_sizes = [
         ("4 KB", 4 * 1024),
         ("64 KB", 64 * 1024),
@@ -368,16 +406,24 @@ fn run_sweep_chunk_size(hw: &hwinfo::HwInfo) {
             workers,
             None,
             None,
-        ).unwrap();
+        )
+        .unwrap();
         let pipe_time = start_pipe.elapsed().as_secs_f64();
 
         let _ = std::fs::remove_file(temp_path);
 
         let throughput = (size_bytes as f64 / 1_073_741_824.0) / pipe_time;
-        let cycles_per_byte = (hw.cpu_freq_mhz as f64 * 1_000_000.0 * pipe_time) / size_bytes as f64;
+        let cycles_per_byte =
+            (hw.cpu_freq_mhz as f64 * 1_000_000.0 * pipe_time) / size_bytes as f64;
         let aead_ratio = (aead_time / pipe_time) * 100.0;
 
-        println!("| {} | {:.2} GB/s | {:.2} | {:.1}% |", label, throughput, cycles_per_byte, aead_ratio.min(100.0));
+        println!(
+            "| {} | {:.2} GB/s | {:.2} | {:.1}% |",
+            label,
+            throughput,
+            cycles_per_byte,
+            aead_ratio.min(100.0)
+        );
     }
     println!("================================");
 }
@@ -392,7 +438,7 @@ fn run_sweep_workers(hw: &hwinfo::HwInfo) {
     let chunk_size = 1 * 1024 * 1024;
     let dek = [0u8; 32];
     let file_id = [0u8; 16];
-    
+
     let thread_counts = [1, 2, 4, 8, 12, 16, 24, 32];
     let mut base_tput = 0.0;
 
@@ -419,7 +465,8 @@ fn run_sweep_workers(hw: &hwinfo::HwInfo) {
             workers,
             None,
             None,
-        ).unwrap();
+        )
+        .unwrap();
         let pipe_time = start_pipe.elapsed().as_secs_f64();
 
         let _ = std::fs::remove_file(temp_path);
@@ -431,14 +478,17 @@ fn run_sweep_workers(hw: &hwinfo::HwInfo) {
         let speedup = throughput / base_tput;
         let efficiency = (speedup / workers as f64) * 100.0;
 
-        println!("| {} | {:.2} GB/s | {:.2}x | {:.1}% |", workers, throughput, speedup, efficiency);
+        println!(
+            "| {} | {:.2} GB/s | {:.2}x | {:.1}% |",
+            workers, throughput, speedup, efficiency
+        );
     }
     println!("=============================");
 }
 
 fn run_full_suite(hw: hwinfo::HwInfo) {
     println!("Running full performance and security benchmark suite...");
-    
+
     fs::create_dir_all("vollcrypt-files/reports").ok();
     fs::create_dir_all("vollcrypt-files/bench/results").ok();
 
@@ -450,8 +500,18 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     println!("Hardware detected: {}", hw.cpu_brand);
 
     // Run Profile Benchmarks to fill out the Pipelined Performance Metrics Suite table
-    let (balanced_metrics, _, _, _, _, _, _) = run_profile_bench_internal(256 * 1024 * 1024, 1024 * 1024, (hw.cpu_cores_logical / 2).max(1), &hw);
-    let (max_metrics, _, _, _, _, _, _) = run_profile_bench_internal(1024 * 1024 * 1024, 8 * 1024 * 1024, hw.cpu_cores_logical, &hw);
+    let (balanced_metrics, _, _, _, _, _, _) = run_profile_bench_internal(
+        256 * 1024 * 1024,
+        1024 * 1024,
+        (hw.cpu_cores_logical / 2).max(1),
+        &hw,
+    );
+    let (max_metrics, _, _, _, _, _, _) = run_profile_bench_internal(
+        1024 * 1024 * 1024,
+        8 * 1024 * 1024,
+        hw.cpu_cores_logical,
+        &hw,
+    );
 
     // ==========================================
     // SECTION A: PERFORMANCE MEASUREMENTS
@@ -459,7 +519,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     println!("Running Single-Core Throughput benchmarks...");
     let dek = [0u8; 32];
     let file_id = [0u8; 16];
-    
+
     let sizes = [
         ("4 KB", 4 * 1024),
         ("64 KB", 64 * 1024),
@@ -478,12 +538,12 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
             "4 MB" => 20,
             _ => 10,
         };
-        
+
         // Encrypt runs
         let mut enc_runs = Vec::new();
         for _ in 0..runs_count {
             let start = Instant::now();
-            let env = encrypt_chunk(&dek, &file_id, 0, &plaintext).unwrap();
+            let env = encrypt_chunk(&dek, &file_id, 0, &plaintext, None).unwrap();
             enc_runs.push(start.elapsed().as_secs_f64() * 1_000_000.0); // in microseconds
             let _ = black_box(env);
         }
@@ -495,11 +555,11 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         }
 
         // Decrypt runs
-        let env = encrypt_chunk(&dek, &file_id, 0, &plaintext).unwrap();
+        let env = encrypt_chunk(&dek, &file_id, 0, &plaintext, None).unwrap();
         let mut dec_runs = Vec::new();
         for _ in 0..runs_count {
             let start = Instant::now();
-            let pt = decrypt_chunk(&dek, &file_id, 0, &env).unwrap();
+            let pt = decrypt_chunk(&dek, &file_id, 0, &env, None).unwrap();
             dec_runs.push(start.elapsed().as_secs_f64() * 1_000_000.0);
             let _ = black_box(pt);
         }
@@ -539,7 +599,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     let tree = MerkleTree::from_leaves(leaves_proof);
     let root = tree.root();
     let proof = tree.proof(12345);
-    
+
     let mut p_gen_runs = Vec::new();
     for _ in 0..50 {
         let start = Instant::now();
@@ -587,7 +647,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         kw_wrap_runs.push(start.elapsed().as_secs_f64() * 1_000_000.0);
     }
     let (kw_wrap_med, kw_wrap_p99, _kw_wrap_std) = stats(&kw_wrap_runs);
-    
+
     let wrapped = aes256_kw_wrap(&dek, &dek);
     let mut kw_unwrap_runs = Vec::new();
     for _ in 0..50 {
@@ -634,6 +694,35 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         ver_med, ver_p99
     ));
 
+    // Hybrid Signatures (Ed25519 + ML-DSA-65)
+    let (hpk, hsk) = hybrid_keypair_generate();
+    let hmsg = vec![0u8; 1024];
+    let hsig = hybrid_sign(&hsk, &hpk, "vollf-hdr-plain", &[], &hmsg);
+
+    let mut hsig_runs = Vec::new();
+    for _ in 0..30 {
+        let start = Instant::now();
+        let _res = hybrid_sign(&hsk, &hpk, "vollf-hdr-plain", &[], &hmsg);
+        hsig_runs.push(start.elapsed().as_secs_f64() * 1_000_000.0);
+    }
+    let (hsig_med, hsig_p99, _hsig_std) = stats(&hsig_runs);
+
+    let mut hver_runs = Vec::new();
+    for _ in 0..30 {
+        let start = Instant::now();
+        let _res = hybrid_verify(&hpk, "vollf-hdr-plain", &[], &hmsg, &hsig);
+        hver_runs.push(start.elapsed().as_secs_f64() * 1_000_000.0);
+    }
+    let (hver_med, hver_p99, _hver_std) = stats(&hver_runs);
+    single_core_rows.push(format!(
+        "| hybrid_sign | 1 KB message | {:.2} μs | {:.2} μs | N/A |",
+        hsig_med, hsig_p99
+    ));
+    single_core_rows.push(format!(
+        "| hybrid_verify | 1 KB message | {:.2} μs | {:.2} μs | N/A |",
+        hver_med, hver_p99
+    ));
+
     // Header parse/write
     let header_1 = Header {
         version: 1,
@@ -659,7 +748,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         hw1_runs.push(start.elapsed().as_secs_f64() * 1_000_000.0);
     }
     let (hw1_med, hw1_p99, _hw1_std) = stats(&hw1_runs);
-    
+
     let ser_1 = header_1.write();
     let mut hp1_runs = Vec::new();
     for _ in 0..50 {
@@ -711,7 +800,11 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
 
     // Save single-core results
     let single_core_report = single_core_rows.join("\n");
-    fs::write("vollcrypt-files/bench/results/single_core.json", format!("{{\"rows\": {:?}}}", single_core_rows)).ok();
+    fs::write(
+        "vollcrypt-files/bench/results/single_core.json",
+        format!("{{\"rows\": {:?}}}", single_core_rows),
+    )
+    .ok();
 
     // 2. Parallel Throughput Benchmarks
     println!("Running Parallel scaling benchmarks...");
@@ -727,8 +820,13 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     let mut peak_multi_core_tput = 0.0;
 
     for &threads in &thread_counts {
-        if threads == 0 { continue; }
-        let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+        if threads == 0 {
+            continue;
+        }
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .unwrap();
         let mut runs = Vec::new();
         for _ in 0..3 {
             let start = Instant::now();
@@ -736,9 +834,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
                 let _res: Vec<_> = plaintexts
                     .par_iter()
                     .enumerate()
-                    .map(|(idx, pt)| {
-                        encrypt_chunk(&dek, &file_id, idx as u32, pt).unwrap()
-                    })
+                    .map(|(idx, pt)| encrypt_chunk(&dek, &file_id, idx as u32, pt, None).unwrap())
                     .collect();
             });
             runs.push(start.elapsed().as_secs_f64());
@@ -753,13 +849,17 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         }
         let speedup = tput / base_tput;
         let efficiency = (speedup / threads as f64) * 100.0;
-        
+
         par_rows.push(format!(
             "| parallel_encrypt | {} | {:.3} GB/s | {:.2}x | {:.1}% |",
             threads, tput, speedup, efficiency
         ));
     }
-    fs::write("vollcrypt-files/bench/results/parallel.json", format!("{{\"rows\": {:?}}}", par_rows)).ok();
+    fs::write(
+        "vollcrypt-files/bench/results/parallel.json",
+        format!("{{\"rows\": {:?}}}", par_rows),
+    )
+    .ok();
 
     // 3. KDF Benchmarks
     println!("Running KDF benchmarks...");
@@ -774,7 +874,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         }
         let (med, _, _) = stats(&runs);
         let rate_gpu = 20_000_000_000.0 / iters as f64;
-        
+
         kdf_rows.push(format!(
             "| PBKDF2 | {} iter | {:.2} ms | <1 MB | ~{:.1} attempts/sec |",
             iters, med, rate_gpu
@@ -806,14 +906,20 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
 
         kdf_rows.push(format!(
             "| Argon2id | {} (m={}, t={}, p={}) | {:.2} ms | {:.1} MB | ~{:.1} attempts/sec |",
-            name, m, t, p, med, m as f64 / 1024.0, rate_gpu
+            name,
+            m,
+            t,
+            p,
+            med,
+            m as f64 / 1024.0,
+            rate_gpu
         ));
     }
 
     // 4. Hybrid KEM Benchmarks
     println!("Running Hybrid KEM benchmarks...");
     let mut kem_rows = Vec::new();
-    
+
     let mut keygen_runs = Vec::new();
     for _ in 0..3 {
         let start = Instant::now();
@@ -841,7 +947,10 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         unwrap_runs.push(start.elapsed().as_secs_f64() * 1000.0);
     }
     let (unwrap_med, _, _) = stats(&unwrap_runs);
-    kem_rows.push(format!("| unwrap_key_with_recipient_key | {:.3} ms |", unwrap_med));
+    kem_rows.push(format!(
+        "| unwrap_key_with_recipient_key | {:.3} ms |",
+        unwrap_med
+    ));
 
     // Pure X25519 wrap simulation vs Hybrid
     let (x_pk, _x_sk) = x25519_keypair_generate();
@@ -878,7 +987,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         let start = Instant::now();
         let mut leaf_hashes = Vec::with_capacity(num_chunks);
         for idx in 0..num_chunks {
-            let env = encrypt_chunk(&dek, &file_id, idx as u32, &plain_chunk).unwrap();
+            let env = encrypt_chunk(&dek, &file_id, idx as u32, &plain_chunk, None).unwrap();
             leaf_hashes.push(chunk_leaf_hash(&env));
         }
         let tree = MerkleTree::from_leaves(leaf_hashes);
@@ -889,13 +998,19 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
 
         size_rows.push(format!(
             "| {} | {:.2} ms | {:.2} ms | {:.2} MB |",
-            label, elapsed_enc, elapsed_enc * 0.9, ram_delta.max(0.1)
+            label,
+            elapsed_enc,
+            elapsed_enc * 0.9,
+            ram_delta.max(0.1)
         ));
     }
     // Extrapolations
-    size_rows.push("| 10 GB | extrapolated: ~18.5 s | extrapolated: ~16.8 s | ~1.5 MB |".to_string());
-    size_rows.push("| 100 GB | extrapolated: ~185 s | extrapolated: ~168 s | ~1.5 MB |".to_string());
-    size_rows.push("| 1 TB | extrapolated: ~31 min | extrapolated: ~28 min | ~1.5 MB |".to_string());
+    size_rows
+        .push("| 10 GB | extrapolated: ~18.5 s | extrapolated: ~16.8 s | ~1.5 MB |".to_string());
+    size_rows
+        .push("| 100 GB | extrapolated: ~185 s | extrapolated: ~168 s | ~1.5 MB |".to_string());
+    size_rows
+        .push("| 1 TB | extrapolated: ~31 min | extrapolated: ~28 min | ~1.5 MB |".to_string());
 
     // 6. Multi-recipient Scaling
     println!("Running Multi-recipient Scaling benchmarks...");
@@ -945,7 +1060,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     for &count in &member_counts {
         let group_id = [0u8; 16];
         let founder_id = [1u8; 16];
-        let (admin_pk, admin_sk) = ed25519_keypair_generate();
+        let (admin_pk, admin_sk) = hybrid_keypair_generate();
         let (rec_pk, _) = generate_recipient_keypair();
         let gk_wrap = wrap_key_to_recipient(&[0u8; 32], founder_id, 1, &rec_pk).unwrap();
 
@@ -953,7 +1068,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
             group_id,
             founder_id,
             &admin_sk,
-            admin_pk,
+            admin_pk.clone(),
             rec_pk.clone(),
             gk_wrap.clone(),
         );
@@ -962,7 +1077,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         for idx in 0..count {
             let mut mid = [0u8; 16];
             mid[0..4].copy_from_slice(&(idx as u32 + 2).to_be_bytes());
-            let _ = manifest.add_member(&admin_sk, mid, admin_pk, rec_pk.clone(), gk_wrap.clone());
+            let _ = manifest.add_member(&admin_sk, mid, admin_pk.clone(), rec_pk.clone(), gk_wrap.clone());
         }
         let add_time = start_add.elapsed().as_secs_f64() * 1000.0 / count as f64;
 
@@ -974,7 +1089,11 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
 
         manifest_rows.push(format!(
             "| {} | {:.3} ms | {:.2} ms | {:.2} ms | {} B |",
-            count, add_time, ver_time, ver_time * 0.05, size
+            count,
+            add_time,
+            ver_time,
+            ver_time * 0.05,
+            size
         ));
     }
 
@@ -988,7 +1107,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     let start_voll_sc = Instant::now();
     let mut leaf_hashes_sc = Vec::with_capacity(num_chunks_1gb);
     for idx in 0..num_chunks_1gb {
-        let env = encrypt_chunk(&dek, &file_id, idx as u32, &plain_chunk).unwrap();
+        let env = encrypt_chunk(&dek, &file_id, idx as u32, &plain_chunk, None).unwrap();
         leaf_hashes_sc.push(chunk_leaf_hash(&env));
     }
     let tree_sc = MerkleTree::from_leaves(leaf_hashes_sc);
@@ -998,12 +1117,18 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     // --- Vollcrypt Multi-Core 1 GB ---
     println!("-> Measuring Vollcrypt Multi-Core 1 GB...");
     let start_voll_mc = Instant::now();
-    let pool = rayon::ThreadPoolBuilder::new().num_threads(physical_cpus).build().unwrap();
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(physical_cpus)
+        .build()
+        .unwrap();
     let leaf_hashes_mc: Vec<_> = pool.install(|| {
-        (0..num_chunks_1gb).into_par_iter().map(|idx| {
-            let env = encrypt_chunk(&dek, &file_id, idx as u32, &plain_chunk).unwrap();
-            chunk_leaf_hash(&env)
-        }).collect()
+        (0..num_chunks_1gb)
+            .into_par_iter()
+            .map(|idx| {
+                let env = encrypt_chunk(&dek, &file_id, idx as u32, &plain_chunk, None).unwrap();
+                chunk_leaf_hash(&env)
+            })
+            .collect()
     });
     let tree_mc = MerkleTree::from_leaves(leaf_hashes_mc);
     let _r_mc = tree_mc.root();
@@ -1034,15 +1159,29 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     let raw_mc_elapsed = start_raw_mc.elapsed().as_secs_f64();
 
     // Dynamically measure actual competitor baselines on this exact hardware
-    let (openssl_sc_elapsed, age_sc_elapsed) = run_competitor_comparison(&dek, raw_sc_elapsed, hw.cpu_features.aes_ni);
+    let (openssl_sc_elapsed, age_sc_elapsed) =
+        run_competitor_comparison(&dek, raw_sc_elapsed, hw.cpu_features.aes_ni);
 
     // Verify Entropy
-    let env_100k = encrypt_chunk(&dek, &file_id, 0, &vec![0u8; 100_000]).unwrap();
+    let env_100k = encrypt_chunk(&dek, &file_id, 0, &vec![0u8; 100_000], None).unwrap();
     let serialized_env = env_100k.write();
     let entropy = calculate_shannon_entropy(&serialized_env);
 
     // Stop dynamic system resource monitor
-    let (ram_min, ram_max, ram_avg, cpu_min, cpu_max, cpu_avg, disk_r_min, disk_r_max, disk_r_avg, disk_w_min, disk_w_max, disk_w_avg) = monitor.stop();
+    let (
+        ram_min,
+        ram_max,
+        ram_avg,
+        cpu_min,
+        cpu_max,
+        cpu_avg,
+        disk_r_min,
+        disk_r_max,
+        disk_r_avg,
+        disk_w_min,
+        disk_w_max,
+        disk_w_avg,
+    ) = monitor.stop();
 
     // Write PERFORMANCE_REPORT.md
     let perf_content = format!(
@@ -1172,7 +1311,11 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         age_sc_elapsed,
         hkdf_med
     );
-    fs::write("vollcrypt-files/reports/PERFORMANCE_REPORT.md", perf_content).unwrap();
+    fs::write(
+        "vollcrypt-files/reports/PERFORMANCE_REPORT.md",
+        perf_content,
+    )
+    .unwrap();
     println!("Generated: vollcrypt-files/reports/PERFORMANCE_REPORT.md");
 
     // ==========================================
@@ -1180,7 +1323,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     // ==========================================
     println!("Running dynamic Bit-flip Resistance test...");
     let bf_plaintext = vec![0u8; 1024]; // 1 KB plaintext
-    let bf_env = encrypt_chunk(&dek, &file_id, 0, &bf_plaintext).unwrap();
+    let bf_env = encrypt_chunk(&dek, &file_id, 0, &bf_plaintext, None).unwrap();
     let mut bf_serialized = bf_env.write();
     let bf_total_bits = bf_serialized.len() * 8;
     let mut bf_failures = 0;
@@ -1192,7 +1335,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         bf_serialized[byte_idx] ^= 1 << bit_idx;
 
         if let Ok(parsed_env) = ChunkEnvelope::parse(&bf_serialized, bf_plaintext.len()) {
-            let decrypt_res = decrypt_chunk(&dek, &file_id, 0, &parsed_env);
+            let decrypt_res = decrypt_chunk(&dek, &file_id, 0, &parsed_env, None);
             if decrypt_res.is_err() {
                 bf_failures += 1;
             }
@@ -1204,13 +1347,13 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     }
 
     println!("Running dynamic Tag Forgery Resistance test...");
-    let mut tf_env = encrypt_chunk(&dek, &file_id, 0, &vec![0u8; 100]).unwrap();
+    let mut tf_env = encrypt_chunk(&dek, &file_id, 0, &vec![0u8; 100], None).unwrap();
     let tf_attempts = 100_000;
     let mut tf_successful = 0;
     let mut tf_rng = rand::thread_rng();
     for _ in 0..tf_attempts {
         tf_rng.fill_bytes(&mut tf_env.tag);
-        if decrypt_chunk(&dek, &file_id, 0, &tf_env).is_ok() {
+        if decrypt_chunk(&dek, &file_id, 0, &tf_env, None).is_ok() {
             tf_successful += 1;
         }
     }
@@ -1290,16 +1433,16 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     println!("Running dynamic Replay & Substitution Resistance test...");
     let file_id_b = [2u8; 16];
     let rep_plaintext = vec![0u8; 100];
-    let env_a = encrypt_chunk(&dek, &file_id, 0, &rep_plaintext).unwrap();
+    let env_a = encrypt_chunk(&dek, &file_id, 0, &rep_plaintext, None).unwrap();
     let mut rep_tested = 0;
     let mut rep_replayed = 0;
 
     rep_tested += 1;
-    if decrypt_chunk(&dek, &file_id_b, 0, &env_a).is_ok() {
+    if decrypt_chunk(&dek, &file_id_b, 0, &env_a, None).is_ok() {
         rep_replayed += 1;
     }
     rep_tested += 1;
-    if decrypt_chunk(&dek, &file_id, 1, &env_a).is_ok() {
+    if decrypt_chunk(&dek, &file_id, 1, &env_a, None).is_ok() {
         rep_replayed += 1;
     }
 
@@ -1315,12 +1458,18 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     let mut incorrect_runs = Vec::new();
     for _ in 0..1000 {
         let start = Instant::now();
-        let _ = black_box(aes256_kw_unwrap(black_box(&correct_kek), black_box(&kw_wrapped)));
+        let _ = black_box(aes256_kw_unwrap(
+            black_box(&correct_kek),
+            black_box(&kw_wrapped),
+        ));
         correct_runs.push(start.elapsed().as_secs_f64() * 1_000_000.0);
     }
     for _ in 0..1000 {
         let start = Instant::now();
-        let _ = black_box(aes256_kw_unwrap(black_box(&incorrect_kek), black_box(&kw_wrapped)));
+        let _ = black_box(aes256_kw_unwrap(
+            black_box(&incorrect_kek),
+            black_box(&kw_wrapped),
+        ));
         incorrect_runs.push(start.elapsed().as_secs_f64() * 1_000_000.0);
     }
     let (correct_med, _, _) = stats(&correct_runs);
@@ -1330,21 +1479,21 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     println!("Running dynamic Manifest Authority test...");
     let ma_group_id = [0u8; 16];
     let ma_founder_id = [1u8; 16];
-    let (ma_admin_pk, ma_admin_sk) = ed25519_keypair_generate();
-    let (ma_unauth_pk, ma_unauth_sk) = ed25519_keypair_generate();
+    let (ma_admin_pk, ma_admin_sk) = hybrid_keypair_generate();
+    let (ma_unauth_pk, ma_unauth_sk) = hybrid_keypair_generate();
     let (ma_rec_pk, _) = generate_recipient_keypair();
     let ma_gk_wrap = wrap_key_to_recipient(&[0u8; 32], ma_founder_id, 1, &ma_rec_pk).unwrap();
     let mut ma_manifest = GroupManifest::genesis(
         ma_group_id,
         ma_founder_id,
         &ma_admin_sk,
-        ma_admin_pk,
+        ma_admin_pk.clone(),
         ma_rec_pk.clone(),
         ma_gk_wrap.clone(),
     );
     let ma_member_id = [2u8; 16];
     let ma_prev_op = ma_manifest.operations.last().unwrap();
-    let ma_prev_hash = ma_prev_op.hash();
+    let ma_prev_hash = ma_prev_op.hash(ma_manifest.version);
     let ma_op = Operation::AddMember {
         member_id: ma_member_id,
         member_signing_pk: ma_admin_pk,
@@ -1352,18 +1501,22 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         member_mlkem_pk: ma_rec_pk.ml_kem.clone(),
         gk_wrap: ma_gk_wrap.clone(),
     };
-    let ma_data = ma_op.to_bytes();
+    let ma_data = ma_op.to_bytes(ma_manifest.version);
     let mut ma_forged_op = SignedOperation {
         op_type: 1,
         prev_hash: ma_prev_hash,
         timestamp: 1234567,
-        signer_pubkey: ma_unauth_pk,
+        signer_pubkey: ma_unauth_pk.clone(),
         data_len: ma_data.len() as u32,
         data: ma_data,
-        signature: [0u8; 64],
+        signature: HybridSignature {
+            ed25519: [0u8; 64],
+            mldsa: Vec::new(),
+        },
+        epoch: ma_prev_op.epoch + 1,
     };
-    let ma_msg = ma_forged_op.sig_message();
-    ma_forged_op.signature = ed25519_sign(&ma_unauth_sk, &ma_msg);
+    let ma_msg = ma_forged_op.sig_message_for_version(ma_manifest.version);
+    ma_forged_op.signature = hybrid_sign(&ma_unauth_sk, &ma_unauth_pk, "vollf-manifest-op", &[], &ma_msg);
     ma_manifest.operations.push(ma_forged_op);
 
     let ma_accepted = if ma_manifest.verify().is_ok() { 1 } else { 0 };
@@ -1371,9 +1524,9 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     println!("Running dynamic Signed Header Replay test...");
     let sh_file_id_1 = [1u8; 16];
     let sh_file_id_2 = [2u8; 16];
-    let (sh_signer_pk, sh_signer_sk) = ed25519_keypair_generate();
+    let (sh_signer_pk, sh_signer_sk) = hybrid_keypair_generate();
     let mut sh_header = Header {
-        version: 2,
+        version: 3,
         mode: Mode::Password,
         cipher_id: CipherId::Aes256Gcm,
         file_id: sh_file_id_1,
@@ -1387,14 +1540,14 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
             wrapped_dek: [0u8; 40],
         }],
         signed_metadata: Some(SignedMetadata::Plain {
-            signer_pubkey: sh_signer_pk,
+            signer_pubkey: sh_signer_pk.clone(),
             timestamp: 123456789,
             key_log_id: [0u8; 32],
         }),
         signature: None,
     };
     let sh_msg = sh_header.signed_bytes();
-    let sh_sig = ed25519_sign(&sh_signer_sk, &sh_msg);
+    let sh_sig = hybrid_sign(&sh_signer_sk, &sh_signer_pk, "vollf-hdr-plain", &[], &sh_msg);
     sh_header.signature = Some(sh_sig);
 
     let sh_serialized = sh_header.write();
@@ -1402,7 +1555,11 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     let mut sh_tampered = sh_parsed.clone();
     sh_tampered.file_id = sh_file_id_2;
 
-    let sh_accepted = if verify_header_signature_plain(&sh_tampered).is_ok() { 1 } else { 0 };
+    let sh_accepted = if verify_header_signature_plain(&sh_tampered).is_ok() {
+        1
+    } else {
+        0
+    };
 
     // ==========================================
     // RUN DYNAMIC BEHAVIORAL & CONCURRENCY TESTS
@@ -1418,8 +1575,8 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
                 let dek = [i as u8; 32];
                 let file_id = [i as u8; 16];
                 let plaintext = vec![i as u8; 64 * 1024];
-                let env = encrypt_chunk(&dek, &file_id, 0, &plaintext).unwrap();
-                let decrypted = decrypt_chunk(&dek, &file_id, 0, &env).unwrap();
+                let env = encrypt_chunk(&dek, &file_id, 0, &plaintext, None).unwrap();
+                let decrypted = decrypt_chunk(&dek, &file_id, 0, &env, None).unwrap();
                 assert_eq!(plaintext, decrypted);
             }));
         }
@@ -1429,19 +1586,23 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
             }
         }
     }
-    let concurrent_encrypt_status = if concurrent_encrypt_success { "PASS" } else { "FAIL" };
+    let concurrent_encrypt_status = if concurrent_encrypt_success {
+        "PASS"
+    } else {
+        "FAIL"
+    };
 
     println!("Running dynamic Concurrent Manifest Reads test...");
     let cm_group_id = [0u8; 16];
     let cm_founder_id = [1u8; 16];
-    let (cm_admin_pk, cm_admin_sk) = ed25519_keypair_generate();
+    let (cm_admin_pk, cm_admin_sk) = hybrid_keypair_generate();
     let (cm_rec_pk, _) = generate_recipient_keypair();
     let cm_gk_wrap = wrap_key_to_recipient(&[0u8; 32], cm_founder_id, 1, &cm_rec_pk).unwrap();
     let cm_manifest = GroupManifest::genesis(
         cm_group_id,
         cm_founder_id,
         &cm_admin_sk,
-        cm_admin_pk,
+        cm_admin_pk.clone(),
         cm_rec_pk.clone(),
         cm_gk_wrap.clone(),
     );
@@ -1462,7 +1623,13 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
             mid[0..4].copy_from_slice(&(i as u32 + 2).to_be_bytes());
             {
                 let mut lock = cm_writer_manifest.write().unwrap();
-                let _ = lock.add_member(&cm_writer_sk, mid, cm_writer_pk, cm_writer_rec_pk.clone(), cm_writer_gk_wrap.clone());
+                let _ = lock.add_member(
+                    &cm_writer_sk,
+                    mid,
+                    cm_writer_pk.clone(),
+                    cm_writer_rec_pk.clone(),
+                    cm_writer_gk_wrap.clone(),
+                );
             }
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
@@ -1488,7 +1655,11 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
             concurrent_manifest_success = false;
         }
     }
-    let concurrent_manifest_status = if concurrent_manifest_success { "PASS" } else { "FAIL" };
+    let concurrent_manifest_status = if concurrent_manifest_success {
+        "PASS"
+    } else {
+        "FAIL"
+    };
 
     println!("Running dynamic Concurrent KDF Runs test...");
     let mut kdf_handles = Vec::with_capacity(8);
@@ -1506,7 +1677,11 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
             concurrent_kdf_success = false;
         }
     }
-    let concurrent_kdf_status = if concurrent_kdf_success { "PASS" } else { "FAIL" };
+    let concurrent_kdf_status = if concurrent_kdf_success {
+        "PASS"
+    } else {
+        "FAIL"
+    };
 
     println!("Running dynamic Memory Stability streaming loop...");
     let stability_duration = std::time::Duration::from_secs(5);
@@ -1522,8 +1697,8 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     let mut stability_success = true;
 
     while stability_start.elapsed() < stability_duration {
-        if let Ok(env) = encrypt_chunk(&stab_dek, &stab_file_id, 0, &stab_plaintext) {
-            if let Ok(decrypted) = decrypt_chunk(&stab_dek, &stab_file_id, 0, &env) {
+        if let Ok(env) = encrypt_chunk(&stab_dek, &stab_file_id, 0, &stab_plaintext, None) {
+            if let Ok(decrypted) = decrypt_chunk(&stab_dek, &stab_file_id, 0, &env, None) {
                 if decrypted != stab_plaintext {
                     stability_success = false;
                 }
@@ -1533,7 +1708,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         } else {
             stability_success = false;
         }
-        
+
         let elapsed_sec = stability_start.elapsed().as_secs_f64();
         if elapsed_sec >= next_sample_sec {
             memory_samples.push((elapsed_sec, get_current_rss_mb()));
@@ -1608,7 +1783,11 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         stability_status,
         stability_table
     );
-    fs::write("vollcrypt-files/reports/BEHAVIORAL_REPORT.md", behavioral_content).unwrap();
+    fs::write(
+        "vollcrypt-files/reports/BEHAVIORAL_REPORT.md",
+        behavioral_content,
+    )
+    .unwrap();
     println!("Generated: vollcrypt-files/reports/BEHAVIORAL_REPORT.md");
 
     // Write SECURITY_AUDIT_REPORT.md
@@ -1651,7 +1830,11 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         entropy,
         (entropy / 8.0) * 100.0
     );
-    fs::write("vollcrypt-files/reports/SECURITY_AUDIT_REPORT.md", security_content).unwrap();
+    fs::write(
+        "vollcrypt-files/reports/SECURITY_AUDIT_REPORT.md",
+        security_content,
+    )
+    .unwrap();
     println!("Generated: vollcrypt-files/reports/SECURITY_AUDIT_REPORT.md");
 
     println!("All reports successfully generated and saved to reports/!");
@@ -1659,7 +1842,17 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    
+    let handle = std::thread::Builder::new()
+        .name("benchmark_reporter".to_string())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || {
+            run_main(args);
+        })
+        .unwrap();
+    handle.join().unwrap();
+}
+
+fn run_main(args: Vec<String>) {
     let print_help = || {
         println!("Vollcrypt Benchmark Harness CLI");
         println!("Usage:");
@@ -1736,10 +1929,22 @@ fn main() {
     let hw = hwinfo::detect();
 
     if let Some(ref p) = profile {
-        let size_bytes = if p == "max" { 1024 * 1024 * 1024 } else { 256 * 1024 * 1024 };
-        let chunk_size = if p == "max" { 8 * 1024 * 1024 } else { 1 * 1024 * 1024 };
-        let workers = if p == "max" { hw.cpu_cores_logical } else { (hw.cpu_cores_logical / 2).max(1) };
-        
+        let size_bytes = if p == "max" {
+            1024 * 1024 * 1024
+        } else {
+            256 * 1024 * 1024
+        };
+        let chunk_size = if p == "max" {
+            8 * 1024 * 1024
+        } else {
+            1 * 1024 * 1024
+        };
+        let workers = if p == "max" {
+            hw.cpu_cores_logical
+        } else {
+            (hw.cpu_cores_logical / 2).max(1)
+        };
+
         let result = run_profile_bench(p, size_bytes, chunk_size, workers, &hw, json, compare);
         if json {
             println!("{}", result);
@@ -1750,7 +1955,10 @@ fn main() {
         match s.as_str() {
             "chunk-size" => run_sweep_chunk_size(&hw),
             "workers" => run_sweep_workers(&hw),
-            _ => println!("Error: Unknown sweep type: {}. Use 'chunk-size' or 'workers'.", s),
+            _ => println!(
+                "Error: Unknown sweep type: {}. Use 'chunk-size' or 'workers'.",
+                s
+            ),
         }
     } else if let Some(ref s) = suite {
         if s == "auto" {

@@ -166,3 +166,35 @@ fn wrong_wrap_type_returns_error() {
     let result = unwrap_key_with_recipient_key(&password_wrap, &sk);
     assert!(matches!(result, Err(FileFormatError::WrongWrapType)));
 }
+
+#[test]
+fn test_old_kem_suite_rejected() {
+    // A serialized wrap with wrap_type = 2 (old HybridKem)
+    let mut serialized_old_wrap = vec![0u8; 1183]; // 3 bytes header + 1180 payload
+    serialized_old_wrap[0] = 2; // Old wrap type
+    let payload_len = 1180u16;
+    serialized_old_wrap[1..3].copy_from_slice(&payload_len.to_be_bytes());
+
+    let parse_res = WrapEntry::parse(&serialized_old_wrap);
+    assert!(matches!(parse_res, Err(FileFormatError::UnsupportedSuite(2))));
+}
+
+#[test]
+fn test_hybrid_kem_binding() {
+    let dek = generate_dek();
+    let recipient_id = [0x99; 16];
+    let gk_version = 0;
+
+    let (pk, sk) = generate_recipient_keypair();
+
+    let wrap = wrap_key_to_recipient(&dek, recipient_id, gk_version, &pk).unwrap();
+
+    // If we tamper x25519_ephemeral (ct_x25519) in the WrapEntry, decryption should fail with WrongRecipientKey
+    let mut tampered_wrap = wrap.clone();
+    if let WrapEntry::HybridKem { x25519_ephemeral, .. } = &mut tampered_wrap {
+        x25519_ephemeral[0] ^= 1;
+    }
+
+    let result = unwrap_key_with_recipient_key(&tampered_wrap, &sk);
+    assert!(matches!(result, Err(FileFormatError::WrongRecipientKey)));
+}

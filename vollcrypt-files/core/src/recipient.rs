@@ -1,5 +1,5 @@
-use hkdf::Hkdf;
-use sha2::Sha256;
+use sha3::{Digest, Sha3_256};
+use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
 use zeroize::Zeroize;
 
 use crate::error::FileFormatError;
@@ -44,30 +44,35 @@ pub fn generate_recipient_keypair() -> (RecipientPublicKey, RecipientSecretKey) 
 }
 
 /// Helper function to derive KEK from classical and post-quantum shared secrets.
+///
+/// Implements standard X-Wing KEM combiner:
+/// combined_key = SHA3-256(XWING_LABEL ‖ ss_mlkem ‖ ss_x25519 ‖ ct_x25519 ‖ pk_x25519)
+/// where XWING_LABEL = \.//^\ (5c 2e 2f 2f 5e 5c)
+///
+/// ML-KEM ephemeral ciphertexts/public keys are intentionally excluded from this combiner,
+/// because the ML-KEM Fujisaki-Okamoto (FO) transform already binds the shared secret (ss_pq)
+/// to the ciphertext, preventing component substitution attacks.
 fn hybrid_kek_derive(
     ss_classical: &[u8; 32],
     ss_pq: &[u8; 32],
+    ct_x25519: &[u8; 32],
+    pk_x25519: &[u8; 32],
     recipient_id: &[u8; 16],
     gk_version: u32,
 ) -> [u8; 32] {
-    let mut ikm = [0u8; 64];
-    ikm[0..32].copy_from_slice(ss_classical);
-    ikm[32..64].copy_from_slice(ss_pq);
-
-    let mut info = [0u8; 48];
-    info[0..28].copy_from_slice(b"vollcrypt-file-hybrid-kem-v1");
-    info[28..44].copy_from_slice(recipient_id);
-    info[44..48].copy_from_slice(&gk_version.to_be_bytes());
-
-    let hk = Hkdf::<Sha256>::new(None, &ikm);
-    let mut kek = [0u8; 32];
-
-    // hk.expand is infallible for L = 32
-    if hk.expand(&info, &mut kek).is_err() {
-        kek = [0u8; 32];
-    }
-
-    kek
+    let label = [0x5c, 0x2e, 0x2f, 0x2f, 0x5e, 0x5c];
+    let mut hasher = Sha3_256::new();
+    hasher.update(&label);
+    hasher.update(ss_pq);          // ss_mlkem
+    hasher.update(ss_classical);   // ss_x25519
+    hasher.update(ct_x25519);      // ct_x25519
+    hasher.update(pk_x25519);      // pk_x25519
+    hasher.update(recipient_id);
+    hasher.update(&gk_version.to_be_bytes());
+    let result = hasher.finalize();
+    let mut combined_key = [0u8; 32];
+    combined_key.copy_from_slice(&result);
+    combined_key
 }
 
 /// Encapsulates the Key (DEK or GK) to a recipient's public key.
@@ -83,7 +88,14 @@ pub fn wrap_key_to_recipient(
     let mut ss_classical = x25519_diffie_hellman(&eph_sk, &recipient_pk.x25519);
     let (mut ss_pq, mlkem_ct) = mlkem768_encapsulate(&recipient_pk.ml_kem);
 
-    let mut kek = hybrid_kek_derive(&ss_classical, &ss_pq, &recipient_id, gk_version);
+    let mut kek = hybrid_kek_derive(
+        &ss_classical,
+        &ss_pq,
+        &eph_pk,
+        &recipient_pk.x25519,
+        &recipient_id,
+        gk_version,
+    );
     let wrapped_dek = crate::keywrap::aes256_kw_wrap(&kek, key);
 
     // Securely zeroize all intermediate key materials
@@ -124,7 +136,19 @@ pub fn unwrap_key_with_recipient_key(
             ct.copy_from_slice(mlkem_ciphertext);
             let mut ss_pq = mlkem768_decapsulate(&recipient_sk.ml_kem, &ct);
 
-            let mut kek = hybrid_kek_derive(&ss_classical, &ss_pq, recipient_id, *gk_version);
+            // Derive recipient static public key from secret key
+            let secret = StaticSecret::from(recipient_sk.x25519);
+            let public = X25519PublicKey::from(&secret);
+            let pk_x25519 = public.to_bytes();
+
+            let mut kek = hybrid_kek_derive(
+                &ss_classical,
+                &ss_pq,
+                x25519_ephemeral,
+                &pk_x25519,
+                recipient_id,
+                *gk_version,
+            );
 
             // Wrap aes256_kw_unwrap result to map WrongPassword to WrongRecipientKey
             let dek_res = crate::keywrap::aes256_kw_unwrap(&kek, wrapped_dek).map_err(|e| {

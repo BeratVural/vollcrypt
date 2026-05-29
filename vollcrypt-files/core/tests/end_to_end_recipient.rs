@@ -2,7 +2,7 @@ use vollcrypt_files_core::{
     chunk_leaf_hash, decrypt_chunk, encrypt_chunk, generate_dek, generate_file_id,
     generate_recipient_keypair, generate_salt, unwrap_dek_with_password,
     unwrap_key_with_recipient_key, wrap_dek_with_password, wrap_key_to_recipient, ChunkEnvelope,
-    CipherId, Header, KdfChoice, MerkleTree, Mode, HashAlgorithm, VERSION,
+    CipherId, HashAlgorithm, Header, KdfChoice, MerkleTree, Mode, VERSION,
 };
 
 #[test]
@@ -14,7 +14,7 @@ fn encrypt_decrypt_small_file_hybrid_kem() {
     let dek = generate_dek();
     let file_id = generate_file_id();
 
-    let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext).unwrap();
+    let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext, None).unwrap();
     let leaf = chunk_leaf_hash(&envelope);
     let merkle_root = MerkleTree::from_leaves(vec![leaf]).root();
 
@@ -44,8 +44,14 @@ fn encrypt_decrypt_small_file_hybrid_kem() {
     let parsed_envelope = ChunkEnvelope::parse(&serialized[header_len..], 4096).unwrap();
 
     let recovered_dek = unwrap_key_with_recipient_key(&parsed_header.wraps[0], &sk).unwrap();
-    let recovered =
-        decrypt_chunk(&recovered_dek, &parsed_header.file_id, 0, &parsed_envelope).unwrap();
+    let recovered = decrypt_chunk(
+        &recovered_dek,
+        &parsed_header.file_id,
+        0,
+        &parsed_envelope,
+        None,
+    )
+    .unwrap();
 
     assert_eq!(plaintext, recovered);
 }
@@ -65,7 +71,7 @@ fn encrypt_decrypt_multi_recipient() {
     let dek = generate_dek();
     let file_id = generate_file_id();
 
-    let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext).unwrap();
+    let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext, None).unwrap();
     let leaf = chunk_leaf_hash(&envelope);
     let merkle_root = MerkleTree::from_leaves(vec![leaf]).root();
 
@@ -99,8 +105,14 @@ fn encrypt_decrypt_multi_recipient() {
 
     for (i, rec_sk) in recipients_sks.iter().enumerate() {
         let recovered_dek = unwrap_key_with_recipient_key(&parsed_header.wraps[i], rec_sk).unwrap();
-        let recovered =
-            decrypt_chunk(&recovered_dek, &parsed_header.file_id, 0, &parsed_envelope).unwrap();
+        let recovered = decrypt_chunk(
+            &recovered_dek,
+            &parsed_header.file_id,
+            0,
+            &parsed_envelope,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(plaintext, recovered);
     }
@@ -115,7 +127,7 @@ fn mixed_password_and_recipient_header() {
     let dek = generate_dek();
     let file_id = generate_file_id();
 
-    let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext).unwrap();
+    let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext, None).unwrap();
     let leaf = chunk_leaf_hash(&envelope);
     let merkle_root = MerkleTree::from_leaves(vec![leaf]).root();
 
@@ -154,6 +166,7 @@ fn mixed_password_and_recipient_header() {
         &parsed_header.file_id,
         0,
         &parsed_envelope,
+        None,
     )
     .unwrap();
     assert_eq!(plaintext, recovered_pw);
@@ -165,6 +178,7 @@ fn mixed_password_and_recipient_header() {
         &parsed_header.file_id,
         0,
         &parsed_envelope,
+        None,
     )
     .unwrap();
     assert_eq!(plaintext, recovered_kem);

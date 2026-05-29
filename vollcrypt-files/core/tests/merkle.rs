@@ -15,14 +15,30 @@ fn hash_two(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
 fn single_leaf_root_is_leaf() {
     let leaf = [0xAA; 32];
     let tree = MerkleTree::from_leaves(vec![leaf]);
-    assert_eq!(tree.root(), leaf);
+    let expected = vollcrypt_files_core::bind_root_with_length(
+        &leaf,
+        1,
+        vollcrypt_files_core::HashAlgorithm::Sha256,
+    );
+    assert_eq!(tree.root(), expected);
 }
 
 #[test]
 fn two_leaves_root() {
     let leaf1 = [0x01; 32];
     let leaf2 = [0x02; 32];
-    let expected = hash_two(&leaf1, &leaf2);
+
+    let mut hasher = Sha256::new();
+    hasher.update(&[0x01]);
+    hasher.update(&leaf1);
+    hasher.update(&leaf2);
+    let mut parent = [0u8; 32];
+    parent.copy_from_slice(&hasher.finalize());
+    let expected = vollcrypt_files_core::bind_root_with_length(
+        &parent,
+        2,
+        vollcrypt_files_core::HashAlgorithm::Sha256,
+    );
 
     let tree = MerkleTree::from_leaves(vec![leaf1, leaf2]);
     assert_eq!(tree.root(), expected);
@@ -32,15 +48,33 @@ fn two_leaves_root() {
 fn odd_leaves_duplication() {
     // 3 leaves: L0, L1, L2
     // Level 0: [L0, L1, L2]
-    // Level 1: [P0 = Hash(L0||L1), P1 = Hash(L2||L2)]
-    // Level 2: [R = Hash(P0||P1)]
+    // Level 1: [P0 = Hash(0x01 || L0 || L1), P1 = L2 (promoted)]
+    // Level 2: [R = Hash(0x01 || P0 || P1)]
     let l0 = [0x0A; 32];
     let l1 = [0x0B; 32];
     let l2 = [0x0C; 32];
 
-    let p0 = hash_two(&l0, &l1);
-    let p1 = hash_two(&l2, &l2);
-    let expected_root = hash_two(&p0, &p1);
+    let mut hasher = Sha256::new();
+    hasher.update(&[0x01]);
+    hasher.update(&l0);
+    hasher.update(&l1);
+    let mut p0 = [0u8; 32];
+    p0.copy_from_slice(&hasher.finalize());
+
+    let p1 = l2; // Promoted, not duplicated
+
+    let mut hasher = Sha256::new();
+    hasher.update(&[0x01]);
+    hasher.update(&p0);
+    hasher.update(&p1);
+    let mut r = [0u8; 32];
+    r.copy_from_slice(&hasher.finalize());
+
+    let expected_root = vollcrypt_files_core::bind_root_with_length(
+        &r,
+        3,
+        vollcrypt_files_core::HashAlgorithm::Sha256,
+    );
 
     let tree = MerkleTree::from_leaves(vec![l0, l1, l2]);
     assert_eq!(tree.root(), expected_root);
@@ -203,7 +237,7 @@ fn test_blake3_merkle_tree() {
 
 #[test]
 fn test_streaming_merkle_differential() {
-    use vollcrypt_files_core::{StreamingMerkle, HashAlgorithm};
+    use vollcrypt_files_core::{HashAlgorithm, StreamingMerkle};
 
     for algo in &[HashAlgorithm::Sha256, HashAlgorithm::Blake3] {
         let counts = [0, 1, 2, 3, 4, 5, 8, 15, 16, 32, 100, 1000];

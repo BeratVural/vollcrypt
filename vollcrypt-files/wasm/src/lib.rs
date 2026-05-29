@@ -5,6 +5,7 @@ use vollcrypt_files_core::{
     unwrap_key_with_recipient_key as core_unwrap_key_with_recipient_key,
     wrap_key_to_recipient as core_wrap_key_to_recipient, RecipientPublicKey, RecipientSecretKey,
 };
+use vollcrypt_files_core::hybrid_sig::{HybridPublicKey, HybridSecretKey, HybridSignature};
 use wasm_bindgen::prelude::*;
 
 pub mod wasm_bridge;
@@ -12,6 +13,34 @@ pub mod wasm_bridge;
 // Helper utility to convert errors
 fn to_js_err<E: std::fmt::Display>(e: E) -> JsValue {
     JsValue::from_str(&e.to_string())
+}
+
+fn to_hybrid_pubkey(slice: &[u8], name: &str) -> Result<HybridPublicKey, JsValue> {
+    if slice.len() == 32 {
+        let mut ed25519 = [0u8; 32];
+        ed25519.copy_from_slice(slice);
+        Ok(HybridPublicKey {
+            ed25519,
+            mldsa: [0u8; 1952],
+        })
+    } else {
+        HybridPublicKey::parse(slice)
+            .map_err(|e| JsValue::from_str(&format!("Invalid public key {}: {}", name, e)))
+    }
+}
+
+fn to_hybrid_secret_key(slice: &[u8], name: &str) -> Result<HybridSecretKey, JsValue> {
+    if slice.len() == 32 {
+        let mut ed25519 = [0u8; 32];
+        ed25519.copy_from_slice(slice);
+        Ok(HybridSecretKey {
+            ed25519,
+            mldsa: [0u8; 4032],
+        })
+    } else {
+        HybridSecretKey::parse(slice)
+            .map_err(|e| JsValue::from_str(&format!("Invalid secret key {}: {}", name, e)))
+    }
 }
 
 // Fixed size array parsers
@@ -110,7 +139,7 @@ pub fn encrypt_chunk(
     let dek_arr = to_arr32(dek, "dek")?;
     let file_id_arr = to_arr16(file_id, "file_id")?;
 
-    match core_encrypt_chunk(&dek_arr, &file_id_arr, chunk_index, plaintext) {
+    match core_encrypt_chunk(&dek_arr, &file_id_arr, chunk_index, plaintext, None) {
         Ok(envelope) => {
             let env_obj = ChunkEnvelope {
                 chunk_index: envelope.chunk_index,
@@ -149,7 +178,7 @@ pub fn decrypt_chunk(
         tag: tag_arr,
     };
 
-    match core_decrypt_chunk(&dek_arr, &file_id_arr, chunk_index, &core_envelope) {
+    match core_decrypt_chunk(&dek_arr, &file_id_arr, chunk_index, &core_envelope, None) {
         Ok(plaintext) => Ok(plaintext),
         Err(e) => Err(to_js_err(e)),
     }
@@ -669,6 +698,54 @@ pub fn ed25519_verify(pk: &[u8], message: &[u8], signature: &[u8]) -> Result<boo
     Ok(vollcrypt_files_core::ed25519_verify(&pk_arr, message, &sig_arr).is_ok())
 }
 
+// ==================== Hybrid Signatures ====================
+
+#[derive(Serialize, Deserialize)]
+pub struct HybridKeypairObj {
+    #[serde(rename = "publicKey")]
+    pub public_key: Vec<u8>,
+    #[serde(rename = "secretKey")]
+    pub secret_key: Vec<u8>,
+}
+
+#[wasm_bindgen(js_name = hybridKeypairGenerate)]
+pub fn hybrid_keypair_generate() -> Result<JsValue, JsValue> {
+    let (pk, sk) = vollcrypt_files_core::hybrid_keypair_generate();
+    let kp = HybridKeypairObj {
+        public_key: pk.write(),
+        secret_key: sk.write(),
+    };
+    serde_wasm_bindgen::to_value(&kp).map_err(to_js_err)
+}
+
+#[wasm_bindgen(js_name = hybridSign)]
+pub fn hybrid_sign(
+    sk: &[u8],
+    pk: &[u8],
+    domain: &str,
+    context: &[u8],
+    payload: &[u8],
+) -> Result<Vec<u8>, JsValue> {
+    let sk_val = to_hybrid_secret_key(sk, "sk")?;
+    let pk_val = to_hybrid_pubkey(pk, "pk")?;
+    let sig = vollcrypt_files_core::hybrid_sign(&sk_val, &pk_val, domain, context, payload);
+    Ok(sig.write())
+}
+
+#[wasm_bindgen(js_name = hybridVerify)]
+pub fn hybrid_verify(
+    pk: &[u8],
+    domain: &str,
+    context: &[u8],
+    payload: &[u8],
+    signature: &[u8],
+) -> Result<bool, JsValue> {
+    let pk_val = to_hybrid_pubkey(pk, "pk")?;
+    let sig_val = HybridSignature::parse(signature)
+        .map_err(|e| JsValue::from_str(&format!("Invalid signature: {}", e)))?;
+    Ok(vollcrypt_files_core::hybrid_verify(&pk_val, domain, context, payload, &sig_val))
+}
+
 // ==================== GroupManifest Class ====================
 
 #[derive(Serialize, Deserialize)]
@@ -713,8 +790,8 @@ impl GroupManifest {
             ml_kem: Box::new(r_mlkem),
         };
 
-        let f_ed_pk = to_arr32(founder_ed25519_pk, "founder_ed25519_pk")?;
-        let f_ed_sk = to_arr32(founder_ed25519_sk, "founder_ed25519_sk")?;
+        let f_signing_pk = to_hybrid_pubkey(founder_ed25519_pk, "founder_ed25519_pk")?;
+        let f_signing_sk = to_hybrid_secret_key(founder_ed25519_sk, "founder_ed25519_sk")?;
 
         let gk_wrap = core_wrap_key_to_recipient(&initial_gk_arr, founder_id_arr, 1, &rec_pk)
             .map_err(to_js_err)?;
@@ -722,8 +799,8 @@ impl GroupManifest {
         let inner = vollcrypt_files_core::GroupManifest::genesis(
             group_id_arr,
             founder_id_arr,
-            &f_ed_sk,
-            f_ed_pk,
+            &f_signing_sk,
+            f_signing_pk,
             rec_pk,
             gk_wrap,
         );
@@ -755,13 +832,12 @@ impl GroupManifest {
         new_member_id: &[u8],
         new_member_pk: JsValue,
         current_gk: &[u8],
-        admin_pk: &[u8],
+        _admin_pk: &[u8],
         admin_sk: &[u8],
         _timestamp: u32,
     ) -> Result<(), JsValue> {
         let member_id_arr = to_arr16(new_member_id, "new_member_id")?;
-        let admin_sk_arr = to_arr32(admin_sk, "admin_sk")?;
-        let _admin_pk_arr = to_arr32(admin_pk, "admin_pk")?;
+        let admin_sk_arr = to_hybrid_secret_key(admin_sk, "admin_sk")?;
         let current_gk_arr = to_arr32(current_gk, "current_gk")?;
 
         let m_pk_obj: MemberPublicKeyObj =
@@ -778,7 +854,7 @@ impl GroupManifest {
             ml_kem: Box::new(rm),
         };
 
-        let signing_pk = to_arr32(&m_pk_obj.signing_pk, "new_member_pk.signing_pk")?;
+        let signing_pk = to_hybrid_pubkey(&m_pk_obj.signing_pk, "new_member_pk.signing_pk")?;
 
         let current_version = self.inner.current_gk_version();
         let gk_wrap =
@@ -799,7 +875,7 @@ impl GroupManifest {
         _timestamp: u32,
     ) -> Result<(), JsValue> {
         let member_id_arr = to_arr16(removed_member_id, "removed_member_id")?;
-        let admin_sk_arr = to_arr32(admin_sk, "admin_sk")?;
+        let admin_sk_arr = to_hybrid_secret_key(admin_sk, "admin_sk")?;
 
         self.inner
             .remove_member(&admin_sk_arr, member_id_arr)
@@ -810,16 +886,15 @@ impl GroupManifest {
     pub fn rotate_group_key(
         &mut self,
         new_gk: &[u8],
-        admin_pk: &[u8],
+        _admin_pk: &[u8],
         admin_sk: &[u8],
         timestamp: u32,
     ) -> Result<u32, JsValue> {
         let new_gk_arr = to_arr32(new_gk, "new_gk")?;
-        let admin_pk_arr = to_arr32(admin_pk, "admin_pk")?;
-        let admin_sk_arr = to_arr32(admin_sk, "admin_sk")?;
+        let admin_sk_arr = to_hybrid_secret_key(admin_sk, "admin_sk")?;
 
         self.inner
-            .rotate_group_key(&new_gk_arr, &admin_pk_arr, &admin_sk_arr, timestamp as u64)
+            .rotate_group_key(&new_gk_arr, &admin_sk_arr, timestamp as u64)
             .map_err(to_js_err)
     }
 
@@ -828,18 +903,16 @@ impl GroupManifest {
         &mut self,
         version_to_shred: u32,
         reason: String,
-        admin_pk: &[u8],
+        _admin_pk: &[u8],
         admin_sk: &[u8],
         timestamp: u32,
     ) -> Result<(), JsValue> {
-        let admin_pk_arr = to_arr32(admin_pk, "admin_pk")?;
-        let admin_sk_arr = to_arr32(admin_sk, "admin_sk")?;
+        let admin_sk_arr = to_hybrid_secret_key(admin_sk, "admin_sk")?;
 
         self.inner
             .shred_group_key(
                 version_to_shred,
                 &reason,
-                &admin_pk_arr,
                 &admin_sk_arr,
                 timestamp as u64,
             )
@@ -950,7 +1023,13 @@ fn signed_metadata_to_serde(meta: vollcrypt_files_core::SignedMetadata) -> Signe
             key_log_id,
         } => SignedMetadata {
             kind: "Plain".to_string(),
-            signer_pubkey: Some(signer_pubkey.to_vec()),
+            signer_pubkey: Some(
+                if signer_pubkey.mldsa == [0u8; 1952] {
+                    signer_pubkey.ed25519.to_vec()
+                } else {
+                    signer_pubkey.write()
+                }
+            ),
             timestamp: timestamp as u32,
             key_log_id: Some(key_log_id.to_vec()),
             sealed_group_id: None,
@@ -988,7 +1067,7 @@ fn serde_to_signed_metadata(
             let pk_buf = meta
                 .signer_pubkey
                 .ok_or_else(|| JsValue::from_str("Missing signerPubkey"))?;
-            let signer_pubkey = to_arr32(&pk_buf, "signerPubkey")?;
+            let signer_pubkey = to_hybrid_pubkey(&pk_buf, "signerPubkey")?;
 
             let kl_buf = meta
                 .key_log_id
@@ -1055,7 +1134,13 @@ fn header_to_serde(header: vollcrypt_files_core::Header) -> HeaderObj {
         hash_algorithm: header.hash_algorithm as u8,
         wraps: header.wraps.into_iter().map(wrap_entry_to_serde).collect(),
         signed_metadata: header.signed_metadata.map(signed_metadata_to_serde),
-        signature: header.signature.map(|s| s.to_vec()),
+        signature: header.signature.map(|s| {
+            if header.version == 3 {
+                s.write()
+            } else {
+                s.ed25519.to_vec()
+            }
+        }),
     }
 }
 
@@ -1076,12 +1161,19 @@ fn serde_to_header(obj: HeaderObj) -> Result<vollcrypt_files_core::Header, JsVal
 
     let signature = match obj.signature {
         Some(s) => {
-            if s.len() != 64 {
-                return Err(JsValue::from_str("signature must be exactly 64 bytes"));
+            if s.len() == 64 {
+                let mut ed_sig = [0u8; 64];
+                ed_sig.copy_from_slice(&s);
+                Some(HybridSignature {
+                    ed25519: ed_sig,
+                    mldsa: Vec::new(),
+                })
+            } else {
+                match HybridSignature::parse(&s) {
+                    Ok(sig) => Some(sig),
+                    Err(e) => return Err(JsValue::from_str(&e.to_string())),
+                }
             }
-            let mut sig = [0u8; 64];
-            sig.copy_from_slice(&s);
-            Some(sig)
         }
         None => None,
     };
@@ -1095,7 +1187,12 @@ fn serde_to_header(obj: HeaderObj) -> Result<vollcrypt_files_core::Header, JsVal
     let hash_algorithm = match obj.hash_algorithm {
         0 => vollcrypt_files_core::HashAlgorithm::Sha256,
         1 => vollcrypt_files_core::HashAlgorithm::Blake3,
-        other => return Err(JsValue::from_str(&format!("Invalid hashAlgorithm value: {}", other))),
+        other => {
+            return Err(JsValue::from_str(&format!(
+                "Invalid hashAlgorithm value: {}",
+                other
+            )))
+        }
     };
 
     Ok(vollcrypt_files_core::Header {
@@ -1205,8 +1302,8 @@ pub fn sign_header_plain(
 ) -> Result<JsValue, JsValue> {
     let obj: HeaderObj = serde_wasm_bindgen::from_value(header).map_err(to_js_err)?;
     let mut core_header = serde_to_header(obj)?;
-    let signer_pk_arr = to_arr32(signer_pk, "signer_pk")?;
-    let signer_sk_arr = to_arr32(signer_sk, "signer_sk")?;
+    let signer_pk_arr = to_hybrid_pubkey(signer_pk, "signer_pk")?;
+    let signer_sk_arr = to_hybrid_secret_key(signer_sk, "signer_sk")?;
     let key_log_id_arr = to_arr32(key_log_id, "key_log_id")?;
 
     vollcrypt_files_core::sign_header_plain(
@@ -1236,8 +1333,8 @@ pub fn sign_header_sealed(
 ) -> Result<JsValue, JsValue> {
     let obj: HeaderObj = serde_wasm_bindgen::from_value(header).map_err(to_js_err)?;
     let mut core_header = serde_to_header(obj)?;
-    let signer_pk_arr = to_arr32(signer_pk, "signer_pk")?;
-    let signer_sk_arr = to_arr32(signer_sk, "signer_sk")?;
+    let signer_pk_arr = to_hybrid_pubkey(signer_pk, "signer_pk")?;
+    let signer_sk_arr = to_hybrid_secret_key(signer_sk, "signer_sk")?;
     let key_log_id_arr = to_arr32(key_log_id, "key_log_id")?;
     let group_id_arr = to_arr16(sealed_group_id, "sealed_group_id")?;
     let sealed_gk_arr = to_arr32(sealed_gk, "sealed_gk")?;
@@ -1263,7 +1360,7 @@ pub fn verify_header_signature_plain(header: JsValue) -> Result<Vec<u8>, JsValue
     let obj: HeaderObj = serde_wasm_bindgen::from_value(header).map_err(to_js_err)?;
     let core_header = serde_to_header(obj)?;
     match vollcrypt_files_core::verify_header_signature_plain(&core_header) {
-        Ok(pubkey) => Ok(pubkey.to_vec()),
+        Ok(pubkey) => Ok(pubkey.write()),
         Err(e) => Err(to_js_err(e)),
     }
 }
@@ -1272,12 +1369,13 @@ pub fn verify_header_signature_plain(header: JsValue) -> Result<Vec<u8>, JsValue
 pub fn verify_header_signature_sealed(
     header: JsValue,
     sealed_gk: &[u8],
+    key_log: &KeyLog,
 ) -> Result<Vec<u8>, JsValue> {
     let obj: HeaderObj = serde_wasm_bindgen::from_value(header).map_err(to_js_err)?;
     let core_header = serde_to_header(obj)?;
     let gk_arr = to_arr32(sealed_gk, "sealed_gk")?;
-    match vollcrypt_files_core::verify_header_signature_sealed(&core_header, &gk_arr) {
-        Ok(pubkey) => Ok(pubkey.to_vec()),
+    match vollcrypt_files_core::verify_header_signature_sealed(&core_header, &gk_arr, &key_log.inner) {
+        Ok(pubkey) => Ok(pubkey.write()),
         Err(e) => Err(to_js_err(e)),
     }
 }
@@ -1312,11 +1410,11 @@ fn entry_to_serde(entry: &vollcrypt_files_core::KeyLogEntry) -> KeyLogEntry {
             kind: "DeviceRegister".to_string(),
             user_id: Some(user_id.to_vec()),
             device_id: device_id.to_vec(),
-            device_pubkey: Some(device_pubkey.to_vec()),
+            device_pubkey: Some(device_pubkey.write()),
             human_label: Some(human_label.clone()),
             prev_hash: entry.prev_hash.to_vec(),
             timestamp: entry.timestamp as u32,
-            signature: entry.signature.to_vec(),
+            signature: entry.signature.write(),
         },
         vollcrypt_files_core::KeyLogEntryType::DeviceRevoke { device_id } => KeyLogEntry {
             kind: "DeviceRevoke".to_string(),
@@ -1326,7 +1424,7 @@ fn entry_to_serde(entry: &vollcrypt_files_core::KeyLogEntry) -> KeyLogEntry {
             human_label: None,
             prev_hash: entry.prev_hash.to_vec(),
             timestamp: entry.timestamp as u32,
-            signature: entry.signature.to_vec(),
+            signature: entry.signature.write(),
         },
     }
 }
@@ -1340,7 +1438,7 @@ pub struct KeyLog {
 impl KeyLog {
     #[wasm_bindgen]
     pub fn create(authority_pubkey: &[u8]) -> Result<KeyLog, JsValue> {
-        let auth_pk = to_arr32(authority_pubkey, "authority_pubkey")?;
+        let auth_pk = to_hybrid_pubkey(authority_pubkey, "authority_pubkey")?;
         Ok(KeyLog {
             inner: vollcrypt_files_core::KeyLog::new(auth_pk),
         })
@@ -1376,8 +1474,8 @@ impl KeyLog {
     ) -> Result<Vec<u8>, JsValue> {
         let u_id = to_arr16(user_id, "user_id")?;
         let d_id = to_arr16(device_id, "device_id")?;
-        let d_pk = to_arr32(device_pk, "device_pk")?;
-        let auth_sk = to_arr32(authority_sk, "authority_sk")?;
+        let d_pk = to_hybrid_pubkey(device_pk, "device_pk")?;
+        let auth_sk = to_hybrid_secret_key(authority_sk, "authority_sk")?;
 
         match self
             .inner
@@ -1396,7 +1494,7 @@ impl KeyLog {
         timestamp: u32,
     ) -> Result<(), JsValue> {
         let d_id = to_arr16(device_id, "device_id")?;
-        let auth_sk = to_arr32(authority_sk, "authority_sk")?;
+        let auth_sk = to_hybrid_secret_key(authority_sk, "authority_sk")?;
 
         self.inner
             .revoke_device(d_id, &auth_sk, timestamp as u64)
@@ -1458,11 +1556,14 @@ pub fn resolve_sender(
         core_sealed_gk = Some(gk_arr);
     }
 
-    match vollcrypt_files_core::resolve_sender(&core_header, &key_log.inner, core_sealed_gk.as_ref())
-    {
+    match vollcrypt_files_core::resolve_sender(
+        &core_header,
+        &key_log.inner,
+        core_sealed_gk.as_ref(),
+    ) {
         Ok(info) => {
             let res = SenderInfo {
-                signer_pubkey: info.signer_pubkey.to_vec(),
+                signer_pubkey: info.signer_pubkey.write(),
                 user_id: info.user_id.to_vec(),
                 device_id: info.device_id.to_vec(),
                 device_was_active: info.device_was_active,
@@ -1512,61 +1613,72 @@ pub async fn encrypt_file_pipelined_async_wasm(
 ) -> Result<JsValue, JsValue> {
     let dek_arr = to_arr32(dek, "dek")?;
     let file_id_arr = to_arr16(file_id, "file_id")?;
-    
+
     let wraps_objs: Vec<WrapEntry> = serde_wasm_bindgen::from_value(wraps).map_err(to_js_err)?;
     let mut core_wraps = Vec::with_capacity(wraps_objs.len());
     for w in wraps_objs {
         core_wraps.push(serde_to_wrap_entry(w)?);
     }
-    
+
     let mode = vollcrypt_files_core::Mode::try_from(mode_val)
         .map_err(|_| JsValue::from_str("Invalid mode value"))?;
-        
-    let sign_info: Option<vollcrypt_files_core::PipelinedSignInfo> = if sign_info_val.is_null() || sign_info_val.is_undefined() {
-        None
-    } else {
-        let js_info: SignInfoJs = serde_wasm_bindgen::from_value(sign_info_val).map_err(to_js_err)?;
-        let signer_pk = to_arr32(&js_info.signer_pk, "signerPk")?;
-        let signer_sk = to_arr32(&js_info.signer_sk, "signerSk")?;
-        let key_log_id = to_arr32(&js_info.key_log_id, "keyLogId")?;
-        
-        match js_info.kind.as_str() {
-            "Plain" => Some(vollcrypt_files_core::PipelinedSignInfo::Plain {
-                signer_ed25519_pk: signer_pk,
-                signer_ed25519_sk: signer_sk,
-                key_log_id,
-                timestamp: js_info.timestamp,
-            }),
-            "Sealed" => {
-                let group_id_buf = js_info.sealed_group_id.ok_or_else(|| JsValue::from_str("Missing sealedGroupId"))?;
-                let sealed_group_id = to_arr16(&group_id_buf, "sealedGroupId")?;
-                let sealed_gk_version = js_info.sealed_gk_version.ok_or_else(|| JsValue::from_str("Missing sealedGkVersion"))?;
-                let sealed_gk_buf = js_info.sealed_gk.ok_or_else(|| JsValue::from_str("Missing sealedGk"))?;
-                let sealed_gk = to_arr32(&sealed_gk_buf, "sealedGk")?;
-                Some(vollcrypt_files_core::PipelinedSignInfo::Sealed {
-                    signer_ed25519_pk: signer_pk,
-                    signer_ed25519_sk: signer_sk,
+
+    let sign_info: Option<vollcrypt_files_core::PipelinedSignInfo> =
+        if sign_info_val.is_null() || sign_info_val.is_undefined() {
+            None
+        } else {
+            let js_info: SignInfoJs =
+                serde_wasm_bindgen::from_value(sign_info_val).map_err(to_js_err)?;
+            let signer_pk = to_hybrid_pubkey(&js_info.signer_pk, "signerPk")?;
+            let signer_sk = to_hybrid_secret_key(&js_info.signer_sk, "signerSk")?;
+            let key_log_id = to_arr32(&js_info.key_log_id, "keyLogId")?;
+
+            match js_info.kind.as_str() {
+                "Plain" => Some(vollcrypt_files_core::PipelinedSignInfo::Plain {
+                    signer_pk,
+                    signer_sk,
                     key_log_id,
                     timestamp: js_info.timestamp,
-                    sealed_group_id,
-                    sealed_gk_version,
-                    sealed_gk,
-                })
+                }),
+                "Sealed" => {
+                    let group_id_buf = js_info
+                        .sealed_group_id
+                        .ok_or_else(|| JsValue::from_str("Missing sealedGroupId"))?;
+                    let sealed_group_id = to_arr16(&group_id_buf, "sealedGroupId")?;
+                    let sealed_gk_version = js_info
+                        .sealed_gk_version
+                        .ok_or_else(|| JsValue::from_str("Missing sealedGkVersion"))?;
+                    let sealed_gk_buf = js_info
+                        .sealed_gk
+                        .ok_or_else(|| JsValue::from_str("Missing sealedGk"))?;
+                    let sealed_gk = to_arr32(&sealed_gk_buf, "sealedGk")?;
+                    Some(vollcrypt_files_core::PipelinedSignInfo::Sealed {
+                        signer_pk,
+                        signer_sk,
+                        key_log_id,
+                        timestamp: js_info.timestamp,
+                        sealed_group_id,
+                        sealed_gk_version,
+                        sealed_gk,
+                    })
+                }
+                _ => return Err(JsValue::from_str("Unknown PipelinedSignInfo kind")),
             }
-            _ => return Err(JsValue::from_str("Unknown PipelinedSignInfo kind")),
-        }
-    };
-    
+        };
+
     // Parse write_mode to ensure JS caller passed valid schema, though ignored in in-memory WASM mode
-    let _write_mode: Option<IoWriteMode> = if write_mode_val.is_null() || write_mode_val.is_undefined() {
-        None
-    } else {
-        Some(serde_wasm_bindgen::from_value(write_mode_val).map_err(to_js_err)?)
-    };
+    let _write_mode: Option<IoWriteMode> =
+        if write_mode_val.is_null() || write_mode_val.is_undefined() {
+            None
+        } else {
+            Some(serde_wasm_bindgen::from_value(write_mode_val).map_err(to_js_err)?)
+        };
 
     // Register WasmWebCryptoProvider
     #[cfg(target_arch = "wasm32")]
-    let _ = vollcrypt_files_core::set_crypto_provider(Box::new(vollcrypt_files_core::WasmWebCryptoProvider));
+    let _ = vollcrypt_files_core::set_crypto_provider(Box::new(
+        vollcrypt_files_core::WasmWebCryptoProvider,
+    ));
 
     match vollcrypt_files_core::pipelined_io::encrypt_file_pipelined_async(
         plaintext,
@@ -1576,7 +1688,9 @@ pub async fn encrypt_file_pipelined_async_wasm(
         core_wraps,
         mode,
         sign_info,
-    ).await {
+    )
+    .await
+    {
         Ok((header, encrypted_data)) => {
             #[derive(Serialize)]
             struct EncryptResultJs {
@@ -1599,15 +1713,16 @@ pub async fn decrypt_file_pipelined_async_wasm(
     dek: &[u8],
 ) -> Result<JsValue, JsValue> {
     let dek_arr = to_arr32(dek, "dek")?;
-    
+
     // Register WasmWebCryptoProvider
     #[cfg(target_arch = "wasm32")]
-    let _ = vollcrypt_files_core::set_crypto_provider(Box::new(vollcrypt_files_core::WasmWebCryptoProvider));
+    let _ = vollcrypt_files_core::set_crypto_provider(Box::new(
+        vollcrypt_files_core::WasmWebCryptoProvider,
+    ));
 
-    match vollcrypt_files_core::pipelined_io::decrypt_file_pipelined_async(
-        ciphertext,
-        &dek_arr,
-    ).await {
+    match vollcrypt_files_core::pipelined_io::decrypt_file_pipelined_async(ciphertext, &dek_arr)
+        .await
+    {
         Ok((header, plaintext)) => {
             #[derive(Serialize)]
             struct DecryptResultJs {
@@ -1623,4 +1738,3 @@ pub async fn decrypt_file_pipelined_async_wasm(
         Err(e) => Err(to_js_err(e)),
     }
 }
-

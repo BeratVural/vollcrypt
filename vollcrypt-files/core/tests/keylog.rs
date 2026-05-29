@@ -1,15 +1,15 @@
 use vollcrypt_files_core::{
-    ed25519_keypair_generate, generate_file_id, FileFormatError, KeyLog, KeyLogEntryType,
+    hybrid_keypair_generate, generate_file_id, FileFormatError, KeyLog, KeyLogEntryType,
 };
 
 #[test]
 fn register_one_device() {
-    let (auth_pk, auth_sk) = ed25519_keypair_generate();
+    let (auth_pk, auth_sk) = hybrid_keypair_generate();
     let mut keylog = KeyLog::new(auth_pk);
 
     let user_id = generate_file_id();
     let device_id = generate_file_id();
-    let (device_pk, _device_sk) = ed25519_keypair_generate();
+    let (device_pk, _device_sk) = hybrid_keypair_generate();
 
     let entry_hash = keylog
         .register_device(user_id, device_id, device_pk, "MacBook Pro", &auth_sk, 100)
@@ -35,14 +35,14 @@ fn register_one_device() {
 
 #[test]
 fn register_two_devices() {
-    let (auth_pk, auth_sk) = ed25519_keypair_generate();
+    let (auth_pk, auth_sk) = hybrid_keypair_generate();
     let mut keylog = KeyLog::new(auth_pk);
 
     let user_id = generate_file_id();
     let device_id1 = generate_file_id();
-    let (device_pk1, _device_sk1) = ed25519_keypair_generate();
+    let (device_pk1, _device_sk1) = hybrid_keypair_generate();
     let device_id2 = generate_file_id();
-    let (device_pk2, _device_sk2) = ed25519_keypair_generate();
+    let (device_pk2, _device_sk2) = hybrid_keypair_generate();
 
     let hash1 = keylog
         .register_device(user_id, device_id1, device_pk1, "iPhone 15", &auth_sk, 100)
@@ -59,12 +59,12 @@ fn register_two_devices() {
 
 #[test]
 fn revoke_device() {
-    let (auth_pk, auth_sk) = ed25519_keypair_generate();
+    let (auth_pk, auth_sk) = hybrid_keypair_generate();
     let mut keylog = KeyLog::new(auth_pk);
 
     let user_id = generate_file_id();
     let device_id = generate_file_id();
-    let (device_pk, _device_sk) = ed25519_keypair_generate();
+    let (device_pk, _device_sk) = hybrid_keypair_generate();
 
     keylog
         .register_device(user_id, device_id, device_pk, "MacBook Pro", &auth_sk, 100)
@@ -84,7 +84,7 @@ fn revoke_device() {
 
 #[test]
 fn register_then_revoke_unknown_fails() {
-    let (auth_pk, auth_sk) = ed25519_keypair_generate();
+    let (auth_pk, auth_sk) = hybrid_keypair_generate();
     let mut keylog = KeyLog::new(auth_pk);
     let unknown_device_id = generate_file_id();
 
@@ -94,12 +94,12 @@ fn register_then_revoke_unknown_fails() {
 
 #[test]
 fn double_revoke_fails() {
-    let (auth_pk, auth_sk) = ed25519_keypair_generate();
+    let (auth_pk, auth_sk) = hybrid_keypair_generate();
     let mut keylog = KeyLog::new(auth_pk);
 
     let user_id = generate_file_id();
     let device_id = generate_file_id();
-    let (device_pk, _device_sk) = ed25519_keypair_generate();
+    let (device_pk, _device_sk) = hybrid_keypair_generate();
 
     keylog
         .register_device(user_id, device_id, device_pk, "MacBook Pro", &auth_sk, 100)
@@ -113,13 +113,13 @@ fn double_revoke_fails() {
 
 #[test]
 fn unauthorized_signer_breaks_verify() {
-    let (auth_pk, _auth_sk) = ed25519_keypair_generate();
-    let (_wrong_pk, wrong_sk) = ed25519_keypair_generate();
+    let (auth_pk, _auth_sk) = hybrid_keypair_generate();
+    let (_wrong_pk, wrong_sk) = hybrid_keypair_generate();
     let mut keylog = KeyLog::new(auth_pk);
 
     let user_id = generate_file_id();
     let device_id = generate_file_id();
-    let (device_pk, _device_sk) = ed25519_keypair_generate();
+    let (device_pk, _device_sk) = hybrid_keypair_generate();
 
     // Sign with unauthorized key wrong_sk
     keylog
@@ -132,12 +132,12 @@ fn unauthorized_signer_breaks_verify() {
 
 #[test]
 fn tampered_entry_data_breaks_verify() {
-    let (auth_pk, auth_sk) = ed25519_keypair_generate();
+    let (auth_pk, auth_sk) = hybrid_keypair_generate();
     let mut keylog = KeyLog::new(auth_pk);
 
     let user_id = generate_file_id();
     let device_id = generate_file_id();
-    let (device_pk, _device_sk) = ed25519_keypair_generate();
+    let (device_pk, _device_sk) = hybrid_keypair_generate();
 
     keylog
         .register_device(user_id, device_id, device_pk, "MacBook Pro", &auth_sk, 100)
@@ -158,14 +158,14 @@ fn tampered_entry_data_breaks_verify() {
 
 #[test]
 fn tampered_prev_hash_breaks_chain() {
-    let (auth_pk, auth_sk) = ed25519_keypair_generate();
+    let (auth_pk, auth_sk) = hybrid_keypair_generate();
     let mut keylog = KeyLog::new(auth_pk);
 
     let user_id = generate_file_id();
     let device_id1 = generate_file_id();
-    let (device_pk1, _device_sk1) = ed25519_keypair_generate();
+    let (device_pk1, _device_sk1) = hybrid_keypair_generate();
     let device_id2 = generate_file_id();
-    let (device_pk2, _device_sk2) = ed25519_keypair_generate();
+    let (device_pk2, _device_sk2) = hybrid_keypair_generate();
 
     keylog
         .register_device(user_id, device_id1, device_pk1, "iPhone 15", &auth_sk, 100)
@@ -183,14 +183,14 @@ fn tampered_prev_hash_breaks_chain() {
 
 #[test]
 fn keylog_roundtrip_binary() {
-    let (auth_pk, auth_sk) = ed25519_keypair_generate();
+    let (auth_pk, auth_sk) = hybrid_keypair_generate();
     let mut keylog = KeyLog::new(auth_pk);
 
     let user_id = generate_file_id();
     let device_id1 = generate_file_id();
-    let (device_pk1, _device_sk1) = ed25519_keypair_generate();
+    let (device_pk1, _device_sk1) = hybrid_keypair_generate();
     let device_id2 = generate_file_id();
-    let (device_pk2, _device_sk2) = ed25519_keypair_generate();
+    let (device_pk2, _device_sk2) = hybrid_keypair_generate();
 
     keylog
         .register_device(user_id, device_id1, device_pk1, "iPhone 15", &auth_sk, 100)
@@ -212,12 +212,12 @@ fn keylog_roundtrip_binary() {
 
 #[test]
 fn lookup_by_entry_hash() {
-    let (auth_pk, auth_sk) = ed25519_keypair_generate();
+    let (auth_pk, auth_sk) = hybrid_keypair_generate();
     let mut keylog = KeyLog::new(auth_pk);
 
     let user_id = generate_file_id();
     let device_id = generate_file_id();
-    let (device_pk, _device_sk) = ed25519_keypair_generate();
+    let (device_pk, _device_sk) = hybrid_keypair_generate();
 
     let entry_hash = keylog
         .register_device(user_id, device_id, device_pk, "MacBook Pro", &auth_sk, 100)

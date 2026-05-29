@@ -1,12 +1,12 @@
 use vollcrypt_files_core::{
-    ed25519_keypair_generate, generate_file_id, generate_gk, generate_recipient_keypair,
+    hybrid_keypair_generate, generate_file_id, generate_gk, generate_recipient_keypair,
     unwrap_key_with_recipient_key, wrap_key_to_recipient, FileFormatError, GroupManifest,
     Operation,
 };
 
 #[test]
 fn rotate_increments_version() {
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let (rec_pk, _rec_sk) = generate_recipient_keypair();
     let group_id = generate_file_id();
     let founder_id = generate_file_id();
@@ -27,7 +27,7 @@ fn rotate_increments_version() {
     assert_eq!(manifest.current_gk_version(), 1);
 
     let ver = manifest
-        .rotate_group_key(&gk2, &admin_pk, &admin_sk, 100)
+        .rotate_group_key(&gk2, &admin_sk, 100)
         .unwrap();
 
     assert_eq!(ver, 2);
@@ -40,7 +40,7 @@ fn rotate_increments_version() {
 
 #[test]
 fn rotate_includes_all_current_members() {
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let (rec_pk1, _rec_sk1) = generate_recipient_keypair();
     let group_id = generate_file_id();
     let founder_id = generate_file_id();
@@ -60,7 +60,7 @@ fn rotate_includes_all_current_members() {
 
     // Add Member 2
     let member2_id = generate_file_id();
-    let (m2_signing_pk, _m2_signing_sk) = ed25519_keypair_generate();
+    let (m2_signing_pk, _m2_signing_sk) = hybrid_keypair_generate();
     let (rec_pk2, _rec_sk2) = generate_recipient_keypair();
     let gk_wrap2 = wrap_key_to_recipient(&gk1, member2_id, 1, &rec_pk2).unwrap();
     manifest
@@ -69,11 +69,11 @@ fn rotate_includes_all_current_members() {
 
     // Rotate Key
     manifest
-        .rotate_group_key(&gk2, &admin_pk, &admin_sk, 200)
+        .rotate_group_key(&gk2, &admin_sk, 200)
         .unwrap();
 
     let op =
-        Operation::parse(manifest.operations[2].op_type, &manifest.operations[2].data).unwrap();
+        Operation::parse(manifest.operations[2].op_type, &manifest.operations[2].data, manifest.version).unwrap();
 
     if let Operation::RotateKey {
         new_gk_version,
@@ -91,7 +91,7 @@ fn rotate_includes_all_current_members() {
 
 #[test]
 fn rotate_excludes_removed_members() {
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let (rec_pk1, _rec_sk1) = generate_recipient_keypair();
     let group_id = generate_file_id();
     let founder_id = generate_file_id();
@@ -111,7 +111,7 @@ fn rotate_excludes_removed_members() {
 
     // Add Member 2
     let member2_id = generate_file_id();
-    let (m2_signing_pk, _m2_signing_sk) = ed25519_keypair_generate();
+    let (m2_signing_pk, _m2_signing_sk) = hybrid_keypair_generate();
     let (rec_pk2, _rec_sk2) = generate_recipient_keypair();
     let gk_wrap2 = wrap_key_to_recipient(&gk1, member2_id, 1, &rec_pk2).unwrap();
     manifest
@@ -123,11 +123,11 @@ fn rotate_excludes_removed_members() {
 
     // Rotate Key
     manifest
-        .rotate_group_key(&gk2, &admin_pk, &admin_sk, 300)
+        .rotate_group_key(&gk2, &admin_sk, 300)
         .unwrap();
 
     let op =
-        Operation::parse(manifest.operations[3].op_type, &manifest.operations[3].data).unwrap();
+        Operation::parse(manifest.operations[3].op_type, &manifest.operations[3].data, manifest.version).unwrap();
 
     if let Operation::RotateKey { wraps, .. } = op {
         assert_eq!(wraps.len(), 1);
@@ -139,7 +139,7 @@ fn rotate_excludes_removed_members() {
 
 #[test]
 fn member_can_unwrap_new_gk() {
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let (rec_pk, rec_sk) = generate_recipient_keypair();
     let group_id = generate_file_id();
     let founder_id = generate_file_id();
@@ -159,7 +159,7 @@ fn member_can_unwrap_new_gk() {
 
     // Rotate
     manifest
-        .rotate_group_key(&gk2, &admin_pk, &admin_sk, 400)
+        .rotate_group_key(&gk2, &admin_sk, 400)
         .unwrap();
 
     // Member retrieves wrap for version 2
@@ -173,7 +173,7 @@ fn member_can_unwrap_new_gk() {
 
 #[test]
 fn member_can_still_unwrap_old_gk() {
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let (rec_pk, rec_sk) = generate_recipient_keypair();
     let group_id = generate_file_id();
     let founder_id = generate_file_id();
@@ -193,7 +193,7 @@ fn member_can_still_unwrap_old_gk() {
 
     // Rotate
     manifest
-        .rotate_group_key(&gk2, &admin_pk, &admin_sk, 400)
+        .rotate_group_key(&gk2, &admin_sk, 400)
         .unwrap();
 
     // Member retrieves wrap for version 1
@@ -207,8 +207,8 @@ fn member_can_still_unwrap_old_gk() {
 
 #[test]
 fn unauthorized_rotate_fails() {
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
-    let (_unauth_pk, unauth_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
+    let (_unauth_pk, unauth_sk) = hybrid_keypair_generate();
     let (rec_pk, _rec_sk) = generate_recipient_keypair();
     let group_id = generate_file_id();
     let founder_id = generate_file_id();
@@ -227,13 +227,13 @@ fn unauthorized_rotate_fails() {
     );
 
     // Rotate with unauthorized key
-    let res = manifest.rotate_group_key(&gk2, &admin_pk, &unauth_sk, 500);
+    let res = manifest.rotate_group_key(&gk2, &unauth_sk, 500);
     assert!(matches!(res, Err(FileFormatError::NotAuthorized)));
 }
 
 #[test]
 fn rotation_preserves_chain_integrity() {
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let (rec_pk, _rec_sk) = generate_recipient_keypair();
     let group_id = generate_file_id();
     let founder_id = generate_file_id();
@@ -252,7 +252,7 @@ fn rotation_preserves_chain_integrity() {
     );
 
     manifest
-        .rotate_group_key(&gk2, &admin_pk, &admin_sk, 600)
+        .rotate_group_key(&gk2, &admin_sk, 600)
         .unwrap();
 
     assert!(manifest.verify().is_ok());

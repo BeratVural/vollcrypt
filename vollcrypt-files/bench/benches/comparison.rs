@@ -1,5 +1,5 @@
+use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit};
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead};
 use vollcrypt_files_core::*;
 
 fn calculate_shannon_entropy(data: &[u8]) -> f64 {
@@ -33,7 +33,9 @@ fn bench_raw_vs_vollcrypt(c: &mut Criterion) {
         let cipher = Aes256Gcm::new(key);
         let nonce = aes_gcm::Nonce::from_slice(&[0u8; 12]);
         b.iter(|| {
-            let res = cipher.encrypt(nonce, black_box(plaintext.as_slice())).unwrap();
+            let res = cipher
+                .encrypt(nonce, black_box(plaintext.as_slice()))
+                .unwrap();
             let _ = black_box(res);
         });
     });
@@ -41,7 +43,7 @@ fn bench_raw_vs_vollcrypt(c: &mut Criterion) {
     // Vollcrypt Encrypt Chunk (which includes key derivation, subkey zeroization, AAD framing)
     g.bench_function("vollcrypt_encrypt_chunk", |b| {
         b.iter(|| {
-            let res = encrypt_chunk(&dek, &file_id, 0, black_box(&plaintext)).unwrap();
+            let res = encrypt_chunk(&dek, &file_id, 0, black_box(&plaintext), None).unwrap();
             let _ = black_box(res);
         });
     });
@@ -55,7 +57,7 @@ fn check_compression_entropy(c: &mut Criterion) {
     let dek = [0u8; 32];
     let file_id = [0u8; 16];
 
-    let env = encrypt_chunk(&dek, &file_id, 0, &plaintext).unwrap();
+    let env = encrypt_chunk(&dek, &file_id, 0, &plaintext, None).unwrap();
     let ciphertext = env.write();
     let entropy = calculate_shannon_entropy(&ciphertext);
 
@@ -73,9 +75,5 @@ fn check_compression_entropy(c: &mut Criterion) {
              entropy, (entropy / 8.0) * 100.0);
 }
 
-criterion_group!(
-    benches,
-    bench_raw_vs_vollcrypt,
-    check_compression_entropy
-);
+criterion_group!(benches, bench_raw_vs_vollcrypt, check_compression_entropy);
 criterion_main!(benches);

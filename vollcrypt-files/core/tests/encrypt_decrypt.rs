@@ -1,4 +1,6 @@
-use vollcrypt_files_core::{decrypt_chunk, encrypt_chunk, derive_chunk_keys, derive_chunk_subkey, FileFormatError};
+use vollcrypt_files_core::{
+    decrypt_chunk, derive_chunk_keys, derive_chunk_subkey, encrypt_chunk, FileFormatError,
+};
 
 #[test]
 fn single_chunk_roundtrip() {
@@ -7,10 +9,10 @@ fn single_chunk_roundtrip() {
     let chunk_index = 42;
     let plaintext = vec![0xBC; 1024]; // 1 KB
 
-    let envelope = encrypt_chunk(&dek, &file_id, chunk_index, &plaintext).unwrap();
+    let envelope = encrypt_chunk(&dek, &file_id, chunk_index, &plaintext, None).unwrap();
     assert_eq!(envelope.chunk_index, chunk_index);
 
-    let decrypted = decrypt_chunk(&dek, &file_id, chunk_index, &envelope).unwrap();
+    let decrypted = decrypt_chunk(&dek, &file_id, chunk_index, &envelope, None).unwrap();
     assert_eq!(decrypted, plaintext);
 }
 
@@ -25,13 +27,13 @@ fn many_chunks_roundtrip() {
 
     for i in 0..chunks_count {
         let plaintext = vec![i as u8; 256];
-        let envelope = encrypt_chunk(&dek, &file_id, i, &plaintext).unwrap();
+        let envelope = encrypt_chunk(&dek, &file_id, i, &plaintext, None).unwrap();
         envelopes.push(envelope);
         plaintexts.push(plaintext);
     }
 
     for i in 0..chunks_count {
-        let decrypted = decrypt_chunk(&dek, &file_id, i, &envelopes[i as usize]).unwrap();
+        let decrypted = decrypt_chunk(&dek, &file_id, i, &envelopes[i as usize], None).unwrap();
         assert_eq!(decrypted, plaintexts[i as usize]);
     }
 }
@@ -43,12 +45,12 @@ fn tamper_ciphertext_fails() {
     let chunk_index = 0;
     let plaintext = b"Hello, World!";
 
-    let mut envelope = encrypt_chunk(&dek, &file_id, chunk_index, plaintext).unwrap();
+    let mut envelope = encrypt_chunk(&dek, &file_id, chunk_index, plaintext, None).unwrap();
 
     // Tamper ciphertext
     envelope.ciphertext[0] ^= 1;
 
-    let result = decrypt_chunk(&dek, &file_id, chunk_index, &envelope);
+    let result = decrypt_chunk(&dek, &file_id, chunk_index, &envelope, None);
     assert!(matches!(result, Err(FileFormatError::AesGcmDecryptFailed)));
 }
 
@@ -59,12 +61,12 @@ fn tamper_iv_fails() {
     let chunk_index = 0;
     let plaintext = b"Hello, World!";
 
-    let mut envelope = encrypt_chunk(&dek, &file_id, chunk_index, plaintext).unwrap();
+    let mut envelope = encrypt_chunk(&dek, &file_id, chunk_index, plaintext, None).unwrap();
 
     // Tamper IV
     envelope.iv[0] ^= 1;
 
-    let result = decrypt_chunk(&dek, &file_id, chunk_index, &envelope);
+    let result = decrypt_chunk(&dek, &file_id, chunk_index, &envelope, None);
     assert!(matches!(result, Err(FileFormatError::AesGcmDecryptFailed)));
 }
 
@@ -75,12 +77,12 @@ fn tamper_tag_fails() {
     let chunk_index = 0;
     let plaintext = b"Hello, World!";
 
-    let mut envelope = encrypt_chunk(&dek, &file_id, chunk_index, plaintext).unwrap();
+    let mut envelope = encrypt_chunk(&dek, &file_id, chunk_index, plaintext, None).unwrap();
 
     // Tamper Tag
     envelope.tag[0] ^= 1;
 
-    let result = decrypt_chunk(&dek, &file_id, chunk_index, &envelope);
+    let result = decrypt_chunk(&dek, &file_id, chunk_index, &envelope, None);
     assert!(matches!(result, Err(FileFormatError::AesGcmDecryptFailed)));
 }
 
@@ -92,11 +94,11 @@ fn swap_chunks_fails() {
     let plaintext_a = b"Plaintext AAAAA";
     let plaintext_b = b"Plaintext BBBBB";
 
-    let envelope_a = encrypt_chunk(&dek, &file_id, 0, plaintext_a).unwrap();
-    let envelope_b = encrypt_chunk(&dek, &file_id, 1, plaintext_b).unwrap();
+    let envelope_a = encrypt_chunk(&dek, &file_id, 0, plaintext_a, None).unwrap();
+    let envelope_b = encrypt_chunk(&dek, &file_id, 1, plaintext_b, None).unwrap();
 
     // Try to decrypt envelope B as chunk index 0
-    let result = decrypt_chunk(&dek, &file_id, 0, &envelope_b);
+    let result = decrypt_chunk(&dek, &file_id, 0, &envelope_b, None);
     // Should fail with ChunkIndexOutOfOrder since envelope_b.chunk_index (1) != 0
     assert!(matches!(
         result,
@@ -109,7 +111,7 @@ fn swap_chunks_fails() {
     // Try to decrypt envelope A as chunk index 1 (swapping envelope A's chunk index index)
     let mut tampered_envelope_a = envelope_a.clone();
     tampered_envelope_a.chunk_index = 1; // Lie about the chunk index
-    let result = decrypt_chunk(&dek, &file_id, 1, &tampered_envelope_a);
+    let result = decrypt_chunk(&dek, &file_id, 1, &tampered_envelope_a, None);
     // Should fail with AesGcmDecryptFailed because AAD checks index in subkey / AAD block
     assert!(matches!(result, Err(FileFormatError::AesGcmDecryptFailed)));
 }
@@ -122,9 +124,9 @@ fn wrong_file_id_fails() {
     let chunk_index = 0;
     let plaintext = b"Hello, World!";
 
-    let envelope = encrypt_chunk(&dek, &file_id_encrypt, chunk_index, plaintext).unwrap();
+    let envelope = encrypt_chunk(&dek, &file_id_encrypt, chunk_index, plaintext, None).unwrap();
 
-    let result = decrypt_chunk(&dek, &file_id_decrypt, chunk_index, &envelope);
+    let result = decrypt_chunk(&dek, &file_id_decrypt, chunk_index, &envelope, None);
     assert!(matches!(result, Err(FileFormatError::AesGcmDecryptFailed)));
 }
 
@@ -136,9 +138,9 @@ fn wrong_dek_fails() {
     let chunk_index = 0;
     let plaintext = b"Hello, World!";
 
-    let envelope = encrypt_chunk(&dek_encrypt, &file_id, chunk_index, plaintext).unwrap();
+    let envelope = encrypt_chunk(&dek_encrypt, &file_id, chunk_index, plaintext, None).unwrap();
 
-    let result = decrypt_chunk(&dek_decrypt, &file_id, chunk_index, &envelope);
+    let result = decrypt_chunk(&dek_decrypt, &file_id, chunk_index, &envelope, None);
     assert!(matches!(result, Err(FileFormatError::AesGcmDecryptFailed)));
 }
 
@@ -187,8 +189,8 @@ fn encrypt_chunk_no_osrng_determinism() {
     let file_id = [0xEF; 16];
     let idx = 4;
     let pt = b"Deterministic payload";
-    let env1 = encrypt_chunk(&dek, &file_id, idx, pt).unwrap();
-    let env2 = encrypt_chunk(&dek, &file_id, idx, pt).unwrap();
+    let env1 = encrypt_chunk(&dek, &file_id, idx, pt, None).unwrap();
+    let env2 = encrypt_chunk(&dek, &file_id, idx, pt, None).unwrap();
     assert_eq!(env1.iv, env2.iv);
     assert_eq!(env1.ciphertext, env2.ciphertext);
     assert_eq!(env1.tag, env2.tag);
@@ -201,7 +203,7 @@ fn different_dek_different_ciphertext() {
     let file_id = [0xF0; 16];
     let idx = 4;
     let pt = b"Deterministic payload";
-    let env1 = encrypt_chunk(&dek1, &file_id, idx, pt).unwrap();
-    let env2 = encrypt_chunk(&dek2, &file_id, idx, pt).unwrap();
+    let env1 = encrypt_chunk(&dek1, &file_id, idx, pt, None).unwrap();
+    let env2 = encrypt_chunk(&dek2, &file_id, idx, pt, None).unwrap();
     assert_ne!(env1.ciphertext, env2.ciphertext);
 }

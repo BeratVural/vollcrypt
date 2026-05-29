@@ -1,12 +1,13 @@
 use vollcrypt_files_core::{
-    aes256_gcm_decrypt, ed25519_keypair_generate, generate_file_id, generate_gk, sign_header_plain,
-    sign_header_sealed, verify_header_signature_plain, verify_header_signature_sealed, CipherId,
-    FileFormatError, Header, Mode, SignedMetadata, HashAlgorithm,
+    aes256_gcm_decrypt, hybrid_keypair_generate, generate_file_id, generate_gk, sign_header_plain,
+    sign_header_sealed, verify_header_signature_plain, verify_header_signature_plain_policy,
+    verify_header_signature_sealed, verify_header_signature_sealed_policy, CipherId,
+    FileFormatError, HashAlgorithm, Header, Mode, SignedMetadata, KeyLog,
 };
 
 fn create_test_header() -> Header {
     Header {
-        version: 2,
+        version: 3,
         mode: Mode::Group,
         cipher_id: CipherId::Aes256Gcm,
         file_id: generate_file_id(),
@@ -23,7 +24,7 @@ fn create_test_header() -> Header {
 #[test]
 fn sign_verify_plain_roundtrip() {
     let mut header = create_test_header();
-    let (pk, sk) = ed25519_keypair_generate();
+    let (pk, sk) = hybrid_keypair_generate();
     let key_log_id = [0xAA; 32];
     let timestamp = 123456789;
 
@@ -36,9 +37,18 @@ fn sign_verify_plain_roundtrip() {
 #[test]
 fn sign_verify_sealed_roundtrip() {
     let mut header = create_test_header();
-    let (pk, sk) = ed25519_keypair_generate();
-    let key_log_id = [0xBB; 32];
+    let (auth_pk, auth_sk) = hybrid_keypair_generate();
+    let mut key_log = KeyLog::new(auth_pk);
+
+    let (pk, sk) = hybrid_keypair_generate();
     let timestamp = 987654321;
+    let user_id = generate_file_id();
+    let device_id = generate_file_id();
+    
+    let key_log_id = key_log
+        .register_device(user_id, device_id, pk.clone(), "MacBook Pro", &auth_sk, timestamp)
+        .unwrap();
+
     let group_id = generate_file_id();
     let gk = generate_gk();
 
@@ -54,7 +64,7 @@ fn sign_verify_sealed_roundtrip() {
     )
     .unwrap();
 
-    let verified_pk = verify_header_signature_sealed(&header, &gk).unwrap();
+    let verified_pk = verify_header_signature_sealed(&header, &gk, &key_log).unwrap();
     assert_eq!(verified_pk, pk);
 }
 
@@ -68,9 +78,18 @@ fn verify_unsigned_header_fails() {
 #[test]
 fn verify_sealed_with_plain_fails() {
     let mut header = create_test_header();
-    let (pk, sk) = ed25519_keypair_generate();
-    let key_log_id = [0xBB; 32];
+    let (auth_pk, auth_sk) = hybrid_keypair_generate();
+    let mut key_log = KeyLog::new(auth_pk);
+
+    let (pk, sk) = hybrid_keypair_generate();
     let timestamp = 987654321;
+    let user_id = generate_file_id();
+    let device_id = generate_file_id();
+    
+    let key_log_id = key_log
+        .register_device(user_id, device_id, pk.clone(), "MacBook Pro", &auth_sk, timestamp)
+        .unwrap();
+
     let group_id = generate_file_id();
     let gk = generate_gk();
 
@@ -93,22 +112,24 @@ fn verify_sealed_with_plain_fails() {
 #[test]
 fn verify_plain_with_sealed_fails() {
     let mut header = create_test_header();
-    let (pk, sk) = ed25519_keypair_generate();
+    let (pk, sk) = hybrid_keypair_generate();
     let key_log_id = [0xAA; 32];
     let timestamp = 123456789;
     let gk = generate_gk();
+    let (auth_pk, _auth_sk) = hybrid_keypair_generate();
+    let key_log = KeyLog::new(auth_pk);
 
     sign_header_plain(&mut header, &pk, &sk, key_log_id, timestamp).unwrap();
 
-    let res = verify_header_signature_sealed(&header, &gk);
+    let res = verify_header_signature_sealed(&header, &gk, &key_log);
     assert!(matches!(res, Err(FileFormatError::HeaderNotSealed)));
 }
 
 #[test]
 fn wrong_sk_signs_wrong_signature() {
     let mut header = create_test_header();
-    let (pk, _sk) = ed25519_keypair_generate();
-    let (_wrong_pk, wrong_sk) = ed25519_keypair_generate();
+    let (pk, _sk) = hybrid_keypair_generate();
+    let (_wrong_pk, wrong_sk) = hybrid_keypair_generate();
     let key_log_id = [0xAA; 32];
     let timestamp = 123456789;
 
@@ -122,7 +143,7 @@ fn wrong_sk_signs_wrong_signature() {
 #[test]
 fn tampered_header_fails_verify() {
     let mut header = create_test_header();
-    let (pk, sk) = ed25519_keypair_generate();
+    let (pk, sk) = hybrid_keypair_generate();
     let key_log_id = [0xAA; 32];
     let timestamp = 123456789;
 
@@ -138,7 +159,7 @@ fn tampered_header_fails_verify() {
 #[test]
 fn tampered_signature_fails_verify() {
     let mut header = create_test_header();
-    let (pk, sk) = ed25519_keypair_generate();
+    let (pk, sk) = hybrid_keypair_generate();
     let key_log_id = [0xAA; 32];
     let timestamp = 123456789;
 
@@ -146,7 +167,7 @@ fn tampered_signature_fails_verify() {
 
     // Tamper signature
     if let Some(ref mut sig) = header.signature {
-        sig[0] ^= 1;
+        sig.ed25519[0] ^= 1;
     }
 
     let res = verify_header_signature_plain(&header);
@@ -156,9 +177,18 @@ fn tampered_signature_fails_verify() {
 #[test]
 fn wrong_gk_fails_sealed_verify() {
     let mut header = create_test_header();
-    let (pk, sk) = ed25519_keypair_generate();
-    let key_log_id = [0xBB; 32];
+    let (auth_pk, auth_sk) = hybrid_keypair_generate();
+    let mut key_log = KeyLog::new(auth_pk);
+
+    let (pk, sk) = hybrid_keypair_generate();
     let timestamp = 987654321;
+    let user_id = generate_file_id();
+    let device_id = generate_file_id();
+    
+    let key_log_id = key_log
+        .register_device(user_id, device_id, pk.clone(), "MacBook Pro", &auth_sk, timestamp)
+        .unwrap();
+
     let group_id = generate_file_id();
     let gk = generate_gk();
     let wrong_gk = generate_gk();
@@ -175,14 +205,14 @@ fn wrong_gk_fails_sealed_verify() {
     )
     .unwrap();
 
-    let res = verify_header_signature_sealed(&header, &wrong_gk);
+    let res = verify_header_signature_sealed(&header, &wrong_gk, &key_log);
     assert!(matches!(res, Err(FileFormatError::WrongGroupKey)));
 }
 
 #[test]
 fn sealed_timestamp_in_clear() {
     let mut header = create_test_header();
-    let (pk, sk) = ed25519_keypair_generate();
+    let (pk, sk) = hybrid_keypair_generate();
     let key_log_id = [0xBB; 32];
     let timestamp = 987654321;
     let group_id = generate_file_id();
@@ -216,10 +246,115 @@ fn sealed_timestamp_in_clear() {
         aad.extend_from_slice(&timestamp.to_be_bytes());
 
         let plaintext = aes256_gcm_decrypt(&gk, iv, &aad, sealed_payload, sealed_tag).unwrap();
-        assert_eq!(plaintext.len(), 64);
-        assert_eq!(&plaintext[0..32], &pk[..]);
-        assert_eq!(&plaintext[32..64], &key_log_id[..]);
+        // Under v3, plaintext is only 32 bytes (key_log_id)
+        assert_eq!(plaintext.len(), 32);
+        assert_eq!(&plaintext[0..32], &key_log_id[..]);
     } else {
         panic!("Expected Sealed metadata");
     }
+}
+
+#[test]
+fn test_require_signed_policy_plain() {
+    let mut header = create_test_header();
+    let (pk, sk) = hybrid_keypair_generate();
+    let key_log_id = [0xAA; 32];
+    let timestamp = 123456789;
+
+    // Unsigned header (default: version 3, but signature and metadata are None)
+    header.signed_metadata = None;
+    header.signature = None;
+
+    // With require_pq_signature = false, verify should fail with HeaderNotSigned
+    let res = verify_header_signature_plain_policy(&header, false);
+    assert!(matches!(res, Err(FileFormatError::HeaderNotSigned)));
+
+    // With require_pq_signature = true, verify should fail with IntegrityError
+    let res = verify_header_signature_plain_policy(&header, true);
+    assert!(matches!(res, Err(FileFormatError::IntegrityError(_))));
+
+    // Now sign it
+    sign_header_plain(&mut header, &pk, &sk, key_log_id, timestamp).unwrap();
+
+    // Verification should pass in both cases
+    let res_false = verify_header_signature_plain_policy(&header, false).unwrap();
+    assert_eq!(res_false, pk);
+    let res_true = verify_header_signature_plain_policy(&header, true).unwrap();
+    assert_eq!(res_true, pk);
+
+    // Downgrade version to 1 and remove metadata
+    header.version = 1;
+    header.signed_metadata = None;
+    header.signature = None;
+
+    // With require_pq_signature = false, verify should fail with HeaderNotSigned
+    let res = verify_header_signature_plain_policy(&header, false);
+    assert!(matches!(res, Err(FileFormatError::HeaderNotSigned)));
+
+    // With require_pq_signature = true, verify should fail with IntegrityError (downgrade prevention)
+    let res = verify_header_signature_plain_policy(&header, true);
+    assert!(matches!(res, Err(FileFormatError::IntegrityError(_))));
+}
+
+#[test]
+fn test_require_signed_policy_sealed() {
+    let mut header = create_test_header();
+    let (auth_pk, auth_sk) = hybrid_keypair_generate();
+    let mut key_log = KeyLog::new(auth_pk);
+
+    let (pk, sk) = hybrid_keypair_generate();
+    let timestamp = 987654321;
+    let user_id = generate_file_id();
+    let device_id = generate_file_id();
+    
+    let key_log_id = key_log
+        .register_device(user_id, device_id, pk.clone(), "MacBook Pro", &auth_sk, timestamp)
+        .unwrap();
+
+    let group_id = generate_file_id();
+    let gk = generate_gk();
+
+    // Unsigned header
+    header.signed_metadata = None;
+    header.signature = None;
+
+    // With require_pq_signature = false, verify should fail with HeaderNotSigned
+    let res = verify_header_signature_sealed_policy(&header, &gk, &key_log, false);
+    assert!(matches!(res, Err(FileFormatError::HeaderNotSigned)));
+
+    // With require_pq_signature = true, verify should fail with IntegrityError
+    let res = verify_header_signature_sealed_policy(&header, &gk, &key_log, true);
+    assert!(matches!(res, Err(FileFormatError::IntegrityError(_))));
+
+    // Now sign it
+    sign_header_sealed(
+        &mut header,
+        &pk,
+        &sk,
+        key_log_id,
+        timestamp,
+        group_id,
+        1,
+        &gk,
+    )
+    .unwrap();
+
+    // Verification should pass in both cases
+    let res_false = verify_header_signature_sealed_policy(&header, &gk, &key_log, false).unwrap();
+    assert_eq!(res_false, pk);
+    let res_true = verify_header_signature_sealed_policy(&header, &gk, &key_log, true).unwrap();
+    assert_eq!(res_true, pk);
+
+    // Downgrade version to 1 and remove metadata
+    header.version = 1;
+    header.signed_metadata = None;
+    header.signature = None;
+
+    // With require_pq_signature = false, verify should fail with HeaderNotSigned
+    let res = verify_header_signature_sealed_policy(&header, &gk, &key_log, false);
+    assert!(matches!(res, Err(FileFormatError::HeaderNotSigned)));
+
+    // With require_pq_signature = true, verify should fail with IntegrityError (downgrade prevention)
+    let res = verify_header_signature_sealed_policy(&header, &gk, &key_log, true);
+    assert!(matches!(res, Err(FileFormatError::IntegrityError(_))));
 }

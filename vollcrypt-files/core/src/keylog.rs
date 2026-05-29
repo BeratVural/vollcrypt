@@ -1,5 +1,5 @@
 use crate::error::FileFormatError;
-use crate::signing::{ed25519_sign, ed25519_verify};
+use crate::hybrid_sig::{hybrid_sign, hybrid_verify, HybridPublicKey, HybridSecretKey, HybridSignature};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
@@ -8,7 +8,7 @@ pub enum KeyLogEntryType {
     DeviceRegister {
         user_id: [u8; 16],
         device_id: [u8; 16],
-        device_pubkey: [u8; 32],
+        device_pubkey: HybridPublicKey,
         human_label: String, // max 256 byte UTF-8
     },
     DeviceRevoke {
@@ -26,10 +26,10 @@ impl KeyLogEntryType {
                 human_label,
             } => {
                 let label_bytes = human_label.as_bytes();
-                let mut out = Vec::with_capacity(16 + 16 + 32 + 2 + label_bytes.len());
+                let mut out = Vec::with_capacity(16 + 16 + 1984 + 2 + label_bytes.len());
                 out.extend_from_slice(user_id);
                 out.extend_from_slice(device_id);
-                out.extend_from_slice(device_pubkey);
+                out.extend_from_slice(&device_pubkey.write());
                 out.extend_from_slice(&(label_bytes.len() as u16).to_be_bytes());
                 out.extend_from_slice(label_bytes);
                 out
@@ -41,9 +41,9 @@ impl KeyLogEntryType {
     pub fn parse(entry_type_byte: u8, data: &[u8]) -> Result<Self, FileFormatError> {
         match entry_type_byte {
             0 => {
-                if data.len() < 16 + 16 + 32 + 2 {
+                if data.len() < 16 + 16 + 1984 + 2 {
                     return Err(FileFormatError::TruncatedChunk {
-                        expected: 16 + 16 + 32 + 2,
+                        expected: 16 + 16 + 1984 + 2,
                         got: data.len(),
                     });
                 }
@@ -53,25 +53,24 @@ impl KeyLogEntryType {
                 let mut device_id = [0u8; 16];
                 device_id.copy_from_slice(&data[16..32]);
 
-                let mut device_pubkey = [0u8; 32];
-                device_pubkey.copy_from_slice(&data[32..64]);
+                let device_pubkey = HybridPublicKey::parse(&data[32..2016])?;
 
                 let mut label_len_bytes = [0u8; 2];
-                label_len_bytes.copy_from_slice(&data[64..66]);
+                label_len_bytes.copy_from_slice(&data[2016..2018]);
                 let label_len = u16::from_be_bytes(label_len_bytes) as usize;
 
                 if label_len > 256 {
                     return Err(FileFormatError::LabelTooLong);
                 }
 
-                if data.len() < 66 + label_len {
+                if data.len() < 2018 + label_len {
                     return Err(FileFormatError::TruncatedChunk {
-                        expected: 66 + label_len,
+                        expected: 2018 + label_len,
                         got: data.len(),
                     });
                 }
 
-                let label_str = std::str::from_utf8(&data[66..66 + label_len])
+                let label_str = std::str::from_utf8(&data[2018..2018 + label_len])
                     .map_err(|_| FileFormatError::InvalidWrapPayload)?
                     .to_string();
 
@@ -103,7 +102,7 @@ pub struct KeyLogEntry {
     pub entry: KeyLogEntryType,
     pub prev_hash: [u8; 32],
     pub timestamp: u64,
-    pub signature: [u8; 64],
+    pub signature: HybridSignature,
 }
 
 impl KeyLogEntry {
@@ -126,7 +125,7 @@ impl KeyLogEntry {
 
     pub fn write(&self) -> Vec<u8> {
         let mut out = self.sig_message();
-        out.extend_from_slice(&self.signature);
+        out.extend_from_slice(&self.signature.write());
         out
     }
 
@@ -149,19 +148,21 @@ impl KeyLogEntry {
         entry_data_len_bytes.copy_from_slice(&input[41..45]);
         let entry_data_len = u32::from_be_bytes(entry_data_len_bytes) as usize;
 
-        let expected_len = 45 + entry_data_len + 64;
-        if input.len() < expected_len {
+        let entry_data_end = 45 + entry_data_len;
+        if input.len() < entry_data_end {
             return Err(FileFormatError::TruncatedChunk {
-                expected: expected_len,
+                expected: entry_data_end,
                 got: input.len(),
             });
         }
 
-        let entry_data_bytes = &input[45..45 + entry_data_len];
+        let entry_data_bytes = &input[45..entry_data_end];
         let entry = KeyLogEntryType::parse(entry_type_byte, entry_data_bytes)?;
 
-        let mut signature = [0u8; 64];
-        signature.copy_from_slice(&input[45 + entry_data_len..expected_len]);
+        let signature = HybridSignature::parse(&input[entry_data_end..])?;
+        let sig_wire_len = signature.write().len();
+
+        let expected_len = entry_data_end + sig_wire_len;
 
         Ok((
             KeyLogEntry {
@@ -185,12 +186,12 @@ pub fn hash_of_entry(entry: &KeyLogEntry) -> [u8; 32] {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyLog {
-    pub authority_pubkey: [u8; 32],
+    pub authority_pubkey: HybridPublicKey,
     pub entries: Vec<KeyLogEntry>,
 }
 
 impl KeyLog {
-    pub fn new(authority_pubkey: [u8; 32]) -> Self {
+    pub fn new(authority_pubkey: HybridPublicKey) -> Self {
         KeyLog {
             authority_pubkey,
             entries: Vec::new(),
@@ -208,9 +209,9 @@ impl KeyLog {
         &mut self,
         user_id: [u8; 16],
         device_id: [u8; 16],
-        device_pubkey: [u8; 32],
+        device_pubkey: HybridPublicKey,
         human_label: &str,
-        authority_sk: &[u8; 32],
+        authority_sk: &HybridSecretKey,
         timestamp: u64,
     ) -> Result<[u8; 32], FileFormatError> {
         if human_label.len() > 256 {
@@ -227,10 +228,13 @@ impl KeyLog {
             entry: entry_type,
             prev_hash,
             timestamp,
-            signature: [0u8; 64],
+            signature: HybridSignature {
+                ed25519: [0u8; 64],
+                mldsa: Vec::new(),
+            },
         };
         let msg = temp_entry.sig_message();
-        let signature = ed25519_sign(authority_sk, &msg);
+        let signature = hybrid_sign(authority_sk, &self.authority_pubkey, "vollf-keylog-entry", &[], &msg);
         temp_entry.signature = signature;
 
         let entry_hash = hash_of_entry(&temp_entry);
@@ -241,7 +245,7 @@ impl KeyLog {
     pub fn revoke_device(
         &mut self,
         device_id: [u8; 16],
-        authority_sk: &[u8; 32],
+        authority_sk: &HybridSecretKey,
         timestamp: u64,
     ) -> Result<(), FileFormatError> {
         let mut found = false;
@@ -281,10 +285,13 @@ impl KeyLog {
             entry: entry_type,
             prev_hash,
             timestamp,
-            signature: [0u8; 64],
+            signature: HybridSignature {
+                ed25519: [0u8; 64],
+                mldsa: Vec::new(),
+            },
         };
         let msg = temp_entry.sig_message();
-        let signature = ed25519_sign(authority_sk, &msg);
+        let signature = hybrid_sign(authority_sk, &self.authority_pubkey, "vollf-keylog-entry", &[], &msg);
         temp_entry.signature = signature;
 
         self.entries.push(temp_entry);
@@ -299,7 +306,9 @@ impl KeyLog {
             }
 
             let msg = entry.sig_message();
-            ed25519_verify(&self.authority_pubkey, &msg, &entry.signature)?;
+            if !hybrid_verify(&self.authority_pubkey, "vollf-keylog-entry", &[], &msg, &entry.signature) {
+                return Err(FileFormatError::SignatureInvalid);
+            }
 
             prev_hash = hash_of_entry(entry);
         }
@@ -369,20 +378,20 @@ impl KeyLog {
             entries_bytes.extend_from_slice(&entry.write());
         }
 
-        let mut out = Vec::with_capacity(8 + 1 + 3 + 32 + 4 + entries_bytes.len());
+        let mut out = Vec::with_capacity(8 + 1 + 3 + 1984 + 4 + entries_bytes.len());
         out.extend_from_slice(b"VOLLKEYL");
         out.push(1); // Version
         out.extend_from_slice(&[0u8; 3]); // Reserved
-        out.extend_from_slice(&self.authority_pubkey);
+        out.extend_from_slice(&self.authority_pubkey.write());
         out.extend_from_slice(&(self.entries.len() as u32).to_be_bytes());
         out.extend_from_slice(&entries_bytes);
         out
     }
 
     pub fn parse(input: &[u8]) -> Result<KeyLog, FileFormatError> {
-        if input.len() < 8 + 1 + 3 + 32 + 4 {
+        if input.len() < 8 + 1 + 3 + 1984 + 4 {
             return Err(FileFormatError::TruncatedChunk {
-                expected: 48,
+                expected: 2000,
                 got: input.len(),
             });
         }
@@ -396,15 +405,14 @@ impl KeyLog {
             return Err(FileFormatError::UnsupportedKeyLogVersion(version));
         }
 
-        let mut authority_pubkey = [0u8; 32];
-        authority_pubkey.copy_from_slice(&input[12..44]);
+        let authority_pubkey = HybridPublicKey::parse(&input[12..1996])?;
 
         let mut entry_count_bytes = [0u8; 4];
-        entry_count_bytes.copy_from_slice(&input[44..48]);
+        entry_count_bytes.copy_from_slice(&input[1996..2000]);
         let entry_count = u32::from_be_bytes(entry_count_bytes) as usize;
 
         let mut entries = Vec::with_capacity(entry_count);
-        let mut offset = 48;
+        let mut offset = 2000;
 
         for _ in 0..entry_count {
             if offset >= input.len() {

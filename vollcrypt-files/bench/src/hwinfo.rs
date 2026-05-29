@@ -31,11 +31,13 @@ fn detect_cpu_features() -> CpuFeatures {
     use raw_cpuid::CpuId;
     let cpuid = CpuId::new();
 
-    let (aes_ni, avx, pclmulqdq) = cpuid.get_feature_info()
+    let (aes_ni, avx, pclmulqdq) = cpuid
+        .get_feature_info()
         .map(|f| (f.has_aesni(), f.has_avx(), f.has_pclmulqdq()))
         .unwrap_or((false, false, false));
 
-    let (avx2, avx512, sha_ni) = cpuid.get_extended_feature_info()
+    let (avx2, avx512, sha_ni) = cpuid
+        .get_extended_feature_info()
         .map(|f| (f.has_avx2(), f.has_avx512f(), f.has_sha()))
         .unwrap_or((false, false, false));
 
@@ -65,7 +67,11 @@ fn detect_gpu_brand() -> String {
     #[cfg(target_os = "windows")]
     {
         if let Ok(output) = std::process::Command::new("powershell")
-            .args(&["-NoProfile", "-Command", "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"])
+            .args(&[
+                "-NoProfile",
+                "-Command",
+                "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name",
+            ])
             .output()
         {
             let gpu = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -78,7 +84,10 @@ fn detect_gpu_brand() -> String {
             .output()
         {
             let gpu_out = String::from_utf8_lossy(&output.stdout);
-            let lines = gpu_out.lines().map(|s| s.trim()).filter(|s| !s.is_empty() && *s != "Name");
+            let lines = gpu_out
+                .lines()
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty() && *s != "Name");
             let gpus: Vec<_> = lines.collect();
             if !gpus.is_empty() {
                 return gpus.join(", ");
@@ -119,20 +128,24 @@ fn detect_disk_info() -> String {
     if disks.is_empty() {
         return "Unknown Disk".to_string();
     }
-    disks.iter().map(|d| {
-        let kind_str = match d.kind() {
-            sysinfo::DiskKind::SSD => "SSD",
-            sysinfo::DiskKind::HDD => "HDD",
-            _ => "Unknown Type",
-        };
-        format!(
-            "{} [{}] ({:.1} GB free / {:.1} GB total)",
-            d.mount_point().to_string_lossy(),
-            kind_str,
-            d.available_space() as f64 / 1_073_741_824.0,
-            d.total_space() as f64 / 1_073_741_824.0
-        )
-    }).collect::<Vec<_>>().join("; ")
+    disks
+        .iter()
+        .map(|d| {
+            let kind_str = match d.kind() {
+                sysinfo::DiskKind::SSD => "SSD",
+                sysinfo::DiskKind::HDD => "HDD",
+                _ => "Unknown Type",
+            };
+            format!(
+                "{} [{}] ({:.1} GB free / {:.1} GB total)",
+                d.mount_point().to_string_lossy(),
+                kind_str,
+                d.available_space() as f64 / 1_073_741_824.0,
+                d.total_space() as f64 / 1_073_741_824.0
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 pub fn detect() -> HwInfo {
@@ -140,13 +153,12 @@ pub fn detect() -> HwInfo {
     sys.refresh_all();
 
     let cpus = sys.cpus();
-    let cpu_brand = cpus.first()
+    let cpu_brand = cpus
+        .first()
         .map(|cpu| cpu.brand().trim().to_string())
         .unwrap_or_else(|| "Unknown".to_string());
-    
-    let cpu_freq_mhz = cpus.first()
-        .map(|cpu| cpu.frequency())
-        .unwrap_or(0);
+
+    let cpu_freq_mhz = cpus.first().map(|cpu| cpu.frequency()).unwrap_or(0);
 
     let cpu_cores_physical = sys.physical_core_count().unwrap_or(1);
     let cpu_cores_logical = cpus.len();
@@ -185,13 +197,29 @@ pub fn detect() -> HwInfo {
 pub fn render_markdown(info: &HwInfo) -> String {
     let features = info.cpu_features;
     let mut accel = Vec::new();
-    if features.aes_ni { accel.push("AES-NI"); }
-    if features.avx { accel.push("AVX"); }
-    if features.avx2 { accel.push("AVX2"); }
-    if features.avx512 { accel.push("AVX512"); }
-    if features.sha_ni { accel.push("SHA-NI"); }
-    if features.pclmulqdq { accel.push("PCLMULQDQ"); }
-    let accel_str = if accel.is_empty() { "None".to_string() } else { accel.join(", ") };
+    if features.aes_ni {
+        accel.push("AES-NI");
+    }
+    if features.avx {
+        accel.push("AVX");
+    }
+    if features.avx2 {
+        accel.push("AVX2");
+    }
+    if features.avx512 {
+        accel.push("AVX512");
+    }
+    if features.sha_ni {
+        accel.push("SHA-NI");
+    }
+    if features.pclmulqdq {
+        accel.push("PCLMULQDQ");
+    }
+    let accel_str = if accel.is_empty() {
+        "None".to_string()
+    } else {
+        accel.join(", ")
+    };
 
     format!(
         "| Component | Detail |\n\
@@ -217,4 +245,3 @@ pub fn render_markdown(info: &HwInfo) -> String {
         info.rust_version
     )
 }
-

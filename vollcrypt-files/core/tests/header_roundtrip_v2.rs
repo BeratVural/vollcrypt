@@ -1,11 +1,11 @@
 use vollcrypt_files_core::{
-    ed25519_keypair_generate, generate_file_id, generate_gk, sign_header_plain, sign_header_sealed,
-    CipherId, Header, Mode, SignedMetadata, HashAlgorithm,
+    hybrid_keypair_generate, generate_file_id, generate_gk, sign_header_plain, sign_header_sealed,
+    CipherId, HashAlgorithm, Header, Mode, SignedMetadata, HybridSignature, HybridPublicKey,
 };
 
-fn create_test_header() -> Header {
+fn create_test_header(version: u8) -> Header {
     Header {
-        version: 2,
+        version,
         mode: Mode::Group,
         cipher_id: CipherId::Aes256Gcm,
         file_id: generate_file_id(),
@@ -20,9 +20,9 @@ fn create_test_header() -> Header {
 }
 
 #[test]
-fn signed_header_write_parse() {
-    let mut header = create_test_header();
-    let (pk, sk) = ed25519_keypair_generate();
+fn signed_v3_header_write_parse() {
+    let mut header = create_test_header(3);
+    let (pk, sk) = hybrid_keypair_generate();
     let key_log_id = [0xAA; 32];
     let timestamp = 123456789;
 
@@ -32,7 +32,7 @@ fn signed_header_write_parse() {
     let (parsed, parsed_len) = Header::parse(&bytes).unwrap();
 
     assert_eq!(bytes.len(), parsed_len);
-    assert_eq!(parsed.version, 2);
+    assert_eq!(parsed.version, 3);
     assert_eq!(parsed.signature, header.signature);
 
     if let Some(SignedMetadata::Plain {
@@ -50,9 +50,9 @@ fn signed_header_write_parse() {
 }
 
 #[test]
-fn sealed_header_write_parse() {
-    let mut header = create_test_header();
-    let (pk, sk) = ed25519_keypair_generate();
+fn sealed_v3_header_write_parse() {
+    let mut header = create_test_header(3);
+    let (pk, sk) = hybrid_keypair_generate();
     let key_log_id = [0xBB; 32];
     let timestamp = 987654321;
     let group_id = generate_file_id();
@@ -74,7 +74,7 @@ fn sealed_header_write_parse() {
     let (parsed, parsed_len) = Header::parse(&bytes).unwrap();
 
     assert_eq!(bytes.len(), parsed_len);
-    assert_eq!(parsed.version, 2);
+    assert_eq!(parsed.version, 3);
     assert_eq!(parsed.signature, header.signature);
 
     if let Some(SignedMetadata::Sealed {
@@ -90,7 +90,8 @@ fn sealed_header_write_parse() {
         assert_eq!(sealed_gk_version, 1);
         assert_eq!(parsed_ts, timestamp);
         assert_eq!(iv.len(), 12);
-        assert_eq!(sealed_payload.len(), 64); // encrypted 64 bytes
+        // Under v3, sealed payload is exactly 32 bytes (only key_log_id)
+        assert_eq!(sealed_payload.len(), 32); 
         assert_eq!(sealed_tag.len(), 16);
     } else {
         panic!("Expected Sealed metadata");
@@ -98,27 +99,71 @@ fn sealed_header_write_parse() {
 }
 
 #[test]
+fn legacy_v2_header_write_parse() {
+    // Manually construct a version 2 header to check backward compatibility
+    let mut header = create_test_header(2);
+    let ed25519_pk = [0x01; 32];
+    let ed25519_sig = [0x02; 64];
+    let key_log_id = [0xAA; 32];
+    let timestamp = 123456789;
+
+    header.signed_metadata = Some(SignedMetadata::Plain {
+        signer_pubkey: HybridPublicKey {
+            ed25519: ed25519_pk,
+            mldsa: [0u8; 1952],
+        },
+        timestamp,
+        key_log_id,
+    });
+    header.signature = Some(HybridSignature {
+        ed25519: ed25519_sig,
+        mldsa: Vec::new(),
+    });
+
+    let bytes = header.write();
+    let (parsed, parsed_len) = Header::parse(&bytes).unwrap();
+
+    assert_eq!(bytes.len(), parsed_len);
+    assert_eq!(parsed.version, 2);
+    assert_eq!(parsed.signature, header.signature);
+
+    if let Some(SignedMetadata::Plain {
+        signer_pubkey,
+        timestamp: parsed_ts,
+        key_log_id: parsed_kl,
+    }) = parsed.signed_metadata
+    {
+        assert_eq!(signer_pubkey.ed25519, ed25519_pk);
+        // in v2, mldsa is parsed as all zeros because it's not present on-wire
+        assert_eq!(signer_pubkey.mldsa, [0u8; 1952]); 
+        assert_eq!(parsed_ts, timestamp);
+        assert_eq!(parsed_kl, key_log_id);
+    } else {
+        panic!("Expected Plain metadata");
+    }
+}
+
+#[test]
 fn unsigned_header_writes_version_1() {
-    let header = create_test_header();
-    // unsigned header should write version 1
+    let header = create_test_header(2);
+    // unsigned header should write version 1 (since it has no signed metadata)
     let bytes = header.write();
     assert_eq!(bytes[8], 1);
 }
 
 #[test]
-fn signed_header_writes_version_2() {
-    let mut header = create_test_header();
-    let (pk, sk) = ed25519_keypair_generate();
+fn signed_header_writes_version_3() {
+    let mut header = create_test_header(3);
+    let (pk, sk) = hybrid_keypair_generate();
     sign_header_plain(&mut header, &pk, &sk, [0x00; 32], 100).unwrap();
 
     let bytes = header.write();
-    assert_eq!(bytes[8], 2);
+    assert_eq!(bytes[8], 3);
 }
 
 #[test]
 fn parse_v1_still_works() {
     // Construct a manual version 1 header
-    // magic (8B) + version (1) + mode (2) + cipher (0) + file_id (16) + chunk_size (4) + plaintext_size (8) + merkle_root (32) + wrap_count (1) + reserved (4) + variable_len (4)
     let file_id = generate_file_id();
     let mut v1_bytes = Vec::new();
     v1_bytes.extend_from_slice(b"VOLLVALT");

@@ -1,7 +1,7 @@
-use std::collections::BTreeMap;
-use std::io::Write;
 use crate::chunk::ChunkEnvelope;
 use crate::error::FileFormatError;
+use std::collections::BTreeMap;
+use std::io::Write;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IoWriteMode {
@@ -36,16 +36,22 @@ impl<W: Write> ChunkWriter for SequentialChunkWriter<W> {
         self.pending.insert(index, envelope.clone());
         while let Some(env) = self.pending.remove(&self.next_expected) {
             let bytes = env.write();
-            self.writer.write_all(&bytes).map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            self.writer
+                .write_all(&bytes)
+                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
             self.next_expected += 1;
         }
         Ok(())
     }
 
     fn finalize(&mut self) -> Result<(), FileFormatError> {
-        self.writer.flush().map_err(|e| FileFormatError::IoError(e.to_string()))?;
+        self.writer
+            .flush()
+            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
         if !self.pending.is_empty() {
-            return Err(FileFormatError::IoError("Pending chunks remain in SequentialChunkWriter".to_string()));
+            return Err(FileFormatError::IoError(
+                "Pending chunks remain in SequentialChunkWriter".to_string(),
+            ));
         }
         Ok(())
     }
@@ -72,19 +78,21 @@ impl<W: Write> BatchedChunkWriter<W> {
 impl<W: Write> ChunkWriter for BatchedChunkWriter<W> {
     fn write_chunk(&mut self, index: u32, envelope: &ChunkEnvelope) -> Result<(), FileFormatError> {
         self.pending.insert(index, envelope.clone());
-        
+
         let mut sequential_count = 0;
         let mut check_idx = self.next_expected;
         while self.pending.contains_key(&check_idx) {
             sequential_count += 1;
             check_idx += 1;
         }
-        
+
         if sequential_count >= self.batch_size {
             for _ in 0..self.batch_size {
                 if let Some(env) = self.pending.remove(&self.next_expected) {
                     let bytes = env.write();
-                    self.writer.write_all(&bytes).map_err(|e| FileFormatError::IoError(e.to_string()))?;
+                    self.writer
+                        .write_all(&bytes)
+                        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
                     self.next_expected += 1;
                 }
             }
@@ -95,12 +103,18 @@ impl<W: Write> ChunkWriter for BatchedChunkWriter<W> {
     fn finalize(&mut self) -> Result<(), FileFormatError> {
         while let Some(env) = self.pending.remove(&self.next_expected) {
             let bytes = env.write();
-            self.writer.write_all(&bytes).map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            self.writer
+                .write_all(&bytes)
+                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
             self.next_expected += 1;
         }
-        self.writer.flush().map_err(|e| FileFormatError::IoError(e.to_string()))?;
+        self.writer
+            .flush()
+            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
         if !self.pending.is_empty() {
-            return Err(FileFormatError::IoError("Pending chunks remain in BatchedChunkWriter".to_string()));
+            return Err(FileFormatError::IoError(
+                "Pending chunks remain in BatchedChunkWriter".to_string(),
+            ));
         }
         Ok(())
     }
@@ -131,7 +145,9 @@ impl ChunkWriter for DirectOffsetChunkWriter {
     }
 
     fn finalize(&mut self) -> Result<(), FileFormatError> {
-        self.file.sync_all().map_err(|e| FileFormatError::IoError(e.to_string()))?;
+        self.file
+            .sync_all()
+            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
         Ok(())
     }
 }
@@ -143,7 +159,9 @@ pub fn write_raw_at(file: &std::fs::File, buf: &[u8], offset: u64) -> Result<(),
         let mut buf = buf;
         let mut offset = offset;
         while !buf.is_empty() {
-            let n = file.write_at(buf, offset).map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            let n = file
+                .write_at(buf, offset)
+                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
             if n == 0 {
                 return Err(FileFormatError::IoError("Write returned 0".to_string()));
             }
@@ -158,7 +176,9 @@ pub fn write_raw_at(file: &std::fs::File, buf: &[u8], offset: u64) -> Result<(),
         let mut buf = buf;
         let mut offset = offset;
         while !buf.is_empty() {
-            let n = file.seek_write(buf, offset).map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            let n = file
+                .seek_write(buf, offset)
+                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
             if n == 0 {
                 return Err(FileFormatError::IoError("Write returned 0".to_string()));
             }
@@ -172,6 +192,8 @@ pub fn write_raw_at(file: &std::fs::File, buf: &[u8], offset: u64) -> Result<(),
         let _ = file;
         let _ = buf;
         let _ = offset;
-        Err(FileFormatError::IoError("Direct offset writing is not supported on this platform".to_string()))
+        Err(FileFormatError::IoError(
+            "Direct offset writing is not supported on this platform".to_string(),
+        ))
     }
 }

@@ -7,7 +7,6 @@ use wasm_bindgen_test::*;
 
 // wasm_bindgen_test_configure!(run_in_browser);
 
-
 #[wasm_bindgen_test]
 fn test_generators() {
     let dek = generate_dek();
@@ -93,24 +92,35 @@ async fn test_async_pipelined_roundtrip() {
     let sign_info = JsValue::null();
 
     // Call async encrypt
-    let enc_result_js = encrypt_file_pipelined_async_wasm(plaintext, &dek, &file_id, chunk_size, wraps, mode, sign_info, JsValue::null()).await.unwrap();
-    
+    let enc_result_js = encrypt_file_pipelined_async_wasm(
+        plaintext,
+        &dek,
+        &file_id,
+        chunk_size,
+        wraps,
+        mode,
+        sign_info,
+        JsValue::null(),
+    )
+    .await
+    .unwrap();
+
     #[derive(serde::Deserialize)]
     struct EncResult {
         ciphertext: Vec<u8>,
     }
     let enc_res: EncResult = serde_wasm_bindgen::from_value(enc_result_js).unwrap();
-    
+
     // Call async decrypt
-    let dec_result_js = decrypt_file_pipelined_async_wasm(&enc_res.ciphertext, &dek).await.unwrap();
-    
+    let dec_result_js = decrypt_file_pipelined_async_wasm(&enc_res.ciphertext, &dek)
+        .await
+        .unwrap();
+
     #[derive(serde::Deserialize)]
     struct DecResult {
         plaintext: Vec<u8>,
     }
     let dec_res: DecResult = serde_wasm_bindgen::from_value(dec_result_js).unwrap();
-    
+
     assert_eq!(dec_res.plaintext, plaintext);
 }
-
-

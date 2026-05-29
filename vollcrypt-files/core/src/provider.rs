@@ -1,5 +1,5 @@
-use crate::error::FileFormatError;
 use crate::buffer_pool::PooledBuffer;
+use crate::error::FileFormatError;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::OnceLock;
@@ -122,16 +122,19 @@ impl CryptoProvider for NativeCryptoProvider {
         aad: &[u8],
         plaintext: &[u8],
     ) -> Result<(Vec<u8>, [u8; 16]), FileFormatError> {
-        use aes_gcm::{aead::{AeadInPlace, KeyInit}, Aes256Gcm, Nonce};
-        
-        let cipher = Aes256Gcm::new_from_slice(key)
-            .map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
+        use aes_gcm::{
+            aead::{AeadInPlace, KeyInit},
+            Aes256Gcm, Nonce,
+        };
+
+        let cipher =
+            Aes256Gcm::new_from_slice(key).map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
         let nonce = Nonce::from_slice(iv);
         let mut buffer = plaintext.to_vec();
         let tag = cipher
             .encrypt_in_place_detached(nonce, aad, &mut buffer)
             .map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
-            
+
         let mut tag_arr = [0u8; 16];
         tag_arr.copy_from_slice(&tag);
         Ok((buffer, tag_arr))
@@ -145,17 +148,20 @@ impl CryptoProvider for NativeCryptoProvider {
         ciphertext: &[u8],
         tag: &[u8; 16],
     ) -> Result<Vec<u8>, FileFormatError> {
-        use aes_gcm::{aead::{AeadInPlace, KeyInit}, Aes256Gcm, Nonce, Tag};
-        
-        let cipher = Aes256Gcm::new_from_slice(key)
-            .map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
+        use aes_gcm::{
+            aead::{AeadInPlace, KeyInit},
+            Aes256Gcm, Nonce, Tag,
+        };
+
+        let cipher =
+            Aes256Gcm::new_from_slice(key).map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
         let nonce = Nonce::from_slice(iv);
         let tag_obj = Tag::from_slice(tag);
         let mut buffer = ciphertext.to_vec();
         cipher
             .decrypt_in_place_detached(nonce, aad, &mut buffer, tag_obj)
             .map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
-            
+
         Ok(buffer)
     }
 
@@ -166,15 +172,18 @@ impl CryptoProvider for NativeCryptoProvider {
         aad: &[u8],
         buffer: &mut [u8],
     ) -> Result<[u8; 16], FileFormatError> {
-        use aes_gcm::{aead::{AeadInPlace, KeyInit}, Aes256Gcm, Nonce};
-        
-        let cipher = Aes256Gcm::new_from_slice(key)
-            .map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
+        use aes_gcm::{
+            aead::{AeadInPlace, KeyInit},
+            Aes256Gcm, Nonce,
+        };
+
+        let cipher =
+            Aes256Gcm::new_from_slice(key).map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
         let nonce = Nonce::from_slice(iv);
         let tag = cipher
             .encrypt_in_place_detached(nonce, aad, buffer)
             .map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
-            
+
         let mut tag_arr = [0u8; 16];
         tag_arr.copy_from_slice(&tag);
         Ok(tag_arr)
@@ -188,16 +197,19 @@ impl CryptoProvider for NativeCryptoProvider {
         buffer: &mut [u8],
         tag: &[u8; 16],
     ) -> Result<(), FileFormatError> {
-        use aes_gcm::{aead::{AeadInPlace, KeyInit}, Aes256Gcm, Nonce, Tag};
-        
-        let cipher = Aes256Gcm::new_from_slice(key)
-            .map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
+        use aes_gcm::{
+            aead::{AeadInPlace, KeyInit},
+            Aes256Gcm, Nonce, Tag,
+        };
+
+        let cipher =
+            Aes256Gcm::new_from_slice(key).map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
         let nonce = Nonce::from_slice(iv);
         let tag_obj = Tag::from_slice(tag);
         cipher
             .decrypt_in_place_detached(nonce, aad, buffer, tag_obj)
             .map_err(|_| FileFormatError::AesGcmDecryptFailed)?;
-            
+
         Ok(())
     }
 }
@@ -205,9 +217,13 @@ impl CryptoProvider for NativeCryptoProvider {
 static PROVIDER: OnceLock<Box<dyn CryptoProvider>> = OnceLock::new();
 
 pub fn set_crypto_provider(provider: Box<dyn CryptoProvider>) -> Result<(), &'static str> {
-    PROVIDER.set(provider).map_err(|_| "Crypto provider already set")
+    PROVIDER
+        .set(provider)
+        .map_err(|_| "Crypto provider already set")
 }
 
 pub fn get_crypto_provider() -> &'static dyn CryptoProvider {
-    PROVIDER.get_or_init(|| Box::new(NativeCryptoProvider)).as_ref()
+    PROVIDER
+        .get_or_init(|| Box::new(NativeCryptoProvider))
+        .as_ref()
 }

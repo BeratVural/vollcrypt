@@ -6,7 +6,13 @@ fn bench_chunk_encrypt_decrypt(c: &mut Criterion) {
     let file_id = [0u8; 16];
     let chunk_index = 0u32;
 
-    let sizes = [4 * 1024, 64 * 1024, 1024 * 1024, 4 * 1024 * 1024, 16 * 1024 * 1024];
+    let sizes = [
+        4 * 1024,
+        64 * 1024,
+        1024 * 1024,
+        4 * 1024 * 1024,
+        16 * 1024 * 1024,
+    ];
 
     // Chunk Encrypt
     let mut g_enc = c.benchmark_group("chunk_encrypt");
@@ -15,7 +21,7 @@ fn bench_chunk_encrypt_decrypt(c: &mut Criterion) {
         g_enc.throughput(Throughput::Bytes(size as u64));
         g_enc.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
             b.iter(|| {
-                let res = encrypt_chunk(&dek, &file_id, chunk_index, black_box(&plaintext));
+                let res = encrypt_chunk(&dek, &file_id, chunk_index, black_box(&plaintext), None);
                 let _ = black_box(res);
             });
         });
@@ -26,11 +32,11 @@ fn bench_chunk_encrypt_decrypt(c: &mut Criterion) {
     let mut g_dec = c.benchmark_group("chunk_decrypt");
     for &size in &sizes {
         let plaintext = vec![0u8; size];
-        let env = encrypt_chunk(&dek, &file_id, chunk_index, &plaintext).unwrap();
+        let env = encrypt_chunk(&dek, &file_id, chunk_index, &plaintext, None).unwrap();
         g_dec.throughput(Throughput::Bytes(size as u64));
         g_dec.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
             b.iter(|| {
-                let res = decrypt_chunk(&dek, &file_id, chunk_index, black_box(&env));
+                let res = decrypt_chunk(&dek, &file_id, chunk_index, black_box(&env), None);
                 let _ = black_box(res);
             });
         });

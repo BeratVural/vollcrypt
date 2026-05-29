@@ -1,11 +1,11 @@
 use vollcrypt_files_core::{
-    ed25519_keypair_generate, generate_file_id, generate_gk, resolve_sender, sign_header_plain,
-    sign_header_sealed, CipherId, FileFormatError, Header, KeyLog, Mode, HashAlgorithm,
+    hybrid_keypair_generate, generate_file_id, generate_gk, resolve_sender, sign_header_plain,
+    sign_header_sealed, CipherId, FileFormatError, HashAlgorithm, Header, KeyLog, Mode,
 };
 
 fn create_test_header() -> Header {
     Header {
-        version: 2,
+        version: 3,
         mode: Mode::Group,
         cipher_id: CipherId::Aes256Gcm,
         file_id: generate_file_id(),
@@ -21,10 +21,10 @@ fn create_test_header() -> Header {
 
 #[test]
 fn full_resolution_plain() {
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let mut keylog = KeyLog::new(admin_pk);
 
-    let (device_pk, device_sk) = ed25519_keypair_generate();
+    let (device_pk, device_sk) = hybrid_keypair_generate();
     let user_id = generate_file_id();
     let device_id = generate_file_id();
     let timestamp = 100;
@@ -33,7 +33,7 @@ fn full_resolution_plain() {
         .register_device(
             user_id,
             device_id,
-            device_pk,
+            device_pk.clone(),
             "Alice's Mac",
             &admin_sk,
             timestamp,
@@ -56,10 +56,10 @@ fn full_resolution_plain() {
 
 #[test]
 fn full_resolution_sealed() {
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let mut keylog = KeyLog::new(admin_pk);
 
-    let (device_pk, device_sk) = ed25519_keypair_generate();
+    let (device_pk, device_sk) = hybrid_keypair_generate();
     let user_id = generate_file_id();
     let device_id = generate_file_id();
     let timestamp = 100;
@@ -68,7 +68,7 @@ fn full_resolution_sealed() {
         .register_device(
             user_id,
             device_id,
-            device_pk,
+            device_pk.clone(),
             "Alice's Mac",
             &admin_sk,
             timestamp,
@@ -108,16 +108,16 @@ fn full_resolution_sealed() {
 
 #[test]
 fn resolution_after_device_revoke() {
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let mut keylog = KeyLog::new(admin_pk);
 
-    let (device_pk, device_sk) = ed25519_keypair_generate();
+    let (device_pk, device_sk) = hybrid_keypair_generate();
     let user_id = generate_file_id();
     let device_id = generate_file_id();
 
     // Register at 100
     let key_log_id = keylog
-        .register_device(user_id, device_id, device_pk, "Alice's Mac", &admin_sk, 100)
+        .register_device(user_id, device_id, device_pk.clone(), "Alice's Mac", &admin_sk, 100)
         .unwrap();
 
     // Revoke at 150
@@ -139,10 +139,10 @@ fn resolution_after_device_revoke() {
 
 #[test]
 fn wrong_gk_for_sealed_resolution() {
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let mut keylog = KeyLog::new(admin_pk);
 
-    let (device_pk, device_sk) = ed25519_keypair_generate();
+    let (device_pk, device_sk) = hybrid_keypair_generate();
     let user_id = generate_file_id();
     let device_id = generate_file_id();
     let timestamp = 100;
@@ -151,7 +151,7 @@ fn wrong_gk_for_sealed_resolution() {
         .register_device(
             user_id,
             device_id,
-            device_pk,
+            device_pk.clone(),
             "Alice's Mac",
             &admin_sk,
             timestamp,

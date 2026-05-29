@@ -3,10 +3,10 @@ use vollcrypt_files_core::*;
 
 fn bench_multi_recipient_wrap(c: &mut Criterion) {
     let dek = [0u8; 32];
-    
+
     // N recipients
     let recipient_counts = [1, 10, 100];
-    
+
     let mut g = c.benchmark_group("multi_recipient_wrap");
     for &count in &recipient_counts {
         // Generate recipient public keys
@@ -23,7 +23,13 @@ fn bench_multi_recipient_wrap(c: &mut Criterion) {
             b.iter(|| {
                 let mut wraps = Vec::new();
                 for (pk, id) in &recipients {
-                    let wrap = wrap_key_to_recipient(black_box(&dek), black_box(*id), black_box(1), black_box(pk)).unwrap();
+                    let wrap = wrap_key_to_recipient(
+                        black_box(&dek),
+                        black_box(*id),
+                        black_box(1),
+                        black_box(pk),
+                    )
+                    .unwrap();
                     wraps.push(wrap);
                 }
                 let _ = black_box(wraps);
@@ -56,7 +62,9 @@ fn bench_group_manifest_scaling(c: &mut Criterion) {
         for idx in 0..size {
             let mut mid = [0u8; 16];
             mid[0..4].copy_from_slice(&(idx as u32 + 2).to_be_bytes());
-            manifest.add_member(&admin_sk, mid, admin_pk, rec_pk.clone(), gk_wrap.clone()).unwrap();
+            manifest
+                .add_member(&admin_sk, mid, admin_pk, rec_pk.clone(), gk_wrap.clone())
+                .unwrap();
         }
 
         g.bench_with_input(BenchmarkId::new("manifest_size", size), &size, |b, _| {
@@ -96,7 +104,9 @@ fn bench_rotation_cost(c: &mut Criterion) {
     for idx in 0..50 {
         let mut mid = [0u8; 16];
         mid[0..4].copy_from_slice(&(idx as u32 + 2).to_be_bytes());
-        manifest.add_member(&admin_sk, mid, admin_pk, rec_pk.clone(), gk_wrap.clone()).unwrap();
+        manifest
+            .add_member(&admin_sk, mid, admin_pk, rec_pk.clone(), gk_wrap.clone())
+            .unwrap();
     }
 
     let mut g = c.benchmark_group("key_rotation");
