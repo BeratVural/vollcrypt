@@ -1,7 +1,7 @@
 use crate::aead::{aes256_gcm_decrypt, aes256_gcm_encrypt};
 use crate::error::FileFormatError;
-use crate::header::{Header, SignedMetadata};
-use crate::hybrid_sig::{hybrid_sign, hybrid_verify, HybridPublicKey, HybridSecretKey, HybridSignature};
+use crate::header::{Header, SignedMetadata, Mode};
+use crate::hybrid_sig::{hybrid_sign, hybrid_verify, HybridPublicKey, HybridSecretKey};
 use crate::keylog::{KeyLog, KeyLogEntryType};
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -68,27 +68,65 @@ pub fn sign_header_sealed(
     Ok(())
 }
 
-pub fn verify_header_signature_plain(header: &Header) -> Result<HybridPublicKey, FileFormatError> {
-    verify_header_signature_plain_policy(header, false)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerificationPolicy {
+    Strict,        // PQ signatures required (v3 headers only)
+    RequireSigned, // Classic or hybrid signatures required
+    AllowLegacy,   // Allow v1/v2 unsigned/legacy signatures (opt-in)
+}
+
+impl VerificationPolicy {
+    pub fn strict() -> Self {
+        VerificationPolicy::Strict
+    }
+    pub fn require_signed() -> Self {
+        VerificationPolicy::RequireSigned
+    }
+    pub fn allow_legacy() -> Self {
+        VerificationPolicy::AllowLegacy
+    }
+}
+
+pub fn verify_header_signature_plain(
+    header: &Header,
+    policy: VerificationPolicy,
+) -> Result<HybridPublicKey, FileFormatError> {
+    verify_header_signature_plain_policy(header, policy)
 }
 
 pub fn verify_header_signature_plain_policy(
     header: &Header,
-    require_pq_signature: bool,
+    policy: VerificationPolicy,
 ) -> Result<HybridPublicKey, FileFormatError> {
-    if header.version == 1 || header.signed_metadata.is_none() || header.signature.is_none() {
-        if require_pq_signature {
+    let is_unsigned_or_legacy = header.version == 1 || header.signed_metadata.is_none() || header.signature.is_none();
+
+    if is_unsigned_or_legacy {
+        if (header.mode == Mode::Recipient || header.mode == Mode::Group) && policy != VerificationPolicy::AllowLegacy {
             return Err(FileFormatError::IntegrityError(
-                "Unsigned header rejected under require_pq_signature policy".to_string(),
+                "Unsigned or legacy header in recipient/group mode".to_string(),
             ));
-        } else {
-            return Err(FileFormatError::HeaderNotSigned);
+        }
+
+        match policy {
+            VerificationPolicy::Strict => {
+                return Err(FileFormatError::IntegrityError(
+                    "Unsigned header rejected under strict policy".to_string(),
+                ));
+            }
+            VerificationPolicy::RequireSigned => {
+                return Err(FileFormatError::IntegrityError(
+                    "Unsigned header rejected under require_signed policy".to_string(),
+                ));
+            }
+            VerificationPolicy::AllowLegacy => {
+                return Err(FileFormatError::HeaderNotSigned);
+            }
         }
     }
 
-    if require_pq_signature && header.version < 3 {
+    if policy == VerificationPolicy::Strict && header.version < 3 {
         return Err(FileFormatError::IntegrityError(
-            "Legacy signature version rejected under require_pq_signature policy".to_string(),
+            "Legacy signature version rejected under strict policy".to_string(),
         ));
     }
 
@@ -117,29 +155,46 @@ pub fn verify_header_signature_sealed(
     header: &Header,
     sealed_gk: &[u8; 32],
     key_log: &KeyLog,
+    policy: VerificationPolicy,
 ) -> Result<HybridPublicKey, FileFormatError> {
-    verify_header_signature_sealed_policy(header, sealed_gk, key_log, false)
+    verify_header_signature_sealed_policy(header, sealed_gk, key_log, policy)
 }
 
 pub fn verify_header_signature_sealed_policy(
     header: &Header,
     sealed_gk: &[u8; 32],
     key_log: &KeyLog,
-    require_pq_signature: bool,
+    policy: VerificationPolicy,
 ) -> Result<HybridPublicKey, FileFormatError> {
-    if header.version == 1 || header.signed_metadata.is_none() || header.signature.is_none() {
-        if require_pq_signature {
+    let is_unsigned_or_legacy = header.version == 1 || header.signed_metadata.is_none() || header.signature.is_none();
+
+    if is_unsigned_or_legacy {
+        if (header.mode == Mode::Recipient || header.mode == Mode::Group) && policy != VerificationPolicy::AllowLegacy {
             return Err(FileFormatError::IntegrityError(
-                "Unsigned header rejected under require_pq_signature policy".to_string(),
+                "Unsigned or legacy header in recipient/group mode".to_string(),
             ));
-        } else {
-            return Err(FileFormatError::HeaderNotSigned);
+        }
+
+        match policy {
+            VerificationPolicy::Strict => {
+                return Err(FileFormatError::IntegrityError(
+                    "Unsigned header rejected under strict policy".to_string(),
+                ));
+            }
+            VerificationPolicy::RequireSigned => {
+                return Err(FileFormatError::IntegrityError(
+                    "Unsigned header rejected under require_signed policy".to_string(),
+                ));
+            }
+            VerificationPolicy::AllowLegacy => {
+                return Err(FileFormatError::HeaderNotSigned);
+            }
         }
     }
 
-    if require_pq_signature && header.version < 3 {
+    if policy == VerificationPolicy::Strict && header.version < 3 {
         return Err(FileFormatError::IntegrityError(
-            "Legacy signature version rejected under require_pq_signature policy".to_string(),
+            "Legacy signature version rejected under strict policy".to_string(),
         ));
     }
 

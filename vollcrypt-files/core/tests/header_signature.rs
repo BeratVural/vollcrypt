@@ -2,7 +2,7 @@ use vollcrypt_files_core::{
     aes256_gcm_decrypt, hybrid_keypair_generate, generate_file_id, generate_gk, sign_header_plain,
     sign_header_sealed, verify_header_signature_plain, verify_header_signature_plain_policy,
     verify_header_signature_sealed, verify_header_signature_sealed_policy, CipherId,
-    FileFormatError, HashAlgorithm, Header, Mode, SignedMetadata, KeyLog,
+    FileFormatError, HashAlgorithm, Header, Mode, SignedMetadata, KeyLog, VerificationPolicy,
 };
 
 fn create_test_header() -> Header {
@@ -30,7 +30,7 @@ fn sign_verify_plain_roundtrip() {
 
     sign_header_plain(&mut header, &pk, &sk, key_log_id, timestamp).unwrap();
 
-    let verified_pk = verify_header_signature_plain(&header).unwrap();
+    let verified_pk = verify_header_signature_plain(&header, VerificationPolicy::RequireSigned).unwrap();
     assert_eq!(verified_pk, pk);
 }
 
@@ -64,14 +64,14 @@ fn sign_verify_sealed_roundtrip() {
     )
     .unwrap();
 
-    let verified_pk = verify_header_signature_sealed(&header, &gk, &key_log).unwrap();
+    let verified_pk = verify_header_signature_sealed(&header, &gk, &key_log, VerificationPolicy::RequireSigned).unwrap();
     assert_eq!(verified_pk, pk);
 }
 
 #[test]
 fn verify_unsigned_header_fails() {
     let header = create_test_header();
-    let res = verify_header_signature_plain(&header);
+    let res = verify_header_signature_plain(&header, VerificationPolicy::AllowLegacy);
     assert!(matches!(res, Err(FileFormatError::HeaderNotSigned)));
 }
 
@@ -105,7 +105,7 @@ fn verify_sealed_with_plain_fails() {
     )
     .unwrap();
 
-    let res = verify_header_signature_plain(&header);
+    let res = verify_header_signature_plain(&header, VerificationPolicy::RequireSigned);
     assert!(matches!(res, Err(FileFormatError::HeaderSealed)));
 }
 
@@ -121,7 +121,7 @@ fn verify_plain_with_sealed_fails() {
 
     sign_header_plain(&mut header, &pk, &sk, key_log_id, timestamp).unwrap();
 
-    let res = verify_header_signature_sealed(&header, &gk, &key_log);
+    let res = verify_header_signature_sealed(&header, &gk, &key_log, VerificationPolicy::RequireSigned);
     assert!(matches!(res, Err(FileFormatError::HeaderNotSealed)));
 }
 
@@ -136,7 +136,7 @@ fn wrong_sk_signs_wrong_signature() {
     // Use wrong_sk to sign, but pass pk as the claim
     sign_header_plain(&mut header, &pk, &wrong_sk, key_log_id, timestamp).unwrap();
 
-    let res = verify_header_signature_plain(&header);
+    let res = verify_header_signature_plain(&header, VerificationPolicy::RequireSigned);
     assert!(matches!(res, Err(FileFormatError::SignatureInvalid)));
 }
 
@@ -152,7 +152,7 @@ fn tampered_header_fails_verify() {
     // Tamper header field
     header.chunk_size ^= 1;
 
-    let res = verify_header_signature_plain(&header);
+    let res = verify_header_signature_plain(&header, VerificationPolicy::RequireSigned);
     assert!(matches!(res, Err(FileFormatError::SignatureInvalid)));
 }
 
@@ -170,7 +170,7 @@ fn tampered_signature_fails_verify() {
         sig.ed25519[0] ^= 1;
     }
 
-    let res = verify_header_signature_plain(&header);
+    let res = verify_header_signature_plain(&header, VerificationPolicy::RequireSigned);
     assert!(matches!(res, Err(FileFormatError::SignatureInvalid)));
 }
 
@@ -205,7 +205,7 @@ fn wrong_gk_fails_sealed_verify() {
     )
     .unwrap();
 
-    let res = verify_header_signature_sealed(&header, &wrong_gk, &key_log);
+    let res = verify_header_signature_sealed(&header, &wrong_gk, &key_log, VerificationPolicy::RequireSigned);
     assert!(matches!(res, Err(FileFormatError::WrongGroupKey)));
 }
 
@@ -266,20 +266,20 @@ fn test_require_signed_policy_plain() {
     header.signature = None;
 
     // With require_pq_signature = false, verify should fail with HeaderNotSigned
-    let res = verify_header_signature_plain_policy(&header, false);
+    let res = verify_header_signature_plain_policy(&header, VerificationPolicy::AllowLegacy);
     assert!(matches!(res, Err(FileFormatError::HeaderNotSigned)));
 
     // With require_pq_signature = true, verify should fail with IntegrityError
-    let res = verify_header_signature_plain_policy(&header, true);
+    let res = verify_header_signature_plain_policy(&header, VerificationPolicy::RequireSigned);
     assert!(matches!(res, Err(FileFormatError::IntegrityError(_))));
 
     // Now sign it
     sign_header_plain(&mut header, &pk, &sk, key_log_id, timestamp).unwrap();
 
     // Verification should pass in both cases
-    let res_false = verify_header_signature_plain_policy(&header, false).unwrap();
+    let res_false = verify_header_signature_plain_policy(&header, VerificationPolicy::AllowLegacy).unwrap();
     assert_eq!(res_false, pk);
-    let res_true = verify_header_signature_plain_policy(&header, true).unwrap();
+    let res_true = verify_header_signature_plain_policy(&header, VerificationPolicy::RequireSigned).unwrap();
     assert_eq!(res_true, pk);
 
     // Downgrade version to 1 and remove metadata
@@ -288,11 +288,11 @@ fn test_require_signed_policy_plain() {
     header.signature = None;
 
     // With require_pq_signature = false, verify should fail with HeaderNotSigned
-    let res = verify_header_signature_plain_policy(&header, false);
+    let res = verify_header_signature_plain_policy(&header, VerificationPolicy::AllowLegacy);
     assert!(matches!(res, Err(FileFormatError::HeaderNotSigned)));
 
     // With require_pq_signature = true, verify should fail with IntegrityError (downgrade prevention)
-    let res = verify_header_signature_plain_policy(&header, true);
+    let res = verify_header_signature_plain_policy(&header, VerificationPolicy::RequireSigned);
     assert!(matches!(res, Err(FileFormatError::IntegrityError(_))));
 }
 
@@ -319,11 +319,11 @@ fn test_require_signed_policy_sealed() {
     header.signature = None;
 
     // With require_pq_signature = false, verify should fail with HeaderNotSigned
-    let res = verify_header_signature_sealed_policy(&header, &gk, &key_log, false);
+    let res = verify_header_signature_sealed_policy(&header, &gk, &key_log, VerificationPolicy::AllowLegacy);
     assert!(matches!(res, Err(FileFormatError::HeaderNotSigned)));
 
     // With require_pq_signature = true, verify should fail with IntegrityError
-    let res = verify_header_signature_sealed_policy(&header, &gk, &key_log, true);
+    let res = verify_header_signature_sealed_policy(&header, &gk, &key_log, VerificationPolicy::RequireSigned);
     assert!(matches!(res, Err(FileFormatError::IntegrityError(_))));
 
     // Now sign it
@@ -340,9 +340,9 @@ fn test_require_signed_policy_sealed() {
     .unwrap();
 
     // Verification should pass in both cases
-    let res_false = verify_header_signature_sealed_policy(&header, &gk, &key_log, false).unwrap();
+    let res_false = verify_header_signature_sealed_policy(&header, &gk, &key_log, VerificationPolicy::AllowLegacy).unwrap();
     assert_eq!(res_false, pk);
-    let res_true = verify_header_signature_sealed_policy(&header, &gk, &key_log, true).unwrap();
+    let res_true = verify_header_signature_sealed_policy(&header, &gk, &key_log, VerificationPolicy::RequireSigned).unwrap();
     assert_eq!(res_true, pk);
 
     // Downgrade version to 1 and remove metadata
@@ -351,10 +351,10 @@ fn test_require_signed_policy_sealed() {
     header.signature = None;
 
     // With require_pq_signature = false, verify should fail with HeaderNotSigned
-    let res = verify_header_signature_sealed_policy(&header, &gk, &key_log, false);
+    let res = verify_header_signature_sealed_policy(&header, &gk, &key_log, VerificationPolicy::AllowLegacy);
     assert!(matches!(res, Err(FileFormatError::HeaderNotSigned)));
 
     // With require_pq_signature = true, verify should fail with IntegrityError (downgrade prevention)
-    let res = verify_header_signature_sealed_policy(&header, &gk, &key_log, true);
+    let res = verify_header_signature_sealed_policy(&header, &gk, &key_log, VerificationPolicy::RequireSigned);
     assert!(matches!(res, Err(FileFormatError::IntegrityError(_))));
 }

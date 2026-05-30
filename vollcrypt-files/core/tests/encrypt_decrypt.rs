@@ -149,8 +149,8 @@ fn derive_chunk_keys_subkey_matches_legacy() {
     let dek = [0x15; 32];
     let file_id = [0xAB; 16];
     let idx = 7;
-    let keys = derive_chunk_keys(&dek, &file_id, idx);
-    let legacy = derive_chunk_subkey(&dek, &file_id, idx);
+    let keys = derive_chunk_keys(&dek, &file_id, idx).unwrap();
+    let legacy = derive_chunk_subkey(&dek, &file_id, idx).unwrap();
     assert_eq!(keys.0, legacy);
 }
 
@@ -159,8 +159,8 @@ fn deterministic_iv_same_inputs() {
     let dek = [0x16; 32];
     let file_id = [0xBC; 16];
     let idx = 13;
-    let keys1 = derive_chunk_keys(&dek, &file_id, idx);
-    let keys2 = derive_chunk_keys(&dek, &file_id, idx);
+    let keys1 = derive_chunk_keys(&dek, &file_id, idx).unwrap();
+    let keys2 = derive_chunk_keys(&dek, &file_id, idx).unwrap();
     assert_eq!(keys1.1, keys2.1);
 }
 
@@ -168,8 +168,8 @@ fn deterministic_iv_same_inputs() {
 fn iv_differs_across_chunk_index() {
     let dek = [0x17; 32];
     let file_id = [0xCD; 16];
-    let keys1 = derive_chunk_keys(&dek, &file_id, 1);
-    let keys2 = derive_chunk_keys(&dek, &file_id, 2);
+    let keys1 = derive_chunk_keys(&dek, &file_id, 1).unwrap();
+    let keys2 = derive_chunk_keys(&dek, &file_id, 2).unwrap();
     assert_ne!(keys1.1, keys2.1);
 }
 
@@ -178,8 +178,8 @@ fn iv_differs_across_file_id() {
     let dek = [0x18; 32];
     let file_id1 = [0xDE; 16];
     let file_id2 = [0xDF; 16];
-    let keys1 = derive_chunk_keys(&dek, &file_id1, 1);
-    let keys2 = derive_chunk_keys(&dek, &file_id2, 1);
+    let keys1 = derive_chunk_keys(&dek, &file_id1, 1).unwrap();
+    let keys2 = derive_chunk_keys(&dek, &file_id2, 1).unwrap();
     assert_ne!(keys1.1, keys2.1);
 }
 

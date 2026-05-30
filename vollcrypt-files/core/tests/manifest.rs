@@ -1,6 +1,6 @@
 use vollcrypt_files_core::{
     hybrid_keypair_generate, hybrid_sign, generate_file_id, generate_gk, generate_recipient_keypair,
-    wrap_key_to_recipient, FileFormatError, GroupManifest,
+    wrap_key_to_recipient, FileFormatError, GroupManifest, RollbackCheck, FounderAnchor,
 };
 
 #[test]
@@ -459,7 +459,7 @@ fn test_verify_manifest_with_pin() {
         group_id,
         founder_id,
         &admin_sk,
-        admin_pk,
+        admin_pk.clone(),
         rec_pk1,
         founder_gk_wrap,
     );
@@ -473,18 +473,20 @@ fn test_verify_manifest_with_pin() {
         .add_member(&admin_sk, member2_id, member2_signing_pk, rec_pk2, gk_wrap2)
         .unwrap();
 
+    let anchor = FounderAnchor::PublicKey(admin_pk);
+
     // The head epoch of the manifest is 1.
     // 1. Pin is None: should pass
-    assert!(vollcrypt_files_core::verify_manifest_with_pin(&manifest, None).is_ok());
+    assert!(vollcrypt_files_core::verify_manifest_with_pin(&manifest, RollbackCheck::TrustOnFirstUse, anchor.clone()).is_ok());
 
     // 2. Pin is Some(0): should pass because head epoch (1) >= pin (0)
-    assert!(vollcrypt_files_core::verify_manifest_with_pin(&manifest, Some(0)).is_ok());
+    assert!(vollcrypt_files_core::verify_manifest_with_pin(&manifest, RollbackCheck::Pin(0), anchor.clone()).is_ok());
 
     // 3. Pin is Some(1): should pass because head epoch (1) >= pin (1)
-    assert!(vollcrypt_files_core::verify_manifest_with_pin(&manifest, Some(1)).is_ok());
+    assert!(vollcrypt_files_core::verify_manifest_with_pin(&manifest, RollbackCheck::Pin(1), anchor.clone()).is_ok());
 
     // 4. Pin is Some(2): should fail with RollbackError because head epoch (1) < pin (2)
-    let res = vollcrypt_files_core::verify_manifest_with_pin(&manifest, Some(2));
+    let res = vollcrypt_files_core::verify_manifest_with_pin(&manifest, RollbackCheck::Pin(2), anchor.clone());
     assert!(matches!(
         res,
         Err(FileFormatError::RollbackError {

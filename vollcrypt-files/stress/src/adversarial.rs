@@ -261,14 +261,14 @@ mod tests {
         // Verification of clean header succeeds
         let serialized = header.write();
         let (parsed, _) = Header::parse(&serialized).unwrap();
-        assert!(verify_header_signature_plain(&parsed).is_ok());
+        assert!(verify_header_signature_plain(&parsed, VerificationPolicy::RequireSigned).is_ok());
 
         // Replay/Tampering: Change the file_id in the signed header
         let mut tampered_header = parsed.clone();
         tampered_header.file_id = file_id_2;
 
         assert!(
-            verify_header_signature_plain(&tampered_header).is_err(),
+            verify_header_signature_plain(&tampered_header, VerificationPolicy::RequireSigned).is_err(),
             "Signature verification succeeded on tampered header!"
         );
     }

@@ -96,24 +96,24 @@ impl Drop for PooledBuffer {
 }
 
 pub struct BufferPool {
-    free_tx: std::sync::mpsc::SyncSender<PooledBuffer>,
-    free_rx: std::sync::Mutex<std::sync::mpsc::Receiver<PooledBuffer>>,
+    free_tx: crossbeam_channel::Sender<PooledBuffer>,
+    free_rx: crossbeam_channel::Receiver<PooledBuffer>,
 }
 
 impl BufferPool {
     pub fn new(chunk_size: usize, pool_size: usize) -> Self {
-        let (free_tx, free_rx) = std::sync::mpsc::sync_channel::<PooledBuffer>(pool_size);
+        let (free_tx, free_rx) = crossbeam_channel::bounded::<PooledBuffer>(pool_size);
         for _ in 0..pool_size {
             free_tx.send(PooledBuffer::new(chunk_size)).unwrap();
         }
         Self {
             free_tx,
-            free_rx: std::sync::Mutex::new(free_rx),
+            free_rx,
         }
     }
 
     pub fn rent(&self) -> PooledBuffer {
-        self.free_rx.lock().unwrap().recv().unwrap()
+        self.free_rx.recv().unwrap()
     }
 
     pub fn return_buffer(&self, mut buffer: PooledBuffer) {

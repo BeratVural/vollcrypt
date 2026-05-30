@@ -1,5 +1,6 @@
 use hkdf::Hkdf;
 use sha2::Sha256;
+use crate::error::FileFormatError;
 
 /// Derives a chunk-specific subkey using HKDF-SHA256.
 ///
@@ -8,7 +9,11 @@ use sha2::Sha256;
 /// * `chunk_index`: The index of the chunk.
 ///
 /// Returns a derived 32-byte subkey. The caller is responsible for zeroizing the output subkey when done.
-pub fn derive_chunk_subkey(dek: &[u8; 32], file_id: &[u8; 16], chunk_index: u32) -> [u8; 32] {
+pub fn derive_chunk_subkey(
+    dek: &[u8; 32],
+    file_id: &[u8; 16],
+    chunk_index: u32,
+) -> Result<[u8; 32], FileFormatError> {
     let mut info = [0u8; 27];
     info[0..23].copy_from_slice(b"vollcrypt-file-chunk-v1");
     info[23..27].copy_from_slice(&chunk_index.to_be_bytes());
@@ -16,14 +21,10 @@ pub fn derive_chunk_subkey(dek: &[u8; 32], file_id: &[u8; 16], chunk_index: u32)
     let hk = Hkdf::<Sha256>::new(Some(file_id), dek);
     let mut subkey = [0u8; 32];
 
-    // hk.expand will only fail if the requested length is too large (i.e. > 255 * 32).
-    // Here we request 32 bytes, which is well within limits. We handle the error gracefully without unwrapping/panicking.
-    if hk.expand(&info, &mut subkey).is_err() {
-        // Fallback to zeros if it ever fails
-        subkey = [0u8; 32];
-    }
+    hk.expand(&info, &mut subkey)
+        .map_err(|_| FileFormatError::IntegrityError("HKDF expansion failed for subkey".to_string()))?;
 
-    subkey
+    Ok(subkey)
 }
 
 /// Derives a Key Encrypting Key (KEK) using PBKDF2-HMAC-SHA256.
@@ -95,7 +96,7 @@ pub fn derive_chunk_keys(
     dek: &[u8; 32],
     file_id: &[u8; 16],
     chunk_index: u32,
-) -> ([u8; 32], [u8; 12]) {
+) -> Result<([u8; 32], [u8; 12]), FileFormatError> {
     let mut info = [0u8; 27];
     info[0..23].copy_from_slice(b"vollcrypt-file-chunk-v1");
     info[23..27].copy_from_slice(&chunk_index.to_be_bytes());
@@ -103,10 +104,8 @@ pub fn derive_chunk_keys(
     let hk = Hkdf::<Sha256>::new(Some(file_id), dek);
     let mut okm = [0u8; 44];
 
-    if hk.expand(&info, &mut okm).is_err() {
-        // Fallback to zeros if it ever fails
-        okm = [0u8; 44];
-    }
+    hk.expand(&info, &mut okm)
+        .map_err(|_| FileFormatError::IntegrityError("HKDF expansion failed for chunk keys".to_string()))?;
 
     let mut subkey = [0u8; 32];
     subkey.copy_from_slice(&okm[0..32]);
@@ -114,5 +113,5 @@ pub fn derive_chunk_keys(
     let mut iv = [0u8; 12];
     iv.copy_from_slice(&okm[32..44]);
 
-    (subkey, iv)
+    Ok((subkey, iv))
 }

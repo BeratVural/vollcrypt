@@ -59,8 +59,9 @@ pub use kdf::{derive_chunk_keys, derive_chunk_subkey, derive_kek_argon2id, deriv
 pub use keylog::{KeyLog, KeyLogEntry, KeyLogEntryType};
 pub use keywrap::{aes256_kw_unwrap, aes256_kw_wrap};
 pub use manifest::{
-    detect_equivocation, manifest_head, verify_manifest_with_pin, EquivocationResult,
-    GroupManifest, Operation, SignedOperation,
+    detect_equivocation, manifest_head, verify_manifest_with_pin, verify_manifest_with_pin_policy,
+    verify_manifest, EquivocationResult, GroupManifest, Operation, SignedOperation,
+    RollbackCheck, FounderAnchor,
 };
 pub use merkle::{
     bind_root_with_length, check_proof_length, chunk_leaf_hash, chunk_leaf_hash_raw,
@@ -69,7 +70,10 @@ pub use merkle::{
     HashAlgorithm, MerkleTree, StreamingMerkle,
 };
 pub use password::{unwrap_dek_with_password, wrap_dek_with_password, KdfChoice};
-pub use pipelined_io::{decrypt_file_pipelined, encrypt_file_pipelined, PipelinedSignInfo};
+pub use pipelined_io::{
+    decrypt_file_pipelined, decrypt_verified, decrypt_streaming_online,
+    encrypt_file_pipelined, PipelinedSignInfo,
+};
 pub use random::{generate_dek, generate_file_id, generate_salt};
 pub use recipient::{
     generate_recipient_keypair, unwrap_key_with_recipient_key, wrap_key_to_recipient,
@@ -79,7 +83,7 @@ pub use resolver::{resolve_sender, SenderInfo};
 pub use signature::{
     sign_header_plain, sign_header_sealed, verify_header_signature_plain,
     verify_header_signature_plain_policy, verify_header_signature_sealed,
-    verify_header_signature_sealed_policy,
+    verify_header_signature_sealed_policy, VerificationPolicy,
 };
 pub use signing::{ed25519_keypair_generate, ed25519_sign, ed25519_verify};
 pub use hybrid_sig::{

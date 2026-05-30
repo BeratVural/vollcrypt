@@ -1326,7 +1326,7 @@ pub fn sign_header_sealed(
 #[napi]
 pub fn verify_header_signature_plain(header: HeaderObj) -> Result<Buffer> {
     let core_header = napi_to_header(header)?;
-    match vollcrypt_files_core::verify_header_signature_plain(&core_header) {
+    match vollcrypt_files_core::verify_header_signature_plain(&core_header, vollcrypt_files_core::VerificationPolicy::RequireSigned) {
         Ok(pubkey) => Ok(Buffer::from(pubkey.write())),
         Err(e) => Err(Error::from_reason(e.to_string())),
     }
@@ -1336,7 +1336,7 @@ pub fn verify_header_signature_plain(header: HeaderObj) -> Result<Buffer> {
 pub fn verify_header_signature_sealed(header: HeaderObj, sealed_gk: Uint8Array, key_log: &KeyLog) -> Result<Buffer> {
     let core_header = napi_to_header(header)?;
     let gk_arr = to_arr32(sealed_gk.as_ref(), "sealed_gk")?;
-    match vollcrypt_files_core::verify_header_signature_sealed(&core_header, &gk_arr, &key_log.inner) {
+    match vollcrypt_files_core::verify_header_signature_sealed(&core_header, &gk_arr, &key_log.inner, vollcrypt_files_core::VerificationPolicy::RequireSigned) {
         Ok(pubkey) => Ok(Buffer::from(pubkey.write())),
         Err(e) => Err(Error::from_reason(e.to_string())),
     }
@@ -1514,6 +1514,7 @@ pub fn resolve_sender(
         &core_header,
         &key_log.inner,
         core_sealed_gk.as_ref(),
+        vollcrypt_files_core::VerificationPolicy::RequireSigned,
     ) {
         Ok(info) => Ok(SenderInfo {
             signer_pubkey: Buffer::from(info.signer_pubkey.write()),
