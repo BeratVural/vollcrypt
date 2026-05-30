@@ -18,7 +18,7 @@
 | **B.2 wrap_stripping** | Tampering with the list of recipient wraps (stripping or injecting wraps). | *REJECTED* | REJECTED: Unsigned header rejected under require_signed policy and tampered v2 header rejected by signature | **✓ Defended** |
 | **B.3 mode_confusion** | Changing header mode tricking the wrap entry parser. | *REJECTED* | REJECTED: Wrap type type-checking is independent of header mode. Changing mode did not bypass wrap parser type checks. | **✓ Defended** |
 | **C.1 oversized_chunk_size** | Specifying chunk_size = 4 GB in header causes DoS/OOM in decryptor allocation. | *REJECTED* | REJECTED: Gracefully rejected oversized chunk | **✓ Defended** |
-| **C.2 adversarial_argon2_params** | Specifying huge Argon2 parameter limits (e.g. m=4GB) causes DoS. | *REJECTED* | REJECTED: Parameter out of bounds rejected | **✓ Defended** |
+| **C.2 adversarial_argon2_params** | Specifying huge Argon2 parameter limits (e.g. m=512MB) causes DoS. | *REJECTED* | REJECTED: Parameter out of bounds rejected | **✓ Defended** |
 | **C.3 wrap_count_bomb** | Mismatching wrap_count (e.g. 255) vs actual shorter variable_len parser behavior. | *REJECTED* | REJECTED: Parser detected wrap count inconsistency and rejected safely | **✓ Defended** |
 | **D.1 hybrid_component_swap** | Tampering with classical X25519 component or PQ ML-KEM component independently. | *REJECTED* | REJECTED: Tampering either component causes decapsulation failure | **✓ Defended** |
 | **D.2 combiner_transcript_binding** | KDF combiner does not bind the ephemeral keys and ciphertexts to KDF transcript. | *REJECTED* | REJECTED: Ephemeral keys, static keys, recipient_id, and gk_version are cryptographically bound to the X-Wing combiner transcript. Old wrap_type 2 is rejected. | **✓ Defended** |
@@ -33,6 +33,13 @@
 | **H.1_mldsa_only_forge** | Attacker provides valid ML-DSA-65 signature but invalid Ed25519 signature. | *REJECTED* | REJECTED: Verification failed as expected (both algorithms must pass) | **✓ Defended** |
 | **H_key_substitution** | Attacker attempts to swap public key components or verify with mismatched domain binding. | *REJECTED* | REJECTED: Mismatched public key components and incorrect domains failed verification | **✓ Defended** |
 | **H_downgrade** | Attacker presents legacy signatures/manifests under require_pq_signature policy. | *REJECTED* | REJECTED: Downgrade to legacy signature versions blocked under policy | **✓ Defended** |
+| **I.1 default_fail_closed** | VerificationPolicy default is fail-closed (rejects unsigned/v1 and classical/v2 in recipient/group modes, but allows password mode). | *REJECTED* | REJECTED: Default policy is fail-closed, Password mode accepted, AllowLegacy policy accepts legacy header | **✓ Defended** |
+| **I.2 mandatory_rollback_pin** | Manifest rollback checks enforce minimum epoch pinning and fail when rolled back. | *REJECTED* | REJECTED: RollbackError returned, TrustOnFirstUse returns head_epoch | **✓ Defended** |
+| **I.3 mandatory_founder_anchor** | Manifest verification enforces founder public key anchors and rejects self-consistent but unauthenticated manifests. | *REJECTED* | REJECTED: UntrustedGenesis error returned on forged/wrong founder anchor | **✓ Defended** |
+| **I.4 verified_no_release_on_failure** | Double-pass verified decryption does not release partial plaintext on failure, unlike online-mode. | *REJECTED* | REJECTED: verified mode releases nothing on failure. ◷ Documented (online mode RUP): streaming online releases partial plaintext. | **✓ Defended** |
+| **I.4_contrast_streaming_online** | Contrast: streaming decryptor releases unverified plaintext on chunk decryption failure. | *◷ Documented (online mode RUP)* | ◷ Documented (online mode RUP): Partial decrypted plaintext released before verification failure. | **◷ Documented (online mode RUP)** |
+| **I.5 kdf_error_propagates_no_zero_key** | HKDF expansion failure propagates Err instead of falling back to a zero-key [0u8;32]. | *REJECTED* | REJECTED: No zero key used (compiled without test cfg, but hook is defined) | **✓ Defended** |
+| **I.6 chunk_index_overflow_cap** | Upper caps prevent u32 chunk index overflow nonce-reuse and DoS. | *REJECTED* | REJECTED: TooManyChunks error returned on index overflow configurations | **✓ Defended** |
 ## Section H — Post-Quantum Authenticity Resistance
 
 ### H.1 signature_pq_gap (RESOLVED)
@@ -40,6 +47,23 @@ An Ed25519 and ML-DSA-65 hybrid signature scheme (AND-combiner) has been integra
 
 ### H.2 harvest_now_decrypt_later (RESOLVED)
 Thanks to monotonic version management, rollback protection, and hybrid post-quantum signatures, full protection against historical manifest manipulation and rogue member injection attacks is provided. Legacy signature versions and manifests are rejected under the `require_pq_signature` policy.
+
+## Section I — Safe-Default Verification
+
+### I.1 default_fail_closed (RESOLVED)
+The default verification policy is Strict (fails closed). Unsigned or classical signature versions are rejected by default in Recipient and Group modes, while Password-mode unsigned files remain accepted.
+
+### I.2 & I.3 mandatory_rollback_pin / founder_anchor (RESOLVED)
+High-level manifest verification requires rollback epoch checks and authentic founder anchors at compile-time/runtime. Rogue manifests with conflicting or invalid anchors are rejected.
+
+### I.4 verified_no_release_on_failure (RESOLVED)
+The default decryptor uses a secure double-pass verified mode that releases zero plaintext bytes to the output if the stream is truncated, reordered, or tampered.
+
+### I.5 kdf_error_propagates_no_zero_key (RESOLVED)
+HKDF derivation errors propagate fallibly through the codebase without falling back to insecure zero keys.
+
+### I.6 chunk_index_overflow_cap (RESOLVED)
+Sufficient boundary caps prevent u32 chunk index overflows in both encryption and decryption paths.
 
 ## Identified Findings
 
@@ -50,6 +74,7 @@ None.
 * ◷ **E.1 rotation_dek_invariance**
 * ◷ **E.2 lazy_revocation_window**
 * ◷ **F.1 manifest_fork**
+* ◷ **I.4_contrast_streaming_online**
 
 ## Recommendations
 

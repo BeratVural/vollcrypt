@@ -68,8 +68,9 @@ pub fn sign_header_sealed(
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VerificationPolicy {
+    #[default]
     Strict,        // PQ signatures required (v3 headers only)
     RequireSigned, // Classic or hybrid signatures required
     AllowLegacy,   // Allow v1/v2 unsigned/legacy signatures (opt-in)
@@ -105,6 +106,10 @@ pub fn verify_header_signature_plain_policy(
             return Err(FileFormatError::IntegrityError(
                 "Unsigned or legacy header in recipient/group mode".to_string(),
             ));
+        }
+
+        if header.mode == Mode::Password {
+            return Err(FileFormatError::HeaderNotSigned);
         }
 
         match policy {
@@ -173,6 +178,10 @@ pub fn verify_header_signature_sealed_policy(
             return Err(FileFormatError::IntegrityError(
                 "Unsigned or legacy header in recipient/group mode".to_string(),
             ));
+        }
+
+        if header.mode == Mode::Password {
+            return Err(FileFormatError::HeaderNotSigned);
         }
 
         match policy {

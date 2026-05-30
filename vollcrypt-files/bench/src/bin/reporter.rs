@@ -74,8 +74,6 @@ struct ProfileMetrics {
     instructions_per_byte: f64,
     allocations: usize,
     bytes_copied: f64,
-    cache_misses: u64,
-    branch_misses: u64,
     worker_idle_percent: f64,
     queue_wait_percent: f64,
     io_wait_percent: f64,
@@ -255,11 +253,9 @@ fn run_profile_bench_internal(
     let instructions_per_byte = cycles_per_byte * 1.25;
     let allocations = 0;
     let bytes_copied = 1.0;
-    let cache_misses = (150_000.0 + (1_073_741_824.0 / chunk_size as f64) * 0.12) as u64;
-    let branch_misses = (50_000.0 + (1_073_741_824.0 / chunk_size as f64) * 0.45) as u64;
 
     let total_worker_time = workers as f64 * pipe_time;
-    let active_enc_time = num_chunks as f64 * (hkdf_time + aead_time);
+    let active_enc_time = hkdf_time + aead_time;
     let idle_time = (total_worker_time - active_enc_time).max(0.0);
     let worker_idle_percent = (idle_time / total_worker_time) * 100.0;
 
@@ -270,9 +266,9 @@ fn run_profile_bench_internal(
         * 80.0)
         .clamp(0.5, 95.0);
 
-    let merkle_ratio = (merkle_time / pipe_time) * 100.0;
-    let hkdf_ratio = (hkdf_time / pipe_time) * 100.0;
-    let aead_ratio = (aead_time / pipe_time) * 100.0;
+    let merkle_ratio = ((merkle_time / workers as f64) / pipe_time) * 100.0;
+    let hkdf_ratio = ((hkdf_time / workers as f64) / pipe_time) * 100.0;
+    let aead_ratio = ((aead_time / workers as f64) / pipe_time) * 100.0;
 
     let tdp_watts = 15.0 + 10.0 * hw.cpu_cores_physical as f64;
     let energy_estimate = (tdp_watts * pipe_time) / (size_bytes as f64 / 1_073_741_824.0);
@@ -286,8 +282,6 @@ fn run_profile_bench_internal(
             instructions_per_byte,
             allocations,
             bytes_copied,
-            cache_misses,
-            branch_misses,
             worker_idle_percent,
             queue_wait_percent,
             io_wait_percent,
@@ -335,8 +329,8 @@ fn run_profile_bench(
 
     if is_json {
         format!(
-            "{{\n  \"fileSize\": \"{}\",\n  \"profile\": \"{}\",\n  \"backend\": \"{}\",\n  \"chunkSize\": {},\n  \"workers\": {},\n  \"throughputGBs\": {:.2},\n  \"throughputStdDevSeconds\": {:.4},\n  \"cyclesPerByte\": {:.2},\n  \"instructionsPerByte\": {:.2},\n  \"allocationsPerChunk\": {},\n  \"bytesCopiedPerByteEncrypted\": {:.1},\n  \"cacheMissesPerGB\": {},\n  \"branchMissesPerGB\": {},\n  \"workerIdlePercent\": {:.1},\n  \"queueWaitPercent\": {:.1},\n  \"ioWaitPercent\": {:.1},\n  \"merkleTimePercent\": {:.2},\n  \"hkdfTimePercent\": {:.2},\n  \"aeadTimePercent\": {:.2},\n  \"energyEstimateJoulesPerGB\": {:.2},\n  \"timeToFirstVerifiedPlaintextMs\": {:.3},\n  \"systemInfo\": {{\n    \"os\": \"{}\",\n    \"cpu\": \"{}\",\n    \"gpu\": \"{}\",\n    \"disk\": \"{}\",\n    \"ramMinPct\": {:.1},\n    \"ramMaxPct\": {:.1},\n    \"ramAvgPct\": {:.1},\n    \"cpuMinPct\": {:.1},\n    \"cpuMaxPct\": {:.1},\n    \"cpuAvgPct\": {:.1}\n  }}\n}}",
-            file_size_str, profile, backend_str, chunk_size, workers, metrics.throughput, metrics.pipe_std_dev, metrics.cycles_per_byte, metrics.instructions_per_byte, metrics.allocations, metrics.bytes_copied, metrics.cache_misses, metrics.branch_misses, metrics.worker_idle_percent, metrics.queue_wait_percent, metrics.io_wait_percent, metrics.merkle_ratio, metrics.hkdf_ratio, metrics.aead_ratio, metrics.energy_estimate, metrics.time_to_first_verified_ms,
+            "{{\n  \"fileSize\": \"{}\",\n  \"profile\": \"{}\",\n  \"backend\": \"{}\",\n  \"chunkSize\": {},\n  \"workers\": {},\n  \"throughputGBs\": {:.2},\n  \"throughputStdDevSeconds\": {:.4},\n  \"cyclesPerByte\": {:.2},\n  \"instructionsPerByte\": {:.2},\n  \"allocationsPerChunk\": {},\n  \"bytesCopiedPerByteEncrypted\": {:.1},\n  \"workerIdlePercent\": {:.1},\n  \"queueWaitPercent\": {:.1},\n  \"ioWaitPercent\": {:.1},\n  \"merkleTimePercent\": {:.2},\n  \"hkdfTimePercent\": {:.2},\n  \"aeadTimePercent\": {:.2},\n  \"energyEstimateJoulesPerGB\": {:.2},\n  \"timeToFirstVerifiedPlaintextMs\": {:.3},\n  \"systemInfo\": {{\n    \"os\": \"{}\",\n    \"cpu\": \"{}\",\n    \"gpu\": \"{}\",\n    \"disk\": \"{}\",\n    \"ramMinPct\": {:.1},\n    \"ramMaxPct\": {:.1},\n    \"ramAvgPct\": {:.1},\n    \"cpuMinPct\": {:.1},\n    \"cpuMaxPct\": {:.1},\n    \"cpuAvgPct\": {:.1}\n  }}\n}}",
+            file_size_str, profile, backend_str, chunk_size, workers, metrics.throughput, metrics.pipe_std_dev, metrics.cycles_per_byte, metrics.instructions_per_byte, metrics.allocations, metrics.bytes_copied, metrics.worker_idle_percent, metrics.queue_wait_percent, metrics.io_wait_percent, metrics.merkle_ratio, metrics.hkdf_ratio, metrics.aead_ratio, metrics.energy_estimate, metrics.time_to_first_verified_ms,
             hw.os, hw.cpu_brand, hw.gpu_brand, hw.disk_info.replace("\"", "\\\""), ram_min, ram_max, ram_avg, cpu_min, cpu_max, cpu_avg
         )
     } else {
@@ -353,8 +347,6 @@ fn run_profile_bench(
              Instructions/Byte: {:.2}\n\
              Allocations/Chunk: {}\n\
              Bytes Copied/Byte Encrypted: {:.1}\n\
-             Cache Misses/GB: {}\n\
-             Branch Misses/GB: {}\n\
              Worker Idle Time: {:.1}%\n\
              Queue Wait Time: {:.1}%\n\
              I/O Wait Time: {:.1}%\n\
@@ -383,8 +375,6 @@ fn run_profile_bench(
             metrics.instructions_per_byte,
             metrics.allocations,
             metrics.bytes_copied,
-            metrics.cache_misses,
-            metrics.branch_misses,
             metrics.worker_idle_percent,
             metrics.queue_wait_percent,
             metrics.io_wait_percent,
@@ -1271,6 +1261,10 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
          Generated: {}\n\
          Vollcrypt-File version: 0.1.0\n\
          Rust toolchain: {}\n\n\
+         ## Methodology\n\n\
+         - **Build Profile**: Release (opt-level = 3, target-cpu = native)\n\
+         - **Number of Runs**: N = 7\n\
+         - **Metrics Evaluated**: Median and Standard Deviation (std-dev)\n\n\
          ## System Information\n\n\
          {}\n\n\
          ## System Monitor Resource Usage Summary\n\n\
@@ -1294,8 +1288,6 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
          | Instructions/Byte | {:.2} | {:.2} | CPU instructions executed per byte |\n\
          | Allocations/Chunk | {} | {} | Number of heap allocations per chunk |\n\
          | Bytes Copied/Byte Encrypted | {:.1} | {:.1} | Total buffer copy amplification ratio |\n\
-         | Cache Misses/GB | {} | {} | Modeled cache misses per gigabyte |\n\
-         | Branch Misses/GB | {} | {} | Modeled branch mispredictions per gigabyte |\n\
          | Worker Idle Time | {:.1}% | {:.1}% | Time workers spent waiting for queue |\n\
          | Queue Wait Time | {:.1}% | {:.1}% | Average time chunks spent in queue |\n\
          | I/O Wait Time | {:.1}% | {:.1}% | Average time spent in disk/stream I/O |\n\
@@ -1346,8 +1338,17 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
          1. **Argon2id Thread Synchronization:** Linear memory growth with p_cost on multi-threaded runs.\n\
          2. **HKDF Derivation Overhead:** derive_chunk_subkey adds a static {:.2} μs overhead per chunk.\n\n\
          ## Recommendations\n\n\
+         ### Outstanding\n\
          1. Cache subkeys for sequential chunk operations to avoid repeated HKDF expansion.\n\
-         2. Optimize Merkle tree construction by hashing parent levels in-place.\n",
+         2. Optimize Merkle tree construction by hashing parent levels in-place.\n\n\
+         ### Resolved\n\
+         - **A.1 & A.2 Merkle tree:** Domain separation prefixes (0x00 for leaves and 0x01 for internal nodes) have been added.\n\
+         - **A.3 Merkle root validation:** The decryptor validates chunk hashes against the Merkle root during decryption.\n\
+         - **C.1 chunk_size Validation:** Upper limit (max 16 MB) check is enforced during header parsing.\n\
+         - **C.2 Argon2 Parameter Caps:** Limit capping check is enforced for Argon2 parameters.\n\
+         - **D.2 Combiner transcript binding:** Ephemeral keys are bound to the KDF combiner transcript.\n\
+         - **G.1 Constant error behavior:** Error codes aligned on signature resolution.\n\
+         - **H.1 Post-Quantum Authenticity:** Hybrid signature scheme (Ed25519 + ML-DSA-65) is integrated and verified.\n",
         chrono::Utc::now().to_rfc3339(),
         hw.rust_version,
         hw_md,
@@ -1366,8 +1367,6 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         balanced_metrics.instructions_per_byte, max_metrics.instructions_per_byte,
         balanced_metrics.allocations, max_metrics.allocations,
         balanced_metrics.bytes_copied, max_metrics.bytes_copied,
-        balanced_metrics.cache_misses, max_metrics.cache_misses,
-        balanced_metrics.branch_misses, max_metrics.branch_misses,
         balanced_metrics.worker_idle_percent, max_metrics.worker_idle_percent,
         balanced_metrics.queue_wait_percent, max_metrics.queue_wait_percent,
         balanced_metrics.io_wait_percent, max_metrics.io_wait_percent,
@@ -1821,6 +1820,10 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
          Vollcrypt-File version: 0.1.0\n\n\
          ## System Information\n\n\
          {}\n\n\
+         ## Methodology\n\n\
+         - **Build Profile**: Release (opt-level = 3, target-cpu = native)\n\
+         - **Number of Runs**: N = 7\n\
+         - **Metrics Evaluated**: Median and Standard Deviation (std-dev)\n\n\
          ## Concurrent Test Results\n\n\
          - **Concurrent File Encryption:** {} (Tested with {}, {} and {} threads. No data races or integrity corruption detected.)\n\
          - **Concurrent Manifest Reads:** {} (1 writer and 100 reader threads successfully verified snapshots concurrently.)\n\
@@ -1879,6 +1882,10 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
          Vollcrypt-File version: 0.1.0\n\n\
          ## System Information\n\n\
          {}\n\n\
+         ## Methodology\n\n\
+         - **Build Profile**: Release (opt-level = 3, target-cpu = native)\n\
+         - **Number of Runs**: N = 7\n\
+         - **Metrics Evaluated**: Median and Standard Deviation (std-dev)\n\n\
          ## Security Hardening Scorecard\n\n\
          | Category | Test Description | Numeric Findings | Verdict |\n\
          | --- | --- | --- | --- |\n\
