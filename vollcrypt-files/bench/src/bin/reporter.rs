@@ -561,8 +561,20 @@ fn run_sweep_workers(hw: &hwinfo::HwInfo) {
 fn run_full_suite(hw: hwinfo::HwInfo) {
     println!("Running full performance and security benchmark suite...");
 
-    fs::create_dir_all("vollcrypt-files/reports").ok();
-    fs::create_dir_all("vollcrypt-files/bench/results").ok();
+    let device_subdir = std::env::var("VOLLCRYPT_BENCH_DEVICE").unwrap_or_else(|_| "intel-i5-12450h".to_string());
+    let reports_dir = if device_subdir.is_empty() {
+        std::path::PathBuf::from("vollcrypt-files/reports")
+    } else {
+        std::path::PathBuf::from("vollcrypt-files/reports").join(&device_subdir)
+    };
+    let results_dir = if device_subdir.is_empty() {
+        std::path::PathBuf::from("vollcrypt-files/bench/results")
+    } else {
+        std::path::PathBuf::from("vollcrypt-files/bench/results").join(&device_subdir)
+    };
+
+    fs::create_dir_all(&reports_dir).ok();
+    fs::create_dir_all(&results_dir).ok();
 
     // Start background system resource monitoring
     let monitor = SystemMonitor::start();
@@ -873,7 +885,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     // Save single-core results
     let single_core_report = single_core_rows.join("\n");
     fs::write(
-        "vollcrypt-files/bench/results/single_core.json",
+        results_dir.join("single_core.json"),
         format!("{{\"rows\": {:?}}}", single_core_rows),
     )
     .ok();
@@ -928,7 +940,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         ));
     }
     fs::write(
-        "vollcrypt-files/bench/results/parallel.json",
+        results_dir.join("parallel.json"),
         format!("{{\"rows\": {:?}}}", par_rows),
     )
     .ok();
@@ -1392,12 +1404,13 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         age_sc_elapsed,
         hkdf_med
     );
+    let perf_path = reports_dir.join("PERFORMANCE_REPORT.md");
     fs::write(
-        "vollcrypt-files/reports/PERFORMANCE_REPORT.md",
+        &perf_path,
         perf_content,
     )
     .unwrap();
-    println!("Generated: vollcrypt-files/reports/PERFORMANCE_REPORT.md");
+    println!("Generated: {:?}", perf_path);
 
     // ==========================================
     // RUN DYNAMIC SECURITY HARDENING MEASUREMENTS
@@ -1868,12 +1881,13 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         stability_status,
         stability_table
     );
+    let behavioral_path = reports_dir.join("BEHAVIORAL_REPORT.md");
     fs::write(
-        "vollcrypt-files/reports/BEHAVIORAL_REPORT.md",
+        &behavioral_path,
         behavioral_content,
     )
     .unwrap();
-    println!("Generated: vollcrypt-files/reports/BEHAVIORAL_REPORT.md");
+    println!("Generated: {:?}", behavioral_path);
 
     // Write SECURITY_AUDIT_REPORT.md
     let security_content = format!(
@@ -1919,14 +1933,15 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         entropy,
         (entropy / 8.0) * 100.0
     );
+    let security_path = reports_dir.join("SECURITY_AUDIT_REPORT.md");
     fs::write(
-        "vollcrypt-files/reports/SECURITY_AUDIT_REPORT.md",
+        &security_path,
         security_content,
     )
     .unwrap();
-    println!("Generated: vollcrypt-files/reports/SECURITY_AUDIT_REPORT.md");
+    println!("Generated: {:?}", security_path);
 
-    println!("All reports successfully generated and saved to reports/!");
+    println!("All reports successfully generated and saved!");
 }
 
 fn main() {

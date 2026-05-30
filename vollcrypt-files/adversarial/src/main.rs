@@ -1617,6 +1617,10 @@ fn run_adversarial_suite() {
     let mut report_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     report_dir.pop(); // move up from "adversarial" to "vollcrypt-files"
     report_dir.push("reports");
+    let device_subdir = std::env::var("VOLLCRYPT_BENCH_DEVICE").unwrap_or_else(|_| "intel-i5-12450h".to_string());
+    if !device_subdir.is_empty() {
+        report_dir.push(device_subdir);
+    }
 
     if !report_dir.exists() {
         let _ = std::fs::create_dir_all(&report_dir);
