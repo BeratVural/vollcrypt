@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export VOLLCRYPT_BENCH_DEVICE="${VOLLCRYPT_BENCH_DEVICE:-intel-i5-12450h}"
+export VOLLCRYPT_BENCH_DEVICE="${VOLLCRYPT_BENCH_DEVICE:-}"
 
 echo "======================================================================"
 echo "          Vollcrypt-File Quick Smoke Test & Report Generation         "
@@ -17,7 +17,7 @@ cargo test --release --workspace
 
 # 2. Run the reporter to compile the latest performance and security figures
 echo "--> Running metrics reporter..."
-cargo run --release -p vollcrypt-files-bench --bin reporter
+cargo run --release -p vollcrypt-files-bench --bin vollcrypt
 
 device_suffix=""
 if [ -n "${VOLLCRYPT_BENCH_DEVICE:-}" ]; then

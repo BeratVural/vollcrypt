@@ -1613,11 +1613,62 @@ fn run_adversarial_suite() {
     report.push_str("7. **G.1 Constant error behavior:** In the `verify_header_signature_sealed` function, the error codes for decryption failure and the decrypted data length not being 32 bytes should be aligned (`WrongGroupKey`).\n");
     report.push_str("8. **H.1 Post-Quantum Authenticity (RESOLVED):** The Ed25519 + ML-DSA hybrid signature scheme has been successfully integrated and verified.\n");
 
+fn detect_cpu_brand() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(output) = std::process::Command::new("wmic")
+            .args(&["cpu", "get", "name"])
+            .output()
+        {
+            let out = String::from_utf8_lossy(&output.stdout);
+            let lines: Vec<_> = out.lines().map(|s| s.trim()).filter(|s| !s.is_empty() && *s != "Name").collect();
+            if !lines.is_empty() {
+                return lines[0].to_string();
+            }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(content) = std::fs::read_to_string("/proc/cpuinfo") {
+            for line in content.lines() {
+                if line.starts_with("model name") {
+                    if let Some(pos) = line.find(':') {
+                        return line[pos + 1..].trim().to_string();
+                    }
+                }
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(output) = std::process::Command::new("sysctl")
+            .args(&["-n", "machdep.cpu.brand_string"])
+            .output()
+        {
+            return String::from_utf8_lossy(&output.stdout).trim().to_string();
+        }
+    }
+    "unknown_cpu".to_string()
+}
+
+fn get_clean_cpu_name(cpu_brand: &str) -> String {
+    cpu_brand
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect::<String>()
+        .split('_')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("_")
+}
+
     // Write report
     let mut report_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     report_dir.pop(); // move up from "adversarial" to "vollcrypt-files"
     report_dir.push("reports");
-    let device_subdir = std::env::var("VOLLCRYPT_BENCH_DEVICE").unwrap_or_else(|_| "intel-i5-12450h".to_string());
+    let detected_cpu_name = get_clean_cpu_name(&detect_cpu_brand());
+    let device_subdir = std::env::var("VOLLCRYPT_BENCH_DEVICE").unwrap_or_else(|_| detected_cpu_name);
     if !device_subdir.is_empty() {
         report_dir.push(device_subdir);
     }
