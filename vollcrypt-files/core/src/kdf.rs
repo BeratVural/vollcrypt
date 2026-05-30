@@ -2,6 +2,11 @@ use hkdf::Hkdf;
 use sha2::Sha256;
 use crate::error::FileFormatError;
 
+#[cfg(test)]
+thread_local! {
+    pub static INJECT_KDF_ERROR: std::cell::Cell<bool> = std::cell::Cell::new(false);
+}
+
 /// Derives a chunk-specific subkey using HKDF-SHA256.
 ///
 /// * `dek`: The Data Encryption Key (IKM).
@@ -14,6 +19,11 @@ pub fn derive_chunk_subkey(
     file_id: &[u8; 16],
     chunk_index: u32,
 ) -> Result<[u8; 32], FileFormatError> {
+    #[cfg(test)]
+    if INJECT_KDF_ERROR.with(|h| h.get()) {
+        return Err(FileFormatError::IntegrityError("HKDF expansion failed for subkey (injected)".to_string()));
+    }
+
     let mut info = [0u8; 27];
     info[0..23].copy_from_slice(b"vollcrypt-file-chunk-v1");
     info[23..27].copy_from_slice(&chunk_index.to_be_bytes());
@@ -62,7 +72,7 @@ pub fn derive_kek_argon2id(
 ) -> Result<[u8; 32], crate::error::FileFormatError> {
     use argon2::{Algorithm, Argon2, Params, Version};
 
-    if m_cost > 65536 || t_cost > 5 || p_cost > 8 {
+    if m_cost > 262144 || t_cost > 5 || p_cost > 8 {
         return Err(crate::error::FileFormatError::KdfParameterOutOfRange(
             format!(
                 "Argon2 parameters exceed safety limits: m_cost={}, t_cost={}, p_cost={}",
@@ -97,6 +107,11 @@ pub fn derive_chunk_keys(
     file_id: &[u8; 16],
     chunk_index: u32,
 ) -> Result<([u8; 32], [u8; 12]), FileFormatError> {
+    #[cfg(test)]
+    if INJECT_KDF_ERROR.with(|h| h.get()) {
+        return Err(FileFormatError::IntegrityError("HKDF expansion failed for chunk keys (injected)".to_string()));
+    }
+
     let mut info = [0u8; 27];
     info[0..23].copy_from_slice(b"vollcrypt-file-chunk-v1");
     info[23..27].copy_from_slice(&chunk_index.to_be_bytes());
@@ -114,4 +129,22 @@ pub fn derive_chunk_keys(
     iv.copy_from_slice(&okm[32..44]);
 
     Ok((subkey, iv))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_kdf_error_injection() {
+        INJECT_KDF_ERROR.with(|h| h.set(true));
+        let dek = [1u8; 32];
+        let file_id = [2u8; 16];
+        let res_subkey = derive_chunk_subkey(&dek, &file_id, 0);
+        let res_keys = derive_chunk_keys(&dek, &file_id, 0);
+        INJECT_KDF_ERROR.with(|h| h.set(false));
+
+        assert!(res_subkey.is_err());
+        assert!(res_keys.is_err());
+    }
 }
