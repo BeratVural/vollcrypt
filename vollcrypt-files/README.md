@@ -525,6 +525,54 @@ All baseline timings measured dynamically on the same AMD Ryzen 5 7500F test sys
 - **OpenSSL CLI Baseline:** 0.75 s (measured on device)
 - **Age Baseline:** 1.57 s (measured on device)
 
+### Benchmark Results (Intel Core i5-12450H)
+
+#### Device Profile for Tests:
+- **CPU:** 12th Gen Intel(R) Core(TM) i5-12450H (8 physical cores, 12 logical threads)
+- **GPU:** Intel Corporation Alder Lake-P GT1 [UHD Graphics]
+- **Disk:** / [SSD]
+- **RAM Utilized:** Min 27.5%, Max 70.8%, Avg 35.9%
+- **CPU Utilized:** Min 5.4%, Max 66.0%, Avg 12.1%
+
+#### Pipelined Performance Metrics Suite
+| Metric | Balanced Profile (256MB, 1MB chunk) | Max Profile (1GB, 8MB chunk) | Detail |
+| --- | --- | --- | --- |
+| Throughput | 0.71 GB/s | 0.74 GB/s | Aggregate gigabytes per second |
+| Cycles/Byte | 0.55 | 0.53 | CPU clock cycles per byte encrypted |
+| Instructions/Byte | 0.69 | 0.66 | CPU instructions executed per byte |
+| Allocations/Chunk | 0 | 0 | Number of heap allocations per chunk |
+| Bytes Copied/Byte Encrypted | 1.0 | 1.0 | Total buffer copy amplification ratio |
+| Cache Misses/GB | N/A | N/A | Modeled cache misses per gigabyte |
+| Branch Misses/GB | N/A | N/A | Modeled branch mispredictions per gigabyte |
+| Worker Idle Time | 86.4% | 92.8% | Time workers spent waiting for queue |
+| Queue Wait Time | 15.0% | 15.0% | Average time chunks spent in queue |
+| I/O Wait Time | 69.2% | 74.3% | Average time spent in disk/stream I/O |
+| Merkle Time / Total | 0.20% | 0.01% | Percentage of time spent in Merkle tree |
+| HKDF Time / Total | 0.57% | 0.04% | Percentage of time spent in HKDF subkeys |
+| AEAD Time / Total | 12.99% | 7.14% | Percentage of time spent in AEAD crypto |
+| Energy Estimate | 134.21 J/GB | 128.59 J/GB | Estimated energy consumption per GB |
+| Time to First Verified Plaintext | 0.682 ms | 4.769 ms | Latency to verify and decrypt chunk 0 |
+
+#### Chunk Latency & Throughput (Single-Core)
+| Operation | Input Size | Latency (median) | Latency (p99) | Throughput |
+| --- | --- | --- | --- | --- |
+| `encrypt_chunk` | 4 KB | 72.37 μs | 90.15 μs | 53.98 MB/s |
+| `decrypt_chunk` | 4 KB | 80.88 μs | 336.33 μs | 48.30 MB/s |
+| `encrypt_chunk` | 64 KB | 182.53 μs | 209.93 μs | 342.41 MB/s |
+| `decrypt_chunk` | 64 KB | 168.51 μs | 376.97 μs | 370.89 MB/s |
+| `encrypt_chunk` | 1 MB | 1173.14 μs | 1754.10 μs | 852.42 MB/s |
+| `decrypt_chunk` | 1 MB | 1171.14 μs | 1198.10 μs | 853.87 MB/s |
+| `encrypt_chunk` | 4 MB | 4509.95 μs | 4652.09 μs | 886.93 MB/s |
+| `decrypt_chunk` | 4 MB | 4650.11 μs | 4795.83 μs | 860.19 MB/s |
+| `encrypt_chunk` | 16 MB | 17892.73 μs | 19608.63 μs | 894.22 MB/s |
+| `decrypt_chunk` | 16 MB | 18179.62 μs | 21220.74 μs | 880.11 MB/s |
+
+#### Competitor Comparison (1 GB Single-Threaded)
+All baseline timings measured dynamically on the same Intel Core i5-12450H test system:
+- **Vollcrypt File:** 1.21 s (measured)
+- **OpenSSL Baseline:** 1.20 s (measured on device)
+- **Age Baseline:** 2.51 s (measured on device)
+
 ### Benchmark CLI
 
 Vollcrypt Files includes a dedicated benchmark and resource monitoring harness binary named `vollcrypt`. You can use this CLI to run automated suites, sweep configurations, profile specific parameters, and inspect real-time CPU/RAM/Disk stats:
