@@ -98,29 +98,27 @@ The layout of the file container header is length-prefixed and dynamically parse
 | Offset | Length | Type | Description |
 | :--- | :--- | :--- | :--- |
 | 0 | 8 | Bytes | Magic Bytes (`VOLLVALT`) |
-| 8 | 1 | u8 | Format Version |
-| 9 | 1 | u8 | Container Flags |
+| 8 | 1 | u8 | Format Version (1 = Unsigned, 2 = Signed Classical, 3 = Signed Post-Quantum Hybrid) |
+| 9 | 1 | u8 | Container Mode (e.g. 0 = Password, 1 = Recipient, 2 = Group) |
 | 10 | 1 | u8 | Cipher Suite ID |
-| 11 | 1 | u8 | Header Encoding Version |
-| 12 | 4 | u32 BE | Header Length |
-| 16 | 16 | Bytes | File ID |
-| 32 | 4 | u32 BE | Chunk Size |
-| 36 | 8 | u64 BE | Plaintext Size |
-| 44 | 32 | Bytes | Merkle Root |
-| 76 | 4 | u32 BE | Wrap Count |
-| 80 | 4 | u32 BE | Wrap Table Length |
-| 84 | 4 | u32 BE | Extension Table Length |
-| 88 | Var | Structs | Wrap Table |
-| 88 + Wrap Table Length | Var | Structs | Extension Table |
+| 11 | 16 | Bytes | File ID |
+| 27 | 4 | u32 BE | Chunk Size (Max 16 MB) |
+| 31 | 8 | u64 BE | Plaintext Size |
+| 39 | 32 | Bytes | Merkle Root |
+| 71 | 1 | u8 | Wrap Count |
+| 72 | 1 | u8 | Hash Algorithm (0 = SHA-256, 1 = BLAKE3) |
+| 73 | 3 | Bytes | Reserved |
+| 76 | 4 | u32 BE | Variable Length (Length of wrap entries table) |
+| 80 | Var | Structs | Wrap Table (concatenated WrapEntry records) |
+| 80 + Var | 4 | u32 BE | Metadata Length (v2/v3 only) |
+| 84 + Var | Var | Struct | Signed Metadata (v2/v3 only) |
+| 84 + Var + MetVar | Var | Signature | Signature Table (v2: 64B Ed25519, v3: Ed25519 + ML-DSA-65 Hybrid Signature) |
 
 #### Container Flags
-The container does not have a single exclusive wrapping mode. Supported access methods are determined by the list of `WrapEntry` records. A file may contain password, recipient, and group wraps at the same time.
+The container mode determines how the file is accessed (Password, Recipient, or Group). Supported access methods are determined by the list of `WrapEntry` records.
 
-#### Wrap Table Length
-`Wrap Table Length` is the total byte length of all concatenated `WrapEntry` records. Parsers MUST reject headers where the sum of parsed wrap entry sizes does not exactly equal `Wrap Table Length`.
-
-#### Extension Table Length
-Extensions may be marked as critical or non-critical. Implementations MUST reject files containing unknown critical extensions and MAY ignore unknown non-critical extensions.
+#### Variable Length
+`Variable Length` is the total byte length of all concatenated `WrapEntry` records. Parsers MUST reject headers where the sum of parsed wrap entry sizes does not exactly equal `Variable Length`.
 
 ### 2. Chunked File Container Engine
 
@@ -132,9 +130,8 @@ Default chunk size: 1 MiB.
 Recommended range:
 - Minimum: 4 KiB
 - Typical: 1 MiB to 16 MiB
-- Large-file optimized: 16 MiB to 64 MiB
 
-Very large chunk sizes may increase memory pressure, reduce random-access granularity, and are not recommended for general use even if the parser accepts them.
+A ceiling check of 16 MB is enforced during header parsing. Very large chunk sizes may increase memory pressure, reduce random-access granularity, and are not recommended for general use even if the parser accepts them.
 
 #### Sequential Full-File Decryption
 The decryption engine can consume encrypted container bytes sequentially for full-file decryption, without requiring random seeks during normal full-file reads. Random-access reads are supported separately by seeking directly to chunk envelope offsets and verifying the selected chunk against the Merkle Root.
@@ -148,13 +145,13 @@ Each wrap entry starts with a 1-byte `wrap_type` and a 2-byte BE `payload_len`. 
 - **Type 1: Password Argon2id**
   - Payload Length: 68 bytes (Total Entry Length: 71 bytes)
   - Salt (16B) || m_cost (4B BE) || t_cost (4B BE) || p_cost (4B BE) || Wrapped DEK (40B)
-- **Type 2: Hybrid KEM Recipient Wrap**
-  - Payload Length: 1188 bytes (Total Entry Length: 1191 bytes)
-  - Recipient ID (16B) || Recipient Key Version / Wrap Context Version (4B BE) || Ephemeral X25519 PK (32B) || ML-KEM Ciphertext (1088B) || Wrapped DEK (40B)
-  - For direct recipient wrapping, the version field represents the recipient key version. For group-mediated recipient wrapping, it MAY represent the group key epoch, depending on the wrap profile. Group-mediated recipient wraps MUST use a separate context label.
 - **Type 3: Group Wrap**
   - Payload Length: 60 bytes (Total Entry Length: 63 bytes)
   - Group ID (16B) || GK Version (4B BE) || Wrapped DEK (40B)
+- **Type 4: Hybrid KEM Recipient Wrap**
+  - Payload Length: 1180 bytes (Total Entry Length: 1183 bytes)
+  - Recipient ID (16B) || Recipient Key Version / Wrap Context Version (4B BE) || Ephemeral X25519 PK (32B) || ML-KEM Ciphertext (1088B) || Wrapped DEK (40B)
+  - For direct recipient wrapping, the version field represents the recipient key version. For group-mediated recipient wrapping, it MAY represent the group key epoch, depending on the wrap profile. Group-mediated recipient wraps MUST use a separate context label. (Type 2 is unsupported/legacy).
 
 > [!NOTE]
 > **File Container Write Model**
@@ -486,48 +483,47 @@ Vollcrypt File has undergone targeted performance optimizations to achieve peak 
 #### Device Profile for Tests:
 - **CPU:** AMD Ryzen 5 7500F @ 3.70 GHz (6 physical cores, 12 logical threads)
 - **GPU:** NVIDIA GeForce GTX 1660 SUPER
-- **Disk:** D:\ [HDD] (733.8 GB free / 931.5 GB total); C:\ [SSD] (27.4 GB free / 465.1 GB total)
-- **RAM Utilized:** Min 39.5%, Max 59.0%, Avg 43.1%
-- **CPU Utilized:** Min 11.7%, Max 63.8%, Avg 20.5%
+- **Disk:** D:\ [HDD] (734.0 GB free / 931.5 GB total); C:\ [SSD] (27.1 GB free / 465.1 GB total)
+- **RAM Utilized:** Min 34.9%, Max 53.9%, Avg 40.6%
+- **CPU Utilized:** Min 6.0%, Max 76.0%, Avg 21.7%
 
 #### Pipelined Performance Metrics Suite
-| Metric | Balanced Profile (256MB, 1MB chunk) | Max Profile (1GB, 8MB chunk) | Detail |
+| Metric | Balanced Profile (256MB) | Max Profile (1GB) | Detail |
 | --- | --- | --- | --- |
-| Throughput | 1.60 GB/s | 0.76 GB/s | Aggregate gigabytes per second |
-| Cycles/Byte | 2.15 | 4.51 | CPU clock cycles per byte encrypted |
-| Instructions/Byte | 2.69 | 5.64 | CPU instructions executed per byte |
-| Allocations/Chunk | 2 | 2 | Number of heap allocations per chunk |
-| Bytes Copied/Byte Encrypted | 2.0 | 2.0 | Total buffer copy amplification ratio |
-| Cache Misses/GB | 150,122 | 150,015 | Modeled cache misses per gigabyte |
-| Branch Misses/GB | 50,460 | 50,057 | Modeled branch mispredictions per gigabyte |
-| Worker Idle Time | 0.0% | 0.0% | Time workers spent waiting for queue |
-| Queue Wait Time | 0.1% | 0.1% | Average time chunks spent in queue |
-| I/O Wait Time | 0.5% | 0.5% | Average time spent in disk/stream I/O |
-| Merkle Time / Total | 0.02% | 0.00% | Percentage of time spent in Merkle tree |
-| HKDF Time / Total | 0.06% | 0.00% | Percentage of time spent in HKDF subkeys |
-| AEAD Time / Total | 114.91% | 52.69% | Percentage of time spent in AEAD crypto |
-| Energy Estimate | 46.79 J/GB | 98.23 J/GB | Estimated energy consumption per GB |
-| Time to First Verified Plaintext | 0.51 ms | 9.31 ms | Latency to verify and decrypt chunk 0 |
+| Throughput | 3.56 GB/s | 3.31 GB/s | Aggregate gigabytes per second |
+| Cycles/Byte | 0.97 | 1.04 | CPU clock cycles per byte encrypted |
+| Instructions/Byte | 1.21 | 1.30 | CPU instructions executed per byte |
+| Allocations/Chunk | 0 | 0 | Number of heap allocations per chunk |
+| Bytes Copied/Byte Encrypted | 1.0 | 1.0 | Total buffer copy amplification ratio |
+| Worker Idle Time | 56.5% | 81.3% | Time workers spent waiting for queue |
+| Queue Wait Time | 11.3% | 15.0% | Average time chunks spent in queue |
+| I/O Wait Time | 45.2% | 65.1% | Average time spent in disk/stream I/O |
+| Merkle Time / Total | 0.01% | 0.00% | Percentage of time spent in Merkle tree |
+| HKDF Time / Total | 0.02% | 0.00% | Percentage of time spent in HKDF subkeys |
+| AEAD Time / Total | 43.44% | 18.65% | Percentage of time spent in AEAD crypto |
+| Energy Estimate | 21.05 J/GB | 22.65 J/GB | Estimated energy consumption per GB |
+| Time to First Verified Plaintext | 0.172 ms | 1.668 ms | Latency to verify and decrypt chunk 0 |
 
 #### Chunk Latency & Throughput (Single-Core)
 | Operation | Input Size | Latency (median) | Latency (p99) | Throughput |
 | --- | --- | --- | --- | --- |
-| `encrypt_chunk` | 4 KB | 3.30 μs | 30.90 μs | 1183.71 MB/s |
-| `decrypt_chunk` | 4 KB | 3.40 μs | 4.00 μs | 1148.90 MB/s |
-| `encrypt_chunk` | 64 KB | 38.30 μs | 67.00 μs | 1631.85 MB/s |
-| `decrypt_chunk` | 64 KB | 38.10 μs | 63.30 μs | 1640.42 MB/s |
-| `encrypt_chunk` | 1 MB | 918.80 μs | 1059.40 μs | 1088.38 MB/s |
-| `decrypt_chunk` | 1 MB | 850.30 μs | 982.10 μs | 1176.06 MB/s |
-| `encrypt_chunk` | 4 MB | 3198.30 μs | 3551.40 μs | 1250.66 MB/s |
-| `decrypt_chunk` | 4 MB | 2838.80 μs | 2964.20 μs | 1409.05 MB/s |
-| `encrypt_chunk` | 16 MB | 11440.20 μs | 12715.80 μs | 1398.58 MB/s |
-| `decrypt_chunk` | 16 MB | 11455.20 μs | 12889.30 μs | 1396.75 MB/s |
+| encrypt_chunk | 4 KB | 4.30 μs | 28.50 μs | 908.43 MB/s |
+| decrypt_chunk | 4 KB | 3.60 μs | 4.40 μs | 1085.07 MB/s |
+| encrypt_chunk | 64 KB | 36.90 μs | 66.80 μs | 1693.77 MB/s |
+| decrypt_chunk | 64 KB | 37.10 μs | 56.60 μs | 1684.64 MB/s |
+| encrypt_chunk | 1 MB | 691.60 μs | 778.90 μs | 1445.92 MB/s |
+| decrypt_chunk | 1 MB | 675.50 μs | 723.30 μs | 1480.38 MB/s |
+| encrypt_chunk | 4 MB | 2586.30 μs | 2970.20 μs | 1546.61 MB/s |
+| decrypt_chunk | 4 MB | 2641.20 μs | 2651.90 μs | 1514.46 MB/s |
+| encrypt_chunk | 16 MB | 10425.80 μs | 11724.60 μs | 1534.65 MB/s |
+| decrypt_chunk | 16 MB | 10564.10 μs | 10630.60 μs | 1514.56 MB/s |
 
-#### Competitor Comparison (1 GB Single-Threaded)
+#### Competitor Comparison (1 GB Single-Threaded & Multi-Threaded)
 All baseline timings measured dynamically on the same AMD Ryzen 5 7500F test system:
-- **Vollcrypt File:** 0.75 s (measured)
-- **OpenSSL Baseline:** 0.77 s (measured on device)
-- **Age Baseline:** 1.62 s (measured on device)
+- **Vollcrypt File (Single-Core):** 0.72 s (measured)
+- **Vollcrypt File (All-Cores):** 0.14 s (measured)
+- **OpenSSL CLI Baseline:** 0.75 s (measured on device)
+- **Age Baseline:** 1.57 s (measured on device)
 
 ### Benchmark CLI
 
@@ -552,13 +548,25 @@ cargo run --release -p vollcrypt-files-bench --bin vollcrypt -- bench --sweep wo
 
 ### Test & Security Scorecard
 
-The current test suite includes stress, fuzzing, tampering, replay, and forgery-resistance tests. Passing these tests does not constitute a formal proof or third-party audit, but it provides implementation-level hardening coverage for the tested attack classes.
+The current test suite includes stress, fuzzing, tampering, replay, forgery-resistance, and safe-default policy tests.
 
-- Bit-flip tests: 8,000 modified ciphertext bits tested, 0 accepted.
-- Tag forgery tests: 1,000,000 random forged tags tested, 0 accepted.
-- Header tampering tests: modified header fields rejected.
-- Replay/substitution tests: tested against cross-file and chunk substitution attempts.
-- Linter: 100% clean Clippy builds under `-- -D warnings` on all target formats.
+- **Stress Tests:** `vollcrypt-files-stress` (16/16 pass)
+- **Hardening Coverages:**
+  - **Bit-flip Resistance:** Flip every bit in ciphertext chunk (8448 flips tested, 0 decrypted/accepted).
+  - **Tag Forgery Resistance:** Random tag insertion (100000 tries, 0 accepted).
+  - **Header Tampering Matrix:** Tamper magic, version, file_id (27 fields, 27 rejected).
+  - **Replay Attack Resistance:** IV uniqueness & cross-file substitution (0 replayed).
+  - **Timing Side Channels:** Constant-time password unwrap check (Median delta: 0.0000 μs).
+  - **Manifest Authority:** Unauthorized signature injection (1 forgery, 0 accepted).
+  - **Signed Header Replay:** Replaying v2 signature on fake file (1 replay, 0 accepted).
+- **Safe-Default Verification (Section I):**
+  - **default_fail_closed:** Assures fail-closed default policy on recipient/group modes.
+  - **mandatory_rollback_pin:** Enforces minimum epoch pinning.
+  - **mandatory_founder_anchor:** Rejects manifests with invalid founder anchors.
+  - **verified_no_release_on_failure:** Double-pass verified mode releases exactly 0 bytes on tampering.
+  - **kdf_error_propagates_no_zero_key:** No insecure fallback key usage.
+  - **chunk_index_overflow_cap:** Prevents u32 chunk index overflows.
+- **Linter:** 100% clean Clippy builds under `-- -D warnings` on all target formats.
 
 ---
 
