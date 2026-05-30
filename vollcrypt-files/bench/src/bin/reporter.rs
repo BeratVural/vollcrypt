@@ -558,10 +558,23 @@ fn run_sweep_workers(hw: &hwinfo::HwInfo) {
     println!("=============================");
 }
 
+fn get_clean_cpu_name(cpu_brand: &str) -> String {
+    cpu_brand
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect::<String>()
+        .split('_')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("_")
+}
+
 fn run_full_suite(hw: hwinfo::HwInfo) {
     println!("Running full performance and security benchmark suite...");
 
-    let device_subdir = std::env::var("VOLLCRYPT_BENCH_DEVICE").unwrap_or_else(|_| "intel-i5-12450h".to_string());
+    let detected_cpu_name = get_clean_cpu_name(&hw.cpu_brand);
+    let device_subdir = std::env::var("VOLLCRYPT_BENCH_DEVICE").unwrap_or_else(|_| detected_cpu_name);
     let reports_dir = if device_subdir.is_empty() {
         std::path::PathBuf::from("vollcrypt-files/reports")
     } else {
@@ -592,8 +605,8 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     );
     let (max_metrics, _, _, _, _, _, _) = run_profile_bench_internal(
         1024 * 1024 * 1024,
-        8 * 1024 * 1024,
-        hw.cpu_cores_logical,
+        4 * 1024 * 1024,
+        hw.cpu_cores_physical,
         &hw,
     );
 
@@ -1184,14 +1197,16 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     // 8. Comparison vs Industry Baselines
     println!("Running Comparison benchmarks (dynamic 1 GB measurements)...");
     let one_gb_bytes = 1024 * 1024 * 1024;
-    let num_chunks_1gb = one_gb_bytes / chunk_size_1mb;
+    let chunk_size_4mb = 4 * 1024 * 1024;
+    let plain_chunk_4mb = vec![0u8; chunk_size_4mb];
+    let num_chunks_1gb = one_gb_bytes / chunk_size_4mb;
 
     // --- Vollcrypt Single-Core 1 GB ---
     println!("-> Measuring Vollcrypt Single-Core 1 GB...");
     let start_voll_sc = Instant::now();
     let mut leaf_hashes_sc = Vec::with_capacity(num_chunks_1gb);
     for idx in 0..num_chunks_1gb {
-        let env = encrypt_chunk(&dek, &file_id, idx as u32, &plain_chunk, None).unwrap();
+        let env = encrypt_chunk(&dek, &file_id, idx as u32, &plain_chunk_4mb, None).unwrap();
         leaf_hashes_sc.push(chunk_leaf_hash(&env));
     }
     let tree_sc = MerkleTree::from_leaves(leaf_hashes_sc);
@@ -1209,7 +1224,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         (0..num_chunks_1gb)
             .into_par_iter()
             .map(|idx| {
-                let env = encrypt_chunk(&dek, &file_id, idx as u32, &plain_chunk, None).unwrap();
+                let env = encrypt_chunk(&dek, &file_id, idx as u32, &plain_chunk_4mb, None).unwrap();
                 chunk_leaf_hash(&env)
             })
             .collect()
@@ -1225,7 +1240,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     let nonce = aes_gcm::Nonce::from_slice(&[0u8; 12]);
     let start_raw_sc = Instant::now();
     for _ in 0..num_chunks_1gb {
-        let _raw_res = cipher.encrypt(nonce, plain_chunk.as_slice()).unwrap();
+        let _raw_res = cipher.encrypt(nonce, plain_chunk_4mb.as_slice()).unwrap();
     }
     let raw_sc_elapsed = start_raw_sc.elapsed().as_secs_f64();
 
@@ -1237,7 +1252,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
             let key = aes_gcm::Key::<Aes256Gcm>::from_slice(&dek);
             let cipher = Aes256Gcm::new(key);
             let nonce = aes_gcm::Nonce::from_slice(&[0u8; 12]);
-            let _raw_res = cipher.encrypt(nonce, plain_chunk.as_slice()).unwrap();
+            let _raw_res = cipher.encrypt(nonce, plain_chunk_4mb.as_slice()).unwrap();
         });
     });
     let raw_mc_elapsed = start_raw_mc.elapsed().as_secs_f64();
@@ -1966,9 +1981,13 @@ fn run_main(args: Vec<String>) {
     };
 
     if args.len() < 2 {
-        println!("No arguments provided. Defaulting to full suite execution (--suite auto)...");
+        println!("No arguments provided. Defaulting to profile max execution...");
         let hw = hwinfo::detect();
-        run_full_suite(hw);
+        let size_bytes = 1024 * 1024 * 1024;
+        let chunk_size = 4 * 1024 * 1024;
+        let workers = hw.cpu_cores_physical;
+        let result = run_profile_bench("max", size_bytes, chunk_size, workers, &hw, false, false);
+        print!("{}", result);
         return;
     }
 
@@ -2071,7 +2090,11 @@ fn run_main(args: Vec<String>) {
             println!("Error: Unknown suite: {}. Use 'auto'.", s);
         }
     } else {
-        println!("No options specified. Running full suite...");
-        run_full_suite(hw);
+        println!("No options specified. Defaulting to profile max execution...");
+        let size_bytes = 1024 * 1024 * 1024;
+        let chunk_size = 4 * 1024 * 1024;
+        let workers = hw.cpu_cores_physical;
+        let result = run_profile_bench("max", size_bytes, chunk_size, workers, &hw, false, false);
+        print!("{}", result);
     }
 }

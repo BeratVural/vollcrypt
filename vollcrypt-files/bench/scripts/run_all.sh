@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export VOLLCRYPT_BENCH_DEVICE="${VOLLCRYPT_BENCH_DEVICE:-intel-i5-12450h}"
+export VOLLCRYPT_BENCH_DEVICE="${VOLLCRYPT_BENCH_DEVICE:-}"
 
 echo "======================================================================"
 echo "      Vollcrypt-File Comprehensive Performance & Behavioral Suite     "
@@ -36,7 +36,7 @@ cargo bench --workspace || true
 
 # 4. Run the Performance & Security Reporter
 echo "--> Compiling and running the metrics reporter..."
-cargo run --release -p vollcrypt-files-bench --bin reporter
+cargo run --release -p vollcrypt-files-bench --bin vollcrypt
 
 device_suffix=""
 if [ -n "${VOLLCRYPT_BENCH_DEVICE:-}" ]; then
