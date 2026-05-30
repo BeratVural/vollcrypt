@@ -1,16 +1,16 @@
 # Vollcrypt File Behavioral Report
 
-Generated: 2026-05-30T14:55:50.899506214+00:00
+Generated: 2026-05-30T15:23:48.259701945+00:00
 Vollcrypt-File version: 0.1.0
 
 ## System Information
 
 | Component | Detail |
 | --- | --- |
-| CPU | 12th Gen Intel(R) Core(TM) i5-12450H (8 physical cores, 12 logical threads) @ 3.61 GHz |
+| CPU | 12th Gen Intel(R) Core(TM) i5-12450H (8 physical cores, 12 logical threads) @ 3.39 GHz |
 | GPU | 00:02.0 VGA compatible controller: Intel Corporation Alder Lake-P GT1 [UHD Graphics] (rev 0c) |
-| RAM | 6.98 GB (4.83 GB available) |
-| Disk | / [SSD] (416.8 GB free / 467.3 GB total); /boot/efi [SSD] (1.0 GB free / 1.0 GB total) |
+| RAM | 6.98 GB (5.20 GB available) |
+| Disk | / [SSD] (416.3 GB free / 467.3 GB total); /boot/efi [SSD] (1.0 GB free / 1.0 GB total) |
 | OS | Ubuntu 7.0.0-15-generic |
 | Hardware Acceleration | AES-NI, AVX, AVX2, SHA-NI, PCLMULQDQ |
 | Rust Version | rustc 1.93.1 (01f6ddf75 2026-02-11) (built from a source tarball) |
@@ -34,12 +34,12 @@ Vollcrypt-File version: 0.1.0
 
 | Elapsed Time | RSS Usage | Delta |
 | --- | --- | --- |
-| 0.0 s | 293.92 MB | +0.00 MB |
-| 1.0 s | 293.92 MB | +0.00 MB |
-| 2.0 s | 293.92 MB | +0.00 MB |
-| 3.0 s | 293.92 MB | +0.00 MB |
-| 4.0 s | 293.92 MB | +0.00 MB |
-| 5.0 s | 293.92 MB | +0.00 MB |
+| 0.0 s | 282.78 MB | +0.00 MB |
+| 1.0 s | 282.78 MB | +0.00 MB |
+| 2.0 s | 282.78 MB | +0.00 MB |
+| 3.0 s | 282.78 MB | +0.00 MB |
+| 4.0 s | 282.78 MB | +0.00 MB |
+| 5.0 s | 282.78 MB | +0.00 MB |
 
 ## Edge Case Matrix
 
