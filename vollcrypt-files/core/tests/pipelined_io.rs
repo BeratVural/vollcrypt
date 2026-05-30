@@ -132,7 +132,7 @@ fn test_pipelined_signed_header_plain() {
     .unwrap();
 
     // Verify signature passes
-    assert!(verify_header_signature_plain(&header).is_ok());
+    assert!(verify_header_signature_plain(&header, vollcrypt_files_core::VerificationPolicy::RequireSigned).is_ok());
 
     // Decrypt and verify roundtrip
     let mut decrypted = Vec::new();

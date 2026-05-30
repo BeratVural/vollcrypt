@@ -144,6 +144,12 @@ pub enum FileFormatError {
     #[error("Sealed group key required")]
     SealedGkRequired,
 
+    #[error("Untrusted manifest genesis / founder anchor mismatch")]
+    UntrustedGenesis,
+
+    #[error("Too many chunks: maximum is 4,294,967,295")]
+    TooManyChunks,
+
     #[error("I/O error: {0}")]
     IoError(String),
 }

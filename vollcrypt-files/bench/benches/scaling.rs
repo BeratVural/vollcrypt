@@ -42,7 +42,7 @@ fn bench_multi_recipient_wrap(c: &mut Criterion) {
 fn bench_group_manifest_scaling(c: &mut Criterion) {
     let group_id = [0u8; 16];
     let founder_id = [1u8; 16];
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let (rec_pk, _) = generate_recipient_keypair();
     let gk_wrap = wrap_key_to_recipient(&[0u8; 32], founder_id, 1, &rec_pk).unwrap();
 
@@ -54,7 +54,7 @@ fn bench_group_manifest_scaling(c: &mut Criterion) {
             group_id,
             founder_id,
             &admin_sk,
-            admin_pk,
+            admin_pk.clone(),
             rec_pk.clone(),
             gk_wrap.clone(),
         );
@@ -63,7 +63,7 @@ fn bench_group_manifest_scaling(c: &mut Criterion) {
             let mut mid = [0u8; 16];
             mid[0..4].copy_from_slice(&(idx as u32 + 2).to_be_bytes());
             manifest
-                .add_member(&admin_sk, mid, admin_pk, rec_pk.clone(), gk_wrap.clone())
+                .add_member(&admin_sk, mid, admin_pk.clone(), rec_pk.clone(), gk_wrap.clone())
                 .unwrap();
         }
 
@@ -80,6 +80,7 @@ fn bench_group_manifest_scaling(c: &mut Criterion) {
                 let _ = black_box(res);
             });
         });
+
     }
     g.finish();
 }
@@ -87,7 +88,7 @@ fn bench_group_manifest_scaling(c: &mut Criterion) {
 fn bench_rotation_cost(c: &mut Criterion) {
     let group_id = [0u8; 16];
     let founder_id = [1u8; 16];
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let (rec_pk, _) = generate_recipient_keypair();
     let gk_wrap = wrap_key_to_recipient(&[0u8; 32], founder_id, 1, &rec_pk).unwrap();
 
@@ -95,7 +96,7 @@ fn bench_rotation_cost(c: &mut Criterion) {
         group_id,
         founder_id,
         &admin_sk,
-        admin_pk,
+        admin_pk.clone(),
         rec_pk.clone(),
         gk_wrap.clone(),
     );
@@ -105,7 +106,7 @@ fn bench_rotation_cost(c: &mut Criterion) {
         let mut mid = [0u8; 16];
         mid[0..4].copy_from_slice(&(idx as u32 + 2).to_be_bytes());
         manifest
-            .add_member(&admin_sk, mid, admin_pk, rec_pk.clone(), gk_wrap.clone())
+            .add_member(&admin_sk, mid, admin_pk.clone(), rec_pk.clone(), gk_wrap.clone())
             .unwrap();
     }
 
@@ -116,7 +117,6 @@ fn bench_rotation_cost(c: &mut Criterion) {
             let new_gk = [2u8; 32];
             let res = manifest_clone.rotate_group_key(
                 black_box(&new_gk),
-                black_box(&admin_pk),
                 black_box(&admin_sk),
                 black_box(123456789),
             );

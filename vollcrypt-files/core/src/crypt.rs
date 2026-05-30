@@ -18,7 +18,7 @@ pub fn encrypt_chunk(
     plaintext: &[u8],
     header_hash: Option<&[u8; 32]>,
 ) -> Result<ChunkEnvelope, FileFormatError> {
-    let (subkey_raw, iv) = derive_chunk_keys(dek, file_id, chunk_index);
+    let (subkey_raw, iv) = derive_chunk_keys(dek, file_id, chunk_index)?;
     let subkey = Zeroizing::new(subkey_raw);
 
     let mut aad = [0u8; 52];
@@ -63,7 +63,8 @@ pub fn decrypt_chunk(
 
     // Derive subkey using derive_chunk_keys (the subkey is the first 32 bytes of the output).
     // Zeroizing guarantees zeroization on scope exit.
-    let subkey = Zeroizing::new(derive_chunk_keys(dek, file_id, chunk_index).0);
+    let (subkey_raw, _) = derive_chunk_keys(dek, file_id, chunk_index)?;
+    let subkey = Zeroizing::new(subkey_raw);
 
     let mut aad = [0u8; 52];
     aad[0..16].copy_from_slice(file_id);
@@ -95,7 +96,7 @@ pub async fn encrypt_chunk_async(
     plaintext: Vec<u8>,
     header_hash: Option<&[u8; 32]>,
 ) -> Result<ChunkEnvelope, FileFormatError> {
-    let (subkey_raw, iv) = derive_chunk_keys(dek, file_id, chunk_index);
+    let (subkey_raw, iv) = derive_chunk_keys(dek, file_id, chunk_index)?;
     let subkey = zeroize::Zeroizing::new(subkey_raw);
 
     let mut aad = [0u8; 52];
@@ -134,7 +135,8 @@ pub async fn decrypt_chunk_async(
         });
     }
 
-    let subkey = zeroize::Zeroizing::new(derive_chunk_keys(dek, file_id, chunk_index).0);
+    let (subkey_raw, _) = derive_chunk_keys(dek, file_id, chunk_index)?;
+    let subkey = zeroize::Zeroizing::new(subkey_raw);
 
     let mut aad = [0u8; 52];
     aad[0..16].copy_from_slice(file_id);
@@ -167,7 +169,7 @@ pub fn encrypt_chunk_in_place(
     plaintext_len: usize,
     header_hash: Option<&[u8; 32]>,
 ) -> Result<(), FileFormatError> {
-    let (subkey_raw, iv) = derive_chunk_keys(dek, file_id, chunk_index);
+    let (subkey_raw, iv) = derive_chunk_keys(dek, file_id, chunk_index)?;
     let subkey = Zeroizing::new(subkey_raw);
 
     let mut aad = [0u8; 52];
@@ -212,7 +214,8 @@ pub fn decrypt_chunk_in_place(
         });
     }
 
-    let subkey = Zeroizing::new(derive_chunk_keys(dek, file_id, chunk_index).0);
+    let (subkey_raw, _) = derive_chunk_keys(dek, file_id, chunk_index)?;
+    let subkey = Zeroizing::new(subkey_raw);
 
     let mut aad = [0u8; 52];
     aad[0..16].copy_from_slice(file_id);
@@ -247,7 +250,7 @@ pub async fn encrypt_chunk_in_place_async(
     plaintext_len: usize,
     header_hash: Option<&[u8; 32]>,
 ) -> Result<(crate::buffer_pool::PooledBuffer, [u8; 16]), FileFormatError> {
-    let (subkey_raw, iv) = derive_chunk_keys(dek, file_id, chunk_index);
+    let (subkey_raw, iv) = derive_chunk_keys(dek, file_id, chunk_index)?;
     let subkey = Zeroizing::new(subkey_raw);
 
     let mut aad = [0u8; 52];
@@ -296,7 +299,8 @@ pub async fn decrypt_chunk_in_place_async(
         });
     }
 
-    let subkey = Zeroizing::new(derive_chunk_keys(dek, file_id, chunk_index).0);
+    let (subkey_raw, _) = derive_chunk_keys(dek, file_id, chunk_index)?;
+    let subkey = Zeroizing::new(subkey_raw);
 
     let mut aad = [0u8; 52];
     aad[0..16].copy_from_slice(file_id);

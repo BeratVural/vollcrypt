@@ -1359,7 +1359,7 @@ pub fn sign_header_sealed(
 pub fn verify_header_signature_plain(header: JsValue) -> Result<Vec<u8>, JsValue> {
     let obj: HeaderObj = serde_wasm_bindgen::from_value(header).map_err(to_js_err)?;
     let core_header = serde_to_header(obj)?;
-    match vollcrypt_files_core::verify_header_signature_plain(&core_header) {
+    match vollcrypt_files_core::verify_header_signature_plain(&core_header, vollcrypt_files_core::VerificationPolicy::RequireSigned) {
         Ok(pubkey) => Ok(pubkey.write()),
         Err(e) => Err(to_js_err(e)),
     }
@@ -1374,7 +1374,7 @@ pub fn verify_header_signature_sealed(
     let obj: HeaderObj = serde_wasm_bindgen::from_value(header).map_err(to_js_err)?;
     let core_header = serde_to_header(obj)?;
     let gk_arr = to_arr32(sealed_gk, "sealed_gk")?;
-    match vollcrypt_files_core::verify_header_signature_sealed(&core_header, &gk_arr, &key_log.inner) {
+    match vollcrypt_files_core::verify_header_signature_sealed(&core_header, &gk_arr, &key_log.inner, vollcrypt_files_core::VerificationPolicy::RequireSigned) {
         Ok(pubkey) => Ok(pubkey.write()),
         Err(e) => Err(to_js_err(e)),
     }
@@ -1560,6 +1560,7 @@ pub fn resolve_sender(
         &core_header,
         &key_log.inner,
         core_sealed_gk.as_ref(),
+        vollcrypt_files_core::VerificationPolicy::RequireSigned,
     ) {
         Ok(info) => {
             let res = SenderInfo {

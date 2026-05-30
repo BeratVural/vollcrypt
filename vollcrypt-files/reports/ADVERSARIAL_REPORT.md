@@ -23,9 +23,9 @@
 | **D.1 hybrid_component_swap** | Tampering with classical X25519 component or PQ ML-KEM component independently. | *REJECTED* | REJECTED: Tampering either component causes decapsulation failure | **✓ Defended** |
 | **D.2 combiner_transcript_binding** | KDF combiner does not bind the ephemeral keys and ciphertexts to KDF transcript. | *REJECTED* | REJECTED: Ephemeral keys, static keys, recipient_id, and gk_version are cryptographically bound to the X-Wing combiner transcript. Old wrap_type 2 is rejected. | **✓ Defended** |
 | **D.3 mlkem_binding_multi_recipient** | Ciphertext bound checks: same DEK wrapped to 2 recipients. | *REJECTED* | REJECTED: Tested and observed no cross-recipient key decryption leaks | **✓ Defended** |
-| **E.1 rotation_dek_invariance** | rewrap_dek_in_header rotates KEK but leaves DEK unchanged (no forward secrecy if DEK is compromised). | *◷ Sınır/Footgun* | ◷ Sınır/Footgun: DEK is invariant under rotation. rotation veri forward-secrecy SAĞLAMAZ. | **◷ Sınır/Footgun** |
-| **E.2 lazy_revocation_window** | removeMember done in manifest but no rotate+rewrap done allows revoked member to decrypt. | *◷ Sınır/Footgun* | ◷ Sınır/Footgun: Revoked member can still decrypt group key from history because no rotation occurred. | **◷ Sınır/Footgun** |
-| **F.1 manifest_fork** | Stateless client cannot detect conflicting manifest forks signed by the admin. | *◷ Detectable (out-of-band gerektirir)* | ◷ Detectable (out-of-band gerektirir): Equivocation detected between Fork A and Fork B at epoch 1. Stateless clients must compare heads out-of-band. | **◷ Detectable (out-of-band gerektirir)** |
+| **E.1 rotation_dek_invariance** | rewrap_dek_in_header rotates KEK but leaves DEK unchanged (no forward secrecy if DEK is compromised). | *◷ Bound/Footgun* | ◷ Bound/Footgun: DEK is invariant under rotation. Rotation does not provide forward secrecy. | **◷ Bound/Footgun** |
+| **E.2 lazy_revocation_window** | removeMember done in manifest but no rotate+rewrap done allows revoked member to decrypt. | *◷ Bound/Footgun* | ◷ Bound/Footgun: Revoked member can still decrypt group key from history because no rotation occurred. | **◷ Bound/Footgun** |
+| **F.1 manifest_fork** | Stateless client cannot detect conflicting manifest forks signed by the admin. | *◷ Detectable (requires out-of-band)* | ◷ Detectable (requires out-of-band): Equivocation detected between Fork A and Fork B at epoch 1. Stateless clients must compare heads out-of-band. | **◷ Detectable (requires out-of-band)** |
 | **F.2 manifest_rollback** | Stateless client presented with a valid historical prefix accepts rolled-back state. | *REJECTED* | REJECTED: Rollback detected. Client pinned epoch 1, rollback manifest had epoch 0. | **✓ Defended** |
 | **G.1 sealed_resolution_oracle** | Timing and error-type differences between incorrect Group Key and malformed sealed payload. | *REJECTED* | REJECTED: Constant error behavior | **✓ Defended** |
 | **G.2 wasm_aes_constant_time** | WASM soft AES backend (bitsliced fixslice vs table-based timing leak). | *REJECTED* | REJECTED: WASM uses constant-time bitsliced fixslice software AES | **✓ Defended** |
@@ -33,14 +33,13 @@
 | **H.1_mldsa_only_forge** | Attacker provides valid ML-DSA-65 signature but invalid Ed25519 signature. | *REJECTED* | REJECTED: Verification failed as expected (both algorithms must pass) | **✓ Defended** |
 | **H_key_substitution** | Attacker attempts to swap public key components or verify with mismatched domain binding. | *REJECTED* | REJECTED: Mismatched public key components and incorrect domains failed verification | **✓ Defended** |
 | **H_downgrade** | Attacker presents legacy signatures/manifests under require_pq_signature policy. | *REJECTED* | REJECTED: Downgrade to legacy signature versions blocked under policy | **✓ Defended** |
-
-## Bölüm H — Post-Quantum Authenticity Direnci
+## Section H — Post-Quantum Authenticity Resistance
 
 ### H.1 signature_pq_gap (RESOLVED)
-Ed25519 ve ML-DSA-65 hibrit imza şeması (AND-combiner) entegre edilmiştir. Saldırganın doğrulamayı geçmesi için hem klasik hem de post-quantum imza algoritmalarını kırması gerekir. Böylece PQ-authenticity sağlanmış ve imza sahteciliği açığı kapatılmıştır.
+An Ed25519 and ML-DSA-65 hybrid signature scheme (AND-combiner) has been integrated. For an attacker to bypass verification, they must break both classical and post-quantum signature algorithms. Thus, PQ-authenticity is achieved and the signature forgery vulnerability is closed.
 
 ### H.2 harvest_now_decrypt_later (RESOLVED)
-Monotonic sürüm yönetimi, rollback koruması ve hibrit post-quantum imzalar sayesinde tarihsel manifest manipülasyonu ve sahte üye ekleme saldırılarına karşı tam koruma sağlanmıştır. Eski sürüm imzalar ve manifestler `require_pq_signature` politikası altında reddedilir.
+Thanks to monotonic version management, rollback protection, and hybrid post-quantum signatures, full protection against historical manifest manipulation and rogue member injection attacks is provided. Legacy signature versions and manifests are rejected under the `require_pq_signature` policy.
 
 ## Identified Findings
 
@@ -54,11 +53,11 @@ None.
 
 ## Recommendations
 
-1. **A.1 & A.2 Merkle tree:** Merkle ağacı yaprakları için `0x00` ve iç düğümler için `0x01` domain separation prefix'leri eklenmeli. RFC 6962 standardı takip edilerek Merkle root collision ve second-preimage saldırıları engellenmeli.
-2. **A.3 Merkle root validation:** Decryptor'ın dosyayı deşifre ederken chunk'ların hash'lerini Merkle root ile doğrulaması zorunlu kılınmalı. Şu anki tasarımda Merkle root sadece dekoratif durumdadır.
-3. **C.1 chunk_size Validation:** `Header::parse` fonksiyonuna üst sınır limiti eklenmeli (örneğin maksimum 16 MB). Bu sayede saldırgan kontrollü 4GB chunk_size değerinin BufferPool'da 640GB bellek tahsis ederek DoS/OOM yaratması engellenmeli.
-4. **C.2 Argon2 Parameter Caps:** Argon2 KDF parametreleri ($m, t, p$) için üst sınır capping kontrolü getirilmeli (örneğin $m_{max} = 64\text{ MB}, t_{max} = 5$).
-5. **D.2 Combiner transcript binding:** Hybrid KDF'de (KDF info) ephemeral x25519 public key ve ML-KEM ciphertext'leri KDF info transcript'ine dahil edilerek (X-Wing binding) key substitution saldırılarına karşı korunmalı.
-6. **F.1 & F.2 Manifest Pinning:** İstemciler manifest sürümünü monotonic bir sayaca bağlamalı ve son bilinen durumu pinlemelidir. Equivocation ve Rollback saldırılarını engellemek için gossip protokolü veya merkezi tescil otoritesi kurulmalı.
-7. **G.1 Constant error behavior:** `verify_header_signature_sealed` fonksiyonunda, decryption başarısızlığı ile deşifre olan verinin 64 byte olmaması durumunun hata kodları eşitlenmeli (`WrongGroupKey`).
-8. **H.1 Post-Quantum Authenticity (RESOLVED):** Ed25519 + ML-DSA hibrit imza şeması başarıyla entegre edilmiş ve doğrulanmıştır.
+1. **A.1 & A.2 Merkle tree:** Domain separation prefixes (0x00 for leaves and 0x01 for internal nodes) should be added. Follow the RFC 6962 standard to prevent Merkle root collision and second-preimage attacks.
+2. **A.3 Merkle root validation:** The decryptor must be forced to validate chunk hashes against the Merkle root during decryption. In the current design, the Merkle root is purely decorative.
+3. **C.1 chunk_size Validation:** A ceiling limit should be added to the `Header::parse` function (e.g. maximum 16 MB). This prevents an attacker-controlled 4GB chunk_size from allocating 640GB in the BufferPool, causing DoS/OOM.
+4. **C.2 Argon2 Parameter Caps:** An upper limit capping check should be enforced for Argon2 KDF parameters ($m, t, p$) (e.g., $m_{max} = 64\text{ MB}, t_{max} = 5$).
+5. **D.2 Combiner transcript binding:** The ephemeral x25519 public key and ML-KEM ciphertext should be included in the KDF info transcript in Hybrid KDF (X-Wing binding) to protect against key substitution attacks.
+6. **F.1 & F.2 Manifest Pinning:** Clients should bind the manifest version to a monotonic counter and pin the last known state. A gossip protocol or a centralized registration authority should be established to prevent Equivocation and Rollback attacks.
+7. **G.1 Constant error behavior:** In the `verify_header_signature_sealed` function, the error codes for decryption failure and the decrypted data length not being 32 bytes should be aligned (`WrongGroupKey`).
+8. **H.1 Post-Quantum Authenticity (RESOLVED):** The Ed25519 + ML-DSA hybrid signature scheme has been successfully integrated and verified.

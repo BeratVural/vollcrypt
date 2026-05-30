@@ -2,6 +2,7 @@ use crate::error::FileFormatError;
 use crate::recipient::RecipientPublicKey;
 use crate::wrap::WrapEntry;
 use crate::hybrid_sig::{HybridPublicKey, HybridSecretKey, HybridSignature, hybrid_sign, hybrid_verify};
+use crate::signature::VerificationPolicy;
 
 /// Represents a group manifest operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1025,10 +1026,10 @@ impl GroupManifest {
 
     /// Verifies the signature integrity and hash chain links of the manifest.
     pub fn verify(&self) -> Result<(), FileFormatError> {
-        self.verify_policy(false)
+        self.verify_policy(VerificationPolicy::RequireSigned)
     }
 
-    pub fn verify_policy(&self, require_pq_signature: bool) -> Result<(), FileFormatError> {
+    pub fn verify_policy(&self, policy: VerificationPolicy) -> Result<(), FileFormatError> {
         if self.operations.is_empty() {
             return Err(FileFormatError::EmptyManifest);
         }
@@ -1059,10 +1060,10 @@ impl GroupManifest {
             // 4. Verify signature
             let msg = op_signed.sig_message_for_version(self.version);
 
-            if require_pq_signature {
+            if policy == VerificationPolicy::Strict {
                 if op_signed.signature.mldsa.is_empty() || self.version < 2 {
                     return Err(FileFormatError::IntegrityError(
-                        "Manifest operation has no PQ signature under require_pq_signature policy".to_string(),
+                        "Manifest operation has no PQ signature under strict policy".to_string(),
                     ));
                 }
             }
@@ -1072,6 +1073,11 @@ impl GroupManifest {
                     return Err(FileFormatError::SignatureInvalid);
                 }
             } else {
+                if policy == VerificationPolicy::Strict {
+                    return Err(FileFormatError::IntegrityError(
+                        "Manifest operation has no PQ signature under strict policy".to_string(),
+                    ));
+                }
                 crate::signing::ed25519_verify(&op_signed.signer_pubkey.ed25519, &msg, &op_signed.signature.ed25519)?;
             }
 
@@ -1153,32 +1159,84 @@ pub enum EquivocationResult {
     DifferentEpochs,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RollbackCheck {
+    Pin(u64),
+    TrustOnFirstUse,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FounderAnchor {
+    PublicKey(HybridPublicKey),
+    GenesisHash([u8; 32]),
+    TrustOnFirstUse,
+}
+
 /// Verifies manifest chain integrity and validates it against a last known pinned epoch.
 pub fn verify_manifest_with_pin(
     manifest: &GroupManifest,
-    last_known_epoch: Option<u64>,
-) -> Result<(), FileFormatError> {
-    verify_manifest_with_pin_policy(manifest, last_known_epoch, false)
+    rollback_check: RollbackCheck,
+    founder_anchor: FounderAnchor,
+) -> Result<(u64, HybridPublicKey), FileFormatError> {
+    verify_manifest_with_pin_policy(manifest, rollback_check, founder_anchor, VerificationPolicy::RequireSigned)
 }
 
 /// Verifies manifest chain integrity with a policy option.
 pub fn verify_manifest_with_pin_policy(
     manifest: &GroupManifest,
-    last_known_epoch: Option<u64>,
-    require_pq_signature: bool,
-) -> Result<(), FileFormatError> {
-    manifest.verify_policy(require_pq_signature)?;
+    rollback_check: RollbackCheck,
+    founder_anchor: FounderAnchor,
+    policy: VerificationPolicy,
+) -> Result<(u64, HybridPublicKey), FileFormatError> {
+    manifest.verify_policy(policy)?;
+
+    let genesis_op = manifest.operations.first().ok_or(FileFormatError::EmptyManifest)?;
+    let actual_founder = manifest.founder_signing_pk()?;
+    let actual_genesis_hash = genesis_op.hash(manifest.version);
+
+    match founder_anchor {
+        FounderAnchor::PublicKey(ref expected_pk) => {
+            if actual_founder != *expected_pk {
+                return Err(FileFormatError::UntrustedGenesis);
+            }
+        }
+        FounderAnchor::GenesisHash(expected_hash) => {
+            if actual_genesis_hash != expected_hash {
+                return Err(FileFormatError::UntrustedGenesis);
+            }
+        }
+        FounderAnchor::TrustOnFirstUse => {}
+    }
 
     let head_epoch = manifest.operations.last().map(|op| op.epoch).unwrap_or(0);
-    if let Some(pin) = last_known_epoch {
-        if head_epoch < pin {
-            return Err(FileFormatError::RollbackError {
-                expected: pin,
-                got: head_epoch,
-            });
+    match rollback_check {
+        RollbackCheck::Pin(pin) => {
+            if head_epoch < pin {
+                return Err(FileFormatError::RollbackError {
+                    expected: pin,
+                    got: head_epoch,
+                });
+            }
         }
+        RollbackCheck::TrustOnFirstUse => {}
     }
-    Ok(())
+
+    Ok((head_epoch, actual_founder))
+}
+
+/// Consolidates manifest verification checking for epoch pinning and founder anchor.
+///
+/// # Security Note
+/// A manifest's self-contained `verify()` method only checks internal cryptographic consistency.
+/// To verify that the manifest belongs to the correct authorized group, you MUST provide a
+/// trusted `FounderAnchor` or use `TrustOnFirstUse` and pin the returned public key out-of-band.
+pub fn verify_manifest(
+    manifest: &GroupManifest,
+    rollback_check: RollbackCheck,
+    founder_anchor: FounderAnchor,
+    policy: VerificationPolicy,
+) -> Result<(u64, HybridPublicKey), FileFormatError> {
+    verify_manifest_with_pin_policy(manifest, rollback_check, founder_anchor, policy)
 }
 
 /// Returns the manifest's current cryptographic head (hash and epoch number).

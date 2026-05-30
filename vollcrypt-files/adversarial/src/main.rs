@@ -3,15 +3,15 @@ use std::process::{Command, Stdio};
 use std::time::Instant;
 
 use vollcrypt_files_core::{
-    decrypt_file_pipelined, ed25519_keypair_generate, encrypt_file_pipelined, generate_dek,
+    decrypt_file_pipelined, encrypt_file_pipelined, generate_dek,
     generate_file_id, generate_gk, generate_recipient_keypair, rewrap_dek_in_header,
     sign_header_plain, sign_header_sealed, unwrap_dek_with_group_key, unwrap_dek_with_password,
     unwrap_key_with_recipient_key, verify_header_signature_plain,
     verify_header_signature_plain_policy, verify_header_signature_sealed,
-    verify_header_signature_sealed_policy, wrap_dek_for_group, wrap_dek_with_password,
+    wrap_dek_for_group, wrap_dek_with_password,
     wrap_key_to_recipient, CipherId, FileFormatError, GroupManifest, HashAlgorithm, Header,
     KdfChoice, MerkleTree, Mode, SignedMetadata, WrapEntry,
-    hybrid_keypair_generate, HybridPublicKey, HybridSecretKey, HybridSignature, KeyLog,
+    hybrid_keypair_generate, HybridPublicKey, HybridSignature, KeyLog,
     hybrid_sign, hybrid_verify,
 };
 
@@ -242,24 +242,24 @@ fn run_adversarial_suite() {
             // Tamper chunk_size
             let mut tampered_header = header.clone();
             tampered_header.chunk_size = 8192;
-            let verify_chunk_size = verify_header_signature_plain(&tampered_header).is_err();
+            let verify_chunk_size = verify_header_signature_plain(&tampered_header, vollcrypt_files_core::VerificationPolicy::RequireSigned).is_err();
 
             // Tamper plaintext_size
             let mut tampered_header = header.clone();
             tampered_header.plaintext_size = 5000;
-            let verify_plaintext_size = verify_header_signature_plain(&tampered_header).is_err();
+            let verify_plaintext_size = verify_header_signature_plain(&tampered_header, vollcrypt_files_core::VerificationPolicy::RequireSigned).is_err();
 
             // Tamper merkle_root
             let mut tampered_header = header.clone();
             tampered_header.merkle_root = [0u8; 32];
-            let verify_merkle_root = verify_header_signature_plain(&tampered_header).is_err();
+            let verify_merkle_root = verify_header_signature_plain(&tampered_header, vollcrypt_files_core::VerificationPolicy::RequireSigned).is_err();
 
             // Tamper wrap_count (which is implicit in wraps length in Header struct, but let's change serialized bytes)
             let mut serialized = header.write();
             // wrap_count is at index 71. Let's increment it.
             serialized[71] += 1;
             let verify_wrap_count = Header::parse(&serialized)
-                .and_then(|(h, _)| verify_header_signature_plain(&h))
+                .and_then(|(h, _)| verify_header_signature_plain(&h, vollcrypt_files_core::VerificationPolicy::RequireSigned))
                 .is_err();
 
             if verify_chunk_size && verify_plaintext_size && verify_merkle_root && verify_wrap_count {
@@ -299,7 +299,7 @@ fn run_adversarial_suite() {
             };
 
             // 1. Verify that unsigned downgrade is rejected under require_signed policy
-            let reject_unsigned = verify_header_signature_plain_policy(&header_v1, true).is_err();
+            let reject_unsigned = verify_header_signature_plain_policy(&header_v1, vollcrypt_files_core::VerificationPolicy::RequireSigned).is_err();
 
             // 2. Signed Mode (v2) wrap stripping check
             let (pk, sk) = hybrid_keypair_generate();
@@ -317,7 +317,7 @@ fn run_adversarial_suite() {
 
             let parse_v2_stripped = Header::parse(&serialized_v2_stripped);
             let reject_v2_stripped = match parse_v2_stripped {
-                Ok((h, _)) => verify_header_signature_plain_policy(&h, true).is_err(),
+                Ok((h, _)) => verify_header_signature_plain_policy(&h, vollcrypt_files_core::VerificationPolicy::RequireSigned).is_err(),
                 Err(_) => true,
             };
 
@@ -624,7 +624,7 @@ fn run_adversarial_suite() {
     run_test(
         "E.1 rotation_dek_invariance",
         "rewrap_dek_in_header rotates KEK but leaves DEK unchanged (no forward secrecy if DEK is compromised).",
-        "◷ Sınır/Footgun",
+        "◷ Bound/Footgun",
         || {
             let dek = generate_dek();
             let old_gk = generate_gk();
@@ -655,7 +655,7 @@ fn run_adversarial_suite() {
 
             if unwrapped_dek == dek {
                 (
-                    "◷ Sınır/Footgun: DEK is invariant under rotation. rotation veri forward-secrecy SAĞLAMAZ.".to_string(),
+                    "◷ Bound/Footgun: DEK is invariant under rotation. Rotation does not provide forward secrecy.".to_string(),
                     true, // Safe to say true (expected behavior but documented as footgun)
                 )
             } else {
@@ -670,7 +670,7 @@ fn run_adversarial_suite() {
     run_test(
         "E.2 lazy_revocation_window",
         "removeMember done in manifest but no rotate+rewrap done allows revoked member to decrypt.",
-        "◷ Sınır/Footgun",
+        "◷ Bound/Footgun",
         || {
             let gk = generate_gk();
             let (admin_pk, admin_sk) = hybrid_keypair_generate();
@@ -715,7 +715,7 @@ fn run_adversarial_suite() {
 
             match decrypt_gk {
                 Ok(key) if key == gk => (
-                    "◷ Sınır/Footgun: Revoked member can still decrypt group key from history because no rotation occurred.".to_string(),
+                    "◷ Bound/Footgun: Revoked member can still decrypt group key from history because no rotation occurred.".to_string(),
                     true,
                 ),
                 _ => ("REJECTED: Revoked member cannot decrypt".to_string(), false),
@@ -729,7 +729,7 @@ fn run_adversarial_suite() {
     run_test(
         "F.1 manifest_fork",
         "Stateless client cannot detect conflicting manifest forks signed by the admin.",
-        "◷ Detectable (out-of-band gerektirir)",
+        "◷ Detectable (requires out-of-band)",
         || {
             let (admin_pk, admin_sk) = hybrid_keypair_generate();
             let (m1_pk, _) = generate_recipient_keypair();
@@ -778,7 +778,7 @@ fn run_adversarial_suite() {
 
             if equiv_res == vollcrypt_files_core::EquivocationResult::EquivocationDetected {
                 (
-                    "◷ Detectable (out-of-band gerektirir): Equivocation detected between Fork A and Fork B at epoch 1. Stateless clients must compare heads out-of-band.".to_string(),
+                    "◷ Detectable (requires out-of-band): Equivocation detected between Fork A and Fork B at epoch 1. Stateless clients must compare heads out-of-band.".to_string(),
                     true,
                 )
             } else {
@@ -801,7 +801,7 @@ fn run_adversarial_suite() {
             let w1 = wrap_key_to_recipient(&generate_gk(), m1_id, 1, &m1_pk).unwrap();
 
             let mut manifest =
-                GroupManifest::genesis([9u8; 16], m1_id, &admin_sk, admin_pk, m1_pk, w1);
+                GroupManifest::genesis([9u8; 16], m1_id, &admin_sk, admin_pk.clone(), m1_pk, w1);
 
             // Add member X (epoch 1)
             let (mx_pk, _) = generate_recipient_keypair();
@@ -823,9 +823,12 @@ fn run_adversarial_suite() {
                 operations: vec![manifest.operations[0].clone()],
             };
 
-            // Attempt verification of rollback state with the pinned epoch
             let verify_res =
-                vollcrypt_files_core::verify_manifest_with_pin(&manifest_rollback, pinned_epoch);
+                vollcrypt_files_core::verify_manifest_with_pin(
+                    &manifest_rollback,
+                    vollcrypt_files_core::RollbackCheck::Pin(pinned_epoch.unwrap_or(0)),
+                    vollcrypt_files_core::FounderAnchor::PublicKey(admin_pk.clone()),
+                );
 
             if matches!(verify_res, Err(FileFormatError::RollbackError { .. })) {
                 (
@@ -872,7 +875,7 @@ fn run_adversarial_suite() {
 
             // Case 1: Wrong Group Key
             let wrong_gk = [0u8; 32];
-            let verify_wrong_gk = verify_header_signature_sealed(&header, &wrong_gk, &gk);
+            let verify_wrong_gk = verify_header_signature_sealed(&header, &wrong_gk, &gk, vollcrypt_files_core::VerificationPolicy::RequireSigned);
 
             // Case 2: Correct Group Key but malformed sealed payload (length mismatch after decryption)
             // Let's create a header with a sealed payload that decrypts successfully to a size != 32 bytes.
@@ -880,7 +883,7 @@ fn run_adversarial_suite() {
             // If we encrypt a different length (e.g. 16 bytes) under the same key:
             let mut tampered_header = header.clone();
             if let Some(SignedMetadata::Sealed { sealed_payload, sealed_tag, iv, timestamp, .. }) = &mut tampered_header.signed_metadata {
-                let mut fake_plaintext = [0u8; 16]; // 16 bytes instead of 32
+                let fake_plaintext = [0u8; 16]; // 16 bytes instead of 32
                 let mut aad = Vec::with_capacity(24);
                 aad.extend_from_slice(&tampered_header.file_id);
                 aad.extend_from_slice(&timestamp.to_be_bytes());
@@ -889,7 +892,7 @@ fn run_adversarial_suite() {
                 *sealed_payload = payload;
                 *sealed_tag = tag;
             }
-            let verify_malformed_payload = verify_header_signature_sealed(&tampered_header, &group_key, &gk);
+            let verify_malformed_payload = verify_header_signature_sealed(&tampered_header, &group_key, &gk, vollcrypt_files_core::VerificationPolicy::RequireSigned);
 
             // Compare errors
             let err_wrong_gk = format!("{:?}", verify_wrong_gk.err().unwrap());
@@ -1040,7 +1043,7 @@ fn run_adversarial_suite() {
                 mldsa: Vec::new(),
             });
 
-            let verify_v2 = verify_header_signature_plain_policy(&header_v2, true);
+            let verify_v2 = verify_header_signature_plain_policy(&header_v2, vollcrypt_files_core::VerificationPolicy::Strict);
 
             // 2. Create a legacy manifest
             let (m1_pk, _) = generate_recipient_keypair();
@@ -1049,7 +1052,7 @@ fn run_adversarial_suite() {
             let mut manifest = GroupManifest::genesis([9u8; 16], m1_id, &sk, pk, m1_pk, w1);
             manifest.operations[0].signature.mldsa = Vec::new();
             
-            let verify_manifest = manifest.verify_policy(true);
+            let verify_manifest = manifest.verify_policy(vollcrypt_files_core::VerificationPolicy::Strict);
 
             if verify_v2.is_err() && verify_manifest.is_err() {
                 ("REJECTED: Downgrade to legacy signature versions blocked under policy".to_string(), true)
@@ -1063,16 +1066,16 @@ fn run_adversarial_suite() {
     );
 
     // Section H Analysis (resolved)
-    report.push_str("## Bölüm H — Post-Quantum Authenticity Direnci\n\n");
+    report.push_str("## Section H — Post-Quantum Authenticity Resistance\n\n");
     report.push_str("### H.1 signature_pq_gap (RESOLVED)\n");
-    report.push_str("Ed25519 ve ML-DSA-65 hibrit imza şeması (AND-combiner) entegre edilmiştir. ");
-    report.push_str("Saldırganın doğrulamayı geçmesi için hem klasik hem de post-quantum imza algoritmalarını kırması gerekir. ");
-    report.push_str("Böylece PQ-authenticity sağlanmış ve imza sahteciliği açığı kapatılmıştır.\n\n");
+    report.push_str("An Ed25519 and ML-DSA-65 hybrid signature scheme (AND-combiner) has been integrated. ");
+    report.push_str("For an attacker to bypass verification, they must break both classical and post-quantum signature algorithms. ");
+    report.push_str("Thus, PQ-authenticity is achieved and the signature forgery vulnerability is closed.\n\n");
 
     report.push_str("### H.2 harvest_now_decrypt_later (RESOLVED)\n");
-    report.push_str("Monotonic sürüm yönetimi, rollback koruması ve hibrit post-quantum imzalar sayesinde tarihsel manifest manipülasyonu ");
-    report.push_str("ve sahte üye ekleme saldırılarına karşı tam koruma sağlanmıştır. ");
-    report.push_str("Eski sürüm imzalar ve manifestler `require_pq_signature` politikası altında reddedilir.\n\n");
+    report.push_str("Thanks to monotonic version management, rollback protection, and hybrid post-quantum signatures, full protection ");
+    report.push_str("against historical manifest manipulation and rogue member injection attacks is provided. ");
+    report.push_str("Legacy signature versions and manifests are rejected under the `require_pq_signature` policy.\n\n");
 
     // Identified Findings
     report.push_str("## Identified Findings\n\n");
@@ -1098,19 +1101,22 @@ fn run_adversarial_suite() {
 
     // Recommendations
     report.push_str("## Recommendations\n\n");
-    report.push_str("1. **A.1 & A.2 Merkle tree:** Merkle ağacı yaprakları için `0x00` ve iç düğümler için `0x01` domain separation prefix'leri eklenmeli. RFC 6962 standardı takip edilerek Merkle root collision ve second-preimage saldırıları engellenmeli.\n");
-    report.push_str("2. **A.3 Merkle root validation:** Decryptor'ın dosyayı deşifre ederken chunk'ların hash'lerini Merkle root ile doğrulaması zorunlu kılınmalı. Şu anki tasarımda Merkle root sadece dekoratif durumdadır.\n");
-    report.push_str("3. **C.1 chunk_size Validation:** `Header::parse` fonksiyonuna üst sınır limiti eklenmeli (örneğin maksimum 16 MB). Bu sayede saldırgan kontrollü 4GB chunk_size değerinin BufferPool'da 640GB bellek tahsis ederek DoS/OOM yaratması engellenmeli.\n");
-    report.push_str("4. **C.2 Argon2 Parameter Caps:** Argon2 KDF parametreleri ($m, t, p$) için üst sınır capping kontrolü getirilmeli (örneğin $m_{max} = 64\\text{ MB}, t_{max} = 5$).\n");
-    report.push_str("5. **D.2 Combiner transcript binding:** Hybrid KDF'de (KDF info) ephemeral x25519 public key ve ML-KEM ciphertext'leri KDF info transcript'ine dahil edilerek (X-Wing binding) key substitution saldırılarına karşı korunmalı.\n");
-    report.push_str("6. **F.1 & F.2 Manifest Pinning:** İstemciler manifest sürümünü monotonic bir sayaca bağlamalı ve son bilinen durumu pinlemelidir. Equivocation ve Rollback saldırılarını engellemek için gossip protokolü veya merkezi tescil otoritesi kurulmalı.\n");
-    report.push_str("7. **G.1 Constant error behavior:** `verify_header_signature_sealed` fonksiyonunda, decryption başarısızlığı ile deşifre olan verinin 64 byte olmaması durumunun hata kodları eşitlenmeli (`WrongGroupKey`).\n");
-    report.push_str("8. **H.1 Post-Quantum Authenticity (RESOLVED):** Ed25519 + ML-DSA hibrit imza şeması başarıyla entegre edilmiş ve doğrulanmıştır.\n");
+    report.push_str("1. **A.1 & A.2 Merkle tree:** Domain separation prefixes (0x00 for leaves and 0x01 for internal nodes) should be added. Follow the RFC 6962 standard to prevent Merkle root collision and second-preimage attacks.\n");
+    report.push_str("2. **A.3 Merkle root validation:** The decryptor must be forced to validate chunk hashes against the Merkle root during decryption. In the current design, the Merkle root is purely decorative.\n");
+    report.push_str("3. **C.1 chunk_size Validation:** A ceiling limit should be added to the `Header::parse` function (e.g. maximum 16 MB). This prevents an attacker-controlled 4GB chunk_size from allocating 640GB in the BufferPool, causing DoS/OOM.\n");
+    report.push_str("4. **C.2 Argon2 Parameter Caps:** An upper limit capping check should be enforced for Argon2 KDF parameters ($m, t, p$) (e.g., $m_{max} = 64\\text{ MB}, t_{max} = 5$).\n");
+    report.push_str("5. **D.2 Combiner transcript binding:** The ephemeral x25519 public key and ML-KEM ciphertext should be included in the KDF info transcript in Hybrid KDF (X-Wing binding) to protect against key substitution attacks.\n");
+    report.push_str("6. **F.1 & F.2 Manifest Pinning:** Clients should bind the manifest version to a monotonic counter and pin the last known state. A gossip protocol or a centralized registration authority should be established to prevent Equivocation and Rollback attacks.\n");
+    report.push_str("7. **G.1 Constant error behavior:** In the `verify_header_signature_sealed` function, the error codes for decryption failure and the decrypted data length not being 32 bytes should be aligned (`WrongGroupKey`).\n");
+    report.push_str("8. **H.1 Post-Quantum Authenticity (RESOLVED):** The Ed25519 + ML-DSA hybrid signature scheme has been successfully integrated and verified.\n");
 
     // Write report
-    let report_dir = std::path::Path::new("reports");
+    let mut report_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    report_dir.pop(); // move up from "adversarial" to "vollcrypt-files"
+    report_dir.push("reports");
+
     if !report_dir.exists() {
-        let _ = std::fs::create_dir_all(report_dir);
+        let _ = std::fs::create_dir_all(&report_dir);
     }
     let report_path = report_dir.join("ADVERSARIAL_REPORT.md");
     std::fs::write(&report_path, report).unwrap();
@@ -1176,9 +1182,9 @@ fn run_test<F>(
     let (observed, defended) = test_fn();
 
     let verdict = if defended {
-        if expected == "◷ Sınır/Footgun" {
+        if expected == "◷ Bound/Footgun" {
             footguns.push(name.to_string());
-            "◷ Sınır/Footgun"
+            "◷ Bound/Footgun"
         } else if expected == "— Gap-Analysis" {
             "— Gap-Analysis"
         } else if expected.starts_with("◷ Detectable") {

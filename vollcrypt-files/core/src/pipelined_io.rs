@@ -1,6 +1,4 @@
-use std::collections::BTreeMap;
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
 use std::thread;
 
@@ -12,7 +10,7 @@ use crate::crypt::{
 use crate::error::FileFormatError;
 use crate::header::{CipherId, Header, Mode, SignedMetadata};
 use crate::hybrid_sig::{HybridPublicKey, HybridSecretKey, HybridSignature};
-use crate::merkle::{chunk_leaf_hash_raw_with_algo, chunk_leaf_hash_with_algo, StreamingMerkle};
+use crate::merkle::{chunk_leaf_hash_raw_with_algo, chunk_leaf_hash_with_algo, MerkleTree, StreamingMerkle};
 use crate::signature::{sign_header_plain, sign_header_sealed};
 use crate::wrap::WrapEntry;
 use crate::writer::IoWriteMode;
@@ -44,7 +42,7 @@ struct EncryptTask {
 }
 
 enum EncryptResultInPlace {
-    Envelope(crate::buffer_pool::PooledBuffer),
+    Envelope(crate::buffer_pool::PooledBuffer, [u8; 32]),
     Leaf([u8; 32]),
 }
 
@@ -63,6 +61,7 @@ struct DecryptTask {
 struct DecryptResultTask {
     index: u32,
     plaintext_len: usize,
+    leaf_hash: [u8; 32],
     result: Result<crate::buffer_pool::PooledBuffer, FileFormatError>,
 }
 
@@ -242,6 +241,9 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
         } else {
             source_len.div_ceil(chunk_size as u64)
         };
+        if total_chunks > u32::MAX as u64 {
+            return Err(FileFormatError::TooManyChunks);
+        }
         let mut total_size = header_len as u64;
         if total_chunks > 0 {
             let last_chunk_plaintext_len = (source_len % chunk_size as u64) as usize;
@@ -281,32 +283,35 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
     }
 
     // Allocate BufferPool
-    let batch_size = 16;
+    let batch_size = if chunk_size >= 1024 * 1024 {
+        1
+    } else if chunk_size >= 64 * 1024 {
+        4
+    } else {
+        16
+    };
     let pool_size = (num_workers * 2 + 2) * batch_size;
     let pool = Arc::new(crate::buffer_pool::BufferPool::new(chunk_size, pool_size));
 
     // 2. Setup channels
+    // 2. Setup channels
     let queue_bound = num_workers * 2;
-    let (read_tx, read_rx) = sync_channel::<Vec<EncryptTask>>(queue_bound);
-    let (write_tx, write_rx) = sync_channel::<Vec<EncryptResultTask>>(queue_bound);
+    let (read_tx, read_rx) = crossbeam_channel::bounded::<Vec<EncryptTask>>(queue_bound);
+    let (write_tx, write_rx) = crossbeam_channel::bounded::<Vec<EncryptResultTask>>(queue_bound);
 
-    let read_rx = Arc::new(std::sync::Mutex::new(read_rx));
     let dek = *dek;
     let file_id = *file_id;
 
     // 3. Spawn workers
     let mut workers = Vec::with_capacity(num_workers);
     for worker_id in 0..num_workers {
-        let read_rx_c = Arc::clone(&read_rx);
+        let read_rx_c = read_rx.clone();
         let write_tx_c = write_tx.clone();
         let local_file = direct_write_files[worker_id].take();
         let pool_c = Arc::clone(&pool);
 
         let t = thread::spawn(move || loop {
-            let task = {
-                let rx = read_rx_c.lock().unwrap();
-                rx.recv().ok()
-            };
+            let task = read_rx_c.recv().ok();
             if let Some(batch) = task {
                 let mut results = Vec::with_capacity(batch.len());
                 for mut t in batch {
@@ -350,10 +355,16 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
                                     result: Ok(EncryptResultInPlace::Leaf(leaf)),
                                 });
                             } else {
+                                let leaf = chunk_leaf_hash_raw_with_algo(
+                                    idx,
+                                    t.buffer.get_iv(),
+                                    t.buffer.as_tag_slice(t.plaintext_len),
+                                    hash_algo,
+                                );
                                 results.push(EncryptResultTask {
                                     index: idx,
                                     plaintext_len: t.plaintext_len,
-                                    result: Ok(EncryptResultInPlace::Envelope(t.buffer)),
+                                    result: Ok(EncryptResultInPlace::Envelope(t.buffer, leaf)),
                                 });
                             }
                         }
@@ -401,6 +412,12 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
                 break;
             }
 
+            if idx >= u32::MAX {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "TooManyChunks: chunk count exceeds u32::MAX",
+                ));
+            }
             total_bytes += read_bytes as u64;
             current_batch.push(EncryptTask {
                 index: idx,
@@ -428,21 +445,27 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
 
     {
         // 5. Gather and write sequentially to dest
-        let mut pending = BTreeMap::new();
-        let mut pending_leaves = BTreeMap::new();
+        let mut pending = Vec::new();
+        let mut pending_leaves = Vec::new();
         let mut next_expected = 0u32;
         let mut encrypt_err = None;
 
         while let Ok(batch_results) = write_rx.recv() {
             if encrypt_err.is_none() {
                 for task in batch_results {
-                    let idx = task.index;
+                    let idx = task.index as usize;
                     match task.result {
-                        Ok(EncryptResultInPlace::Envelope(buf)) => {
-                            pending.insert(idx, (buf, task.plaintext_len));
+                        Ok(EncryptResultInPlace::Envelope(buf, leaf)) => {
+                            if pending.len() <= idx {
+                                pending.resize_with(idx + 1024, || None);
+                            }
+                            pending[idx] = Some((buf, task.plaintext_len, leaf));
                         }
                         Ok(EncryptResultInPlace::Leaf(leaf)) => {
-                            pending_leaves.insert(idx, leaf);
+                            if pending_leaves.len() <= idx {
+                                pending_leaves.resize_with(idx + 1024, || None);
+                            }
+                            pending_leaves[idx] = Some(leaf);
                         }
                         Err(e) => {
                             encrypt_err = Some(e);
@@ -454,38 +477,30 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
             if !*is_direct {
                 match selected_mode {
                     IoWriteMode::Sequential => {
-                        while let Some((buf, len)) = pending.remove(&next_expected) {
-                            let iv = *buf.get_iv();
-                            let tag = *buf.as_tag_slice(len);
-                            let leaf =
-                                chunk_leaf_hash_raw_with_algo(next_expected, &iv, &tag, hash_algo);
-                            merkle_reducer.push_leaf(leaf);
-                            let dest = dest_opt.as_mut().expect("dest must be present");
-                            if let Err(e) = dest.write_all(buf.as_envelope_slice(len)) {
-                                encrypt_err = Some(FileFormatError::IoError(e.to_string()));
+                        while next_expected < pending.len() as u32 {
+                            if let Some((buf, len, leaf)) = pending[next_expected as usize].take() {
+                                merkle_reducer.push_leaf(leaf);
+                                let dest = dest_opt.as_mut().expect("dest must be present");
+                                if let Err(e) = dest.write_all(buf.as_envelope_slice(len)) {
+                                    encrypt_err = Some(FileFormatError::IoError(e.to_string()));
+                                }
+                                pool.return_buffer(buf);
+                                next_expected += 1;
+                            } else {
+                                break;
                             }
-                            pool.return_buffer(buf);
-                            next_expected += 1;
                         }
                     }
                     IoWriteMode::Batched { batch_size } => {
                         let mut sequential_count = 0;
-                        let mut check_idx = next_expected;
-                        while pending.contains_key(&check_idx) {
+                        let mut check_idx = next_expected as usize;
+                        while check_idx < pending.len() && pending[check_idx].is_some() {
                             sequential_count += 1;
                             check_idx += 1;
                         }
                         if sequential_count >= batch_size {
                             for _ in 0..batch_size {
-                                if let Some((buf, len)) = pending.remove(&next_expected) {
-                                    let iv = *buf.get_iv();
-                                    let tag = *buf.as_tag_slice(len);
-                                    let leaf = chunk_leaf_hash_raw_with_algo(
-                                        next_expected,
-                                        &iv,
-                                        &tag,
-                                        hash_algo,
-                                    );
+                                if let Some((buf, len, leaf)) = pending[next_expected as usize].take() {
                                     merkle_reducer.push_leaf(leaf);
                                     let dest = dest_opt.as_mut().expect("dest must be present");
                                     if let Err(e) = dest.write_all(buf.as_envelope_slice(len)) {
@@ -500,33 +515,40 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
                     IoWriteMode::DirectOffset => unreachable!(),
                 }
             } else {
-                while let Some(leaf) = pending_leaves.remove(&next_expected) {
-                    merkle_reducer.push_leaf(leaf);
-                    next_expected += 1;
+                while next_expected < pending_leaves.len() as u32 {
+                    if let Some(leaf) = pending_leaves[next_expected as usize].take() {
+                        merkle_reducer.push_leaf(leaf);
+                        next_expected += 1;
+                    } else {
+                        break;
+                    }
                 }
             }
         }
 
         if encrypt_err.is_none() && !*is_direct {
             if let IoWriteMode::Batched { .. } = selected_mode {
-                while let Some((buf, len)) = pending.remove(&next_expected) {
-                    let iv = *buf.get_iv();
-                    let tag = *buf.as_tag_slice(len);
-                    let leaf = chunk_leaf_hash_raw_with_algo(next_expected, &iv, &tag, hash_algo);
-                    merkle_reducer.push_leaf(leaf);
-                    let dest = dest_opt.as_mut().expect("dest must be present");
-                    if let Err(e) = dest.write_all(buf.as_envelope_slice(len)) {
-                        encrypt_err = Some(FileFormatError::IoError(e.to_string()));
+                while next_expected < pending.len() as u32 {
+                    if let Some((buf, len, leaf)) = pending[next_expected as usize].take() {
+                        merkle_reducer.push_leaf(leaf);
+                        let dest = dest_opt.as_mut().expect("dest must be present");
+                        if let Err(e) = dest.write_all(buf.as_envelope_slice(len)) {
+                            encrypt_err = Some(FileFormatError::IoError(e.to_string()));
+                        }
+                        pool.return_buffer(buf);
+                        next_expected += 1;
+                    } else {
+                        break;
                     }
-                    pool.return_buffer(buf);
-                    next_expected += 1;
                 }
             }
         }
 
         // Cleanup remaining buffers in case of errors
-        for (_, (buf, _)) in pending {
-            pool.return_buffer(buf);
+        for opt in pending {
+            if let Some((buf, _, _)) = opt {
+                pool.return_buffer(buf);
+            }
         }
 
         if let Some(e) = encrypt_err {
@@ -537,7 +559,13 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
         plaintext_size = read_thread
             .join()
             .unwrap()
-            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            .map_err(|e| {
+                if e.to_string().contains("TooManyChunks") {
+                    FileFormatError::TooManyChunks
+                } else {
+                    FileFormatError::IoError(e.to_string())
+                }
+            })?;
 
         // Wait for workers
         for w in workers {
@@ -635,18 +663,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
 /// * `dest`: Writer where the decrypted plaintext is written.
 /// * `dek`: Data Encryption Key (32 bytes).
 /// * `num_workers`: Number of parallel worker threads for decryption.
-pub fn decrypt_file_pipelined<R: Read + Send + 'static, W: Write>(
-    mut source: R,
-    mut dest: W,
-    dek: &[u8; 32],
-    num_workers: usize,
-) -> Result<Header, FileFormatError> {
-    if num_workers == 0 {
-        return Err(FileFormatError::IoError(
-            "num_workers must be greater than 0".to_string(),
-        ));
-    }
-
+fn read_header_from_stream<R: Read>(mut source: R) -> Result<(Header, usize), FileFormatError> {
     // 1. Read the fixed portion of the header first (80 bytes)
     let mut fixed_buf = [0u8; FIXED_HEADER_LEN];
     source
@@ -716,40 +733,66 @@ pub fn decrypt_file_pipelined<R: Read + Send + 'static, W: Write>(
     let (header, header_parsed_len) = Header::parse(&header_buf)?;
     assert_eq!(header_parsed_len, total_header_len);
 
-    let header_hash = header.canonical_header_hash();
+    Ok((header, total_header_len))
+}
+
+fn decrypt_file_pipelined_internal<R: Read + Send + 'static, W: Write>(
+    mut source: R,
+    mut dest: W,
+    dek: &[u8; 32],
+    num_workers: usize,
+    header: &Header,
+    header_hash: &[u8; 32],
+) -> Result<(), FileFormatError> {
+    if num_workers == 0 {
+        return Err(FileFormatError::IoError(
+            "num_workers must be greater than 0".to_string(),
+        ));
+    }
+
     let chunk_size = header.chunk_size as usize;
     let plaintext_size = header.plaintext_size;
     let file_id = header.file_id;
+    let hash_algo = header.hash_algorithm;
 
     // Allocate BufferPool
-    let batch_size = 16;
+    let batch_size = if chunk_size >= 1024 * 1024 {
+        1
+    } else if chunk_size >= 64 * 1024 {
+        4
+    } else {
+        16
+    };
     let pool_size = (num_workers * 2 + 2) * batch_size;
     let pool = Arc::new(crate::buffer_pool::BufferPool::new(chunk_size, pool_size));
 
-    // 2. Setup channels
+    // Setup channels
     let queue_bound = num_workers * 2;
-    let (read_tx, read_rx) = sync_channel::<Vec<DecryptTask>>(queue_bound);
-    let (write_tx, write_rx) = sync_channel::<Vec<DecryptResultTask>>(queue_bound);
+    let (read_tx, read_rx) = crossbeam_channel::bounded::<Vec<DecryptTask>>(queue_bound);
+    let (write_tx, write_rx) = crossbeam_channel::bounded::<Vec<DecryptResultTask>>(queue_bound);
 
-    let read_rx = Arc::new(std::sync::Mutex::new(read_rx));
     let dek = *dek;
+    let header_hash = *header_hash;
 
-    // 3. Spawn workers
+    // Spawn workers
     let mut workers = Vec::with_capacity(num_workers);
     for _ in 0..num_workers {
-        let read_rx_c = Arc::clone(&read_rx);
+        let read_rx_c = read_rx.clone();
         let write_tx_c = write_tx.clone();
         let pool_c = Arc::clone(&pool);
 
         let t = thread::spawn(move || loop {
-            let task = {
-                let rx = read_rx_c.lock().unwrap();
-                rx.recv().ok()
-            };
+            let task = read_rx_c.recv().ok();
             if let Some(batch) = task {
                 let mut results = Vec::with_capacity(batch.len());
                 for mut t in batch {
                     let idx = t.index;
+                    let leaf = chunk_leaf_hash_raw_with_algo(
+                        idx,
+                        t.buffer.get_iv(),
+                        t.buffer.as_tag_slice(t.plaintext_len),
+                        hash_algo,
+                    );
                     let res = decrypt_chunk_in_place(
                         &dek,
                         &file_id,
@@ -763,6 +806,7 @@ pub fn decrypt_file_pipelined<R: Read + Send + 'static, W: Write>(
                             results.push(DecryptResultTask {
                                 index: idx,
                                 plaintext_len: t.plaintext_len,
+                                leaf_hash: leaf,
                                 result: Ok(t.buffer),
                             });
                         }
@@ -771,6 +815,7 @@ pub fn decrypt_file_pipelined<R: Read + Send + 'static, W: Write>(
                             results.push(DecryptResultTask {
                                 index: idx,
                                 plaintext_len: t.plaintext_len,
+                                leaf_hash: leaf,
                                 result: Err(e),
                             });
                         }
@@ -787,18 +832,20 @@ pub fn decrypt_file_pipelined<R: Read + Send + 'static, W: Write>(
     }
     drop(write_tx);
 
-    // 4. Read envelopes in a separate thread
-    let total_chunks = if plaintext_size == 0 {
+    let total_chunks_u64 = if plaintext_size == 0 {
         0
     } else {
-        plaintext_size.div_ceil(chunk_size as u64) as u32
+        plaintext_size.div_ceil(chunk_size as u64)
     };
+    if total_chunks_u64 > u32::MAX as u64 {
+        return Err(FileFormatError::TooManyChunks);
+    }
+    let total_chunks = total_chunks_u64 as u32;
 
-    let hash_algo = header.hash_algorithm;
+    // Read envelopes in a separate thread
     let read_tx_c = read_tx;
     let pool_c = Arc::clone(&pool);
-    let read_thread = thread::spawn(move || -> Result<Vec<[u8; 32]>, FileFormatError> {
-        let mut leaf_hashes = Vec::with_capacity(total_chunks as usize);
+    let read_thread = thread::spawn(move || -> Result<(), FileFormatError> {
         let mut current_batch = Vec::with_capacity(batch_size);
         for idx in 0..total_chunks {
             let is_last = idx == total_chunks - 1;
@@ -818,15 +865,6 @@ pub fn decrypt_file_pipelined<R: Read + Send + 'static, W: Write>(
                 .read_exact(buffer.as_envelope_mut(chunk_plaintext_len))
                 .map_err(|e| FileFormatError::IoError(e.to_string()))?;
 
-            use crate::merkle::chunk_leaf_hash_raw_with_algo;
-            let leaf = chunk_leaf_hash_raw_with_algo(
-                idx,
-                buffer.get_iv(),
-                buffer.as_tag_slice(chunk_plaintext_len),
-                hash_algo,
-            );
-            leaf_hashes.push(leaf);
-
             current_batch.push(DecryptTask {
                 index: idx,
                 buffer,
@@ -837,29 +875,33 @@ pub fn decrypt_file_pipelined<R: Read + Send + 'static, W: Write>(
                 let batch_to_send =
                     std::mem::replace(&mut current_batch, Vec::with_capacity(batch_size));
                 if read_tx_c.send(batch_to_send).is_err() {
-                    return Ok(leaf_hashes);
+                    return Ok(());
                 }
             }
         }
         if !current_batch.is_empty() {
             let _ = read_tx_c.send(current_batch);
         }
-        Ok(leaf_hashes)
+        Ok(())
     });
 
-    // 5. Gather and write plaintexts sequentially
-    let mut pending = BTreeMap::new();
+    // Gather and write plaintexts sequentially
+    let mut pending = Vec::new();
     let mut next_expected = 0u32;
     let mut decrypt_err = None;
 
+    let mut leaf_hashes = vec![[0u8; 32]; total_chunks as usize];
     let mut total_decrypted_bytes = 0u64;
     while let Ok(batch_results) = write_rx.recv() {
         if decrypt_err.is_none() {
             for task in batch_results {
-                let idx = task.index;
+                let idx = task.index as usize;
                 match task.result {
                     Ok(buf) => {
-                        pending.insert(idx, (buf, task.plaintext_len));
+                        if pending.len() <= idx {
+                            pending.resize_with(idx + 1024, || None);
+                        }
+                        pending[idx] = Some((buf, task.plaintext_len, task.leaf_hash));
                     }
                     Err(e) => {
                         decrypt_err = Some(e);
@@ -867,18 +909,25 @@ pub fn decrypt_file_pipelined<R: Read + Send + 'static, W: Write>(
                 }
             }
         }
-        while let Some((buf, len)) = pending.remove(&next_expected) {
-            dest.write_all(buf.as_plaintext(len))
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
-            total_decrypted_bytes += len as u64;
-            pool.return_buffer(buf);
-            next_expected += 1;
+        while next_expected < pending.len() as u32 {
+            if let Some((buf, len, leaf)) = pending[next_expected as usize].take() {
+                dest.write_all(buf.as_plaintext(len))
+                    .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+                total_decrypted_bytes += len as u64;
+                leaf_hashes[next_expected as usize] = leaf;
+                pool.return_buffer(buf);
+                next_expected += 1;
+            } else {
+                break;
+            }
         }
     }
 
     // Cleanup remaining buffers in case of errors
-    for (_, (buf, _)) in pending {
-        pool.return_buffer(buf);
+    for opt in pending {
+        if let Some((buf, _, _)) = opt {
+            pool.return_buffer(buf);
+        }
     }
 
     if let Some(e) = decrypt_err {
@@ -886,7 +935,7 @@ pub fn decrypt_file_pipelined<R: Read + Send + 'static, W: Write>(
     }
 
     // Wait for read thread
-    let leaf_hashes = read_thread.join().unwrap()?;
+    read_thread.join().unwrap()?;
 
     // Wait for workers
     for w in workers {
@@ -898,7 +947,7 @@ pub fn decrypt_file_pipelined<R: Read + Send + 'static, W: Write>(
     let recomputed_root = if leaf_hashes.is_empty() {
         [0u8; 32]
     } else {
-        let mut tree = crate::merkle::MerkleTree::from_leaves_with_algo(leaf_hashes, hash_algo);
+        let tree = crate::merkle::MerkleTree::from_leaves_with_algo(leaf_hashes, hash_algo);
         tree.root()
     };
 
@@ -922,7 +971,145 @@ pub fn decrypt_file_pipelined<R: Read + Send + 'static, W: Write>(
         });
     }
 
+    Ok(())
+}
+
+/// Decrypts a file in a streaming/online manner using parallel pipelines.
+///
+/// # WARNING (RUP - Released Unverified Plaintext)
+/// This is a streaming/online decryptor. It emits decrypted plaintext to `dest`
+/// *before* verifying the final Merkle root/signature of the file.
+/// If the stream is truncated, reordered, or tampered with, this function
+/// will eventually return an error, but the caller will have already received
+/// partial, unverified plaintext.
+///
+/// Callers MUST NOT trust the partial output of this function. They should
+/// either write to a temporary file and rename/commit only on `Ok`, or
+/// use `decrypt_verified` which verifies integrity completely before releasing
+/// any plaintext.
+pub fn decrypt_streaming_online<R: Read + Send + 'static, W: Write>(
+    mut source: R,
+    dest: W,
+    dek: &[u8; 32],
+    num_workers: usize,
+) -> Result<Header, FileFormatError> {
+    let (header, _) = read_header_from_stream(&mut source)?;
+    let header_hash = header.canonical_header_hash();
+    decrypt_file_pipelined_internal(source, dest, dek, num_workers, &header, &header_hash)?;
     Ok(header)
+}
+
+/// Decrypts a file verifying its integrity completely before releasing any plaintext.
+///
+/// This is a secure "all-or-nothing" decryptor. It requires a seekable source to
+/// perform a first pass validating Merkle leaf hash tags, indexes, and roots
+/// before executing decryption and emitting plaintext in a second pass.
+pub fn decrypt_verified<R: Read + Seek + Send + 'static, W: Write>(
+    mut source: R,
+    dest: W,
+    dek: &[u8; 32],
+    num_workers: usize,
+) -> Result<Header, FileFormatError> {
+    let _start_pos = source.stream_position().map_err(|e| FileFormatError::IoError(e.to_string()))?;
+
+    // 1. Read header
+    let (header, _) = read_header_from_stream(&mut source)?;
+    let payload_start_pos = source.stream_position().map_err(|e| FileFormatError::IoError(e.to_string()))?;
+
+    let chunk_size = header.chunk_size as usize;
+    let plaintext_size = header.plaintext_size;
+    let hash_algo = header.hash_algorithm;
+
+    let total_chunks_u64 = if plaintext_size == 0 {
+        0
+    } else {
+        plaintext_size.div_ceil(chunk_size as u64)
+    };
+    if total_chunks_u64 > u32::MAX as u64 {
+        return Err(FileFormatError::TooManyChunks);
+    }
+    let total_chunks = total_chunks_u64 as u32;
+
+    // First Pass: Verify integrity of all tags
+    let mut leaf_hashes = Vec::with_capacity(total_chunks as usize);
+    for idx in 0..total_chunks {
+        let is_last = idx == total_chunks - 1;
+        let chunk_plaintext_len = if is_last {
+            let rem = plaintext_size % chunk_size as u64;
+            if rem == 0 {
+                chunk_size
+            } else {
+                rem as usize
+            }
+        } else {
+            chunk_size
+        };
+
+        // Read index (4 bytes) and IV (12 bytes)
+        let mut prefix = [0u8; 16];
+        source.read_exact(&mut prefix).map_err(|e| FileFormatError::IoError(e.to_string()))?;
+        let read_idx = u32::from_be_bytes([prefix[0], prefix[1], prefix[2], prefix[3]]);
+        if read_idx != idx {
+            return Err(FileFormatError::ChunkIndexOutOfOrder { expected: idx, got: read_idx });
+        }
+        let iv: [u8; 12] = prefix[4..16].try_into().unwrap();
+
+        // Seek forward by chunk_plaintext_len (ciphertext size)
+        source.seek(std::io::SeekFrom::Current(chunk_plaintext_len as i64))
+            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+
+        // Read tag (16 bytes)
+        let mut tag = [0u8; 16];
+        source.read_exact(&mut tag).map_err(|e| FileFormatError::IoError(e.to_string()))?;
+
+        // Compute leaf hash
+        let leaf = chunk_leaf_hash_raw_with_algo(idx, &iv, &tag, hash_algo);
+        leaf_hashes.push(leaf);
+    }
+
+    // Verify there are no trailing bytes
+    let end_pos = source.stream_position().map_err(|e| FileFormatError::IoError(e.to_string()))?;
+    source.seek(std::io::SeekFrom::End(0)).map_err(|e| FileFormatError::IoError(e.to_string()))?;
+    let final_pos = source.stream_position().map_err(|e| FileFormatError::IoError(e.to_string()))?;
+    if final_pos != end_pos {
+        return Err(FileFormatError::TruncatedChunk {
+            expected: (final_pos - payload_start_pos) as usize,
+            got: (end_pos - payload_start_pos) as usize,
+        });
+    }
+
+    // Verify Merkle root
+    let recomputed_root = if leaf_hashes.is_empty() {
+        [0u8; 32]
+    } else {
+        let tree = MerkleTree::from_leaves_with_algo(leaf_hashes, hash_algo);
+        tree.root()
+    };
+
+    use subtle::ConstantTimeEq;
+    if recomputed_root.ct_eq(&header.merkle_root).unwrap_u8() != 1 {
+        return Err(FileFormatError::AesGcmDecryptFailed);
+    }
+
+    // Reset source to start of payload
+    source.seek(std::io::SeekFrom::Start(payload_start_pos))
+        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+
+    // Second Pass: Safe Decryption
+    let header_hash = header.canonical_header_hash();
+    decrypt_file_pipelined_internal(source, dest, dek, num_workers, &header, &header_hash)?;
+
+    Ok(header)
+}
+
+/// Decrypts a file verifying its integrity completely before releasing any plaintext (safe by default).
+pub fn decrypt_file_pipelined<R: Read + Seek + Send + 'static, W: Write>(
+    source: R,
+    dest: W,
+    dek: &[u8; 32],
+    num_workers: usize,
+) -> Result<Header, FileFormatError> {
+    decrypt_verified(source, dest, dek, num_workers)
 }
 
 /// Encrypts in-memory plaintext asynchronously with WebCrypto/concurrent provider capability.
@@ -1160,7 +1347,7 @@ pub async fn decrypt_file_pipelined_async(
     let recomputed_root = if leaf_hashes.is_empty() {
         [0u8; 32]
     } else {
-        let mut tree =
+        let tree =
             crate::merkle::MerkleTree::from_leaves_with_algo(leaf_hashes, header.hash_algorithm);
         tree.root()
     };

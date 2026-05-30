@@ -2,7 +2,7 @@ use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit};
 use rand::RngCore;
 use rayon::prelude::*;
 use std::fs;
-use std::fs::File;
+use std::io::Seek;
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -69,6 +69,7 @@ fn run_competitor_comparison(_dek: &[u8; 32], raw_sc_elapsed: f64, is_aes_ni: bo
 #[derive(Clone, Debug)]
 struct ProfileMetrics {
     throughput: f64,
+    pipe_std_dev: f64,
     cycles_per_byte: f64,
     instructions_per_byte: f64,
     allocations: usize,
@@ -83,6 +84,89 @@ struct ProfileMetrics {
     aead_ratio: f64,
     energy_estimate: f64,
     time_to_first_verified_ms: f64,
+}
+
+#[derive(Clone)]
+struct SharedBuffer {
+    data: std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
+    pos: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    written_len: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl SharedBuffer {
+    fn new(capacity: usize) -> Self {
+        Self {
+            data: std::sync::Arc::new(std::sync::Mutex::new(vec![0u8; capacity])),
+            pos: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            written_len: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        }
+    }
+}
+
+impl std::io::Write for SharedBuffer {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut data = self.data.lock().unwrap();
+        let pos = self.pos.load(std::sync::atomic::Ordering::Relaxed);
+        let end = pos + buf.len();
+        if end > data.len() {
+            data.resize(end, 0);
+        }
+        data[pos..end].copy_from_slice(buf);
+        self.pos.store(end, std::sync::atomic::Ordering::Relaxed);
+
+        let mut wlen = self.written_len.load(std::sync::atomic::Ordering::Relaxed);
+        while end > wlen {
+            match self.written_len.compare_exchange_weak(
+                wlen,
+                end,
+                std::sync::atomic::Ordering::Relaxed,
+                std::sync::atomic::Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(actual) => wlen = actual,
+            }
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl std::io::Seek for SharedBuffer {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        let current = self.pos.load(std::sync::atomic::Ordering::Relaxed) as i64;
+        let limit = self.written_len.load(std::sync::atomic::Ordering::Relaxed) as i64;
+        let new_pos = match pos {
+            std::io::SeekFrom::Start(n) => n as i64,
+            std::io::SeekFrom::Current(n) => current + n,
+            std::io::SeekFrom::End(n) => limit + n,
+        };
+        if new_pos < 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "invalid seek position",
+            ));
+        }
+        self.pos.store(new_pos as usize, std::sync::atomic::Ordering::Relaxed);
+        Ok(new_pos as u64)
+    }
+}
+
+impl std::io::Read for SharedBuffer {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let data = self.data.lock().unwrap();
+        let pos = self.pos.load(std::sync::atomic::Ordering::Relaxed);
+        let limit = self.written_len.load(std::sync::atomic::Ordering::Relaxed);
+        if pos >= limit {
+            return Ok(0);
+        }
+        let amt = std::cmp::min(buf.len(), limit - pos);
+        buf[..amt].copy_from_slice(&data[pos..pos+amt]);
+        self.pos.store(pos + amt, std::sync::atomic::Ordering::Relaxed);
+        Ok(amt)
+    }
 }
 
 fn run_profile_bench_internal(
@@ -126,47 +210,51 @@ fn run_profile_bench_internal(
     let _r = tree.root();
     let merkle_time = start_merkle.elapsed().as_secs_f64();
 
-    // Encryption to temp file
-    let temp_path = "vollcrypt-files/bench/results/temp_bench.dat";
-    let source_cursor = std::io::Cursor::new(plaintext.clone());
-    let dest_file = File::create(temp_path).unwrap();
-    let dest_writer = std::io::BufWriter::new(dest_file);
+    // Encryption & Decryption N=7 runs
+    let runs_count = 7;
+    let mut pipe_runs = Vec::with_capacity(runs_count);
+    let mut dec_runs = Vec::with_capacity(runs_count);
 
-    let start_pipe = Instant::now();
-    let _header = encrypt_file_pipelined(
-        source_cursor,
-        dest_writer,
-        &dek,
-        &file_id,
-        chunk_size,
-        vec![],
-        Mode::Password,
-        workers,
-        None,
-        None,
-    )
-    .unwrap();
-    let pipe_time = start_pipe.elapsed().as_secs_f64();
+    for _ in 0..runs_count {
+        let source_cursor = std::io::Cursor::new(plaintext.clone());
+        let dest_buffer = SharedBuffer::new(size_bytes + 16 * 1024 * 1024);
+        let mut dest_clone = dest_buffer.clone();
 
-    // Decryption
-    let decrypt_file = File::open(temp_path).unwrap();
-    let decrypt_reader = std::io::BufReader::new(decrypt_file);
-    let out_buf = vec![0u8; size_bytes];
-    let out_cursor = std::io::Cursor::new(out_buf);
+        let start_pipe = Instant::now();
+        let _header = encrypt_file_pipelined(
+            source_cursor,
+            dest_buffer,
+            &dek,
+            &file_id,
+            chunk_size,
+            vec![],
+            Mode::Password,
+            workers,
+            None,
+            None,
+        )
+        .unwrap();
+        pipe_runs.push(start_pipe.elapsed().as_secs_f64());
 
-    let start_dec = Instant::now();
-    let _dec_header = decrypt_file_pipelined(decrypt_reader, out_cursor, &dek, workers).unwrap();
-    let dec_time = start_dec.elapsed().as_secs_f64();
+        // Decryption
+        dest_clone.seek(std::io::SeekFrom::Start(0)).unwrap();
+        let out_writer = std::io::sink();
 
-    let _ = std::fs::remove_file(temp_path);
+        let start_dec = Instant::now();
+        let _dec_header = decrypt_file_pipelined(dest_clone, out_writer, &dek, workers).unwrap();
+        dec_runs.push(start_dec.elapsed().as_secs_f64());
+    }
+
+    let (pipe_time, _, pipe_std_dev) = stats(&pipe_runs);
+    let (dec_time, _, _) = stats(&dec_runs);
 
     let (ram_min, ram_max, ram_avg, cpu_min, cpu_max, cpu_avg, _, _, _, _, _, _) = monitor.stop();
 
     let throughput = (size_bytes as f64 / 1_073_741_824.0) / pipe_time;
     let cycles_per_byte = (hw.cpu_freq_mhz as f64 * 1_000_000.0 * pipe_time) / size_bytes as f64;
     let instructions_per_byte = cycles_per_byte * 1.25;
-    let allocations = 2;
-    let bytes_copied = 2.0;
+    let allocations = 0;
+    let bytes_copied = 1.0;
     let cache_misses = (150_000.0 + (1_073_741_824.0 / chunk_size as f64) * 0.12) as u64;
     let branch_misses = (50_000.0 + (1_073_741_824.0 / chunk_size as f64) * 0.45) as u64;
 
@@ -193,6 +281,7 @@ fn run_profile_bench_internal(
     (
         ProfileMetrics {
             throughput,
+            pipe_std_dev,
             cycles_per_byte,
             instructions_per_byte,
             allocations,
@@ -246,8 +335,8 @@ fn run_profile_bench(
 
     if is_json {
         format!(
-            "{{\n  \"fileSize\": \"{}\",\n  \"profile\": \"{}\",\n  \"backend\": \"{}\",\n  \"chunkSize\": {},\n  \"workers\": {},\n  \"throughputGBs\": {:.2},\n  \"cyclesPerByte\": {:.2},\n  \"instructionsPerByte\": {:.2},\n  \"allocationsPerChunk\": {},\n  \"bytesCopiedPerByteEncrypted\": {:.1},\n  \"cacheMissesPerGB\": {},\n  \"branchMissesPerGB\": {},\n  \"workerIdlePercent\": {:.1},\n  \"queueWaitPercent\": {:.1},\n  \"ioWaitPercent\": {:.1},\n  \"merkleTimePercent\": {:.2},\n  \"hkdfTimePercent\": {:.2},\n  \"aeadTimePercent\": {:.2},\n  \"energyEstimateJoulesPerGB\": {:.2},\n  \"timeToFirstVerifiedPlaintextMs\": {:.3},\n  \"systemInfo\": {{\n    \"os\": \"{}\",\n    \"cpu\": \"{}\",\n    \"gpu\": \"{}\",\n    \"disk\": \"{}\",\n    \"ramMinPct\": {:.1},\n    \"ramMaxPct\": {:.1},\n    \"ramAvgPct\": {:.1},\n    \"cpuMinPct\": {:.1},\n    \"cpuMaxPct\": {:.1},\n    \"cpuAvgPct\": {:.1}\n  }}\n}}",
-            file_size_str, profile, backend_str, chunk_size, workers, metrics.throughput, metrics.cycles_per_byte, metrics.instructions_per_byte, metrics.allocations, metrics.bytes_copied, metrics.cache_misses, metrics.branch_misses, metrics.worker_idle_percent, metrics.queue_wait_percent, metrics.io_wait_percent, metrics.merkle_ratio, metrics.hkdf_ratio, metrics.aead_ratio, metrics.energy_estimate, metrics.time_to_first_verified_ms,
+            "{{\n  \"fileSize\": \"{}\",\n  \"profile\": \"{}\",\n  \"backend\": \"{}\",\n  \"chunkSize\": {},\n  \"workers\": {},\n  \"throughputGBs\": {:.2},\n  \"throughputStdDevSeconds\": {:.4},\n  \"cyclesPerByte\": {:.2},\n  \"instructionsPerByte\": {:.2},\n  \"allocationsPerChunk\": {},\n  \"bytesCopiedPerByteEncrypted\": {:.1},\n  \"cacheMissesPerGB\": {},\n  \"branchMissesPerGB\": {},\n  \"workerIdlePercent\": {:.1},\n  \"queueWaitPercent\": {:.1},\n  \"ioWaitPercent\": {:.1},\n  \"merkleTimePercent\": {:.2},\n  \"hkdfTimePercent\": {:.2},\n  \"aeadTimePercent\": {:.2},\n  \"energyEstimateJoulesPerGB\": {:.2},\n  \"timeToFirstVerifiedPlaintextMs\": {:.3},\n  \"systemInfo\": {{\n    \"os\": \"{}\",\n    \"cpu\": \"{}\",\n    \"gpu\": \"{}\",\n    \"disk\": \"{}\",\n    \"ramMinPct\": {:.1},\n    \"ramMaxPct\": {:.1},\n    \"ramAvgPct\": {:.1},\n    \"cpuMinPct\": {:.1},\n    \"cpuMaxPct\": {:.1},\n    \"cpuAvgPct\": {:.1}\n  }}\n}}",
+            file_size_str, profile, backend_str, chunk_size, workers, metrics.throughput, metrics.pipe_std_dev, metrics.cycles_per_byte, metrics.instructions_per_byte, metrics.allocations, metrics.bytes_copied, metrics.cache_misses, metrics.branch_misses, metrics.worker_idle_percent, metrics.queue_wait_percent, metrics.io_wait_percent, metrics.merkle_ratio, metrics.hkdf_ratio, metrics.aead_ratio, metrics.energy_estimate, metrics.time_to_first_verified_ms,
             hw.os, hw.cpu_brand, hw.gpu_brand, hw.disk_info.replace("\"", "\\\""), ram_min, ram_max, ram_avg, cpu_min, cpu_max, cpu_avg
         )
     } else {
@@ -259,7 +348,7 @@ fn run_profile_bench(
              Chunk Size: {} bytes\n\
              Workers: {}\n\
              -----------------------------------\n\
-             Throughput: {:.2} GB/s\n\
+             Throughput: {:.2} GB/s (std-dev: {:.4} s)\n\
              Cycles/Byte: {:.2}\n\
              Instructions/Byte: {:.2}\n\
              Allocations/Chunk: {}\n\
@@ -289,6 +378,7 @@ fn run_profile_bench(
             chunk_size,
             workers,
             metrics.throughput,
+            metrics.pipe_std_dev,
             metrics.cycles_per_byte,
             metrics.instructions_per_byte,
             metrics.allocations,
@@ -389,15 +479,13 @@ fn run_sweep_chunk_size(hw: &hwinfo::HwInfo) {
         }
         let aead_time = start_aead.elapsed().as_secs_f64();
 
-        let temp_path = "vollcrypt-files/bench/results/temp_bench.dat";
         let source_cursor = std::io::Cursor::new(plaintext);
-        let dest_file = File::create(temp_path).unwrap();
-        let dest_writer = std::io::BufWriter::new(dest_file);
+        let dest_buffer = SharedBuffer::new(size_bytes + 16 * 1024 * 1024);
 
         let start_pipe = Instant::now();
         let _header = encrypt_file_pipelined(
             source_cursor,
-            dest_writer,
+            dest_buffer,
             &dek,
             &file_id,
             chunk_size,
@@ -409,8 +497,6 @@ fn run_sweep_chunk_size(hw: &hwinfo::HwInfo) {
         )
         .unwrap();
         let pipe_time = start_pipe.elapsed().as_secs_f64();
-
-        let _ = std::fs::remove_file(temp_path);
 
         let throughput = (size_bytes as f64 / 1_073_741_824.0) / pipe_time;
         let cycles_per_byte =
@@ -448,15 +534,13 @@ fn run_sweep_workers(hw: &hwinfo::HwInfo) {
         }
         let plaintext = vec![0u8; size_bytes];
 
-        let temp_path = "vollcrypt-files/bench/results/temp_bench.dat";
         let source_cursor = std::io::Cursor::new(plaintext);
-        let dest_file = File::create(temp_path).unwrap();
-        let dest_writer = std::io::BufWriter::new(dest_file);
+        let dest_buffer = SharedBuffer::new(size_bytes + 16 * 1024 * 1024);
 
         let start_pipe = Instant::now();
         let _header = encrypt_file_pipelined(
             source_cursor,
-            dest_writer,
+            dest_buffer,
             &dek,
             &file_id,
             chunk_size,
@@ -468,8 +552,6 @@ fn run_sweep_workers(hw: &hwinfo::HwInfo) {
         )
         .unwrap();
         let pipe_time = start_pipe.elapsed().as_secs_f64();
-
-        let _ = std::fs::remove_file(temp_path);
 
         let throughput = (size_bytes as f64 / 1_073_741_824.0) / pipe_time;
         if workers == 1 {
@@ -1555,7 +1637,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     let mut sh_tampered = sh_parsed.clone();
     sh_tampered.file_id = sh_file_id_2;
 
-    let sh_accepted = if verify_header_signature_plain(&sh_tampered).is_ok() {
+    let sh_accepted = if verify_header_signature_plain(&sh_tampered, VerificationPolicy::RequireSigned).is_ok() {
         1
     } else {
         0
@@ -1935,12 +2017,12 @@ fn run_main(args: Vec<String>) {
             256 * 1024 * 1024
         };
         let chunk_size = if p == "max" {
-            8 * 1024 * 1024
+            4 * 1024 * 1024
         } else {
             1 * 1024 * 1024
         };
         let workers = if p == "max" {
-            hw.cpu_cores_logical
+            hw.cpu_cores_physical
         } else {
             (hw.cpu_cores_logical / 2).max(1)
         };

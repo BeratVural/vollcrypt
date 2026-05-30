@@ -255,6 +255,11 @@ impl Header {
         let mut chunk_size_bytes = [0u8; 4];
         chunk_size_bytes.copy_from_slice(&input[27..31]);
         let chunk_size = u32::from_be_bytes(chunk_size_bytes);
+        if chunk_size == 0 {
+            return Err(FileFormatError::KdfParameterOutOfRange(
+                "Chunk size cannot be zero".to_string(),
+            ));
+        }
         if chunk_size > 16_777_216 {
             return Err(FileFormatError::KdfParameterOutOfRange(format!(
                 "Chunk size exceeds 16MB limit: {}",

@@ -154,7 +154,7 @@ fn bench_parallel_recipient_wrap(c: &mut Criterion) {
 fn bench_parallel_manifest_verify(c: &mut Criterion) {
     let group_id = [0u8; 16];
     let founder_id = [1u8; 16];
-    let (admin_pk, admin_sk) = ed25519_keypair_generate();
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
     let (rec_pk, _) = generate_recipient_keypair();
     let gk_wrap = wrap_key_to_recipient(&[0u8; 32], founder_id, 1, &rec_pk).unwrap();
 
@@ -162,7 +162,7 @@ fn bench_parallel_manifest_verify(c: &mut Criterion) {
         group_id,
         founder_id,
         &admin_sk,
-        admin_pk,
+        admin_pk.clone(),
         rec_pk.clone(),
         gk_wrap.clone(),
     );
@@ -171,7 +171,7 @@ fn bench_parallel_manifest_verify(c: &mut Criterion) {
         let mut mid = [0u8; 16];
         mid[0..4].copy_from_slice(&(idx as u32 + 2).to_be_bytes());
         manifest
-            .add_member(&admin_sk, mid, admin_pk, rec_pk.clone(), gk_wrap.clone())
+            .add_member(&admin_sk, mid, admin_pk.clone(), rec_pk.clone(), gk_wrap.clone())
             .unwrap();
     }
 
@@ -187,8 +187,8 @@ fn bench_parallel_manifest_verify(c: &mut Criterion) {
         b.iter(|| {
             let founder_pk = manifest.founder_signing_pk().unwrap();
             let signatures_valid = manifest.operations.par_iter().all(|op| {
-                let msg = op.sig_message();
-                ed25519_verify(&founder_pk, &msg, &op.signature).is_ok()
+                let msg = op.sig_message_for_version(2);
+                hybrid_verify(&founder_pk, "vollf-manifest-op", &[], &msg, &op.signature)
             });
             let _ = black_box(signatures_valid);
         });
