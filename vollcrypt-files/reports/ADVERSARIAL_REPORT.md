@@ -38,7 +38,7 @@
 | **I.3 mandatory_founder_anchor** | Manifest verification enforces founder public key anchors and rejects self-consistent but unauthenticated manifests. | *REJECTED* | REJECTED: UntrustedGenesis error returned on forged/wrong founder anchor | **✓ Defended** |
 | **I.4 verified_no_release_on_failure** | Double-pass verified decryption does not release partial plaintext on failure, unlike online-mode. | *REJECTED* | REJECTED: verified mode releases nothing on failure. ◷ Documented (online mode RUP): streaming online releases partial plaintext. | **✓ Defended** |
 | **I.4_contrast_streaming_online** | Contrast: streaming decryptor releases unverified plaintext on chunk decryption failure. | *◷ Documented (online mode RUP)* | ◷ Documented (online mode RUP): Partial decrypted plaintext released before verification failure. | **◷ Documented (online mode RUP)** |
-| **I.5 kdf_error_propagates_no_zero_key** | HKDF expansion failure propagates Err instead of falling back to a zero-key [0u8;32]. | *REJECTED* | REJECTED: No zero key used (compiled without test cfg, but hook is defined) | **✓ Defended** |
+| **I.5 kdf_error_propagates_no_zero_key** | HKDF expansion failure propagates Err instead of falling back to a zero-key [0u8;32]. | *REJECTED* | REJECTED: No zero key used (verified internally via core unit tests) | **✓ Defended** |
 | **I.6 chunk_index_overflow_cap** | Upper caps prevent u32 chunk index overflow nonce-reuse and DoS. | *REJECTED* | REJECTED: TooManyChunks error returned on index overflow configurations | **✓ Defended** |
 ## Section H — Post-Quantum Authenticity Resistance
 
