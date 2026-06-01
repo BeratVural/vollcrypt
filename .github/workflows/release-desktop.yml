@@ -94,8 +94,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-installers
-          find vollcrypt-desktop/src-tauri/target -name "*.msi" -exec cp {} dist-installers/ \;
-          find vollcrypt-desktop/src-tauri/target -name "*.exe" -exec cp {} dist-installers/ \;
+          find target -name "*.msi" -exec cp {} dist-installers/ \;
+          find target -name "*.exe" -exec cp {} dist-installers/ \;
           ls -la dist-installers/
 
       - name: Stage Installers (macOS)
@@ -103,8 +103,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-installers
-          find vollcrypt-desktop/src-tauri/target -name "*.dmg" -exec cp {} dist-installers/ \;
-          find vollcrypt-desktop/src-tauri/target -name "*.app" -exec cp -r {} dist-installers/ \; 2>/dev/null || true
+          find target -name "*.dmg" -exec cp {} dist-installers/ \;
+          find target -name "*.app" -exec cp -r {} dist-installers/ \; 2>/dev/null || true
           ls -la dist-installers/
 
       - name: Stage Installers (Linux)
@@ -112,8 +112,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-installers
-          find vollcrypt-desktop/src-tauri/target -name "*.deb" -exec cp {} dist-installers/ \;
-          find vollcrypt-desktop/src-tauri/target -name "*.AppImage" -exec cp {} dist-installers/ \;
+          find target -name "*.deb" -exec cp {} dist-installers/ \;
+          find target -name "*.AppImage" -exec cp {} dist-installers/ \;
           ls -la dist-installers/
 
       # -------------------------------------------------------------
