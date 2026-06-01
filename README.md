@@ -21,6 +21,7 @@ Explore the specific modules of Vollcrypt:
 
 *   📩 **[Vollcrypt Messages Module Documentation (README-messages.md)](README-messages.md)** - Stable, E2EE messaging session managers, PCS ratchets, sealed sender, and transparency logs.
 *   📁 **[Vollcrypt Files Module Documentation (README-files.md)](README-files.md)** - Active Development, streaming chunk-based encryption, and Merkle tree verification.
+*   🖥️ **[Vollcrypt Desktop App Module Documentation (README-desktop.md)](README-desktop.md)** - Frameless, dark-mode native desktop application for file and text cryptography.
 
 ---
 
@@ -29,7 +30,8 @@ Explore the specific modules of Vollcrypt:
 This repository is organized as a monorepo containing the following modules:
 
 *   `vollcrypt-messages/`: The Rust implementation and bindings for E2EE messaging (Node.js and WebAssembly).
-*   `vollcrypt-file/`: The Rust implementation and core logic for E2EE file/stream chunking and verification.
+*   `vollcrypt-files/`: The Rust implementation and core logic for E2EE file/stream chunking and verification.
+*   `vollcrypt-desktop/`: Cross-platform desktop application built with Tauri (Rust) and React + Vanilla CSS.
 
 ```mermaid
 graph TD
@@ -38,32 +40,35 @@ graph TD
     classDef runtime fill:#43853d,stroke:#333,stroke-width:1px,color:#fff;
 
     subgraph Core ["Vollcrypt Core Workspace"]
-        vollcrypt_core["vollcrypt-core (Rust)"]:::rust
+        vollcrypt_core["vollcrypt-files-core (Rust)"]:::rust
+        vollcrypt_messages_core["vollcrypt-core (Rust)"]:::rust
     end
 
     subgraph Bindings ["Binding Adapters"]
         napi["vollcrypt-messages/node (napi-rs)"]:::bindings
         wasm["vollcrypt-messages/wasm (wasm-bindgen)"]:::bindings
-        files_node["vollcrypt-file/node (Node streams)"]:::bindings
-        files_wasm["vollcrypt-file/wasm (Browser streams)"]:::bindings
+        files_node["vollcrypt-files/node (Node streams)"]:::bindings
+        files_wasm["vollcrypt-files/wasm (Browser streams)"]:::bindings
     end
 
     subgraph Clients ["Application Runtimes"]
         node_app["Node.js Backend / Server (e.g. NestJS)"]:::runtime
         web_app["Web Browser / Front-end (e.g. Next.js)"]:::runtime
         native_app["Native Rust Applications / Daemons"]:::rust
+        desktop_app["Vollcrypt Desktop App (Tauri v2 + React)"]:::runtime
     end
 
-    vollcrypt_core --> napi
-    vollcrypt_core --> wasm
+    vollcrypt_messages_core --> napi
+    vollcrypt_messages_core --> wasm
     vollcrypt_core --> files_node
     vollcrypt_core --> files_wasm
+    vollcrypt_core --> desktop_app
 
     napi --> node_app
     wasm --> web_app
     files_node --> node_app
     files_wasm --> web_app
-    vollcrypt_core --> native_app
+    vollcrypt_messages_core --> native_app
 ```
 
 ---
@@ -143,6 +148,13 @@ cd ../..
 cd vollcrypt-messages/wasm
 wasm-pack build --target web --out-dir pkg
 cd ../..
+
+# 5. Build and Run Vollcrypt Desktop Application
+cd vollcrypt-desktop
+npm install
+npm run tauri dev      # Launches developer dev server
+npm run tauri build    # Packages optimized production installer (.msi/.exe)
+cd ..
 ```
 
 ### Troubleshooting Common Build Issues
