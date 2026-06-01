@@ -1,0 +1,78 @@
+name: Vollcrypt Files CI
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "vollcrypt-files/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ci-files.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "vollcrypt-files/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ci-files.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test-core:
+    name: Test Files Core Crate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Core Tests
+        run: cargo test -p vollcrypt-files-core
+
+  build-node:
+    name: Build Node Bindings
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: cd vollcrypt-files/node && npm install
+
+      - name: Build Node Bindings
+        run: cd vollcrypt-files/node && npm run build
+
+  build-wasm:
+    name: Build WASM Bindings
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build WASM Bindings
+        run: wasm-pack build vollcrypt-files/wasm --target web --out-dir pkg
