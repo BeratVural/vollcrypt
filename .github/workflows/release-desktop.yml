@@ -1,0 +1,129 @@
+name: Vollcrypt Desktop Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-desktop:
+    name: Build & Release Desktop App
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+          - os: ubuntu-latest
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: |
+            ${{ matrix.platform == 'windows' && 'x86_64-pc-windows-msvc,aarch64-pc-windows-msvc,i686-pc-windows-msvc' || matrix.platform == 'macos' && 'x86_64-apple-darwin,aarch64-apple-darwin' || 'x86_64-unknown-linux-gnu' }}
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Install Node dependencies
+        run: |
+          cd vollcrypt-desktop
+          npm install
+
+      # -------------------------------------------------------------
+      # BUILD WINDOWS BUNDLES (x64, ARM64, x86)
+      # -------------------------------------------------------------
+      - name: Build Windows Installers
+        if: matrix.platform == 'windows'
+        run: |
+          cd vollcrypt-desktop
+          # Build x86_64-pc-windows-msvc (x64)
+          npm run tauri build -- --target x86_64-pc-windows-msvc
+          # Build aarch64-pc-windows-msvc (ARM64)
+          npm run tauri build -- --target aarch64-pc-windows-msvc
+          # Build i686-pc-windows-msvc (x86 32-bit)
+          npm run tauri build -- --target i686-pc-windows-msvc
+
+      # -------------------------------------------------------------
+      # BUILD MACOS BUNDLES (x64, ARM64)
+      # -------------------------------------------------------------
+      - name: Build macOS Installers
+        if: matrix.platform == 'macos'
+        run: |
+          cd vollcrypt-desktop
+          # Build x86_64-apple-darwin (Intel)
+          npm run tauri build -- --target x86_64-apple-darwin
+          # Build aarch64-apple-darwin (Apple Silicon)
+          npm run tauri build -- --target aarch64-apple-darwin
+
+      # -------------------------------------------------------------
+      # BUILD LINUX BUNDLES (x64 deb / AppImage)
+      # -------------------------------------------------------------
+      - name: Build Linux Installers
+        if: matrix.platform == 'linux'
+        run: |
+          cd vollcrypt-desktop
+          # Build x86_64-unknown-linux-gnu (x64)
+          npm run tauri build -- --target x86_64-unknown-linux-gnu
+
+      # -------------------------------------------------------------
+      # COLLECT AND STAGE ALL BUNDLES FOR UPLOAD
+      # -------------------------------------------------------------
+      - name: Stage Installers (Windows)
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          mkdir -p dist-installers
+          find vollcrypt-desktop/src-tauri/target -name "*.msi" -exec cp {} dist-installers/ \;
+          find vollcrypt-desktop/src-tauri/target -name "*.exe" -exec cp {} dist-installers/ \;
+          ls -la dist-installers/
+
+      - name: Stage Installers (macOS)
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          mkdir -p dist-installers
+          find vollcrypt-desktop/src-tauri/target -name "*.dmg" -exec cp {} dist-installers/ \;
+          find vollcrypt-desktop/src-tauri/target -name "*.app" -exec cp -r {} dist-installers/ \; 2>/dev/null || true
+          ls -la dist-installers/
+
+      - name: Stage Installers (Linux)
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          mkdir -p dist-installers
+          find vollcrypt-desktop/src-tauri/target -name "*.deb" -exec cp {} dist-installers/ \;
+          find vollcrypt-desktop/src-tauri/target -name "*.AppImage" -exec cp {} dist-installers/ \;
+          ls -la dist-installers/
+
+      # -------------------------------------------------------------
+      # UPLOAD TO GITHUB RELEASE
+      # -------------------------------------------------------------
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist-installers/*
+          draft: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
