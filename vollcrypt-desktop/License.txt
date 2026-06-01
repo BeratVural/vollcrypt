@@ -1,0 +1,14 @@
+Vollcrypt Software License Agreement
+
+This is a placeholder file. Please replace the content of this file with the actual legal license agreement text compiled by your lawyer.
+
+1. Grant of License:
+Subject to the terms of this Agreement, Vollcrypt grants you a non-exclusive, non-transferable, limited license to use the Software.
+
+2. Description of Other Rights and Limitations:
+You must maintain all copyright and trademark notices on all copies of the Software.
+
+3. Privacy & Offline Processing:
+All cryptography runs locally on your machine. No data is transmitted to remote servers. The authors are not responsible for any data loss resulting from forgotten passwords or lost private keys.
+
+[Please replace this text]

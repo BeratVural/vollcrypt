@@ -1,0 +1,456 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', -apple-system, sans-serif;
+  user-select: none;
+  outline: none !important;
+}
+
+/* Prevent outer focus rings or shadows on window elements */
+html, body, #root, .window-frame {
+  outline: none !important;
+}
+
+body {
+  background-color: transparent;
+  color: #e4e4e7;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+.window-frame {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  background-color: #070708;
+  border: 1px solid #1f1f23;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: none !important;
+}
+
+.app-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex: 1;
+  width: 100%;
+  background-color: #070708;
+  padding: 10px 20px 20px;
+}
+
+/* Central Cryptography Card */
+.main-card {
+  width: 100%;
+  max-width: 520px;
+  background-color: #0f0f11;
+  border: 1px solid #1f1f23;
+  border-radius: 12px;
+  padding: 28px;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header & Brand */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  border-bottom: 1px solid #1f1f23;
+  padding-bottom: 16px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-dot {
+  width: 8px;
+  height: 8px;
+  background-color: #f97316;
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(249, 115, 22, 0.6);
+}
+
+.brand-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #ffffff;
+}
+
+.version-info {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: #52525b;
+}
+
+/* Nav Menu / Tabs (Minimal segment control) */
+.nav-menu {
+  display: flex;
+  background-color: #16161a;
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid #1f1f23;
+  margin-bottom: 24px;
+}
+
+.nav-item {
+  flex: 1;
+  text-align: center;
+  padding: 8px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #71717a;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.nav-item:hover {
+  color: #a1a1aa;
+}
+
+.nav-item.active {
+  background-color: #222227;
+  color: #ffffff;
+}
+
+/* Subtabs (Encrypt / Decrypt, Mode) */
+.settings-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  gap: 12px;
+}
+
+.segmented-control {
+  display: flex;
+  background-color: #16161a;
+  padding: 2px;
+  border-radius: 6px;
+  border: 1px solid #1f1f23;
+}
+
+.segment-btn {
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #71717a;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.segment-btn:hover {
+  color: #a1a1aa;
+}
+
+.segment-btn.active {
+  background-color: #222227;
+  color: #ffffff;
+}
+
+/* Forms & Layout */
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-row {
+  display: flex;
+  gap: 12px;
+}
+
+.form-row .form-group {
+  flex: 1;
+}
+
+label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  color: #71717a;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+/* Input Fields */
+.text-input, .select-input {
+  width: 100%;
+  padding: 10px 12px;
+  background-color: #141416;
+  border: 1px solid #1f1f23;
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 13px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.text-input:focus, .select-input:focus {
+  border-color: #f97316;
+}
+
+.text-input::placeholder {
+  color: #3f3f46;
+}
+
+textarea.text-input {
+  min-height: 100px;
+  resize: none;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+
+/* File Picker Box */
+.file-picker {
+  display: flex;
+  gap: 8px;
+}
+
+.file-path {
+  flex-grow: 1;
+  background-color: #141416;
+  border: 1px solid #1f1f23;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #a1a1aa;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.file-picker-btn {
+  padding: 0 14px;
+  background-color: #1c1c21;
+  border: 1px solid #1f1f23;
+  color: #e4e4e7;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.file-picker-btn:hover {
+  background-color: #222227;
+  border-color: #2d2d34;
+}
+
+/* Action Buttons (Orange Primary) */
+.btn-primary {
+  width: 100%;
+  padding: 12px;
+  background-color: #f97316;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+}
+
+.btn-primary:hover {
+  background-color: #ea580c;
+}
+
+.btn-primary:active {
+  transform: translateY(0.5px);
+}
+
+.btn-secondary {
+  padding: 4px 10px;
+  background-color: #16161a;
+  border: 1px solid #1f1f23;
+  color: #a1a1aa;
+  font-size: 10px;
+  font-weight: 500;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-secondary:hover {
+  background-color: #222227;
+  color: #ffffff;
+}
+
+/* Custom Display Area (Hex / Keys) */
+.display-box-container {
+  margin-top: 16px;
+  border-top: 1px solid #1f1f23;
+  padding-top: 16px;
+}
+
+.display-box-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.display-box {
+  background-color: #141416;
+  border: 1px solid #1f1f23;
+  border-radius: 6px;
+  padding: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  word-break: break-all;
+  max-height: 100px;
+  overflow-y: auto;
+  color: #8b8d99;
+}
+
+.key-section {
+  margin-bottom: 14px;
+}
+
+.key-section:last-child {
+  margin-bottom: 0;
+}
+
+/* Status Notifications */
+.status-msg {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin-top: 16px;
+}
+
+.status-msg.success {
+  background-color: rgba(22, 101, 52, 0.1);
+  border: 1px solid rgba(22, 101, 52, 0.25);
+  color: #4ade80;
+}
+
+.status-msg.error {
+  background-color: rgba(153, 27, 27, 0.1);
+  border: 1px solid rgba(153, 27, 27, 0.25);
+  color: #f87171;
+}
+
+.status-msg.info {
+  background-color: rgba(30, 58, 138, 0.1);
+  border: 1px solid rgba(30, 58, 138, 0.25);
+  color: #60a5fa;
+}
+
+/* Footer Notice */
+.gdpr-notice {
+  font-size: 10px;
+  color: #44444a;
+  line-height: 1.4;
+  margin-top: 20px;
+  text-align: center;
+  border-top: 1px solid #1f1f23;
+  padding-top: 12px;
+}
+
+/* Custom Window Titlebar */
+.custom-titlebar {
+  height: 38px;
+  background-color: #0c0c0e;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 1px solid #1f1f23;
+  user-select: none;
+}
+
+.titlebar-brand {
+  display: flex;
+  align-items: center;
+}
+
+.titlebar-brand .brand-text {
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #ffffff;
+}
+
+.titlebar-brand .brand-crypt {
+  color: #a1a1aa;
+  font-weight: 500;
+}
+
+.titlebar-brand .titlebar-version {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: #44444a;
+  margin-left: 8px;
+}
+
+.titlebar-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.titlebar-btn {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 28px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  color: #71717a;
+  font-size: 10px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.titlebar-btn:hover {
+  background-color: #1c1c21;
+  color: #e4e4e7;
+}
+
+.titlebar-btn.close:hover {
+  background-color: #ea580c;
+  color: #ffffff;
+}
+
+.titlebar-btn.github-btn {
+  margin-right: 6px;
+  color: #71717a;
+}
+
+.titlebar-btn.github-btn:hover {
+  background-color: #1c1c21;
+  color: #f97316;
+}
