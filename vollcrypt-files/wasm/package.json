@@ -1,6 +1,6 @@
 {
   "name": "@vollcrypt/files-wasm",
-  "version": "0.2.0",
+  "version": "0.1.1",
   "description": "Cross-platform, quantum-resistant file encryption engine for the browser/Node via WebAssembly",
   "type": "module",
   "main": "pkg/vollcrypt_files_wasm.js",
