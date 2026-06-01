@@ -8,7 +8,8 @@ members = [
     "vollcrypt-files/wasm",
     "vollcrypt-files/bench",
     "vollcrypt-files/stress",
-    "vollcrypt-files/adversarial"
+    "vollcrypt-files/adversarial",
+    "vollcrypt-desktop/src-tauri"
 ]
 resolver = "2"
 
