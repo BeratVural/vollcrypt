@@ -37,6 +37,9 @@
     ],
     "licenseFile": "../License.txt",
     "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
       "wix": {
         "bannerPath": "../installer-assets/wix-banner.png",
         "dialogImagePath": "../installer-assets/wix-dialog.png"
