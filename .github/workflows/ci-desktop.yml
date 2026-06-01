@@ -1,0 +1,50 @@
+name: Vollcrypt Desktop CI
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "vollcrypt-desktop/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ci-desktop.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "vollcrypt-desktop/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ci-desktop.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check-desktop:
+    name: Build and Check Desktop
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Frontend Dependencies
+        run: cd vollcrypt-desktop && npm install
+
+      - name: Build Frontend
+        run: cd vollcrypt-desktop && npm run build
+
+      - name: Verify Backend (Rust)
+        run: cargo check -p vollcrypt-desktop

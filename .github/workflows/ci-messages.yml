@@ -3,43 +3,42 @@ name: Vollcrypt Messages CI
 on:
   push:
     branches: ["main"]
+    paths:
+      - "vollcrypt-messages/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ci-messages.yml"
   pull_request:
     branches: ["main"]
+    paths:
+      - "vollcrypt-messages/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ci-messages.yml"
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: Test all crates
+  test-core:
+    name: Test Messages Core Crate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Run Workspace Tests
-        run: cargo test --workspace
+      - name: Run Core Tests
+        run: cargo test -p vollcrypt-core
 
   build-node:
     name: Build Node Bindings
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -49,19 +48,18 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Dependencies
-        run: npm install
+      - name: Install dependencies
+        run: cd vollcrypt-messages/node && npm install
 
-      - name: Build Node
-        run: |
-          npm run build:messages:node
-          npm run build:files:node
+      - name: Build Node Bindings
+        run: cd vollcrypt-messages/node && npm run build
 
   build-wasm:
     name: Build WASM Bindings
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -73,13 +71,8 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Install Dependencies
-        run: npm install
-
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-      - name: Build WASM
-        run: |
-          npm run build:messages:wasm
-          npm run build:files:wasm
+      - name: Build WASM Bindings
+        run: wasm-pack build vollcrypt-messages/wasm --target web --out-dir pkg
