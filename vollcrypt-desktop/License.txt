@@ -1,14 +1,79 @@
-Vollcrypt Software License Agreement
+END USER LICENSE AGREEMENT (EULA) AND PRIVACY POLICY
+Software: Vollcrypt Desktop
 
-This is a placeholder file. Please replace the content of this file with the actual legal license agreement text compiled by your lawyer.
+Last Updated: June 2026
 
-1. Grant of License:
-Subject to the terms of this Agreement, Vollcrypt grants you a non-exclusive, non-transferable, limited license to use the Software.
+Compliance Frameworks: EU GDPR (2016/679), TR KVKK (No. 6698), US CCPA/CPRA
 
-2. Description of Other Rights and Limitations:
-You must maintain all copyright and trademark notices on all copies of the Software.
+IMPORTANT – READ CAREFULLY: This End User License Agreement and Privacy Policy ("Agreement") is a legally binding contract between you (the "User") and the developer(s)/owner(s) of Vollcrypt Desktop ("Developer"). By installing, running, or using the Software, you acknowledge that you have read, understood, and agree to be bound by this Agreement. If you do not agree, do not install or use the Software.
 
-3. Privacy & Offline Processing:
-All cryptography runs locally on your machine. No data is transmitted to remote servers. The authors are not responsible for any data loss resulting from forgotten passwords or lost private keys.
+1. GRANT OF LICENSE
+Subject to your compliance with this Agreement, the Developer grants you a limited, non-exclusive, non-transferable, revocable license to install and use the Software on your local device solely for local data encryption and decryption. All intellectual property rights in the Software remain exclusively with the Developer.
 
-[Please replace this text]
+2. PRIVACY POLICY & REGULATORY COMPLIANCE (GDPR, KVKK, CCPA)
+The Software is engineered under the strict principles of Privacy by Design and Zero-Knowledge Architecture. Because the Software operates completely offline, the following compliance disclosures apply globally:
+
+A. General Data Practices (All Jurisdictions)
+No Collection: The Software does not collect, store, log, monitor, or transmit any Personal Data, Personal Information, sensitive data, telemetry, or usage metrics.
+
+Local Processing Only: All cryptographic operations (encryption, decryption, key generation) are executed entirely on your local machine's CPU/RAM. No data ever leaves your device.
+
+No Access to Keys/Files: Your master passwords, encryption keys, and source files are never visible to, or accessible by, the Developer.
+
+B. EU GDPR Compliance Statement
+Pursuant to the General Data Protection Regulation (GDPR) (EU) 2016/679:
+
+Data Controller: Since the Developer does not collect or process any personal data via the Software, the Developer does not act as a "Data Controller" or "Data Processor" under the GDPR. The User maintains exclusive controller-like custody over their own data on their local machine.
+
+Data Subject Rights: Since no personal data is ever collected or processed by the Developer, requests for access, rectification, erasure ("right to be forgotten"), restriction, or portability under GDPR Articles 15-22 are technically inapplicable, as the Developer holds zero data to act upon.
+
+C. Turkish KVKK Compliance Statement
+Pursuant to the Law on the Protection of Personal Data No. 6698 ("KVKK") of the Republic of Türkiye:
+
+Data Controller Status: Because the Software operates completely offline and does not collect, record, process, or transfer any personal data to third parties or abroad, the Developer does not qualify as a "Data Controller" (Veri Sorumlusu) under the KVKK.
+
+Data Subject Rights: Your rights under Article 11 of the KVKK (including the right to request access, correction, or deletion of personal data) are technically inapplicable, as the Developer does not collect, hold, or possess any of your data. The security and absolute governance of your data remain solely under your local control.
+
+D. California CCPA/CPRA Compliance Statement
+Pursuant to the California Consumer Privacy Act, as amended by the California Privacy Rights Act (CCPA/CPRA):
+
+No Sale or Sharing: The Developer does not sell and does not share consumer personal information. The Software has zero commercial tracking mechanisms.
+
+Notice at Collection: Because the Software collects 0% personal information from California residents, no consumer profiles are built, and no financial incentives are offered.
+
+⚠️ CRITICAL SECURITY WARNING: NO BACKDOORS & NO RECOVERY
+Because the Software operates on a pure Zero-Knowledge model, you explicitly acknowledge that:
+
+You are solely responsible for the management and safekeeping of your passwords and cryptographic keys (including public and secret keys).
+
+THERE IS NO RECOVERY MECHANISM. There is no password reset tool, no cloud backup, and no administrative "backdoor."
+
+PERMANENT DATA LOSS: If you forget your password or lose your secret key, your encrypted data becomes permanently unrecoverable. The Developer cannot decrypt your files or bypass the encryption under any legal, technical, or practical circumstance.
+
+3. CRYPTOGRAPHIC STANDARDS & DATA INTEGRITY
+The Software utilizes high-grade, post-quantum hybrid cryptographic standards to ensure local data confidentiality:
+
+Symmetric Encryption: Argon2id or PBKDF2 for key derivation, combined with AES-256-GCM for Authenticated Encryption.
+
+Asymmetric Hybrid KEM: Combines classical X25519 with Post-Quantum Cryptography standard ML-KEM-768 (Kyber).
+
+Digital Signatures: Hybrid implementation of Ed25519 and Post-Quantum ML-DSA-65 (Dilithium).
+
+Integrity Verification: Utilizes a SHA-256-based Merkle Tree structure. Any unauthorized bit-level alteration or tampering with an encrypted file will cause the decryption sequence to fail and halt immediately.
+
+4. FILE SYSTEM ACCESS AND OPERATING SYSTEM PERMISSIONS
+The Software requests local file system permissions only when actively prompted by the User. It interacts exclusively with files explicitly selected by the User via the operating system's standard File Picker interface. The Software writes encrypted data as a new file in your designated target directory and will not delete or overwrite source files unless explicitly commanded by the User.
+
+5. DISCLAIMER OF WARRANTIES
+THE SOFTWARE IS PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED. TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE DEVELOPER EXPRESSLY DISCLAIMS ALL WARRANTIES, INCLUDING BUT NOT LIMITED TO IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. THE DEVELOPER DOES NOT WARRANT THAT THE SOFTWARE WILL BE COMPLETELY ERROR-FREE, UNINTERRUPTED, OR INVULNERABLE TO ALL FUTURE COMPUTATIONAL THREATS.
+
+6. LIMITATION OF LIABILITY
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE DEVELOPER, AUTHORS, OR COPYRIGHT HOLDERS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, LOSS OF DATA, PASSWORD LOSS, CORRUPTION OF ENCRYPTED FILES, LOSS OF PROFITS, OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF, OR INABILITY TO USE, THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+7. INDEMNIFICATION
+You agree to indemnify, defend, and hold harmless the Developer from and against any and all claims, liabilities, damages, losses, or expenses (including reasonable legal and attorneys' fees) arising out of or in any way connected with your misuse of the Software, your violation of this Agreement, or your infringement of any third-party rights.
+
+8. GOVERNING LAW AND SEVERABILITY
+If any provision of this Agreement is found to be invalid or unenforceable by a court of competent jurisdiction, that provision shall be limited or eliminated to the minimum extent necessary, and the remaining provisions shall remain in full force and effect. This Agreement constitutes the entire contract between the User and the Developer regarding the Software.
+
+BY PROCEEDING WITH THE INSTALLATION, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT, UNDERSTAND IT, AGREE TO BE BOUND BY ITS LEGAL CLAUSES, AND ACCEPT ABSOLUTE RESPONSIBILITY FOR YOUR PASSWORDS AND CRYPTOGRAPHIC KEYS.

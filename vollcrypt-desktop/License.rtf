@@ -1,14 +1,81 @@
-{\rtf1\ansi\deff0{\fonttbl{\f0\fnil\fcharset0 Arial;}}\viewkind4\uc1\pard\lang1033\f0\fs20 Vollcrypt Software License Agreement\par
+{\rtf1\ansi\deff0{\fonttbl{\f0\fnil\fcharset0 Arial;}}\viewkind4\uc1\pard\lang1033\f0\fs20
+\b END USER LICENSE AGREEMENT (EULA) AND PRIVACY POLICY\b0\par
+\b Software:\b0  Vollcrypt Desktop\par
 \par
-This is a placeholder file in Rich Text Format (.rtf) required for the WiX installer. Please replace the content of this file with the actual legal license agreement text compiled by your lawyer.\par
+\b Last Updated:\b0  June 2026\par
 \par
-1. Grant of License:\par
-Subject to the terms of this Agreement, Vollcrypt grants you a non-exclusive, non-transferable, limited license to use the Software.\par
+\b Compliance Frameworks:\b0  EU GDPR (2016/679), TR KVKK (No. 6698), US CCPA/CPRA\par
 \par
-2. Description of Other Rights and Limitations:\par
-You must maintain all copyright and trademark notices on all copies of the Software.\par
+\b IMPORTANT - READ CAREFULLY:\b0  This End User License Agreement and Privacy Policy ("Agreement") is a legally binding contract between you (the "User") and the developer(s)/owner(s) of Vollcrypt Desktop ("Developer"). By installing, running, or using the Software, you acknowledge that you have read, understood, and agree to be bound by this Agreement. If you do not agree, do not install or use the Software.\par
 \par
-3. Privacy & Offline Processing:\par
-All cryptography runs locally on your machine. No data is transmitted to remote servers. The authors are not responsible for any data loss resulting from forgotten passwords or lost private keys.\par
+\b 1. GRANT OF LICENSE\b0\par
+Subject to your compliance with this Agreement, the Developer grants you a limited, non-exclusive, non-transferable, revocable license to install and use the Software on your local device solely for local data encryption and decryption. All intellectual property rights in the Software remain exclusively with the Developer.\par
 \par
-[Please replace this text]\par}
+\b 2. PRIVACY POLICY & REGULATORY COMPLIANCE (GDPR, KVKK, CCPA)\b0\par
+The Software is engineered under the strict principles of Privacy by Design and Zero-Knowledge Architecture. Because the Software operates completely offline, the following compliance disclosures apply globally:\par
+\par
+\b A. General Data Practices (All Jurisdictions)\b0\par
+\b No Collection:\b0  The Software does not collect, store, log, monitor, or transmit any Personal Data, Personal Information, sensitive data, telemetry, or usage metrics.\par
+\par
+\b Local Processing Only:\b0  All cryptographic operations (encryption, decryption, key generation) are executed entirely on your local machine's CPU/RAM. No data ever leaves your device.\par
+\par
+\b No Access to Keys/Files:\b0  Your master passwords, encryption keys, and source files are never visible to, or accessible by, the Developer.\par
+\par
+\b B. EU GDPR Compliance Statement\b0\par
+Pursuant to the General Data Protection Regulation (GDPR) (EU) 2016/679:\par
+\par
+\b Data Controller:\b0  Since the Developer does not collect or process any personal data via the Software, the Developer does not act as a "Data Controller" or "Data Processor" under the GDPR. The User maintains exclusive controller-like custody over their own data on their local machine.\par
+\par
+\b Data Subject Rights:\b0  Since no personal data is ever collected or processed by the Developer, requests for access, rectification, erasure ("right to be forgotten"), restriction, or portability under GDPR Articles 15-22 are technically inapplicable, as the Developer holds zero data to act upon.\par
+\par
+\b C. Turkish KVKK Compliance Statement\b0\par
+Pursuant to the Law on the Protection of Personal Data No. 6698 ("KVKK") of the Republic of T\u252?rkiye:\par
+\par
+\b Data Controller Status:\b0  Because the Software operates completely offline and does not collect, record, process, or transfer any personal data to third parties or abroad, the Developer does not qualify as a "Data Controller" (Veri Sorumlusu) under the KVKK.\par
+\par
+\b Data Subject Rights:\b0  Your rights under Article 11 of the KVKK (including the right to request access, correction, or deletion of personal data) are technically inapplicable, as the Developer does not collect, hold, or possess any of your data. The security and absolute governance of your data remain solely under your local control.\par
+\par
+\b D. California CCPA/CPRA Compliance Statement\b0\par
+Pursuant to the California Consumer Privacy Act, as amended by the California Privacy Rights Act (CCPA/CPRA):\par
+\par
+\b No Sale or Sharing:\b0  The Developer does not sell and does not share consumer personal information. The Software has zero commercial tracking mechanisms.\par
+\par
+\b Notice at Collection:\b0  Because the Software collects 0% personal information from California residents, no consumer profiles are built, and no financial incentives are offered.\par
+\par
+\b [!] CRITICAL SECURITY WARNING: NO BACKDOORS & NO RECOVERY\b0\par
+Because the Software operates on a pure Zero-Knowledge model, you explicitly acknowledge that:\par
+\par
+You are solely responsible for the management and safekeeping of your passwords and cryptographic keys (including public and secret keys).\par
+\par
+\b THERE IS NO RECOVERY MECHANISM.\b0  There is no password reset tool, no cloud backup, and no administrative "backdoor."\par
+\par
+\b PERMANENT DATA LOSS:\b0  If you forget your password or lose your secret key, your encrypted data becomes permanently unrecoverable. The Developer cannot decrypt your files or bypass the encryption under any legal, technical, or practical circumstance.\par
+\par
+\b 3. CRYPTOGRAPHIC STANDARDS & DATA INTEGRITY\b0\par
+The Software utilizes high-grade, post-quantum hybrid cryptographic standards to ensure local data confidentiality:\par
+\par
+\b Symmetric Encryption:\b0  Argon2id or PBKDF2 for key derivation, combined with AES-256-GCM for Authenticated Encryption.\par
+\par
+\b Asymmetric Hybrid KEM:\b0  Combines classical X25519 with Post-Quantum Cryptography standard ML-KEM-768 (Kyber).\par
+\par
+\b Digital Signatures:\b0  Hybrid implementation of Ed25519 and Post-Quantum ML-DSA-65 (Dilithium).\par
+\par
+\b Integrity Verification:\b0  Utilizes a SHA-256-based Merkle Tree structure. Any unauthorized bit-level alteration or tampering with an encrypted file will cause the decryption sequence to fail and halt immediately.\par
+\par
+\b 4. FILE SYSTEM ACCESS AND OPERATING SYSTEM PERMISSIONS\b0\par
+The Software requests local file system permissions only when actively prompted by the User. It interacts exclusively with files explicitly selected by the User via the operating system's standard File Picker interface. The Software writes encrypted data as a new file in your designated target directory and will not delete or overwrite source files unless explicitly commanded by the User.\par
+\par
+\b 5. DISCLAIMER OF WARRANTIES\b0\par
+THE SOFTWARE IS PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED. TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE DEVELOPER EXPRESSLY DISCLAIMS ALL WARRANTIES, INCLUDING BUT NOT LIMITED TO IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. THE DEVELOPER DOES NOT WARRANT THAT THE SOFTWARE WILL BE COMPLETELY ERROR-FREE, UNINTERRUPTED, OR INVULNERABLE TO ALL FUTURE COMPUTATIONAL THREATS.\par
+\par
+\b 6. LIMITATION OF LIABILITY\b0\par
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE DEVELOPER, AUTHORS, OR COPYRIGHT HOLDERS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, LOSS OF DATA, PASSWORD LOSS, CORRUPTION OF ENCRYPTED FILES, LOSS OF PROFITS, OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF, OR INABILITY TO USE, THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\par
+\par
+\b 7. INDEMNIFICATION\b0\par
+You agree to indemnify, defend, and hold harmless the Developer from and against any and all claims, liabilities, damages, losses, or expenses (including reasonable legal and attorneys' fees) arising out of or in any way connected with your misuse of the Software, your violation of this Agreement, or your infringement of any third-party rights.\par
+\par
+\b 8. GOVERNING LAW AND SEVERABILITY\b0\par
+If any provision of this Agreement is found to be invalid or unenforceable by a court of competent jurisdiction, that provision shall be limited or eliminated to the minimum extent necessary, and the remaining provisions shall remain in full force and effect. This Agreement constitutes the entire contract between the User and the Developer regarding the Software.\par
+\par
+\b BY PROCEEDING WITH THE INSTALLATION, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT, UNDERSTAND IT, AGREE TO BE BOUND BY ITS LEGAL CLAUSES, AND ACCEPT ABSOLUTE RESPONSIBILITY FOR YOUR PASSWORDS AND CRYPTOGRAPHIC KEYS.\b0\par
+}
