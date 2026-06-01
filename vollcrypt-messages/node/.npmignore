@@ -1,0 +1,7 @@
+# Override root .gitignore to include native bindings
+!index.js
+!index.d.ts
+!vollcrypt.*.node
+
+# Ignore source code
+src/

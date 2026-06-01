@@ -1,0 +1,10 @@
+# Override root .gitignore to include native bindings
+!index.js
+!index.d.ts
+!vollcrypt-files-node.*.node
+
+# Ignore source code and test files
+src/
+tests/
+Cargo.toml
+Cargo.lock

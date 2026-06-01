@@ -1,0 +1,8 @@
+# Override root .gitignore to include compiled WASM files
+!pkg/
+
+# Ignore source code and test files
+src/
+tests/
+Cargo.toml
+Cargo.lock
