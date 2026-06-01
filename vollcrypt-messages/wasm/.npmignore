@@ -1,0 +1,7 @@
+# Override root .gitignore to include compiled WASM files
+!pkg/
+!fast.js
+!fast.d.ts
+
+# Ignore source code
+src/
