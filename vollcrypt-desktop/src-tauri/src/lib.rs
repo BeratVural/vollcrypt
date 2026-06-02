@@ -20,7 +20,14 @@ pub fn run() {
             save_text_file,
             load_text_file,
             save_bin_file,
-            load_bin_file
+            load_bin_file,
+            seal_file,
+            inspect_sealed_file,
+            verify_container_file,
+            encrypt_file_threshold,
+            decrypt_file_threshold,
+            encrypt_text_threshold,
+            decrypt_text_threshold
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -40,6 +40,9 @@ export interface WrapEntry {
   ciphertextMlKem?: Buffer
   groupId?: Buffer
   wrappedKey: Buffer
+  t?: number
+  n?: number
+  shareSetId?: Buffer
 }
 export declare function wrapDekWithPassword(dek: Uint8Array, password: string, kdf: KdfChoice): WrapEntry
 export declare function unwrapDekWithPassword(wrap: WrapEntry, password: string): Buffer
@@ -57,6 +60,21 @@ export declare function wrapKeyToRecipient(key: Uint8Array, recipientId: Uint8Ar
 export declare function unwrapKeyWithRecipientKey(wrap: WrapEntry, recipientSk: KeySubpair): Buffer
 export declare function wrapDekForGroup(dek: Uint8Array, groupId: Uint8Array, gkVersion: number, gk: Uint8Array): WrapEntry
 export declare function unwrapDekWithGroupKey(wrap: WrapEntry, gk: Uint8Array): Buffer
+export interface WrapThresholdResult {
+  wrap: WrapEntry
+  shares: Array<string>
+}
+export interface ShareJson {
+  shareSetId: Buffer
+  t: number
+  n: number
+  x: number
+  y: Buffer
+}
+export declare function wrapDekWithThreshold(dek: Buffer, fileId: Buffer, t: number, n: number, cipherSuiteId: number): WrapThresholdResult
+export declare function unwrapDekWithThresholdShares(wrap: WrapEntry, fileId: Buffer, shares: Array<string>, cipherSuiteId: number): Buffer
+export declare function encodeShare(share: ShareJson): string
+export declare function decodeShare(s: string): ShareJson
 export interface Ed25519KeypairObj {
   publicKey: Buffer
   secretKey: Buffer

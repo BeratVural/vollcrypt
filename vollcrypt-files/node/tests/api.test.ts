@@ -529,3 +529,33 @@ test('pipelined file encryption with signing', async () => {
 
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+test('threshold SSS mode roundtrip', () => {
+  const dek = api.generateDek();
+  const fileId = api.generateFileId();
+  const t = 2;
+  const n = 3;
+  const cipherSuiteId = 0;
+
+  const result = api.wrapDekWithThreshold(dek, fileId, t, n, cipherSuiteId);
+  assert.strictEqual(result.wrap.kind, 'Threshold');
+  assert.strictEqual(result.shares.length, n);
+
+  // Test decoding and encoding a share
+  const shareObj = api.decodeShare(result.shares[0]);
+  assert.strictEqual(shareObj.t, t);
+  assert.strictEqual(shareObj.n, n);
+  const reencoded = api.encodeShare(shareObj);
+  assert.strictEqual(reencoded, result.shares[0]);
+
+  // Decrypt with 2 shares (threshold met)
+  const subsetShares = [result.shares[0], result.shares[1]];
+  const unwrapped = api.unwrapDekWithThresholdShares(result.wrap, fileId, subsetShares, cipherSuiteId);
+  assert.deepStrictEqual(unwrapped, dek);
+
+  // Decrypt with 1 share (threshold not met)
+  assert.throws(() => {
+    api.unwrapDekWithThresholdShares(result.wrap, fileId, [result.shares[0]], cipherSuiteId);
+  });
+});
+
