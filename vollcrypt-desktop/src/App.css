@@ -620,6 +620,20 @@ textarea.text-input {
   pointer-events: auto;
 }
 
+/* Right-aligned tooltip layout for right screen edge items */
+.tooltip-content.right-aligned {
+  left: auto !important;
+  right: -20px !important;
+  transform: none !important;
+}
+
+.tooltip-content.right-aligned::after {
+  left: auto !important;
+  right: 20px !important;
+  transform: none !important;
+}
+
+
 /* Splash Screen Styles */
 .splash-screen {
   position: fixed;

@@ -618,36 +618,48 @@ pub async fn seal_file(
     sign_info: Option<PipelinedSignInfoJson>,
 ) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        let source_file = std::fs::File::open(&path)
-            .map_err(|e| format!("Failed to open file: {}", e))?;
-        
         let temp_path = format!("{}.tmp_seal", path);
-        let dest_file = std::fs::File::create(&temp_path)
-            .map_err(|e| format!("Failed to create temporary file: {}", e))?;
 
-        let core_mode = match mode.as_str() {
-            "seal" => vollcrypt_files_core::SealMode::Seal,
-            "purge" => vollcrypt_files_core::SealMode::Purge,
-            _ => return Err("Invalid seal mode".to_string()),
-        };
+        let seal_result = (|| {
+            let source_file = std::fs::File::open(&path)
+                .map_err(|e| format!("Failed to open file: {}", e))?;
+            
+            let dest_file = std::fs::File::create(&temp_path)
+                .map_err(|e| format!("Failed to create temporary file: {}", e))?;
 
-        let core_sign_info = match sign_info {
-            Some(si) => Some(parse_sign_info(&si.signer_pk, &si.signer_sk, &si.key_log_id, si.timestamp)?),
-            None => None,
-        };
+            let core_mode = match mode.as_str() {
+                "seal" => vollcrypt_files_core::SealMode::Seal,
+                "purge" => vollcrypt_files_core::SealMode::Purge,
+                _ => return Err("Invalid seal mode".to_string()),
+            };
 
-        let opts = vollcrypt_files_core::SealOptions {
-            mode: core_mode,
-            reason,
-            sign_info: core_sign_info,
-        };
+            let core_sign_info = match sign_info {
+                Some(si) => Some(parse_sign_info(&si.signer_pk, &si.signer_sk, &si.key_log_id, si.timestamp)?),
+                None => None,
+            };
 
-        vollcrypt_files_core::seal_container(source_file, dest_file, opts)
-            .map_err(|e| format!("Sealing failed: {}", e))?;
+            let opts = vollcrypt_files_core::SealOptions {
+                mode: core_mode,
+                reason,
+                sign_info: core_sign_info,
+            };
+
+            vollcrypt_files_core::seal_container(source_file, dest_file, opts)
+                .map_err(|e| format!("Sealing failed: {}", e))?;
+
+            Ok(())
+        })();
+
+        if let Err(err) = seal_result {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(err);
+        }
 
         // Replace original file with temporary file
-        std::fs::rename(&temp_path, &path)
-            .map_err(|e| format!("Failed to replace original file with sealed container: {}", e))?;
+        if let Err(e) = std::fs::rename(&temp_path, &path) {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(format!("Failed to replace original file with sealed container: {}", e));
+        }
 
         Ok(())
     })
