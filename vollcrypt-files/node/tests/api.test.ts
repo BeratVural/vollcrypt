@@ -119,7 +119,7 @@ test('group manifest genesis + addMember + removeMember', () => {
   const initialGk = api.generateDek();
   const founderId = api.generateFileId();
   const founderRecipient = api.generateRecipientKeypair();
-  const founderSigning = api.ed25519KeypairGenerate();
+  const founderSigning = api.hybridKeypairGenerate();
 
   // Genesis
   const manifest = api.GroupManifest.genesis(
@@ -142,7 +142,7 @@ test('group manifest genesis + addMember + removeMember', () => {
   // Add Member
   const newMemberId = api.generateFileId();
   const newRecipient = api.generateRecipientKeypair();
-  const newSigning = api.ed25519KeypairGenerate();
+  const newSigning = api.hybridKeypairGenerate();
   const newMemberKeys = {
     recipient: newRecipient.publicKey,
     signingPk: newSigning.publicKey,
@@ -183,7 +183,7 @@ test('key rotation and rewrapping', () => {
   const gk1 = api.generateDek();
   const founderId = api.generateFileId();
   const founderRecipient = api.generateRecipientKeypair();
-  const founderSigning = api.ed25519KeypairGenerate();
+  const founderSigning = api.hybridKeypairGenerate();
 
   const manifest = api.GroupManifest.genesis(
     groupId,
@@ -226,6 +226,7 @@ test('key rotation and rewrapping', () => {
     chunkSize: 65536,
     plaintextSize: 1000,
     merkleRoot: api.generateDek(),
+    hashAlgorithm: 0,
     wraps: [groupWrap],
     signedMetadata: undefined,
     signature: undefined,
@@ -264,6 +265,7 @@ test('crypto shred file header', () => {
     chunkSize: 65536,
     plaintextSize: 100,
     merkleRoot: api.generateDek(),
+    hashAlgorithm: 0,
     wraps: [wrap],
     signedMetadata: undefined,
     signature: undefined,
@@ -278,7 +280,7 @@ test('crypto shred file header', () => {
 
 test('signed header plain + verify', () => {
   const fileId = api.generateFileId();
-  const signerKeys = api.ed25519KeypairGenerate();
+  const signerKeys = api.hybridKeypairGenerate();
   const keyLogId = api.generateDek();
 
   const header: api.HeaderObj = {
@@ -289,6 +291,7 @@ test('signed header plain + verify', () => {
     chunkSize: 65536,
     plaintextSize: 100,
     merkleRoot: api.generateDek(),
+    hashAlgorithm: 0,
     wraps: [],
     signedMetadata: undefined,
     signature: undefined,
@@ -311,10 +314,10 @@ test('signed header plain + verify', () => {
 
 test('signed header sealed + resolve_sender', () => {
   const fileId = api.generateFileId();
-  const signerKeys = api.ed25519KeypairGenerate();
+  const signerKeys = api.hybridKeypairGenerate();
 
   // Setup KeyLog
-  const authority = api.ed25519KeypairGenerate();
+  const authority = api.hybridKeypairGenerate();
   const keyLog = api.KeyLog.create(authority.publicKey);
 
   const userId = api.generateFileId();
@@ -338,6 +341,7 @@ test('signed header sealed + resolve_sender', () => {
     chunkSize: 65536,
     plaintextSize: 100,
     merkleRoot: api.generateDek(),
+    hashAlgorithm: 0,
     wraps: [],
     signedMetadata: undefined,
     signature: undefined,
@@ -361,7 +365,7 @@ test('signed header sealed + resolve_sender', () => {
   assert.ok(signed.signature);
   assert.strictEqual(signed.signedMetadata?.kind, 'Sealed');
 
-  const signerPubkey = api.verifyHeaderSignatureSealed(signed, gk);
+  const signerPubkey = api.verifyHeaderSignatureSealed(signed, gk, keyLog);
   assert.deepStrictEqual(signerPubkey, signerKeys.publicKey);
 
   const senderInfo = api.resolveSender(signed, keyLog, gk);
@@ -465,15 +469,25 @@ test('pipelined file encryption with signing', async () => {
   const fileId = api.generateFileId();
   const chunkSize = 4096;
 
+  const kdf = {
+    kind: 'Pbkdf2',
+    rounds: 1000,
+    salt: api.generateSalt(),
+    mCost: undefined,
+    tCost: undefined,
+    pCost: undefined,
+  };
+  const wrap = api.wrapDekWithPassword(dek, 'pipelined-password', kdf);
+
   // Sign info setup (Plain)
-  const signerKeys = api.ed25519KeypairGenerate();
+  const signerKeys = api.hybridKeypairGenerate();
   const keyLogId = api.generateDek();
   const timestamp = Math.floor(Date.now() / 1000);
 
   const signInfo = {
     kind: 'Plain',
-    signerEd25519Pk: signerKeys.publicKey,
-    signerEd25519Sk: signerKeys.secretKey,
+    signerPk: signerKeys.publicKey,
+    signerSk: signerKeys.secretKey,
     keyLogId: keyLogId,
     timestamp: timestamp,
     sealedGroupId: undefined,
@@ -488,13 +502,13 @@ test('pipelined file encryption with signing', async () => {
     dek,
     fileId,
     chunkSize,
-    [],
+    [wrap],
     0, // Mode::Password
     2, // num_workers
     signInfo
   );
 
-  assert.strictEqual(header.version, 2);
+  assert.strictEqual(header.version, 3);
   assert.ok(header.signature);
   assert.strictEqual(header.signedMetadata?.kind, 'Plain');
 

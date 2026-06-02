@@ -54,6 +54,12 @@ pub enum SignedMetadata {
         sealed_tag: [u8; 16],
         timestamp: u64,
     },
+    SovereignSealed {
+        signer_pubkey: HybridPublicKey,
+        mode: u8,
+        reason: String,
+        timestamp: u64,
+    },
 }
 
 impl SignedMetadata {
@@ -151,6 +157,47 @@ impl SignedMetadata {
                     timestamp,
                 })
             }
+            2 => {
+                let pk_len = if version == 3 { 1984 } else { 32 };
+                let min_expected = 1 + 8 + pk_len + 1 + 4;
+                if input.len() < min_expected {
+                    return Err(FileFormatError::TruncatedHeader {
+                        expected: min_expected,
+                        got: input.len(),
+                    });
+                }
+                let signer_pubkey = if version == 3 {
+                    HybridPublicKey::parse(&input[9..9 + 1984])?
+                } else {
+                    let mut ed25519 = [0u8; 32];
+                    ed25519.copy_from_slice(&input[9..41]);
+                    HybridPublicKey {
+                        ed25519,
+                        mldsa: [0u8; 1952],
+                    }
+                };
+                let mode_offset = 9 + pk_len;
+                let mode = input[mode_offset];
+                let mut reason_len_bytes = [0u8; 4];
+                reason_len_bytes.copy_from_slice(&input[mode_offset + 1..mode_offset + 5]);
+                let reason_len = u32::from_be_bytes(reason_len_bytes) as usize;
+                let expected_total = mode_offset + 5 + reason_len;
+                if input.len() < expected_total {
+                    return Err(FileFormatError::TruncatedHeader {
+                        expected: expected_total,
+                        got: input.len(),
+                    });
+                }
+                let reason = String::from_utf8(input[mode_offset + 5..expected_total].to_vec())
+                    .map_err(|_| FileFormatError::InvalidSealedPayload)?;
+
+                Ok(SignedMetadata::SovereignSealed {
+                    signer_pubkey,
+                    mode,
+                    reason,
+                    timestamp,
+                })
+            }
             _ => Err(FileFormatError::InvalidWrapPayload),
         }
     }
@@ -195,6 +242,27 @@ impl SignedMetadata {
                 out.extend_from_slice(&(sealed_payload.len() as u32).to_be_bytes());
                 out.extend_from_slice(sealed_payload);
                 out.extend_from_slice(sealed_tag);
+                out
+            }
+            SignedMetadata::SovereignSealed {
+                signer_pubkey,
+                mode,
+                reason,
+                timestamp,
+            } => {
+                let pk_bytes = if version == 3 {
+                    signer_pubkey.write()
+                } else {
+                    signer_pubkey.ed25519.to_vec()
+                };
+                let reason_bytes = reason.as_bytes();
+                let mut out = Vec::with_capacity(1 + 8 + pk_bytes.len() + 1 + 4 + reason_bytes.len());
+                out.push(2); // signer_kind
+                out.extend_from_slice(&timestamp.to_be_bytes());
+                out.extend_from_slice(&pk_bytes);
+                out.push(*mode);
+                out.extend_from_slice(&(reason_bytes.len() as u32).to_be_bytes());
+                out.extend_from_slice(reason_bytes);
                 out
             }
         }

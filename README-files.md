@@ -274,6 +274,19 @@ To maximize CPU and NVMe SSD throughput, Vollcrypt Files implements bounded-memo
 *   **Bounded Memory Consumption:** Employs bounded channels to buffer at most `num_workers * 2` chunks, strictly capping heap usage to $O(\text{num\_workers} \times \text{chunk\_size})$ regardless of file size.
 *   **Out-of-order Processing with Sequential Write:** Crypto worker threads encrypt/decrypt chunks concurrently out-of-order, while a re-ordering buffer sequentially writes them to the target file.
 
+#### 6. Sovereign Sealing & Crypto-Shredding
+*   **Irreversible Key Erasure:** Sovereign sealing is designed for strict compliance and data lifecycle governance. When a container is sealed, the `WrapTable` containing all `WrapEntry` records protecting the DEK is permanently cleared (purged). 
+*   **Decryption Blocked:** Once sealed, the Data Encryption Key (DEK) is destroyed inside the file container, making decryption mathematically impossible unless the caller retains a backup copy of the DEK externally. Standard decryption routines will immediately reject sealed containers with a `ContainerSealed` error.
+*   **Signed Sealed Markers:** For signed formats (v2 and v3 containers), the owner signs a domain-separated sealed marker (`"vollcrypt-file-sealed-marker-v1"`) which is written to the header's `SignedMetadata` extension. This prevents attackers from stripping the sealed marker to make the container look unsealed.
+*   **Crypto-Shredding (Purge Mode):** In addition to erasing wraps, Vollcrypt Files supports `Purge` mode. This mode actively zeroizes the entire ciphertext body of the file container before truncating the file to the header size, ensuring both keys and encrypted blocks are destroyed.
+
+#### 7. Shield Integrity Policy
+*   **Tamper-Reactive Security:** The `Shield` framework enforces strict integrity policy validation rules over the file container. It classifies and intercepts potential tampering vectors before raw data is decrypted or processed.
+*   **Signature Enforcement:** Enforces the presence of valid owner signatures on v2/v3 containers. Standard unsigned files or legacy v1 headers are rejected unless the signature policy is explicitly set to `Optional` (for backward-compatibility).
+*   **Verified Release Mode:** The default policy (`ReleaseMode::Verified`) uses a double-pass decryption system. It verifies the complete Merkle root and chunk tag chain over the entire container before releasing any plaintext bytes to the output. If any bit-flip or chunk reordering is detected, exactly zero bytes of plaintext are written, preventing Chosen-Ciphertext Attacks (CCA2) on release.
+*   **Streaming Release Mode:** For large-file performance, `ReleaseMode::Streaming` begins writing decrypted chunks to the output stream immediately. If a mismatch is encountered mid-stream, it aborts decryption and returns an integrity error, preventing further read amplification.
+*   **Constant-Time Comparisons:** To eliminate side-channel timing analysis vectors, all Merkle root comparisons inside the Shield verification routines are performed using constant-time equality primitives (`subtle::ConstantTimeEq`).
+
 ---
 
 ## Technical Specifications
@@ -599,8 +612,8 @@ keyHandle.destroy();
 - `generateGk()`: Generate a cryptographically secure 32-byte Group Key.
 - `encryptChunk(dek, file_id, chunkIndex, plaintext)`: Encrypt a single block of plaintext.
 - `decryptChunk(dek, file_id, chunkIndex, envelope)`: Decrypt a single chunk envelope.
-- `encryptFilePipelinedAsync(sourcePath, destPath, dek, fileId, chunkSize, wraps, mode, numWorkers, signInfo)`: Asynchronously encrypts a file from disk using parallel thread workers (Zero-Copy V8 heap footprint).
-- `decryptFilePipelinedAsync(sourcePath, destPath, dek, numWorkers)`: Asynchronously decrypts a file from disk using parallel thread workers (Zero-Copy V8 heap footprint).
+- `encryptFilePipelinedAsync(sourcePath, destPath, dek, fileId, chunkSize, wraps, mode, numWorkers, signInfo, writeMode)`: Asynchronously encrypts a file from disk using parallel thread workers (Zero-Copy V8 heap footprint).
+- `decryptFilePipelinedAsync(sourcePath, destPath, dek, numWorkers, shield)`: Asynchronously decrypts a file from disk using parallel thread workers with an optional `ShieldPolicy` (Zero-Copy V8 heap footprint).
 - `wrapDekWithPassword(dek, password, kdf)`: Wrap a DEK with a password.
 - `unwrapDekWithPassword(wrapEntry, password)`: Unwrap a password-wrapped DEK.
 - `generateRecipientKeypair()`: Generate an ML-KEM-768 + X25519 keypair.
@@ -611,6 +624,54 @@ keyHandle.destroy();
 - `ed25519KeypairGenerate()`: Generate a signing keypair.
 - `ed25519Sign(sk, message)`: Sign a message.
 - `ed25519Verify(pk, message, signature)`: Verify a signature.
+- `sealContainer(path, options)` / `sealContainer(container_bytes, options)`: Irreversibly seal a container by purging the wrap table. `options` specifies `mode` ("seal" or "purge"), `reason`, and optional `signInfo` for signed v2/v3 containers.
+- `isSealed(header)`: Returns `true` if the container header has an empty wrap table (meaning it is sealed).
+- `inspectSealedContainer(path)` / `inspectSealedContainer(container_bytes)`: Returns structural metadata for a sealed container (mode, reason, timestamp, and ciphertext availability).
+- `verifyContainer(path, policy)` / `verifyContainer(container_bytes, policy)`: Evaluates a container's header, wraps, signature, chunk tags, and Merkle tree against a `ShieldPolicy` and returns a string `ShieldReport`.
+
+### Sovereign Sealing & Shield Policy API Examples
+
+#### Sealing a Container (Node.js)
+```javascript
+const { sealContainer } = require("@vollcrypt/files-node");
+
+// Irreversibly seal the container and sign the sealed marker with the owner's signing key
+await sealContainer("container.dat", {
+  mode: "seal",
+  reason: "GDPR right to be forgotten request",
+  signInfo: {
+    kind: "plain",
+    signerPk: ownerPublicKey,
+    signerSk: ownerPrivateKey,
+    keyLogId: keyLogId,
+    timestamp: Math.floor(Date.now() / 1000)
+  }
+});
+```
+
+#### Verifying a Container with Shield Integrity Policy
+```javascript
+const { verifyContainer, decryptFilePipelinedAsync } = require("@vollcrypt/files-node");
+
+const policy = {
+  releaseMode: "verified", // "verified" (double-pass fail-closed) or "streaming" (fail mid-stream)
+  signature: "required",  // "required" (must have valid owner signature) or "optional"
+  rollbackPin: 5,         // enforce manifest epoch >= 5
+  founderAnchor: true,    // verify founder anchor matches genesis
+  onTamper: "abort"       // "abort", "report", or "recover"
+};
+
+// Check integrity upfront
+const report = verifyContainer("container.dat", policy);
+if (report === "ContainerSealed") {
+  console.log("Container is sealed.");
+} else if (report !== "Success") {
+  console.error("Integrity check failed: " + report);
+} else {
+  // Safe to decrypt under policy
+  await decryptFilePipelinedAsync("container.dat", "plaintext.txt", dek, 4, policy);
+}
+```
 
 ---
 
@@ -797,4 +858,10 @@ The current test suite includes stress, fuzzing, tampering, replay, forgery-resi
   - **verified_no_release_on_failure:** Double-pass verified mode releases exactly 0 bytes on tampering.
   - **kdf_error_propagates_no_zero_key:** No insecure fallback key usage.
   - **chunk_index_overflow_cap:** Prevents u32 chunk index overflows.
+- **Sovereign Sealing & Crypto-Shredding (Section J):**
+  - **sovereign_sealed_fail_closed:** Assures fail-closed behavior for sealed containers under standard decryption paths.
+  - **sealed_marker_tamper:** Detects stripping or altering the owner-signed sealed marker.
+- **Shield Integrity Policy (Section K):**
+  - **shield_verified_fail_closed:** Ensures any bit-flip or out-of-order chunk releases exactly 0 plaintext bytes in verified release mode.
+  - **shield_timing_constant:** Verifies Merkle root cryptographic comparisons are side-channel timing-constant.
 - **Linter:** 100% clean Clippy builds under `-- -D warnings` on all target formats.

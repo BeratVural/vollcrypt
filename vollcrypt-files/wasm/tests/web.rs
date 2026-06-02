@@ -87,7 +87,21 @@ async fn test_async_pipelined_roundtrip() {
     let file_id = generate_file_id();
     let plaintext = b"This is a relatively long file plaintext to test async pipelined file encryption and decryption using browser WebCrypto APIs under WASM headless chrome! Let's make sure it works perfectly.";
     let chunk_size = 16;
-    let wraps = JsValue::from(js_sys::Array::new());
+    let password = "SuperSecretPassword123!";
+    let kdf = KdfChoice {
+        kind: "Pbkdf2".to_string(),
+        rounds: Some(1000),
+        m_cost: None,
+        t_cost: None,
+        p_cost: None,
+        salt: None,
+    };
+    let kdf_js = serde_wasm_bindgen::to_value(&kdf).unwrap();
+    let wrap_js = wrap_dek_with_password(&dek, password, kdf_js).unwrap();
+
+    let wraps_arr = js_sys::Array::new();
+    wraps_arr.push(&wrap_js);
+    let wraps = JsValue::from(wraps_arr);
     let mode = 0; // Mode::Password
     let sign_info = JsValue::null();
 

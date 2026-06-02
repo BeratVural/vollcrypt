@@ -150,6 +150,9 @@ pub enum FileFormatError {
     #[error("Too many chunks: maximum is 4,294,967,295")]
     TooManyChunks,
 
+    #[error("Container is sealed")]
+    ContainerSealed,
+
     #[error("I/O error: {0}")]
     IoError(String),
 }

@@ -39,6 +39,7 @@ pub fn resolve_sender(
             let kl_id = extract_key_log_id_sealed(header, gk)?;
             (pk, kl_id, *timestamp)
         }
+        SignedMetadata::SovereignSealed { .. } => return Err(FileFormatError::HeaderSealed),
     };
 
     let entry = key_log
