@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open, save as tauriSave } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { listen } from "@tauri-apps/api/event";
 import jsQR from "jsqr";
 import "./App.css";
 
@@ -24,6 +25,73 @@ function ResizeHandles() {
     </>
   );
 }
+
+const getFilename = (filepath: string) => {
+  const parts = filepath.split(/[/\\]/);
+  return parts[parts.length - 1];
+};
+
+const formatBytes = (bytes: number) => {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+};
+
+const formatTime = (seconds: number) => {
+  if (seconds <= 0) return "0s";
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (mins < 60) {
+    return `${mins}m ${secs}s`;
+  }
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return `${hours}h ${remMins}m`;
+};
+
+const getDirectory = (filepath: string) => {
+  const parts = filepath.split(/[/\\]/);
+  parts.pop();
+  return parts.join(filepath.includes("\\") ? "\\" : "/");
+};
+
+const joinPath = (dir: string, filename: string) => {
+  const separator = dir.includes("\\") || filename.includes("\\") ? "\\" : "/";
+  return dir.endsWith(separator) ? dir + filename : dir + separator + filename;
+};
+
+const deriveEncryptDest = (src: string, destDir: string) => {
+  const filename = getFilename(src);
+  if (destDir) {
+    return joinPath(destDir, filename + ".voll");
+  } else {
+    return src + ".voll";
+  }
+};
+
+const deriveDecryptDest = (src: string, destDir: string) => {
+  const filename = getFilename(src);
+  let outName = filename;
+  if (filename.endsWith(".voll")) {
+    let base = filename.substring(0, filename.length - 5);
+    if (base.endsWith("_text")) {
+      base = base.substring(0, base.length - 5) + ".txt";
+    }
+    outName = base;
+  } else {
+    outName = filename + ".dec";
+  }
+
+  if (destDir) {
+    return joinPath(destDir, outName);
+  } else {
+    const dir = getDirectory(src);
+    return joinPath(dir, outName);
+  }
+};
 
 function App() {
   const clipboardTimerRef = useRef<any>(null);
@@ -48,19 +116,28 @@ function App() {
   const [textAction, setTextAction] = useState<Action>("encrypt");
 
   // File states
-  const [sourceFile, setSourceFile] = useState("");
+  const [sourceFiles, setSourceFiles] = useState<string[]>([]);
   const [destFile, setDestFile] = useState("");
   const [password, setPassword] = useState("");
   const [kdfChoice, setKdfChoice] = useState("Argon2id");
   const [recipientKey, setRecipientKey] = useState("");
   const [replaceOriginal, setReplaceOriginal] = useState(false);
 
+  // Progress states
+  const [fileProgress, setFileProgress] = useState<{
+    filePath: string;
+    bytesProcessed: number;
+    totalBytes: number;
+    percentage: number;
+    eta: number | null;
+  } | null>(null);
+  const currentFileStartTimeRef = useRef<number | null>(null);
+
   useEffect(() => {
-    if (sourceFile) {
+    if (sourceFiles.length === 1) {
+      const sourceFile = sourceFiles[0];
       if (fileAction === "encrypt") {
-        if (replaceOriginal) {
-          setDestFile(sourceFile + ".voll");
-        }
+        setDestFile(sourceFile + ".voll");
       } else if (fileAction === "decrypt") {
         if (sourceFile.endsWith(".voll")) {
           let base = sourceFile.substring(0, sourceFile.length - 5);
@@ -76,8 +153,10 @@ function App() {
           }
         }
       }
+    } else if (sourceFiles.length > 1) {
+      setDestFile("");
     }
-  }, [replaceOriginal, sourceFile, fileAction]);
+  }, [replaceOriginal, sourceFiles, fileAction]);
 
   useEffect(() => {
     if (activeMode === "password" || activeMode === "threshold") {
@@ -86,6 +165,47 @@ function App() {
       setVerifySignaturePolicy("required");
     }
   }, [activeMode]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+
+    listen<any>("file-progress", (event) => {
+      const payload = event.payload;
+      if (!payload) return;
+      const { filePath, bytesProcessed, totalBytes } = payload;
+
+      const startTime = currentFileStartTimeRef.current;
+      let eta: number | null = null;
+      if (startTime && bytesProcessed > 0) {
+        const elapsedSeconds = (Date.now() - startTime) / 1000;
+        if (elapsedSeconds > 0) {
+          const speed = bytesProcessed / elapsedSeconds;
+          const remainingBytes = totalBytes - bytesProcessed;
+          if (speed > 0) {
+            eta = Math.ceil(remainingBytes / speed);
+          }
+        }
+      }
+
+      const percentage = totalBytes > 0 ? Math.round((bytesProcessed / totalBytes) * 100) : 0;
+
+      setFileProgress({
+        filePath,
+        bytesProcessed,
+        totalBytes,
+        percentage,
+        eta,
+      });
+    }).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
 
   // Verify states
   const [verifyReleaseMode, setVerifyReleaseMode] = useState("verified");
@@ -365,6 +485,25 @@ function App() {
         }
       })
       .catch(err => console.error("Failed to get platform info:", err));
+
+    // Register operating system right-click context menu integration
+    invoke("register_context_menu").catch(err => {
+      console.warn("Failed to register context menu:", err);
+    });
+
+    // Check if the application was launched with files (e.g. from context menu)
+    invoke("get_cli_args").then((args: any) => {
+      if (Array.isArray(args) && args.length > 0) {
+        const files = args.filter(arg => !arg.startsWith("-"));
+        if (files.length > 0) {
+          setSourceFiles(files);
+          setFileAction("encrypt");
+          setActiveTab("file");
+        }
+      }
+    }).catch(err => {
+      console.warn("Failed to read CLI arguments:", err);
+    });
   }, []);
 
   // UI state
@@ -380,30 +519,14 @@ function App() {
 
   const handlePickSource = async () => {
     try {
-      const file = await open({
-        multiple: false,
+      const files = await open({
+        multiple: true,
         directory: false,
-        title: "Select Source File",
+        title: "Select Source File(s)",
       });
-      if (typeof file === "string" && file) {
-        setSourceFile(file);
-        if (fileAction === "encrypt") {
-          setDestFile(file + ".voll");
-        } else {
-          if (file.endsWith(".voll")) {
-            let base = file.substring(0, file.length - 5);
-            if (base.endsWith("_text")) {
-              base = base.substring(0, base.length - 5) + ".txt";
-            }
-            setDestFile(base);
-          } else {
-            if (file.endsWith("_text")) {
-              setDestFile(file.substring(0, file.length - 5) + ".txt");
-            } else {
-              setDestFile(file + ".dec");
-            }
-          }
-        }
+      if (files) {
+        const selected = Array.isArray(files) ? files : [files];
+        setSourceFiles(selected);
       }
     } catch (err: any) {
       showStatus("error", `File selection failed: ${err}`);
@@ -412,12 +535,23 @@ function App() {
 
   const handlePickDest = async () => {
     try {
-      const file = await tauriSave({
-        title: "Select Destination Path",
-        defaultPath: destFile || undefined,
-      });
-      if (file) {
-        setDestFile(file);
+      if (sourceFiles.length <= 1) {
+        const file = await tauriSave({
+          title: "Select Destination Path",
+          defaultPath: destFile || undefined,
+        });
+        if (file) {
+          setDestFile(file);
+        }
+      } else {
+        const directory = await open({
+          multiple: false,
+          directory: true,
+          title: "Select Destination Directory",
+        });
+        if (typeof directory === "string" && directory) {
+          setDestFile(directory);
+        }
       }
     } catch (err: any) {
       showStatus("error", `Destination selection failed: ${err}`);
@@ -426,163 +560,200 @@ function App() {
 
   const handleFileProcess = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!sourceFile) {
-      showStatus("error", "Source file path is required.");
+    if (sourceFiles.length === 0) {
+      showStatus("error", "At least one source file path is required.");
       return;
     }
-    if ((fileAction === "encrypt" || fileAction === "decrypt") && !destFile) {
+    if ((fileAction === "encrypt" || fileAction === "decrypt") && sourceFiles.length === 1 && !destFile) {
       showStatus("error", "Source and destination paths are required.");
       return;
     }
 
     setLoading(true);
-    setStatus({ type: "info", msg: "Processing... Please wait." });
     setVerifyReport(null);
     setSealedInspection(null);
+    setFileProgress(null);
 
-    try {
-      if (fileAction === "encrypt") {
-        if (activeMode === "password") {
-          if (!password) throw new Error("Encryption password is required.");
-          await invoke("encrypt_file_password", {
-            sourcePath: sourceFile,
-            destPath: destFile,
-            password,
-            kdfChoice,
-            perfProfile: performanceProfile,
-            deleteSource: replaceOriginal,
-          });
-        } else if (activeMode === "recipient") {
-          if (!recipientKey) throw new Error("Recipient Public Key is required.");
-          await invoke("encrypt_file_recipient", {
-            sourcePath: sourceFile,
-            destPath: destFile,
-            recipientPkHex: recipientKey.trim(),
-            perfProfile: performanceProfile,
-            deleteSource: replaceOriginal,
-          });
-        } else {
-          if (thresholdT < 2) throw new Error("Threshold (t) must be at least 2.");
-          if (thresholdN < thresholdT) throw new Error("Total shares (n) must be greater than or equal to threshold (t).");
-          const shares: string[] = await invoke("encrypt_file_threshold", {
-            sourcePath: sourceFile,
-            destPath: destFile,
-            t: thresholdT,
-            n: thresholdN,
-            perfProfile: performanceProfile,
-            deleteSource: replaceOriginal,
-          });
-          setGeneratedShares(shares);
+    const filesToProcess = [...sourceFiles];
+    let successCount = 0;
+    const errors: string[] = [];
+
+    for (let i = 0; i < filesToProcess.length; i++) {
+      const currentFile = filesToProcess[i];
+      const currentFilename = getFilename(currentFile);
+      
+      currentFileStartTimeRef.current = Date.now();
+      setFileProgress({
+        filePath: currentFile,
+        bytesProcessed: 0,
+        totalBytes: 0,
+        percentage: 0,
+        eta: null,
+      });
+
+      setStatus({ 
+        type: "info", 
+        msg: `Processing file ${i + 1} of ${filesToProcess.length}: ${currentFilename}...` 
+      });
+
+      try {
+        let currentDest = "";
+        if (fileAction === "encrypt" || fileAction === "decrypt") {
+          if (filesToProcess.length === 1 && destFile) {
+            currentDest = destFile;
+          } else {
+            currentDest = fileAction === "encrypt" 
+              ? deriveEncryptDest(currentFile, destFile) 
+              : deriveDecryptDest(currentFile, destFile);
+          }
         }
-        showStatus("success", activeMode === "threshold" ? "File encrypted and SSS shares generated successfully." : "File successfully encrypted.");
-      } else if (fileAction === "decrypt") {
-        let shieldPolicy = null;
-        if (verifyReleaseMode || verifySignaturePolicy) {
-          shieldPolicy = {
+
+        if (fileAction === "encrypt") {
+          if (activeMode === "password") {
+            if (!password) throw new Error("Encryption password is required.");
+            await invoke("encrypt_file_password", {
+              sourcePath: currentFile,
+              destPath: currentDest,
+              password,
+              kdfChoice,
+              perfProfile: performanceProfile,
+              deleteSource: replaceOriginal,
+            });
+          } else if (activeMode === "recipient") {
+            if (!recipientKey) throw new Error("Recipient Public Key is required.");
+            await invoke("encrypt_file_recipient", {
+              sourcePath: currentFile,
+              destPath: currentDest,
+              recipientPkHex: recipientKey.trim(),
+              perfProfile: performanceProfile,
+              deleteSource: replaceOriginal,
+            });
+          } else {
+            if (thresholdT < 2) throw new Error("Threshold (t) must be at least 2.");
+            if (thresholdN < thresholdT) throw new Error("Total shares (n) must be greater than or equal to threshold (t).");
+            const shares: string[] = await invoke("encrypt_file_threshold", {
+              sourcePath: currentFile,
+              destPath: currentDest,
+              t: thresholdT,
+              n: thresholdN,
+              perfProfile: performanceProfile,
+              deleteSource: replaceOriginal,
+            });
+            setGeneratedShares(shares);
+          }
+        } else if (fileAction === "decrypt") {
+          let shieldPolicy = null;
+          if (verifyReleaseMode || verifySignaturePolicy) {
+            shieldPolicy = {
+              releaseMode: verifyReleaseMode,
+              signature: verifySignaturePolicy,
+              rollbackPin: verifyRollbackPin ? parseInt(verifyRollbackPin, 10) : null,
+              founderAnchor: verifyFounderAnchor,
+              onTamper: verifyOnTamper,
+            };
+          }
+          if (activeMode === "password") {
+            if (!password) throw new Error("Decryption password is required.");
+            await invoke("decrypt_file_password", {
+              sourcePath: currentFile,
+              destPath: currentDest,
+              password,
+              shield: shieldPolicy,
+              perfProfile: performanceProfile,
+              deleteSource: false,
+            });
+          } else if (activeMode === "recipient") {
+            if (!recipientKey) throw new Error("Recipient Secret Key is required.");
+            await invoke("decrypt_file_recipient", {
+              sourcePath: currentFile,
+              destPath: currentDest,
+              recipientSkHex: recipientKey.trim(),
+              shield: shieldPolicy,
+              perfProfile: performanceProfile,
+              deleteSource: false,
+            });
+          } else {
+            const parsedShares = inputShares
+              .split("\n")
+              .map(s => s.trim())
+              .filter(s => s.length > 0);
+            if (parsedShares.length === 0) throw new Error("Please paste at least t shares.");
+            await invoke("decrypt_file_threshold", {
+              sourcePath: currentFile,
+              destPath: currentDest,
+              shares: parsedShares,
+              shield: shieldPolicy,
+              perfProfile: performanceProfile,
+              deleteSource: false,
+            });
+          }
+        } else if (fileAction === "verify") {
+          const policy = {
             releaseMode: verifyReleaseMode,
             signature: verifySignaturePolicy,
             rollbackPin: verifyRollbackPin ? parseInt(verifyRollbackPin, 10) : null,
             founderAnchor: verifyFounderAnchor,
             onTamper: verifyOnTamper,
           };
-        }
-        if (activeMode === "password") {
-          if (!password) throw new Error("Decryption password is required.");
-          await invoke("decrypt_file_password", {
-            sourcePath: sourceFile,
-            destPath: destFile,
-            password,
-            shield: shieldPolicy,
-            perfProfile: performanceProfile,
-            deleteSource: false,
+          const report: string = await invoke("verify_container_file", {
+            path: currentFile,
+            policy,
           });
-        } else if (activeMode === "recipient") {
-          if (!recipientKey) throw new Error("Recipient Secret Key is required.");
-          await invoke("decrypt_file_recipient", {
-            sourcePath: sourceFile,
-            destPath: destFile,
-            recipientSkHex: recipientKey.trim(),
-            shield: shieldPolicy,
-            perfProfile: performanceProfile,
-            deleteSource: false,
-          });
-        } else {
-          const parsedShares = inputShares
-            .split("\n")
-            .map(s => s.trim())
-            .filter(s => s.length > 0);
-          if (parsedShares.length === 0) throw new Error("Please paste at least t shares.");
-          await invoke("decrypt_file_threshold", {
-            sourcePath: sourceFile,
-            destPath: destFile,
-            shares: parsedShares,
-            shield: shieldPolicy,
-            perfProfile: performanceProfile,
-            deleteSource: false,
-          });
-        }
-        showStatus("success", activeMode === "threshold" ? "File successfully decrypted using SSS shares." : "File successfully decrypted.");
-      } else if (fileAction === "verify") {
-        const policy = {
-          releaseMode: verifyReleaseMode,
-          signature: verifySignaturePolicy,
-          rollbackPin: verifyRollbackPin ? parseInt(verifyRollbackPin, 10) : null,
-          founderAnchor: verifyFounderAnchor,
-          onTamper: verifyOnTamper,
-        };
-        const report: string = await invoke("verify_container_file", {
-          path: sourceFile,
-          policy,
-        });
-        setVerifyReport(report);
-        if (report === "ContainerSealed") {
-          showStatus("info", "Verification check: Container is Sealed.");
-          try {
-            const inspectRes = await invoke("inspect_sealed_file", { path: sourceFile });
-            setSealedInspection(inspectRes);
-          } catch (inspectErr) {
-            console.error("Failed to inspect sealed container:", inspectErr);
+          setVerifyReport(report);
+          if (report === "ContainerSealed") {
+            showStatus("info", `Verification (${currentFilename}): Container is Sealed.`);
+            try {
+              const inspectRes = await invoke("inspect_sealed_file", { path: currentFile });
+              setSealedInspection(inspectRes);
+            } catch (inspectErr) {
+              console.error("Failed to inspect sealed container:", inspectErr);
+            }
+          } else if (report === "Success" || report.includes("Success")) {
+            // Success
+          } else {
+            throw new Error(report);
           }
-        } else if (report === "Success" || report.includes("Success")) {
-          showStatus("success", "Verification check: Integrity signature checks passed.");
-        } else {
-          showStatus("error", `Verification check: Tampering/validation issue detected: ${report}`);
-        }
-      } else if (fileAction === "seal") {
-        if (sealConfirmText !== "SEAL") {
-          throw new Error("Please type SEAL to confirm this irreversible action.");
-        }
-        let signInfo = null;
-        if (sealSignEnabled) {
-          if (!sealSignerPk || !sealSignerSk || !sealKeyLogId) {
-            throw new Error("Signing keys and Key Log ID are required when signing the sealed marker.");
+        } else if (fileAction === "seal") {
+          if (sealConfirmText !== "SEAL") {
+            throw new Error("Please type SEAL to confirm this irreversible action.");
           }
-          signInfo = {
-            kind: sealSignKind,
-            signerPk: sealSignerPk.trim(),
-            signerSk: sealSignerSk.trim(),
-            keyLogId: sealKeyLogId.trim(),
-            timestamp: Math.floor(Date.now() / 1000),
-          };
+          let signInfo = null;
+          if (sealSignEnabled) {
+            if (!sealSignerPk || !sealSignerSk || !sealKeyLogId) {
+              throw new Error("Signing keys and Key Log ID are required when signing the sealed marker.");
+            }
+            signInfo = {
+              kind: sealSignKind,
+              signerPk: sealSignerPk.trim(),
+              signerSk: sealSignerSk.trim(),
+              keyLogId: sealKeyLogId.trim(),
+              timestamp: Math.floor(Date.now() / 1000),
+            };
+          }
+          await invoke("seal_file", {
+            path: currentFile,
+            mode: sealMode,
+            reason: sealReason || null,
+            signInfo,
+          });
         }
-        await invoke("seal_file", {
-          path: sourceFile,
-          mode: sealMode,
-          reason: sealReason || null,
-          signInfo,
-        });
-        showStatus("success", `File container successfully ${sealMode === "purge" ? "purged" : "sealed"}.`);
-        setSealConfirmText("");
+        successCount++;
+      } catch (err: any) {
+        const errorMsg = err.message || String(err);
+        errors.push(`${currentFilename}: ${errorMsg}`);
       }
-    } catch (err: any) {
-      if (err === "ContainerSealed" || String(err).includes("ContainerSealed")) {
-        showStatus("error", "ContainerSealed");
-      } else {
-        showStatus("error", err.message || String(err));
-      }
-    } finally {
-      setLoading(false);
     }
+
+    if (errors.length === 0) {
+      showStatus("success", `Successfully processed all ${filesToProcess.length} file(s).`);
+    } else if (successCount > 0) {
+      showStatus("info", `Completed ${successCount} of ${filesToProcess.length} file(s). Errors: ${errors.join("; ")}`);
+    } else {
+      showStatus("error", `Failed processing file(s): ${errors.join("; ")}`);
+    }
+    setFileProgress(null);
+    currentFileStartTimeRef.current = null;
+    setLoading(false);
   };
 
   const handleTextProcess = async (e: React.FormEvent) => {
@@ -908,7 +1079,7 @@ function App() {
               setActiveTab("file");
               setPassword("");
               setRecipientKey("");
-              setSourceFile("");
+              setSourceFiles([]);
               setDestFile("");
               setInputText("");
               setOutputText("");
@@ -927,7 +1098,7 @@ function App() {
               setActiveTab("text");
               setPassword("");
               setRecipientKey("");
-              setSourceFile("");
+              setSourceFiles([]);
               setDestFile("");
               setInputText("");
               setOutputText("");
@@ -947,7 +1118,7 @@ function App() {
               setActiveTab("key");
               setPassword("");
               setRecipientKey("");
-              setSourceFile("");
+              setSourceFiles([]);
               setDestFile("");
               setInputText("");
               setOutputText("");
@@ -980,7 +1151,7 @@ function App() {
                   style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}
                   onClick={() => {
                     setFileAction("encrypt");
-                    setSourceFile("");
+                    setSourceFiles([]);
                     setDestFile("");
                     setPassword("");
                     setRecipientKey("");
@@ -1008,7 +1179,7 @@ function App() {
                   style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}
                   onClick={() => {
                     setFileAction("decrypt");
-                    setSourceFile("");
+                    setSourceFiles([]);
                     setDestFile("");
                     setPassword("");
                     setRecipientKey("");
@@ -1036,7 +1207,7 @@ function App() {
                   style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}
                   onClick={() => {
                     setFileAction("verify");
-                    setSourceFile("");
+                    setSourceFiles([]);
                     setDestFile("");
                     setPassword("");
                     setRecipientKey("");
@@ -1064,7 +1235,7 @@ function App() {
                   style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}
                   onClick={() => {
                     setFileAction("seal");
-                    setSourceFile("");
+                    setSourceFiles([]);
                     setDestFile("");
                     setPassword("");
                     setRecipientKey("");
@@ -1163,26 +1334,32 @@ function App() {
 
             <div className="form-group">
               <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
-                <label style={{ marginBottom: 0 }}>Source File</label>
+                <label style={{ marginBottom: 0 }}>Source File(s)</label>
                 <div className="info-tooltip-wrapper">
                   <span className="info-icon">i</span>
                   <div className="tooltip-content">
-                    <strong>Source File:</strong>
-                    The input file for the cryptographic operation.
+                    <strong>Source File(s):</strong>
+                    The input file(s) for the cryptographic operation.
                     <ul>
-                      <li>For Encrypt: Choose any regular file you wish to secure.</li>
-                      <li>For Decrypt / Verify / Seal: Choose a previously encrypted VOLL container (.voll file).</li>
+                      <li>For Encrypt: Choose regular files you wish to secure.</li>
+                      <li>For Decrypt / Verify / Seal: Choose previously encrypted VOLL containers (.voll files).</li>
                     </ul>
                   </div>
                 </div>
               </div>
               <div className="file-picker">
-                <div className="file-path">{sourceFile || "No file selected..."}</div>
+                <div className="file-path" title={sourceFiles.join("\n")}>
+                  {sourceFiles.length > 0
+                    ? sourceFiles.length === 1
+                      ? sourceFiles[0]
+                      : `${sourceFiles.length} file(s) selected...`
+                    : "No file(s) selected..."}
+                </div>
                 <button type="button" className="file-picker-btn" onClick={handlePickSource}>
                   Browse
                 </button>
               </div>
-              <div className="field-helper">Choose the target file container to process.</div>
+              <div className="field-helper">Choose the target file container(s) to process.</div>
             </div>
 
             {fileAction === "encrypt" && (
@@ -1206,26 +1383,47 @@ function App() {
             {((fileAction === "encrypt" && !replaceOriginal) || fileAction === "decrypt") && (
               <div className="form-group">
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
-                  <label style={{ marginBottom: 0 }}>Destination File</label>
+                  <label style={{ marginBottom: 0 }}>
+                    {sourceFiles.length > 1 ? "Destination Directory" : "Destination File"}
+                  </label>
                   <div className="info-tooltip-wrapper">
                     <span className="info-icon">i</span>
                     <div className="tooltip-content">
-                      <strong>Destination File:</strong>
-                      The output path where the processed file will be saved.
-                      <ul>
-                        <li>Make sure you have write permissions for the selected directory.</li>
-                        <li>Ensure you do not overwrite important data files.</li>
-                      </ul>
+                      {sourceFiles.length > 1 ? (
+                        <>
+                          <strong>Destination Directory:</strong>
+                          The folder where all processed files will be saved.
+                          <ul>
+                            <li>Leave empty to save in the same directory as each source file.</li>
+                            <li>Ensure you have write permissions for the selected directory.</li>
+                          </ul>
+                        </>
+                      ) : (
+                        <>
+                          <strong>Destination File:</strong>
+                          The output path where the processed file will be saved.
+                          <ul>
+                            <li>Make sure you have write permissions for the selected directory.</li>
+                            <li>Ensure you do not overwrite important data files.</li>
+                          </ul>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
                 <div className="file-picker">
-                  <div className="file-path">{destFile || "Select save path..."}</div>
+                  <div className="file-path">
+                    {destFile || (sourceFiles.length > 1 ? "Same directory as source files..." : "Select save path...")}
+                  </div>
                   <button type="button" className="file-picker-btn" onClick={handlePickDest}>
                     Browse
                   </button>
                 </div>
-                <div className="field-helper">Specify the path where the processed output file will be saved.</div>
+                <div className="field-helper">
+                  {sourceFiles.length > 1 
+                    ? "Specify the folder where the output files will be saved."
+                    : "Specify the path where the processed output file will be saved."}
+                </div>
               </div>
             )}
 
@@ -1804,6 +2002,86 @@ function App() {
                   : "Seal Container"}
               </button>
             </div>
+
+            {/* Progress Display */}
+            {fileProgress && (
+              <div
+                className="progress-panel"
+                style={{
+                  marginTop: "20px",
+                  padding: "14px",
+                  backgroundColor: "#16161a",
+                  borderRadius: "8px",
+                  border: "1px solid #232329",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "8px",
+                    fontSize: "12px",
+                    color: "#e4e4e7",
+                    fontWeight: "500",
+                  }}
+                >
+                  <span
+                    style={{
+                      textOverflow: "ellipsis",
+                      overflow: "hidden",
+                      whiteSpace: "nowrap",
+                      maxWidth: "280px",
+                    }}
+                    title={fileProgress.filePath}
+                  >
+                    {getFilename(fileProgress.filePath)}
+                  </span>
+                  <span style={{ color: "#f97316", fontWeight: "600" }}>
+                    {fileProgress.percentage}%
+                  </span>
+                </div>
+                
+                <div
+                  style={{
+                    height: "6px",
+                    backgroundColor: "#27272a",
+                    borderRadius: "3px",
+                    overflow: "hidden",
+                    marginBottom: "10px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${fileProgress.percentage}%`,
+                      height: "100%",
+                      backgroundColor: "#f97316",
+                      borderRadius: "3px",
+                      transition: "width 0.1s ease-out",
+                    }}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    fontSize: "11px",
+                    color: "#a1a1aa",
+                  }}
+                >
+                  <span>
+                    {formatBytes(fileProgress.bytesProcessed)} / {formatBytes(fileProgress.totalBytes)}
+                  </span>
+                  {fileProgress.eta !== null && (
+                    <span style={{ color: "#f97316" }}>
+                      Remaining: {formatTime(fileProgress.eta)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Generated Shares Display */}
             {fileAction === "encrypt" && activeMode === "threshold" && generatedShares && generatedShares.length > 0 && (

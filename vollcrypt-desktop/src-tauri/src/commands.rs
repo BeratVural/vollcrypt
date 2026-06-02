@@ -138,8 +138,51 @@ pub fn generate_share_qr(share: String) -> Result<String, String> {
     Ok(svg_string)
 }
 
+#[derive(serde::Serialize, Clone)]
+struct ProgressPayload {
+    #[serde(rename = "filePath")]
+    file_path: String,
+    #[serde(rename = "bytesProcessed")]
+    bytes_processed: u64,
+    #[serde(rename = "totalBytes")]
+    total_bytes: u64,
+}
+
+struct ProgressReader<R: Read> {
+    inner: R,
+    bytes_read: u64,
+    total_bytes: u64,
+    file_path: String,
+    window: tauri::Window,
+}
+
+impl<R: Read> Read for ProgressReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let res = self.inner.read(buf);
+        if let Ok(n) = res {
+            if n > 0 {
+                self.bytes_read += n as u64;
+                use tauri::Emitter;
+                let _ = self.window.emit("file-progress", ProgressPayload {
+                    file_path: self.file_path.clone(),
+                    bytes_processed: self.bytes_read,
+                    total_bytes: self.total_bytes,
+                });
+            }
+        }
+        res
+    }
+}
+
+impl<R: Read + Seek> Seek for ProgressReader<R> {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        self.inner.seek(pos)
+    }
+}
+
 #[tauri::command]
 pub async fn encrypt_file_password(
+    window: tauri::Window,
     source_path: String,
     dest_path: String,
     password: String,
@@ -147,6 +190,7 @@ pub async fn encrypt_file_password(
     perf_profile: Option<String>,
     delete_source: Option<bool>,
 ) -> Result<(), String> {
+    let window_c = window.clone();
     tokio::task::spawn_blocking(move || {
         let dek = generate_dek();
         let file_id = generate_file_id();
@@ -157,8 +201,18 @@ pub async fn encrypt_file_password(
         let wrap = wrap_dek_with_password(&dek, password.as_bytes(), kdf)
             .map_err(|e| e.to_string())?;
 
-        let source = std::fs::File::open(&source_path)
+        let source_file = std::fs::File::open(&source_path)
             .map_err(|e| format!("Failed to open source file: {}", e))?;
+        let total_bytes = source_file.metadata().map(|m| m.len()).unwrap_or(0);
+
+        let source = ProgressReader {
+            inner: source_file,
+            bytes_read: 0,
+            total_bytes,
+            file_path: source_path.clone(),
+            window: window_c,
+        };
+
         let dest = std::fs::File::create(&dest_path)
             .map_err(|e| format!("Failed to create destination file: {}", e))?;
 
@@ -189,6 +243,7 @@ pub async fn encrypt_file_password(
 
 #[tauri::command]
 pub async fn decrypt_file_password(
+    window: tauri::Window,
     source_path: String,
     dest_path: String,
     password: String,
@@ -196,12 +251,13 @@ pub async fn decrypt_file_password(
     perf_profile: Option<String>,
     delete_source: Option<bool>,
 ) -> Result<(), String> {
+    let window_c = window.clone();
     tokio::task::spawn_blocking(move || {
-        let mut source = std::fs::File::open(&source_path)
+        let mut source_file = std::fs::File::open(&source_path)
             .map_err(|e| format!("Failed to open source file: {}", e))?;
         
         let mut buffer = vec![0u8; 65536];
-        let bytes_read = source.read(&mut buffer)
+        let bytes_read = source_file.read(&mut buffer)
             .map_err(|e| format!("Failed to read file header: {}", e))?;
 
         let (header, _) = vollcrypt_files_core::Header::parse(&buffer[..bytes_read])
@@ -217,8 +273,17 @@ pub async fn decrypt_file_password(
         let dek = unwrap_dek_with_password(wrap, password.as_bytes())
             .map_err(|e| format!("Wrong password or corrupted file: {}", e))?;
 
-        source.seek(std::io::SeekFrom::Start(0))
+        source_file.seek(std::io::SeekFrom::Start(0))
             .map_err(|e| format!("Failed to reset file read pointer: {}", e))?;
+
+        let total_bytes = source_file.metadata().map(|m| m.len()).unwrap_or(0);
+        let source = ProgressReader {
+            inner: source_file,
+            bytes_read: 0,
+            total_bytes,
+            file_path: source_path.clone(),
+            window: window_c,
+        };
 
         let dest = std::fs::File::create(&dest_path)
             .map_err(|e| format!("Failed to create destination file: {}", e))?;
@@ -257,12 +322,14 @@ pub async fn decrypt_file_password(
 
 #[tauri::command]
 pub async fn encrypt_file_recipient(
+    window: tauri::Window,
     source_path: String,
     dest_path: String,
     recipient_pk_hex: String,
     perf_profile: Option<String>,
     delete_source: Option<bool>,
 ) -> Result<(), String> {
+    let window_c = window.clone();
     tokio::task::spawn_blocking(move || {
         let pk = deserialize_pk(&recipient_pk_hex)?;
         let dek = generate_dek();
@@ -272,8 +339,16 @@ pub async fn encrypt_file_recipient(
         let wrap = wrap_key_to_recipient(&dek, recipient_id, 1, &pk)
             .map_err(|e| e.to_string())?;
 
-        let source = std::fs::File::open(&source_path)
+        let source_file = std::fs::File::open(&source_path)
             .map_err(|e| format!("Failed to open source file: {}", e))?;
+        let total_bytes = source_file.metadata().map(|m| m.len()).unwrap_or(0);
+        let source = ProgressReader {
+            inner: source_file,
+            bytes_read: 0,
+            total_bytes,
+            file_path: source_path.clone(),
+            window: window_c,
+        };
         let dest = std::fs::File::create(&dest_path)
             .map_err(|e| format!("Failed to create destination file: {}", e))?;
 
@@ -306,6 +381,7 @@ pub async fn encrypt_file_recipient(
 
 #[tauri::command]
 pub async fn decrypt_file_recipient(
+    window: tauri::Window,
     source_path: String,
     dest_path: String,
     recipient_sk_hex: String,
@@ -313,13 +389,14 @@ pub async fn decrypt_file_recipient(
     perf_profile: Option<String>,
     delete_source: Option<bool>,
 ) -> Result<(), String> {
+    let window_c = window.clone();
     tokio::task::spawn_blocking(move || {
         let sk = deserialize_sk(&recipient_sk_hex)?;
-        let mut source = std::fs::File::open(&source_path)
+        let mut source_file = std::fs::File::open(&source_path)
             .map_err(|e| format!("Failed to open source file: {}", e))?;
         
         let mut buffer = vec![0u8; 65536];
-        let bytes_read = source.read(&mut buffer)
+        let bytes_read = source_file.read(&mut buffer)
             .map_err(|e| format!("Failed to read file header: {}", e))?;
 
         let (header, _) = vollcrypt_files_core::Header::parse(&buffer[..bytes_read])
@@ -335,8 +412,17 @@ pub async fn decrypt_file_recipient(
         let dek = unwrap_key_with_recipient_key(wrap, &sk)
             .map_err(|e| format!("Failed to unwrap DEK (ensure key is correct): {}", e))?;
 
-        source.seek(std::io::SeekFrom::Start(0))
+        source_file.seek(std::io::SeekFrom::Start(0))
             .map_err(|e| format!("Failed to reset file read pointer: {}", e))?;
+
+        let total_bytes = source_file.metadata().map(|m| m.len()).unwrap_or(0);
+        let source = ProgressReader {
+            inner: source_file,
+            bytes_read: 0,
+            total_bytes,
+            file_path: source_path.clone(),
+            window: window_c,
+        };
 
         let dest = std::fs::File::create(&dest_path)
             .map_err(|e| format!("Failed to create destination file: {}", e))?;
@@ -720,6 +806,7 @@ pub struct EncryptTextThresholdResult {
 
 #[tauri::command]
 pub async fn encrypt_file_threshold(
+    window: tauri::Window,
     source_path: String,
     dest_path: String,
     t: u8,
@@ -727,6 +814,7 @@ pub async fn encrypt_file_threshold(
     perf_profile: Option<String>,
     delete_source: Option<bool>,
 ) -> Result<Vec<String>, String> {
+    let window_c = window.clone();
     tokio::task::spawn_blocking(move || {
         let dek = generate_dek();
         let file_id = generate_file_id();
@@ -734,8 +822,16 @@ pub async fn encrypt_file_threshold(
         let (wrap, shares) = wrap_dek_with_threshold(&dek, &file_id, t, n, 0)
             .map_err(|e| e.to_string())?;
 
-        let source = std::fs::File::open(&source_path)
+        let source_file = std::fs::File::open(&source_path)
             .map_err(|e| format!("Failed to open source file: {}", e))?;
+        let total_bytes = source_file.metadata().map(|m| m.len()).unwrap_or(0);
+        let source = ProgressReader {
+            inner: source_file,
+            bytes_read: 0,
+            total_bytes,
+            file_path: source_path.clone(),
+            window: window_c,
+        };
         let dest = std::fs::File::create(&dest_path)
             .map_err(|e| format!("Failed to create destination file: {}", e))?;
 
@@ -773,6 +869,7 @@ pub async fn encrypt_file_threshold(
 
 #[tauri::command]
 pub async fn decrypt_file_threshold(
+    window: tauri::Window,
     source_path: String,
     dest_path: String,
     shares: Vec<String>,
@@ -780,12 +877,13 @@ pub async fn decrypt_file_threshold(
     perf_profile: Option<String>,
     delete_source: Option<bool>,
 ) -> Result<(), String> {
+    let window_c = window.clone();
     tokio::task::spawn_blocking(move || {
-        let mut source = std::fs::File::open(&source_path)
+        let mut source_file = std::fs::File::open(&source_path)
             .map_err(|e| format!("Failed to open source file: {}", e))?;
         
         let mut buffer = vec![0u8; 65536];
-        let bytes_read = source.read(&mut buffer)
+        let bytes_read = source_file.read(&mut buffer)
             .map_err(|e| format!("Failed to read file header: {}", e))?;
 
         let (header, _) = vollcrypt_files_core::Header::parse(&buffer[..bytes_read])
@@ -813,8 +911,17 @@ pub async fn decrypt_file_threshold(
         )
         .map_err(|e| format!("Failed to unwrap DEK (ensure threshold is met and shares are correct): {}", e))?;
 
-        source.seek(std::io::SeekFrom::Start(0))
+        source_file.seek(std::io::SeekFrom::Start(0))
             .map_err(|e| format!("Failed to reset file read pointer: {}", e))?;
+
+        let total_bytes = source_file.metadata().map(|m| m.len()).unwrap_or(0);
+        let source = ProgressReader {
+            inner: source_file,
+            bytes_read: 0,
+            total_bytes,
+            file_path: source_path.clone(),
+            window: window_c,
+        };
 
         let dest = std::fs::File::create(&dest_path)
             .map_err(|e| format!("Failed to create destination file: {}", e))?;
@@ -952,6 +1059,332 @@ pub fn get_platform_info() -> PlatformInfo {
     };
 
     PlatformInfo { os, arch }
+}
+
+#[tauri::command]
+pub fn get_cli_args() -> Vec<String> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 {
+        args[1..].to_vec()
+    } else {
+        Vec::new()
+    }
+}
+
+#[tauri::command]
+pub async fn register_context_menu() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let exe_path = std::env::current_exe()
+            .map_err(|e| format!("Failed to get current executable path: {}", e))?;
+        let exe_str = exe_path.to_string_lossy().to_string();
+
+        let status1 = std::process::Command::new("reg")
+            .args(&[
+                "add",
+                "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt",
+                "/ve",
+                "/t",
+                "REG_SZ",
+                "/d",
+                "Encrypt with VOLLcrypt",
+                "/f",
+            ])
+            .status()
+            .map_err(|e| format!("Failed to run reg: {}", e))?;
+
+        if !status1.success() {
+            return Err("Failed to register context menu in registry".to_string());
+        }
+
+        let _status2 = std::process::Command::new("reg")
+            .args(&[
+                "add",
+                "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt",
+                "/v",
+                "Icon",
+                "/t",
+                "REG_SZ",
+                "/d",
+                &format!("\"{}\"", exe_str),
+                "/f",
+            ])
+            .status();
+
+        let status3 = std::process::Command::new("reg")
+            .args(&[
+                "add",
+                "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt\\command",
+                "/ve",
+                "/t",
+                "REG_SZ",
+                "/d",
+                &format!("\"{}\" \"%1\"", exe_str),
+                "/f",
+            ])
+            .status()
+            .map_err(|e| format!("Failed to set registry command: {}", e))?;
+
+        if !status3.success() {
+            return Err("Failed to set command in registry".to_string());
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let exe_path = std::env::current_exe()
+            .map_err(|e| format!("Failed to get current executable path: {}", e))?;
+        let exe_str = exe_path.to_string_lossy().to_string();
+
+        let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+
+        // 1. Nautilus Script
+        let nautilus_dir = format!("{}/.local/share/nautilus/scripts", home);
+        if std::fs::create_dir_all(&nautilus_dir).is_ok() {
+            let script_path = format!("{}/Encrypt with VOLLcrypt", nautilus_dir);
+            let script_content = format!(
+                "#!/bin/sh\n\"{}\" \"$@\"\n",
+                exe_str
+            );
+            if std::fs::write(&script_path, script_content).is_ok() {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(meta) = std::fs::metadata(&script_path) {
+                    let mut perms = meta.permissions();
+                    perms.set_mode(0o755);
+                    let _ = std::fs::set_permissions(&script_path, perms);
+                }
+            }
+        }
+
+        // 2. Dolphin Service Menu
+        let dolphin_dir5 = format!("{}/.local/share/kservices5/ServiceMenus", home);
+        let dolphin_dir6 = format!("{}/.local/share/kservices6/ServiceMenus", home);
+        
+        let dolphin_content = format!(
+            "[Desktop Entry]\n\
+             Type=Service\n\
+             ServiceTypes=KonqPopupMenu/Plugin\n\
+             MimeType=all/all;\n\
+             Actions=encryptWithVollcrypt;\n\
+             X-KDE-Priority=TopLevel\n\n\
+             [Desktop Action encryptWithVollcrypt]\n\
+             Name=Encrypt with VOLLcrypt\n\
+             Icon=vollcrypt\n\
+             Exec=\"{}\" %F\n",
+            exe_str
+        );
+
+        for dir in &[dolphin_dir5, dolphin_dir6] {
+            if std::fs::create_dir_all(dir).is_ok() {
+                let file_path = format!("{}/vollcrypt.desktop", dir);
+                let _ = std::fs::write(file_path, &dolphin_content);
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+        let services_dir = format!("{}/Library/Services", home);
+        let workflow_name = "Encrypt with VOLLcrypt.workflow";
+        let workflow_path = format!("{}/{}", services_dir, workflow_name);
+
+        let exe_path = std::env::current_exe()
+            .map_err(|e| format!("Failed to get current executable path: {}", e))?;
+        let exe_str = exe_path.to_string_lossy().to_string();
+
+        if std::fs::create_dir_all(&workflow_path).is_ok() {
+            let contents_dir = format!("{}/Contents", workflow_path);
+            let _ = std::fs::create_dir_all(&contents_dir);
+
+            let info_plist_path = format!("{}/Contents/Info.plist", workflow_path);
+            let info_plist = format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+                 <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
+                 <plist version=\"1.0\">\n\
+                 <dict>\n\
+                 \t<key>NSServices</key>\n\
+                 \t<array>\n\
+                 \t\t<dict>\n\
+                 \t\t\t<key>NSMenuItem</key>\n\
+                 \t\t\t<dict>\n\
+                 \t\t\t\t<key>default</key>\n\
+                 \t\t\t\t<string>Encrypt with VOLLcrypt</string>\n\
+                 \t\t\t</dict>\n\
+                 \t\t\t<key>NSMessage</key>\n\
+                 \t\t\t<string>runWorkflowAsService</string>\n\
+                 \t\t\t<key>NSRequiredContext</key>\n\
+                 \t\t\t<dict/>\n\
+                 \t\t\t<key>NSSendTypes</key>\n\
+                 \t\t\t<array>\n\
+                 \t\t\t\t<string>public.item</string>\n\
+                 \t\t\t\t<string>public.folder</string>\n\
+                 \t\t\t</array>\n\
+                 \t\t</dict>\n\
+                 \t</array>\n\
+                 </dict>\n\
+                 </plist>"
+            );
+            let _ = std::fs::write(&info_plist_path, &info_plist);
+
+            let document_wflow_path = format!("{}/document.wflow", workflow_path);
+            let document_wflow = format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+                 <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
+                 <plist version=\"1.0\">\n\
+                 <dict>\n\
+                 \t<key>actions</key>\n\
+                 \t<array>\n\
+                 \t\t<dict>\n\
+                 \t\t\t<key>action</key>\n\
+                 \t\t\t<dict>\n\
+                 \t\t\t\t<key>AMAccepts</key>\n\
+                 \t\t\t\t<dict>\n\
+                 \t\t\t\t\t<key>Container</key>\n\
+                 \t\t\t\t\t<string>List</string>\n\
+                 \t\t\t\t\t<key>Optional</key>\n\
+                 \t\t\t\t\t<true/>\n\
+                 \t\t\t\t\t<key>Types</key>\n\
+                 \t\t\t\t\t<array>\n\
+                 \t\t\t\t\t\t<string>com.apple.cocoa.string</string>\n\
+                 \t\t\t\t\t</array>\n\
+                 \t\t\t\t</dict>\n\
+                 \t\t\t\t<key>AMActionVersion</key>\n\
+                 \t\t\t\t<string>2.0.3</string>\n\
+                 \t\t\t\t<key>AMApplication</key>\n\
+                 \t\t\t\t<array>\n\
+                 \t\t\t\t\t<string>Automator</string>\n\
+                 \t\t\t\t</array>\n\
+                 \t\t\t\t<key>AMParameterProperties</key>\n\
+                 \t\t\t\t<dict/>\n\
+                 \t\t\t\t<key>AMProvides</key>\n\
+                 \t\t\t\t<dict>\n\
+                 \t\t\t\t\t<key>Container</key>\n\
+                 \t\t\t\t\t<string>List</string>\n\
+                 \t\t\t\t\t<key>Types</key>\n\
+                 \t\t\t\t\t<array>\n\
+                 \t\t\t\t\t\t<string>com.apple.cocoa.string</string>\n\
+                 \t\t\t\t\t</array>\n\
+                 \t\t\t\t</dict>\n\
+                 \t\t\t\t<key>ActionBundlePath</key>\n\
+                 \t\t\t\t<string>/System/Library/Automator/Run Shell Script.action</string>\n\
+                 \t\t\t\t<key>ActionName</key>\n\
+                 \t\t\t\t<string>Run Shell Script</string>\n\
+                 \t\t\t\t<key>ActionParameters</key>\n\
+                 \t\t\t\t<dict>\n\
+                 \t\t\t\t\t<key>COMMAND</key>\n\
+                 \t\t\t\t\t<string>\"{}\" \"$@\"</string>\n\
+                 \t\t\t\t\t<key>inputMethod</key>\n\
+                 \t\t\t\t\t<integer>1</integer>\n\
+                 \t\t\t\t\t<key>shell</key>\n\
+                 \t\t\t\t\t<string>/bin/sh</string>\n\
+                 \t\t\t\t\t<key>source</key>\n\
+                 \t\t\t\t\t<string></string>\n\
+                 \t\t\t\t</dict>\n\
+                 \t\t\t\t<key>BundleIdentifier</key>\n\
+                 \t\t\t\t<string>com.apple.RunShellScript</string>\n\
+                 \t\t\t\t<key>CFBundleVersion</key>\n\
+                 \t\t\t\t<string>2.0.3</string>\n\
+                 \t\t\t\t<key>CanShowSelectedItemsWhenRun</key>\n\
+                 \t\t\t\t<false/>\n\
+                 \t\t\t\t<key>CanShowWhenRun</key>\n\
+                 \t\t\t\t<true/>\n\
+                 \t\t\t\t<key>Category</key>\n\
+                 \t\t\t\t<array>\n\
+                 \t\t\t\t\t<string>AMCategoryUtilities</string>\n\
+                 \t\t\t\t</array>\n\
+                 \t\t\t\t<key>Class Name</key>\n\
+                 \t\t\t\t<string>RunShellScriptAction</string>\n\
+                 \t\t\t\t<key>InputUUID</key>\n\
+                 \t\t\t\t<string>INPUT_UUID_HERE</string>\n\
+                 \t\t\t\t<key>Keywords</key>\n\
+                 \t\t\t\t<array>\n\
+                 \t\t\t\t\t<string>Shell</string>\n\
+                 \t\t\t\t\t<string>Script</string>\n\
+                 \t\t\t\t\t<string>Run</string>\n\
+                 \t\t\t\t\t</array>\n\
+                 \t\t\t\t<key>OutputUUID</key>\n\
+                 \t\t\t\t<string>OUTPUT_UUID_HERE</string>\n\
+                 \t\t\t\t<key>UUID</key>\n\
+                 \t\t\t\t<string>ACTION_UUID_HERE</string>\n\
+                 \t\t\t\t<key>UnlocalizedApplications</key>\n\
+                 \t\t\t\t<array>\n\
+                 \t\t\t\t\t<string>Automator</string>\n\
+                 \t\t\t\t</array>\n\
+                 \t\t\t\t<key>arguments</key>\n\
+                 \t\t\t\t<dict/>\n\
+                 \t\t\t\t<key>isViewVisible</key>\n\
+                 \t\t\t\t<true/>\n\
+                 \t\t\t\t<key>location</key>\n\
+                 \t\t\t\t<string>x:300 y:200</string>\n\
+                 \t\t\t\t<key>nibName</key>\n\
+                 \t\t\t\t<string>RunShellScript</string>\n\
+                 \t\t\t\t</dict>\n\
+                 \t\t\t</dict>\n\
+                 \t\t</dict>\n\
+                 \t</array>\n\
+                 \t<key>connectors</key>\n\
+                 \t<dict/>\n\
+                 \t<key>workflowMetaData</key>\n\
+                 \t<dict>\n\
+                 \t\t<key>serviceInputTypeIdentifier</key>\n\
+                 \t\t<string>com.apple.Automator.fileSystemObject</string>\n\
+                 \t\t<key>serviceOutputTypeIdentifier</key>\n\
+                 \t\t<string>com.apple.Automator.nothing</string>\n\
+                 \t\t<key>serviceProcessesInput</key>\n\
+                 \t\t<integer>0</integer>\n\
+                 \t\t<key>systemImageName</key>\n\
+                 \t\t<string>NSActionTemplate</string>\n\
+                 \t\t<key>useAutomaticInputType</key>\n\
+                 \t\t<integer>0</integer>\n\
+                 \t\t<key>workflowTypeIdentifier</key>\n\
+                 \t\t<string>com.apple.Automator.servicesMenu</string>\n\
+                 \t\t</dict>\n\
+                 </dict>\n\
+                 </plist>",
+                exe_str
+            );
+            let _ = std::fs::write(&document_wflow_path, &document_wflow);
+
+            // Notify Pasteboard Service to update
+            let _ = std::process::Command::new("/System/Library/CoreServices/pbs")
+                .arg("-update")
+                .status();
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn unregister_context_menu() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("reg")
+            .args(&[
+                "delete",
+                "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt",
+                "/f",
+            ])
+            .status();
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+        let _ = std::fs::remove_file(format!("{}/.local/share/nautilus/scripts/Encrypt with VOLLcrypt", home));
+        let _ = std::fs::remove_file(format!("{}/.local/share/kservices5/ServiceMenus/vollcrypt.desktop", home));
+        let _ = std::fs::remove_file(format!("{}/.local/share/kservices6/ServiceMenus/vollcrypt.desktop", home));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+        let workflow_path = format!("{}/Library/Services/Encrypt with VOLLcrypt.workflow", home);
+        let _ = std::fs::remove_dir_all(workflow_path);
+    }
+
+    Ok(())
 }
 
 

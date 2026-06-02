@@ -29,7 +29,10 @@ pub fn run() {
             decrypt_file_threshold,
             encrypt_text_threshold,
             decrypt_text_threshold,
-            get_platform_info
+            get_platform_info,
+            get_cli_args,
+            register_context_menu,
+            unregister_context_menu
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
