@@ -92,6 +92,18 @@ The desktop app encapsulates the following functionalities:
 ### 8. UI/UX Enhancements
 - **Decryption Output Restrictions**: Safety enforcement removes the "Replace original file" option in Decryption panels to ensure decrypted data is always written to a new standalone file without modifying the encrypted source.
 - **Keypair Info Circle Tooltips**: Provides interactive, non-blocking informational tooltips next to key management and generation components. Far-right tooltips are dynamically aligned left to ensure they fit within the custom frameless window bounds.
+- **Real-Time Progress & ETA**: Provides visual feedback during file operations with a smooth progress bar, percentage tracker, and remaining time (ETA) display in English.
+
+---
+
+## 🔗 Native OS Integrations
+
+### 1. Right-Click Context Menu ("Encrypt with VOLLcrypt")
+Automatically registers a native right-click shortcut on application launch to encrypt files directly with VOLLcrypt:
+- **Windows 10 & 11**: Creates registry entries in `HKCU\Software\Classes\*\shell\VOLLcrypt`. On Windows 11, the command is accessible via the **Show more options** context submenu due to modern OS restrictions. On Windows 10, it appears directly in the primary context menu.
+- **Linux (GNOME / Nautilus)**: Deploys a shell script inside the user's Nautilus scripts folder (`~/.local/share/nautilus/scripts`), accessible via the **Scripts** submenu.
+- **Linux (KDE / Dolphin)**: Registers a `.desktop` service menu inside Dolphin's service menus path, accessible via the **Actions** submenu.
+- **macOS**: Configures a native Automator Service/Quick Action workflow inside `~/Library/Services`, accessible under **Quick Actions** or **Services**.
 
 ---
 
