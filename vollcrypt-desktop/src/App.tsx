@@ -132,6 +132,7 @@ function App() {
     eta: number | null;
   } | null>(null);
   const currentFileStartTimeRef = useRef<number | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   useEffect(() => {
     if (sourceFiles.length === 1) {
@@ -204,6 +205,51 @@ function App() {
       if (unlisten) {
         unlisten();
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    let unlistenDrop: (() => void) | null = null;
+    let unlistenOver: (() => void) | null = null;
+    let unlistenLeave: (() => void) | null = null;
+
+    const setup = async () => {
+      const win = getCurrentWindow();
+      
+      unlistenDrop = await win.listen<any>("tauri://drag-drop", async (event) => {
+        setIsDraggingOver(false);
+        const paths = event.payload?.paths;
+        if (paths && paths.length > 0) {
+          try {
+            setLoading(true);
+            const files: string[] = await invoke("expand_paths", { paths });
+            if (files && files.length > 0) {
+              setSourceFiles(files);
+              setActiveTab("file");
+            }
+          } catch (err: any) {
+            console.error("Failed to expand dropped paths:", err);
+          } finally {
+            setLoading(false);
+          }
+        }
+      });
+
+      unlistenOver = await win.listen<any>("tauri://drag-over", () => {
+        setIsDraggingOver(true);
+      });
+
+      unlistenLeave = await win.listen<any>("tauri://drag-leave", () => {
+        setIsDraggingOver(false);
+      });
+    };
+
+    setup();
+
+    return () => {
+      if (unlistenDrop) unlistenDrop();
+      if (unlistenOver) unlistenOver();
+      if (unlistenLeave) unlistenLeave();
     };
   }, []);
 
@@ -530,6 +576,29 @@ function App() {
       }
     } catch (err: any) {
       showStatus("error", `File selection failed: ${err}`);
+    }
+  };
+
+  const handlePickFolder = async () => {
+    try {
+      const directory = await open({
+        multiple: false,
+        directory: true,
+        title: "Select Source Folder",
+      });
+      if (directory && typeof directory === "string") {
+        setLoading(true);
+        const files: string[] = await invoke("expand_paths", { paths: [directory] });
+        if (files && files.length > 0) {
+          setSourceFiles(files);
+        } else {
+          showStatus("info", "No files found in the selected folder.");
+        }
+      }
+    } catch (err: any) {
+      showStatus("error", `Folder selection failed: ${err}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1031,6 +1100,47 @@ function App() {
   return (
     <div className="window-frame">
       <ResizeHandles />
+      {isDraggingOver && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(9, 9, 11, 0.85)",
+            backdropFilter: "blur(8px)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "24px",
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              border: "2px dashed #f97316",
+              borderRadius: "12px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#f97316",
+              backgroundColor: "rgba(249, 115, 22, 0.03)",
+            }}
+          >
+            <div style={{ fontSize: "24px", fontWeight: "bold", marginBottom: "8px" }}>
+              Drop Files or Folders
+            </div>
+            <div style={{ fontSize: "14px", color: "#a1a1aa" }}>
+              VOLLcrypt will automatically scan and queue all target documents
+            </div>
+          </div>
+        </div>
+      )}
       {/* Custom Titlebar */}
       <div className="custom-titlebar" data-tauri-drag-region>
         <div className="titlebar-brand" data-tauri-drag-region>
@@ -1353,10 +1463,13 @@ function App() {
                     ? sourceFiles.length === 1
                       ? sourceFiles[0]
                       : `${sourceFiles.length} file(s) selected...`
-                    : "No file(s) selected..."}
+                    : "No file(s) or folder(s) selected..."}
                 </div>
                 <button type="button" className="file-picker-btn" onClick={handlePickSource}>
-                  Browse
+                  Files
+                </button>
+                <button type="button" className="file-picker-btn" onClick={handlePickFolder}>
+                  Folder
                 </button>
               </div>
               <div className="field-helper">Choose the target file container(s) to process.</div>
@@ -1520,16 +1633,26 @@ function App() {
                       Load File
                     </button>
                   </div>
-                  <input
-                    type="text"
-                    className="text-input"
-                    value={recipientKey}
-                    onChange={(e) => setRecipientKey(e.target.value)}
-                    placeholder={fileAction === "encrypt" ? "Paste public key hex..." : "Paste secret key hex..."}
-                  />
+                  {fileAction === "encrypt" ? (
+                    <textarea
+                      className="text-input"
+                      style={{ minHeight: "80px", resize: "vertical", fontFamily: "monospace" }}
+                      value={recipientKey}
+                      onChange={(e) => setRecipientKey(e.target.value)}
+                      placeholder="Paste one or more public key hex values (one per line or separated by commas)..."
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      className="text-input"
+                      value={recipientKey}
+                      onChange={(e) => setRecipientKey(e.target.value)}
+                      placeholder="Paste secret key hex..."
+                    />
+                  )}
                   <div className="field-helper">
                     {fileAction === "encrypt" 
-                      ? "Paste the recipient's post-quantum public key (X25519 + ML-KEM) to encrypt for them."
+                      ? "Paste one or more recipient post-quantum public keys (X25519 + ML-KEM). Multiple keys can be separated by newlines or commas."
                       : "Paste your private secret key (X25519 + ML-KEM) to decrypt the container."}
                   </div>
                 </div>
@@ -2438,16 +2561,26 @@ function App() {
                     </div>
                   </div>
                 </div>
-                <input
-                  type="text"
-                  className="text-input"
-                  value={recipientKey}
-                  onChange={(e) => setRecipientKey(e.target.value)}
-                  placeholder="Paste hexadecimal key..."
-                />
+                {textAction === "encrypt" ? (
+                  <textarea
+                    className="text-input"
+                    style={{ minHeight: "80px", resize: "vertical", fontFamily: "monospace" }}
+                    value={recipientKey}
+                    onChange={(e) => setRecipientKey(e.target.value)}
+                    placeholder="Paste one or more public key hex values (one per line or separated by commas)..."
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    className="text-input"
+                    value={recipientKey}
+                    onChange={(e) => setRecipientKey(e.target.value)}
+                    placeholder="Paste secret key hex..."
+                  />
+                )}
                 <div className="field-helper">
                   {textAction === "encrypt"
-                    ? "Paste the recipient's post-quantum public key (X25519 + ML-KEM) to encrypt for them."
+                    ? "Paste one or more recipient post-quantum public keys (X25519 + ML-KEM). Multiple keys can be separated by newlines or commas."
                     : "Paste your private secret key (X25519 + ML-KEM) to decrypt this container."}
                 </div>
               </div>
