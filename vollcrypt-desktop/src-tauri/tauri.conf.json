@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "vollcrypt-desktop",
+  "productName": "VOLLcrypt",
   "version": "0.1.0",
   "identifier": "com.vollcrypt.desktop",
   "build": {
@@ -14,10 +14,10 @@
       {
         "title": "Vollcrypt",
         "width": 800,
-        "height": 600,
+        "height": 780,
         "decorations": false,
         "transparent": true,
-        "resizable": false,
+        "resizable": true,
         "shadow": false
       }
     ],
