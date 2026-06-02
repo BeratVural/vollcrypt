@@ -58,7 +58,24 @@ The desktop app encapsulates the following functionalities:
 - Decrypts files using the recipient's private key (`.sec`).
 - Verifies sender signature on decryption to prevent key substitution and MITM attacks.
 
-### 4. Text Cryptography & File Interoperability
+### 4. Threshold (t-of-n) SSS Wrap Mode
+- Secures container keys under a Shamir Secret Sharing (SSS) wrap policy over GF(2^8).
+- Automatically splits the container's Threshold Master Secret (TMS) into $n$ SSS shares.
+- Outputs copyable and distributable share strings prefixed with `vcs_` and protected by truncated SHA-256 integrity checksums.
+- Restores key access and decrypts containers directly once at least $t$ valid shares are supplied.
+
+### 5. Sovereign Sealing & Crypto-Shredding
+- Offers a GDPR-compliant irreversible deletion mechanism for containers:
+  - **Seal Mode**: Erases all key-wrapping entries from the container header, keeping the encrypted payload intact but completely keyless (auditable zero-recoverability).
+  - **Purge Mode**: Erases all key-wrapping entries and overwrites/zeroizes the ciphertext block payload on disk (complete crypto-shredding).
+- Supports signing the sealed marker with a digital key (Ed25519 or Post-Quantum) for proof-of-erasure audits.
+
+### 6. Shield Integrity Verification Policies
+- Lets users configure and audit container integrity signature policies before decryption:
+  - **Release Modes**: Choose between strict double-pass verification (`ReleaseMode::Verified`) or speed-focused on-the-fly (`ReleaseMode::Streaming`) streaming.
+  - **Tamper Reactions**: Define reactive policies (Abort, Abort & Report, or Attempt Block Recovery) when container anomalies, timestamp rollbacks, or founder anchor mismatches are detected.
+
+### 7. Text Cryptography & File Interoperability
 - In-memory text encryption/decryption yielding Base64-encoded container packages.
 - Features **binary file compatibility**:
   - Saved encrypted texts are decoded back to raw binary bytes and written to disk as `.voll` container files.
