@@ -32,7 +32,8 @@ pub fn run() {
             get_platform_info,
             get_cli_args,
             register_context_menu,
-            unregister_context_menu
+            unregister_context_menu,
+            expand_paths
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

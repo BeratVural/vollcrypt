@@ -331,13 +331,25 @@ pub async fn encrypt_file_recipient(
 ) -> Result<(), String> {
     let window_c = window.clone();
     tokio::task::spawn_blocking(move || {
-        let pk = deserialize_pk(&recipient_pk_hex)?;
         let dek = generate_dek();
         let file_id = generate_file_id();
 
-        let recipient_id = generate_salt();
-        let wrap = wrap_key_to_recipient(&dek, recipient_id, 1, &pk)
-            .map_err(|e| e.to_string())?;
+        let mut wraps = Vec::new();
+        for pk_hex in recipient_pk_hex.split(|c| c == ',' || c == '\n' || c == '\r') {
+            let pk_hex_trimmed = pk_hex.trim();
+            if pk_hex_trimmed.is_empty() {
+                continue;
+            }
+            let pk = deserialize_pk(pk_hex_trimmed)?;
+            let recipient_id = generate_salt();
+            let wrap = wrap_key_to_recipient(&dek, recipient_id, 1, &pk)
+                .map_err(|e| e.to_string())?;
+            wraps.push(wrap);
+        }
+
+        if wraps.is_empty() {
+            return Err("At least one recipient public key is required".to_string());
+        }
 
         let source_file = std::fs::File::open(&source_path)
             .map_err(|e| format!("Failed to open source file: {}", e))?;
@@ -360,7 +372,7 @@ pub async fn encrypt_file_recipient(
             &dek,
             &file_id,
             1024 * 1024,
-            vec![wrap],
+            wraps,
             Mode::Recipient,
             num_workers,
             None,
@@ -406,11 +418,30 @@ pub async fn decrypt_file_recipient(
             return Err("ContainerSealed".to_string());
         }
 
-        let wrap = header.wraps.first()
-            .ok_or_else(|| "No wrap entries found in header".to_string())?;
+        if header.wraps.is_empty() {
+            return Err("No wrap entries found in header".to_string());
+        }
 
-        let dek = unwrap_key_with_recipient_key(wrap, &sk)
-            .map_err(|e| format!("Failed to unwrap DEK (ensure key is correct): {}", e))?;
+        let mut dek_opt = None;
+        let mut last_err = None;
+        for wrap in &header.wraps {
+            match unwrap_key_with_recipient_key(wrap, &sk) {
+                Ok(dek) => {
+                    dek_opt = Some(dek);
+                    break;
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                }
+            }
+        }
+
+        let dek = dek_opt.ok_or_else(|| {
+            format!(
+                "Failed to unwrap DEK (ensure key is correct and you are an authorized recipient): {:?}",
+                last_err.map(|e| e.to_string()).unwrap_or_default()
+            )
+        })?;
 
         source_file.seek(std::io::SeekFrom::Start(0))
             .map_err(|e| format!("Failed to reset file read pointer: {}", e))?;
@@ -520,20 +551,32 @@ pub async fn encrypt_text_recipient(
     text: String,
     recipient_pk_hex: String,
 ) -> Result<String, String> {
-    let pk = deserialize_pk(&recipient_pk_hex)?;
     let dek = generate_dek();
     let file_id = generate_file_id();
 
-    let recipient_id = generate_salt();
-    let wrap = wrap_key_to_recipient(&dek, recipient_id, 1, &pk)
-        .map_err(|e| e.to_string())?;
+    let mut wraps = Vec::new();
+    for pk_hex in recipient_pk_hex.split(|c| c == ',' || c == '\n' || c == '\r') {
+        let pk_hex_trimmed = pk_hex.trim();
+        if pk_hex_trimmed.is_empty() {
+            continue;
+        }
+        let pk = deserialize_pk(pk_hex_trimmed)?;
+        let recipient_id = generate_salt();
+        let wrap = wrap_key_to_recipient(&dek, recipient_id, 1, &pk)
+            .map_err(|e| e.to_string())?;
+        wraps.push(wrap);
+    }
+
+    if wraps.is_empty() {
+        return Err("At least one recipient public key is required".to_string());
+    }
 
     let (_, ciphertext) = encrypt_file_pipelined_async(
         text.as_bytes(),
         &dek,
         &file_id,
         65536,
-        vec![wrap],
+        wraps,
         Mode::Recipient,
         None,
     )
@@ -555,11 +598,30 @@ pub async fn decrypt_text_recipient(
     let (header, _) = vollcrypt_files_core::Header::parse(&ciphertext)
         .map_err(|e| format!("Invalid header: {}", e))?;
 
-    let wrap = header.wraps.first()
-        .ok_or_else(|| "No wrap entries found".to_string())?;
+    if header.wraps.is_empty() {
+        return Err("No wrap entries found in header".to_string());
+    }
 
-    let dek = unwrap_key_with_recipient_key(wrap, &sk)
-        .map_err(|e| format!("Failed to unwrap DEK: {}", e))?;
+    let mut dek_opt = None;
+    let mut last_err = None;
+    for wrap in &header.wraps {
+        match unwrap_key_with_recipient_key(wrap, &sk) {
+            Ok(dek) => {
+                dek_opt = Some(dek);
+                break;
+            }
+            Err(e) => {
+                last_err = Some(e);
+            }
+        }
+    }
+
+    let dek = dek_opt.ok_or_else(|| {
+        format!(
+            "Failed to unwrap DEK (ensure key is correct and you are an authorized recipient): {:?}",
+            last_err.map(|e| e.to_string()).unwrap_or_default()
+        )
+    })?;
 
     let (_, plaintext_bytes) = decrypt_file_pipelined_async(&ciphertext, &dek)
         .await
@@ -1385,6 +1447,36 @@ pub async fn unregister_context_menu() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn walk_dir_recursive(dir: &std::path::Path, files: &mut Vec<String>) -> std::io::Result<()> {
+    if dir.is_dir() {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                walk_dir_recursive(&path, files)?;
+            } else if path.is_file() {
+                files.push(path.to_string_lossy().to_string());
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn expand_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
+    let mut expanded = Vec::new();
+    for p in paths {
+        let path = std::path::Path::new(&p);
+        if path.is_dir() {
+            walk_dir_recursive(path, &mut expanded)
+                .map_err(|e| format!("Failed to read directory {}: {}", p, e))?;
+        } else if path.is_file() {
+            expanded.push(p);
+        }
+    }
+    Ok(expanded)
 }
 
 

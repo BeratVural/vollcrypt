@@ -55,9 +55,9 @@ The desktop app encapsulates the following functionalities:
   - **Ed25519** for digital signature and sender authenticity.
 - Exports public key files (`.pub`) and private key files (`.sec`) securely.
 
-### 3. Asymmetric File Cryptography
-- Encrypts target files to a recipient's public key (`.pub`) using the ML-KEM + X25519 hybrid exchange.
-- Decrypts files using the recipient's private key (`.sec`).
+### 3. Asymmetric File Cryptography (Multi-Recipient Broadcast Mode)
+- **Multi-Recipient Broadcast Encryption**: Allows a container to be encrypted for multiple recipients concurrently. The main file/text payload is encrypted with a single AES-256-GCM key, which is then wrapped separately for each recipient's public key (ML-KEM-768 + X25519) and appended to the header wraps collection.
+- Decrypts files using any single authorized recipient's private key (`.sec`) by scanning the header wraps collection to locate and unwrap the corresponding entry.
 - Verifies sender signature on decryption to prevent key substitution and MITM attacks.
 - **Replace Original File Option**: Allows users to automatically delete the raw plain text source file on disk upon successful encryption.
 
@@ -104,6 +104,15 @@ Automatically registers a native right-click shortcut on application launch to e
 - **Linux (GNOME / Nautilus)**: Deploys a shell script inside the user's Nautilus scripts folder (`~/.local/share/nautilus/scripts`), accessible via the **Scripts** submenu.
 - **Linux (KDE / Dolphin)**: Registers a `.desktop` service menu inside Dolphin's service menus path, accessible via the **Actions** submenu.
 - **macOS**: Configures a native Automator Service/Quick Action workflow inside `~/Library/Services`, accessible under **Quick Actions** or **Services**.
+
+### 2. Window Drag & Drop Integration
+Features native drag-and-drop file ingestion using Tauri's window event listeners:
+- Dragging files or directories over any part of the application window displays a fullscreen glassmorphic overlay.
+- Dropping items clears the overlay, recursively extracts all nested files, and loads them into the queue.
+
+### 3. Recursive Folder Encryption & Decryption
+- Integrates a **Folder** selection picker next to the **Files** button.
+- Resolves folder paths recursively on the backend using standard Rust APIs, allowing entire directories to be scanned, queued, and processed sequentially with individual progress reporting.
 
 ---
 
