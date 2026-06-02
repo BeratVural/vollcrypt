@@ -1099,7 +1099,7 @@ function App() {
 
   return (
     <div className="window-frame">
-      <ResizeHandles />
+      {platformInfo.os !== "macOS" && <ResizeHandles />}
       {isDraggingOver && (
         <div
           style={{
