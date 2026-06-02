@@ -217,6 +217,12 @@ label {
   border-color: #f97316;
 }
 
+.select-input option {
+  background-color: #141416;
+  color: #ffffff;
+}
+
+
 .text-input::placeholder {
   color: #3f3f46;
 }
