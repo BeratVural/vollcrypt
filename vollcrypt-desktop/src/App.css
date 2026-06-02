@@ -411,7 +411,8 @@ textarea.text-input {
 
 /* Custom Window Titlebar */
 .custom-titlebar {
-  height: 38px;
+  height: 42px;
+  min-height: 42px;
   background-color: #0c0c0e;
   display: flex;
   justify-content: space-between;
@@ -428,7 +429,7 @@ textarea.text-input {
 
 .titlebar-brand .brand-text {
   font-family: 'Inter', -apple-system, sans-serif;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 800;
   letter-spacing: 0.5px;
   color: #ffffff;
@@ -436,7 +437,7 @@ textarea.text-input {
 
 .titlebar-brand .brand-crypt {
   font-family: 'Caveat', cursive;
-  font-size: 17px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--accent-color);
   margin-left: -2px;
@@ -450,8 +451,8 @@ textarea.text-input {
 
 .titlebar-brand .titlebar-version {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
-  color: #44444a;
+  font-size: 11px;
+  color: #71717a;
   margin-left: 8px;
 }
 
@@ -461,13 +462,16 @@ textarea.text-input {
 }
 
 .titlebar-zoom-select {
-  background-color: #141416;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-color: #141416 !important;
   border: 1px solid #27272a;
   border-radius: 4px;
-  color: #a1a1aa;
+  color: #a1a1aa !important;
   font-size: 10px;
   font-weight: 500;
-  padding: 1px 6px;
+  padding: 1px 18px 1px 6px;
   height: 22px;
   cursor: pointer;
   outline: none;
@@ -475,6 +479,10 @@ textarea.text-input {
   transition: all 0.15s ease;
   margin-right: 4px;
   align-self: center;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 8px;
 }
 
 .titlebar-zoom-select:hover {
