@@ -79,6 +79,39 @@ fn deserialize_sk(hex: &str) -> Result<RecipientSecretKey, String> {
     })
 }
 
+fn get_num_workers(perf_profile: Option<&str>) -> usize {
+    match perf_profile {
+        Some("high") => 8,
+        Some("low") => 1,
+        Some("maximum") => 4,
+        _ => 4, // balanced (default)
+    }
+}
+
+fn get_kdf_choice(kdf_choice: &str, perf_profile: Option<&str>) -> KdfChoice {
+    match kdf_choice {
+        "PBKDF2" => {
+            let iterations = match perf_profile {
+                Some("low") => 100_000,
+                Some("high") => 600_000,
+                Some("maximum") => 1_000_000,
+                _ => 300_000, // balanced (default)
+            };
+            KdfChoice::Pbkdf2 { iterations }
+        }
+        _ => {
+            // Argon2id
+            let (m_cost, t_cost, p_cost) = match perf_profile {
+                Some("low") => (16_384, 1, 1),
+                Some("high") => (65_536, 3, 4),
+                Some("maximum") => (262_144, 4, 4),
+                _ => (32_768, 2, 2), // balanced (default)
+            };
+            KdfChoice::Argon2id { m_cost, t_cost, p_cost }
+        }
+    }
+}
+
 #[tauri::command]
 pub fn generate_keypair() -> Result<RecipientKeypairJson, String> {
     let (pk, sk) = generate_recipient_keypair();
@@ -89,20 +122,37 @@ pub fn generate_keypair() -> Result<RecipientKeypairJson, String> {
 }
 
 #[tauri::command]
+pub fn generate_share_qr(share: String) -> Result<String, String> {
+    use qrcode::QrCode;
+    use qrcode::render::svg;
+
+    let code = QrCode::new(share.as_bytes())
+        .map_err(|e| format!("Failed to generate QR code: {}", e))?;
+
+    let svg_string = code.render()
+        .min_dimensions(256, 256)
+        .dark_color(svg::Color("#000000"))
+        .light_color(svg::Color("#ffffff"))
+        .build();
+
+    Ok(svg_string)
+}
+
+#[tauri::command]
 pub async fn encrypt_file_password(
     source_path: String,
     dest_path: String,
     password: String,
     kdf_choice: String,
+    perf_profile: Option<String>,
+    delete_source: Option<bool>,
 ) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let dek = generate_dek();
         let file_id = generate_file_id();
 
-        let kdf = match kdf_choice.as_str() {
-            "PBKDF2" => KdfChoice::pbkdf2_default(),
-            _ => KdfChoice::argon2id_interactive(),
-        };
+        let kdf = get_kdf_choice(&kdf_choice, perf_profile.as_deref());
+        let num_workers = get_num_workers(perf_profile.as_deref());
 
         let wrap = wrap_dek_with_password(&dek, password.as_bytes(), kdf)
             .map_err(|e| e.to_string())?;
@@ -120,11 +170,16 @@ pub async fn encrypt_file_password(
             1024 * 1024, // 1MB chunks
             vec![wrap],
             Mode::Password,
-            4, // 4 worker threads
+            num_workers,
             None,
             None,
         )
         .map_err(|e| format!("Encryption failed: {}", e))?;
+
+        if delete_source.unwrap_or(false) {
+            std::fs::remove_file(&source_path)
+                .map_err(|e| format!("Failed to delete original source file: {}", e))?;
+        }
 
         Ok(())
     })
@@ -138,6 +193,8 @@ pub async fn decrypt_file_password(
     dest_path: String,
     password: String,
     shield: Option<ShieldPolicyJson>,
+    perf_profile: Option<String>,
+    delete_source: Option<bool>,
 ) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let mut source = std::fs::File::open(&source_path)
@@ -171,18 +228,25 @@ pub async fn decrypt_file_password(
             None => None,
         };
 
+        let num_workers = get_num_workers(perf_profile.as_deref());
+
         if let Some(ref pol) = core_policy {
-            decrypt_file_pipelined_with_policy(source, dest, &dek, 4, Some(pol))
+            decrypt_file_pipelined_with_policy(source, dest, &dek, num_workers, Some(pol))
                 .map_err(|e| match e {
                     vollcrypt_files_core::FileFormatError::ContainerSealed => "ContainerSealed".to_string(),
                     other => format!("Decryption failed: {}", other),
                 })?;
         } else {
-            decrypt_file_pipelined(source, dest, &dek, 4)
+            decrypt_file_pipelined(source, dest, &dek, num_workers)
                 .map_err(|e| match e {
                     vollcrypt_files_core::FileFormatError::ContainerSealed => "ContainerSealed".to_string(),
                     other => format!("Decryption failed: {}", other),
                 })?;
+        }
+
+        if delete_source.unwrap_or(false) {
+            std::fs::remove_file(&source_path)
+                .map_err(|e| format!("Failed to delete original source file: {}", e))?;
         }
 
         Ok(())
@@ -196,6 +260,8 @@ pub async fn encrypt_file_recipient(
     source_path: String,
     dest_path: String,
     recipient_pk_hex: String,
+    perf_profile: Option<String>,
+    delete_source: Option<bool>,
 ) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let pk = deserialize_pk(&recipient_pk_hex)?;
@@ -211,6 +277,8 @@ pub async fn encrypt_file_recipient(
         let dest = std::fs::File::create(&dest_path)
             .map_err(|e| format!("Failed to create destination file: {}", e))?;
 
+        let num_workers = get_num_workers(perf_profile.as_deref());
+
         encrypt_file_pipelined(
             source,
             dest,
@@ -219,11 +287,16 @@ pub async fn encrypt_file_recipient(
             1024 * 1024,
             vec![wrap],
             Mode::Recipient,
-            4,
+            num_workers,
             None,
             None,
         )
         .map_err(|e| format!("Encryption failed: {}", e))?;
+
+        if delete_source.unwrap_or(false) {
+            std::fs::remove_file(&source_path)
+                .map_err(|e| format!("Failed to delete original source file: {}", e))?;
+        }
 
         Ok(())
     })
@@ -237,6 +310,8 @@ pub async fn decrypt_file_recipient(
     dest_path: String,
     recipient_sk_hex: String,
     shield: Option<ShieldPolicyJson>,
+    perf_profile: Option<String>,
+    delete_source: Option<bool>,
 ) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let sk = deserialize_sk(&recipient_sk_hex)?;
@@ -271,18 +346,25 @@ pub async fn decrypt_file_recipient(
             None => None,
         };
 
+        let num_workers = get_num_workers(perf_profile.as_deref());
+
         if let Some(ref pol) = core_policy {
-            decrypt_file_pipelined_with_policy(source, dest, &dek, 4, Some(pol))
+            decrypt_file_pipelined_with_policy(source, dest, &dek, num_workers, Some(pol))
                 .map_err(|e| match e {
                     vollcrypt_files_core::FileFormatError::ContainerSealed => "ContainerSealed".to_string(),
                     other => format!("Decryption failed: {}", other),
                 })?;
         } else {
-            decrypt_file_pipelined(source, dest, &dek, 4)
+            decrypt_file_pipelined(source, dest, &dek, num_workers)
                 .map_err(|e| match e {
                     vollcrypt_files_core::FileFormatError::ContainerSealed => "ContainerSealed".to_string(),
                     other => format!("Decryption failed: {}", other),
                 })?;
+        }
+
+        if delete_source.unwrap_or(false) {
+            std::fs::remove_file(&source_path)
+                .map_err(|e| format!("Failed to delete original source file: {}", e))?;
         }
 
         Ok(())
@@ -296,14 +378,12 @@ pub async fn encrypt_text_password(
     text: String,
     password: String,
     kdf_choice: String,
+    perf_profile: Option<String>,
 ) -> Result<String, String> {
     let dek = generate_dek();
     let file_id = generate_file_id();
 
-    let kdf = match kdf_choice.as_str() {
-        "PBKDF2" => KdfChoice::pbkdf2_default(),
-        _ => KdfChoice::argon2id_interactive(),
-    };
+    let kdf = get_kdf_choice(&kdf_choice, perf_profile.as_deref());
 
     let wrap = wrap_dek_with_password(&dek, password.as_bytes(), kdf)
         .map_err(|e| e.to_string())?;
@@ -632,6 +712,8 @@ pub async fn encrypt_file_threshold(
     dest_path: String,
     t: u8,
     n: u8,
+    perf_profile: Option<String>,
+    delete_source: Option<bool>,
 ) -> Result<Vec<String>, String> {
     tokio::task::spawn_blocking(move || {
         let dek = generate_dek();
@@ -645,6 +727,8 @@ pub async fn encrypt_file_threshold(
         let dest = std::fs::File::create(&dest_path)
             .map_err(|e| format!("Failed to create destination file: {}", e))?;
 
+        let num_workers = get_num_workers(perf_profile.as_deref());
+
         encrypt_file_pipelined(
             source,
             dest,
@@ -653,11 +737,16 @@ pub async fn encrypt_file_threshold(
             1024 * 1024,
             vec![wrap],
             Mode::Recipient,
-            4,
+            num_workers,
             None,
             None,
         )
         .map_err(|e| format!("Encryption failed: {}", e))?;
+
+        if delete_source.unwrap_or(false) {
+            std::fs::remove_file(&source_path)
+                .map_err(|e| format!("Failed to delete original source file: {}", e))?;
+        }
 
         let share_strs = shares
             .iter()
@@ -676,6 +765,8 @@ pub async fn decrypt_file_threshold(
     dest_path: String,
     shares: Vec<String>,
     shield: Option<ShieldPolicyJson>,
+    perf_profile: Option<String>,
+    delete_source: Option<bool>,
 ) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let mut source = std::fs::File::open(&source_path)
@@ -721,18 +812,25 @@ pub async fn decrypt_file_threshold(
             None => None,
         };
 
+        let num_workers = get_num_workers(perf_profile.as_deref());
+
         if let Some(ref pol) = core_policy {
-            decrypt_file_pipelined_with_policy(source, dest, &dek, 4, Some(pol))
+            decrypt_file_pipelined_with_policy(source, dest, &dek, num_workers, Some(pol))
                 .map_err(|e| match e {
                     vollcrypt_files_core::FileFormatError::ContainerSealed => "ContainerSealed".to_string(),
                     other => format!("Decryption failed: {}", other),
                 })?;
         } else {
-            decrypt_file_pipelined(source, dest, &dek, 4)
+            decrypt_file_pipelined(source, dest, &dek, num_workers)
                 .map_err(|e| match e {
                     vollcrypt_files_core::FileFormatError::ContainerSealed => "ContainerSealed".to_string(),
                     other => format!("Decryption failed: {}", other),
                 })?;
+        }
+
+        if delete_source.unwrap_or(false) {
+            std::fs::remove_file(&source_path)
+                .map_err(|e| format!("Failed to delete original source file: {}", e))?;
         }
 
         Ok(())
@@ -811,6 +909,37 @@ pub async fn decrypt_text_threshold(
 
     String::from_utf8(plaintext_bytes)
         .map_err(|e| format!("Plaintext is not valid UTF-8: {}", e))
+}
+
+#[derive(serde::Serialize)]
+pub struct PlatformInfo {
+    pub os: String,
+    pub arch: String,
+}
+
+#[tauri::command]
+pub fn get_platform_info() -> PlatformInfo {
+    let os = if cfg!(target_os = "windows") {
+        "Windows".to_string()
+    } else if cfg!(target_os = "macos") {
+        "macOS".to_string()
+    } else if cfg!(target_os = "linux") {
+        "Linux".to_string()
+    } else {
+        std::env::consts::OS.to_string()
+    };
+
+    let arch = if cfg!(target_arch = "x86_64") {
+        "x64".to_string()
+    } else if cfg!(target_arch = "aarch64") {
+        "ARM64".to_string()
+    } else if cfg!(target_arch = "x86") {
+        "x86".to_string()
+    } else {
+        std::env::consts::ARCH.to_string()
+    };
+
+    PlatformInfo { os, arch }
 }
 
 
