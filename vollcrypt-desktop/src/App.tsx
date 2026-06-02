@@ -10,6 +10,21 @@ type Tab = "file" | "text" | "key";
 type Mode = "password" | "recipient" | "threshold";
 type Action = "encrypt" | "decrypt" | "verify" | "seal";
 
+function ResizeHandles() {
+  return (
+    <>
+      <div className="resize-handle top" onMouseDown={() => getCurrentWindow().startResizeDragging("North")} />
+      <div className="resize-handle bottom" onMouseDown={() => getCurrentWindow().startResizeDragging("South")} />
+      <div className="resize-handle left" onMouseDown={() => getCurrentWindow().startResizeDragging("West")} />
+      <div className="resize-handle right" onMouseDown={() => getCurrentWindow().startResizeDragging("East")} />
+      <div className="resize-handle top-left" onMouseDown={() => getCurrentWindow().startResizeDragging("NorthWest")} />
+      <div className="resize-handle top-right" onMouseDown={() => getCurrentWindow().startResizeDragging("NorthEast")} />
+      <div className="resize-handle bottom-left" onMouseDown={() => getCurrentWindow().startResizeDragging("SouthWest")} />
+      <div className="resize-handle bottom-right" onMouseDown={() => getCurrentWindow().startResizeDragging("SouthEast")} />
+    </>
+  );
+}
+
 function App() {
   const clipboardTimerRef = useRef<any>(null);
   const handleMinimize = () => {
@@ -752,6 +767,7 @@ function App() {
   if (showSplash) {
     return (
       <div className="window-frame">
+        <ResizeHandles />
         <div className={`splash-screen ${isSplashDone ? "fade-out" : ""}`}>
           <div className="splash-content">
             <span className="splash-powered">{displayPowered}</span>
@@ -771,6 +787,7 @@ function App() {
   if (!isEulaApproved) {
     return (
       <div className="window-frame">
+        <ResizeHandles />
         {/* Custom Titlebar */}
         <div className="custom-titlebar" data-tauri-drag-region>
           <div className="titlebar-brand" data-tauri-drag-region>
@@ -842,6 +859,7 @@ function App() {
 
   return (
     <div className="window-frame">
+      <ResizeHandles />
       {/* Custom Titlebar */}
       <div className="custom-titlebar" data-tauri-drag-region>
         <div className="titlebar-brand" data-tauri-drag-region>

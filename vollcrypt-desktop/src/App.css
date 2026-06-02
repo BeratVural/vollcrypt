@@ -47,6 +47,7 @@ body {
   border-radius: 10px;
   overflow: hidden;
   box-shadow: none !important;
+  position: relative;
 }
 
 .app-container {
@@ -222,8 +223,23 @@ label {
   transition: all 0.2s ease;
 }
 
+.select-input {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 14px;
+  padding-right: 36px;
+}
+
 .text-input:focus, .select-input:focus {
   border-color: var(--accent-color);
+}
+
+.select-input:focus {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f97316' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
 }
 
 .select-input option {
@@ -956,6 +972,77 @@ input:checked + .slider:before {
   font-size: 9px;
   color: #71717a;
   margin-top: 4px;
+}
+
+/* Custom window resize handles for borderless window resizing */
+.resize-handle {
+  position: absolute;
+  user-select: none;
+  z-index: 9999;
+}
+
+.resize-handle.top {
+  top: 0;
+  left: 6px;
+  right: 6px;
+  height: 6px;
+  cursor: n-resize;
+}
+
+.resize-handle.bottom {
+  bottom: 0;
+  left: 6px;
+  right: 6px;
+  height: 6px;
+  cursor: s-resize;
+}
+
+.resize-handle.left {
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 6px;
+  cursor: w-resize;
+}
+
+.resize-handle.right {
+  right: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 6px;
+  cursor: e-resize;
+}
+
+.resize-handle.top-left {
+  top: 0;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  cursor: nw-resize;
+}
+
+.resize-handle.top-right {
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  cursor: ne-resize;
+}
+
+.resize-handle.bottom-left {
+  bottom: 0;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  cursor: sw-resize;
+}
+
+.resize-handle.bottom-right {
+  bottom: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  cursor: se-resize;
 }
 
 
