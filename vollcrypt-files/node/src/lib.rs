@@ -268,7 +268,7 @@ pub struct KdfChoice {
 
 #[napi(object)]
 pub struct WrapEntry {
-    pub kind: String, // "PasswordPbkdf2" | "PasswordArgon2id" | "HybridKem" | "GroupWrap"
+    pub kind: String, // "PasswordPbkdf2" | "PasswordArgon2id" | "HybridKem" | "GroupWrap" | "Threshold"
     pub salt: Option<Buffer>,
     pub rounds: Option<u32>,
     pub m_cost: Option<u32>,
@@ -280,6 +280,9 @@ pub struct WrapEntry {
     pub ciphertext_ml_kem: Option<Buffer>,
     pub group_id: Option<Buffer>,
     pub wrapped_key: Buffer,
+    pub t: Option<u8>,
+    pub n: Option<u8>,
+    pub share_set_id: Option<Buffer>,
 }
 
 fn wrap_entry_to_napi(entry: vollcrypt_files_core::WrapEntry) -> WrapEntry {
@@ -301,6 +304,9 @@ fn wrap_entry_to_napi(entry: vollcrypt_files_core::WrapEntry) -> WrapEntry {
             ciphertext_ml_kem: None,
             group_id: None,
             wrapped_key: Buffer::from(wrapped_dek.to_vec()),
+            t: None,
+            n: None,
+            share_set_id: None,
         },
         vollcrypt_files_core::WrapEntry::PasswordArgon2id {
             salt,
@@ -321,6 +327,9 @@ fn wrap_entry_to_napi(entry: vollcrypt_files_core::WrapEntry) -> WrapEntry {
             ciphertext_ml_kem: None,
             group_id: None,
             wrapped_key: Buffer::from(wrapped_dek.to_vec()),
+            t: None,
+            n: None,
+            share_set_id: None,
         },
         vollcrypt_files_core::WrapEntry::HybridKem {
             recipient_id,
@@ -341,6 +350,9 @@ fn wrap_entry_to_napi(entry: vollcrypt_files_core::WrapEntry) -> WrapEntry {
             ciphertext_ml_kem: Some(Buffer::from(mlkem_ciphertext)),
             group_id: None,
             wrapped_key: Buffer::from(wrapped_dek.to_vec()),
+            t: None,
+            n: None,
+            share_set_id: None,
         },
         vollcrypt_files_core::WrapEntry::GroupWrap {
             group_id,
@@ -359,6 +371,31 @@ fn wrap_entry_to_napi(entry: vollcrypt_files_core::WrapEntry) -> WrapEntry {
             ciphertext_ml_kem: None,
             group_id: Some(Buffer::from(group_id.to_vec())),
             wrapped_key: Buffer::from(wrapped_dek.to_vec()),
+            t: None,
+            n: None,
+            share_set_id: None,
+        },
+        vollcrypt_files_core::WrapEntry::Threshold {
+            t,
+            n,
+            share_set_id,
+            wrapped_dek,
+        } => WrapEntry {
+            kind: "Threshold".to_string(),
+            salt: None,
+            rounds: None,
+            m_cost: None,
+            t_cost: None,
+            p_cost: None,
+            recipient_id: None,
+            gk_version: None,
+            ephemeral_x25519: None,
+            ciphertext_ml_kem: None,
+            group_id: None,
+            wrapped_key: Buffer::from(wrapped_dek.to_vec()),
+            t: Some(t),
+            n: Some(n),
+            share_set_id: Some(Buffer::from(share_set_id.to_vec())),
         },
     }
 }
@@ -452,6 +489,25 @@ fn napi_to_wrap_entry(entry: WrapEntry) -> Result<vollcrypt_files_core::WrapEntr
             Ok(vollcrypt_files_core::WrapEntry::GroupWrap {
                 group_id,
                 gk_version,
+                wrapped_dek,
+            })
+        }
+        "Threshold" => {
+            let t = entry
+                .t
+                .ok_or_else(|| Error::from_reason("Missing t for Threshold"))?;
+            let n = entry
+                .n
+                .ok_or_else(|| Error::from_reason("Missing n for Threshold"))?;
+            let share_set_id_buf = entry
+                .share_set_id
+                .ok_or_else(|| Error::from_reason("Missing share_set_id for Threshold"))?;
+            let share_set_id = to_arr16(share_set_id_buf.as_ref(), "share_set_id")?;
+            let wrapped_dek = to_arr40(entry.wrapped_key.as_ref(), "wrapped_key")?;
+            Ok(vollcrypt_files_core::WrapEntry::Threshold {
+                t,
+                n,
+                share_set_id,
                 wrapped_dek,
             })
         }
@@ -656,6 +712,104 @@ pub fn unwrap_dek_with_group_key(wrap: WrapEntry, gk: Uint8Array) -> Result<Buff
         Ok(dek) => Ok(Buffer::from(dek.to_vec())),
         Err(e) => Err(Error::from_reason(e.to_string())),
     }
+}
+
+// ==================== Threshold SSS Mode ====================
+
+#[napi(object)]
+pub struct WrapThresholdResult {
+    pub wrap: WrapEntry,
+    pub shares: Vec<String>,
+}
+
+#[napi(object)]
+pub struct ShareJson {
+    pub share_set_id: Buffer,
+    pub t: u8,
+    pub n: u8,
+    pub x: u8,
+    pub y: Buffer,
+}
+
+#[napi]
+pub fn wrap_dek_with_threshold(
+    dek: Buffer,
+    file_id: Buffer,
+    t: u8,
+    n: u8,
+    cipher_suite_id: u8,
+) -> Result<WrapThresholdResult> {
+    let dek_arr = to_arr32(dek.as_ref(), "dek")?;
+    let file_id_arr = to_arr16(file_id.as_ref(), "file_id")?;
+
+    let (core_wrap, core_shares) =
+        vollcrypt_files_core::wrap_dek_with_threshold(&dek_arr, &file_id_arr, t, n, cipher_suite_id)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+
+    let shares = core_shares
+        .iter()
+        .map(|s| vollcrypt_files_core::encode_share(s))
+        .collect();
+
+    Ok(WrapThresholdResult {
+        wrap: wrap_entry_to_napi(core_wrap),
+        shares,
+    })
+}
+
+#[napi]
+pub fn unwrap_dek_with_threshold_shares(
+    wrap: WrapEntry,
+    file_id: Buffer,
+    shares: Vec<String>,
+    cipher_suite_id: u8,
+) -> Result<Buffer> {
+    let core_wrap = napi_to_wrap_entry(wrap)?;
+    let file_id_arr = to_arr16(file_id.as_ref(), "file_id")?;
+
+    let mut core_shares = Vec::with_capacity(shares.len());
+    for s in &shares {
+        let decoded = vollcrypt_files_core::decode_share(s)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        core_shares.push(decoded);
+    }
+
+    let dek = vollcrypt_files_core::unwrap_dek_with_threshold(
+        &core_wrap,
+        &file_id_arr,
+        &core_shares,
+        cipher_suite_id,
+    )
+    .map_err(|e| Error::from_reason(e.to_string()))?;
+
+    Ok(Buffer::from(dek.to_vec()))
+}
+
+#[napi]
+pub fn encode_share(share: ShareJson) -> Result<String> {
+    let share_set_id = to_arr16(share.share_set_id.as_ref(), "share_set_id")?;
+    let y = to_arr32(share.y.as_ref(), "y")?;
+    let core_share = vollcrypt_files_core::Share {
+        share_set_id,
+        t: share.t,
+        n: share.n,
+        x: share.x,
+        y,
+    };
+    Ok(vollcrypt_files_core::encode_share(&core_share))
+}
+
+#[napi]
+pub fn decode_share(s: String) -> Result<ShareJson> {
+    let core_share = vollcrypt_files_core::decode_share(&s)
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+    Ok(ShareJson {
+        share_set_id: Buffer::from(core_share.share_set_id.to_vec()),
+        t: core_share.t,
+        n: core_share.n,
+        x: core_share.x,
+        y: Buffer::from(core_share.y.to_vec()),
+    })
 }
 
 // ==================== Ed25519 Signatures ====================

@@ -28,6 +28,7 @@ pub mod wrap;
 pub mod writer;
 pub mod shield;
 pub mod sovereign;
+pub mod threshold;
 
 pub use shield::{ReleaseMode, SignaturePolicy, OnTamper, ShieldPolicy, ShieldReport, verify_container};
 pub use sovereign::{SealMode, SealOptions, SealedInspection, is_sealed, inspect_sealed, seal_container};
@@ -97,4 +98,7 @@ pub use hybrid_sig::{
     HybridSignature,
 };
 pub use wrap::WrapEntry;
+pub use threshold::{
+    Share, wrap_dek_with_threshold, unwrap_dek_with_threshold, encode_share, decode_share,
+};
 

@@ -310,7 +310,7 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { generateDek, generateFileId, generateSalt, generateGk, encryptChunk, decryptChunk, chunkLeafHash, merkleRoot, merkleProof, verifyMerkleProof, wrapDekWithPassword, unwrapDekWithPassword, unwrapDekWithPasswordAsync, generateRecipientKeypair, wrapKeyToRecipient, unwrapKeyWithRecipientKey, wrapDekForGroup, unwrapDekWithGroupKey, ed25519KeypairGenerate, ed25519Sign, ed25519Verify, hybridKeypairGenerate, hybridSign, hybridVerify, GroupManifest, HeaderClass, rewrapDekInHeader, cryptoShredHeader, signHeaderPlain, signHeaderSealed, verifyHeaderSignaturePlain, verifyHeaderSignatureSealed, KeyLog, resolveSender, sealContainer, isSealed, inspectSealedContainer, verifyContainer, encryptFilePipelinedAsync, decryptFilePipelinedAsync } = nativeBinding
+const { generateDek, generateFileId, generateSalt, generateGk, encryptChunk, decryptChunk, chunkLeafHash, merkleRoot, merkleProof, verifyMerkleProof, wrapDekWithPassword, unwrapDekWithPassword, unwrapDekWithPasswordAsync, generateRecipientKeypair, wrapKeyToRecipient, unwrapKeyWithRecipientKey, wrapDekForGroup, unwrapDekWithGroupKey, wrapDekWithThreshold, unwrapDekWithThresholdShares, encodeShare, decodeShare, ed25519KeypairGenerate, ed25519Sign, ed25519Verify, hybridKeypairGenerate, hybridSign, hybridVerify, GroupManifest, HeaderClass, rewrapDekInHeader, cryptoShredHeader, signHeaderPlain, signHeaderSealed, verifyHeaderSignaturePlain, verifyHeaderSignatureSealed, KeyLog, resolveSender, sealContainer, isSealed, inspectSealedContainer, verifyContainer, encryptFilePipelinedAsync, decryptFilePipelinedAsync } = nativeBinding
 
 module.exports.generateDek = generateDek
 module.exports.generateFileId = generateFileId
@@ -330,6 +330,10 @@ module.exports.wrapKeyToRecipient = wrapKeyToRecipient
 module.exports.unwrapKeyWithRecipientKey = unwrapKeyWithRecipientKey
 module.exports.wrapDekForGroup = wrapDekForGroup
 module.exports.unwrapDekWithGroupKey = unwrapDekWithGroupKey
+module.exports.wrapDekWithThreshold = wrapDekWithThreshold
+module.exports.unwrapDekWithThresholdShares = unwrapDekWithThresholdShares
+module.exports.encodeShare = encodeShare
+module.exports.decodeShare = decodeShare
 module.exports.ed25519KeypairGenerate = ed25519KeypairGenerate
 module.exports.ed25519Sign = ed25519Sign
 module.exports.ed25519Verify = ed25519Verify

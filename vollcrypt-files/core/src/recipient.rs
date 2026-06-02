@@ -168,6 +168,7 @@ pub fn unwrap_key_with_recipient_key(
         }
         WrapEntry::PasswordPbkdf2 { .. }
         | WrapEntry::PasswordArgon2id { .. }
-        | WrapEntry::GroupWrap { .. } => Err(FileFormatError::WrongWrapType),
+        | WrapEntry::GroupWrap { .. }
+        | WrapEntry::Threshold { .. } => Err(FileFormatError::WrongWrapType),
     }
 }

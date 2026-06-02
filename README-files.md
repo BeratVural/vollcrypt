@@ -369,6 +369,30 @@ Each wrap entry starts with a 1-byte `wrap_type` and a 2-byte BE `payload_len`. 
 *   `1143..1183`: Wrapped Key (40 bytes AES-KW)
 *   *Total Serialization Size:* 1183 bytes.
 
+#### Type 5: Threshold SSS Wrap (Payload Length = 58)
+*   `0..1`: Wrap Type (0x05)
+*   `1..3`: Payload Length (0x003A - 58 bytes)
+*   `3..4`: Threshold `t` (1 byte, `1..=255`)
+*   `4..5`: Total Shares `n` (1 byte, `1..=255`)
+*   `5..21`: Share Set ID (16 bytes)
+*   `21..61`: Wrapped DEK (40 bytes AES-KW under the derived KEK)
+*   *Total Serialization Size:* 61 bytes.
+
+Reconstructing the 32-byte Threshold Master Secret (TMS) requires at least `t` valid shares. The KEK is derived via HKDF-SHA256:
+*   **IKM:** Reconstructed TMS (32 bytes)
+*   **Salt:** File ID (16 bytes)
+*   **Info:** `"vollcrypt-file-threshold-kek-v1"` || `share_set_id` (16 bytes) || `t` (1 byte) || `n` (1 byte) || `cipher_suite_id` (1 byte)
+*   **Length:** 32 bytes
+
+Shares are exported externally as portable strings in the format `vcs_<base64url(payload)>` (without padding), where the 59-byte `payload` consists of:
+*   `0..4`: Version / domain tag `VCS\x01` (`[0x56, 0x43, 0x53, 0x01]`)
+*   `4..20`: Share Set ID (16 bytes)
+*   `20..21`: Threshold `t` (1 byte)
+*   `21..22`: Total Shares `n` (1 byte)
+*   `22..23`: Coordinate `x` (1 byte, `1..=255`)
+*   `23..55`: Share Value `y` (32 bytes)
+*   `55..59`: Checksum (4 bytes, first 4 bytes of SHA-256 over `payload[0..55]`)
+
 For direct recipient wrapping, this field represents the recipient key version. For group-mediated recipient wrapping, a separate group-mediated wrap profile SHOULD be used. (Type 2 is unsupported/legacy).
 
 ### Canonical Encoding and Parser Rules

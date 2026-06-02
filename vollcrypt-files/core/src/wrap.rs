@@ -26,6 +26,12 @@ pub enum WrapEntry {
         gk_version: u32,
         wrapped_dek: [u8; 40],
     },
+    Threshold {
+        t: u8,
+        n: u8,
+        share_set_id: [u8; 16],
+        wrapped_dek: [u8; 40],
+    },
 }
 
 impl WrapEntry {
@@ -173,6 +179,30 @@ impl WrapEntry {
                     wrapped_dek,
                 }
             }
+            5 => {
+                if payload_len != 58 {
+                    return Err(FileFormatError::WrapPayloadLengthMismatch {
+                        wrap_type: 5,
+                        expected: 58,
+                        got: payload_len as u16,
+                    });
+                }
+                let t = payload[0];
+                let n = payload[1];
+
+                let mut share_set_id = [0u8; 16];
+                share_set_id.copy_from_slice(&payload[2..18]);
+
+                let mut wrapped_dek = [0u8; 40];
+                wrapped_dek.copy_from_slice(&payload[18..58]);
+
+                WrapEntry::Threshold {
+                    t,
+                    n,
+                    share_set_id,
+                    wrapped_dek,
+                }
+            }
             invalid_type => return Err(FileFormatError::InvalidWrapType(invalid_type)),
         };
 
@@ -185,6 +215,7 @@ impl WrapEntry {
             WrapEntry::PasswordArgon2id { .. } => 1u8,
             WrapEntry::HybridKem { .. } => 4u8,
             WrapEntry::GroupWrap { .. } => 3u8,
+            WrapEntry::Threshold { .. } => 5u8,
         };
 
         let payload_len = (self.wire_size() - 3) as u16;
@@ -237,6 +268,17 @@ impl WrapEntry {
                 out.extend_from_slice(&gk_version.to_be_bytes());
                 out.extend_from_slice(wrapped_dek);
             }
+            WrapEntry::Threshold {
+                t,
+                n,
+                share_set_id,
+                wrapped_dek,
+            } => {
+                out.push(*t);
+                out.push(*n);
+                out.extend_from_slice(share_set_id);
+                out.extend_from_slice(wrapped_dek);
+            }
         }
 
         out
@@ -248,6 +290,7 @@ impl WrapEntry {
             WrapEntry::PasswordArgon2id { .. } => 3 + 68,
             WrapEntry::HybridKem { .. } => 3 + 1180,
             WrapEntry::GroupWrap { .. } => 3 + 60,
+            WrapEntry::Threshold { .. } => 3 + 58,
         }
     }
 }

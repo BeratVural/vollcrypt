@@ -153,6 +153,9 @@ pub enum FileFormatError {
     #[error("Container is sealed")]
     ContainerSealed,
 
+    #[error("Threshold share validation failed")]
+    InvalidShare,
+
     #[error("I/O error: {0}")]
     IoError(String),
 }

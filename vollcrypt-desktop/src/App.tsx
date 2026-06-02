@@ -6,8 +6,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import "./App.css";
 
 type Tab = "file" | "text" | "key";
-type Mode = "password" | "recipient";
-type Action = "encrypt" | "decrypt";
+type Mode = "password" | "recipient" | "threshold";
+type Action = "encrypt" | "decrypt" | "verify" | "seal";
 
 function App() {
   const handleMinimize = () => {
@@ -37,6 +37,25 @@ function App() {
   const [kdfChoice, setKdfChoice] = useState("Argon2id");
   const [recipientKey, setRecipientKey] = useState("");
 
+  // Verify states
+  const [verifyReleaseMode, setVerifyReleaseMode] = useState("verified");
+  const [verifySignaturePolicy, setVerifySignaturePolicy] = useState("required");
+  const [verifyRollbackPin, setVerifyRollbackPin] = useState("");
+  const [verifyFounderAnchor, setVerifyFounderAnchor] = useState(true);
+  const [verifyOnTamper, setVerifyOnTamper] = useState("abort");
+  const [verifyReport, setVerifyReport] = useState<string | null>(null);
+  const [sealedInspection, setSealedInspection] = useState<any | null>(null);
+
+  // Seal states
+  const [sealMode, setSealMode] = useState("seal");
+  const [sealReason, setSealReason] = useState("");
+  const [sealConfirmText, setSealConfirmText] = useState("");
+  const [sealSignEnabled, setSealSignEnabled] = useState(false);
+  const [sealSignKind, setSealSignKind] = useState("plain");
+  const [sealSignerPk, setSealSignerPk] = useState("");
+  const [sealSignerSk, setSealSignerSk] = useState("");
+  const [sealKeyLogId, setSealKeyLogId] = useState("");
+
   // Text states
   const [inputText, setInputText] = useState("");
   const [outputText, setOutputText] = useState("");
@@ -44,6 +63,12 @@ function App() {
   // Key generator states
   const [generatedPk, setGeneratedPk] = useState("");
   const [generatedSk, setGeneratedSk] = useState("");
+
+  // Threshold SSS states
+  const [thresholdT, setThresholdT] = useState<number>(2);
+  const [thresholdN, setThresholdN] = useState<number>(3);
+  const [inputShares, setInputShares] = useState("");
+  const [generatedShares, setGeneratedShares] = useState<string[] | null>(null);
 
   // UI state
   const [status, setStatus] = useState<{ type: "success" | "error" | "info"; msg: string } | null>(null);
@@ -104,13 +129,19 @@ function App() {
 
   const handleFileProcess = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!sourceFile || !destFile) {
+    if (!sourceFile) {
+      showStatus("error", "Source file path is required.");
+      return;
+    }
+    if ((fileAction === "encrypt" || fileAction === "decrypt") && !destFile) {
       showStatus("error", "Source and destination paths are required.");
       return;
     }
 
     setLoading(true);
     setStatus({ type: "info", msg: "Processing... Please wait." });
+    setVerifyReport(null);
+    setSealedInspection(null);
 
     try {
       if (fileAction === "encrypt") {
@@ -122,35 +153,124 @@ function App() {
             password,
             kdfChoice,
           });
-        } else {
+        } else if (activeMode === "recipient") {
           if (!recipientKey) throw new Error("Recipient Public Key is required.");
           await invoke("encrypt_file_recipient", {
             sourcePath: sourceFile,
             destPath: destFile,
             recipientPkHex: recipientKey.trim(),
           });
+        } else {
+          if (thresholdT < 2) throw new Error("Threshold (t) must be at least 2.");
+          if (thresholdN < thresholdT) throw new Error("Total shares (n) must be greater than or equal to threshold (t).");
+          const shares: string[] = await invoke("encrypt_file_threshold", {
+            sourcePath: sourceFile,
+            destPath: destFile,
+            t: thresholdT,
+            n: thresholdN,
+          });
+          setGeneratedShares(shares);
         }
-        showStatus("success", "File successfully encrypted.");
-      } else {
+        showStatus("success", activeMode === "threshold" ? "File encrypted and SSS shares generated successfully." : "File successfully encrypted.");
+      } else if (fileAction === "decrypt") {
+        let shieldPolicy = null;
+        if (verifyReleaseMode || verifySignaturePolicy) {
+          shieldPolicy = {
+            releaseMode: verifyReleaseMode,
+            signature: verifySignaturePolicy,
+            rollbackPin: verifyRollbackPin ? parseInt(verifyRollbackPin, 10) : null,
+            founderAnchor: verifyFounderAnchor,
+            onTamper: verifyOnTamper,
+          };
+        }
         if (activeMode === "password") {
           if (!password) throw new Error("Decryption password is required.");
           await invoke("decrypt_file_password", {
             sourcePath: sourceFile,
             destPath: destFile,
             password,
+            shield: shieldPolicy,
           });
-        } else {
+        } else if (activeMode === "recipient") {
           if (!recipientKey) throw new Error("Recipient Secret Key is required.");
           await invoke("decrypt_file_recipient", {
             sourcePath: sourceFile,
             destPath: destFile,
             recipientSkHex: recipientKey.trim(),
+            shield: shieldPolicy,
+          });
+        } else {
+          const parsedShares = inputShares
+            .split("\n")
+            .map(s => s.trim())
+            .filter(s => s.length > 0);
+          if (parsedShares.length === 0) throw new Error("Please paste at least t shares.");
+          await invoke("decrypt_file_threshold", {
+            sourcePath: sourceFile,
+            destPath: destFile,
+            shares: parsedShares,
+            shield: shieldPolicy,
           });
         }
-        showStatus("success", "File successfully decrypted.");
+        showStatus("success", activeMode === "threshold" ? "File successfully decrypted using SSS shares." : "File successfully decrypted.");
+      } else if (fileAction === "verify") {
+        const policy = {
+          releaseMode: verifyReleaseMode,
+          signature: verifySignaturePolicy,
+          rollbackPin: verifyRollbackPin ? parseInt(verifyRollbackPin, 10) : null,
+          founderAnchor: verifyFounderAnchor,
+          onTamper: verifyOnTamper,
+        };
+        const report: string = await invoke("verify_container_file", {
+          path: sourceFile,
+          policy,
+        });
+        setVerifyReport(report);
+        if (report === "ContainerSealed") {
+          showStatus("info", "Verification check: Container is Sealed.");
+          try {
+            const inspectRes = await invoke("inspect_sealed_file", { path: sourceFile });
+            setSealedInspection(inspectRes);
+          } catch (inspectErr) {
+            console.error("Failed to inspect sealed container:", inspectErr);
+          }
+        } else if (report === "Success" || report.includes("Success")) {
+          showStatus("success", "Verification check: Integrity signature checks passed.");
+        } else {
+          showStatus("error", `Verification check: Tampering/validation issue detected: ${report}`);
+        }
+      } else if (fileAction === "seal") {
+        if (sealConfirmText !== "SEAL") {
+          throw new Error("Please type SEAL to confirm this irreversible action.");
+        }
+        let signInfo = null;
+        if (sealSignEnabled) {
+          if (!sealSignerPk || !sealSignerSk || !sealKeyLogId) {
+            throw new Error("Signing keys and Key Log ID are required when signing the sealed marker.");
+          }
+          signInfo = {
+            kind: sealSignKind,
+            signerPk: sealSignerPk.trim(),
+            signerSk: sealSignerSk.trim(),
+            keyLogId: sealKeyLogId.trim(),
+            timestamp: Math.floor(Date.now() / 1000),
+          };
+        }
+        await invoke("seal_file", {
+          path: sourceFile,
+          mode: sealMode,
+          reason: sealReason || null,
+          signInfo,
+        });
+        showStatus("success", `File container successfully ${sealMode === "purge" ? "purged" : "sealed"}.`);
+        setSealConfirmText("");
       }
     } catch (err: any) {
-      showStatus("error", err.message || String(err));
+      if (err === "ContainerSealed" || String(err).includes("ContainerSealed")) {
+        showStatus("error", "ContainerSealed");
+      } else {
+        showStatus("error", err.message || String(err));
+      }
     } finally {
       setLoading(false);
     }
@@ -166,6 +286,7 @@ function App() {
     setLoading(true);
     setStatus(null);
     setOutputText("");
+    setGeneratedShares(null);
 
     try {
       if (textAction === "encrypt") {
@@ -177,12 +298,22 @@ function App() {
             password,
             kdfChoice,
           });
-        } else {
+        } else if (activeMode === "recipient") {
           if (!recipientKey) throw new Error("Recipient Public Key is required.");
           result = await invoke("encrypt_text_recipient", {
             text: inputText,
             recipientPkHex: recipientKey.trim(),
           });
+        } else {
+          if (thresholdT < 2) throw new Error("Threshold (t) must be at least 2.");
+          if (thresholdN < thresholdT) throw new Error("Total shares (n) must be greater than or equal to threshold (t).");
+          const res: { ciphertextHex: string; shares: string[] } = await invoke("encrypt_text_threshold", {
+            text: inputText,
+            t: thresholdT,
+            n: thresholdN,
+          });
+          result = res.ciphertextHex;
+          setGeneratedShares(res.shares);
         }
         setOutputText(result);
         showStatus("success", "Text encrypted successfully.");
@@ -194,11 +325,21 @@ function App() {
             ciphertextHex: inputText.trim(),
             password,
           });
-        } else {
+        } else if (activeMode === "recipient") {
           if (!recipientKey) throw new Error("Secret Key is required for decryption.");
           result = await invoke("decrypt_text_recipient", {
             ciphertextHex: inputText.trim(),
             recipientSkHex: recipientKey.trim(),
+          });
+        } else {
+          const parsedShares = inputShares
+            .split("\n")
+            .map(s => s.trim())
+            .filter(s => s.length > 0);
+          if (parsedShares.length === 0) throw new Error("Please paste at least t shares.");
+          result = await invoke("decrypt_text_threshold", {
+            ciphertextHex: inputText.trim(),
+            shares: parsedShares,
           });
         }
         setOutputText(result);
@@ -337,6 +478,10 @@ function App() {
               setDestFile("");
               setInputText("");
               setOutputText("");
+              setInputShares("");
+              setGeneratedShares(null);
+              setThresholdT(2);
+              setThresholdN(3);
               setStatus(null);
             }}
           >
@@ -352,6 +497,10 @@ function App() {
               setDestFile("");
               setInputText("");
               setOutputText("");
+              setInputShares("");
+              setGeneratedShares(null);
+              setThresholdT(2);
+              setThresholdN(3);
               setStatus(null);
             }}
           >
@@ -367,6 +516,10 @@ function App() {
               setDestFile("");
               setInputText("");
               setOutputText("");
+              setInputShares("");
+              setGeneratedShares(null);
+              setThresholdT(2);
+              setThresholdN(3);
               setStatus(null);
             }}
           >
@@ -377,18 +530,25 @@ function App() {
         {/* File Tab */}
         {activeTab === "file" && (
           <form onSubmit={handleFileProcess}>
-            <div className="settings-row">
-              <div className="segmented-control">
+            <div className="settings-row" style={{ flexDirection: "column", gap: "12px", alignItems: "stretch" }}>
+              <div className="segmented-control" style={{ display: "flex", width: "100%" }}>
                 <button
                   type="button"
                   className={`segment-btn ${fileAction === "encrypt" ? "active" : ""}`}
+                  style={{ flex: 1 }}
                   onClick={() => {
                     setFileAction("encrypt");
                     setSourceFile("");
                     setDestFile("");
                     setPassword("");
                     setRecipientKey("");
+                    setInputShares("");
+                    setGeneratedShares(null);
+                    setThresholdT(2);
+                    setThresholdN(3);
                     setStatus(null);
+                    setVerifyReport(null);
+                    setSealedInspection(null);
                   }}
                 >
                   Encrypt
@@ -396,45 +556,117 @@ function App() {
                 <button
                   type="button"
                   className={`segment-btn ${fileAction === "decrypt" ? "active" : ""}`}
+                  style={{ flex: 1 }}
                   onClick={() => {
                     setFileAction("decrypt");
                     setSourceFile("");
                     setDestFile("");
                     setPassword("");
                     setRecipientKey("");
+                    setInputShares("");
+                    setGeneratedShares(null);
+                    setThresholdT(2);
+                    setThresholdN(3);
                     setStatus(null);
+                    setVerifyReport(null);
+                    setSealedInspection(null);
                   }}
                 >
                   Decrypt
                 </button>
+                <button
+                  type="button"
+                  className={`segment-btn ${fileAction === "verify" ? "active" : ""}`}
+                  style={{ flex: 1 }}
+                  onClick={() => {
+                    setFileAction("verify");
+                    setSourceFile("");
+                    setDestFile("");
+                    setPassword("");
+                    setRecipientKey("");
+                    setInputShares("");
+                    setGeneratedShares(null);
+                    setThresholdT(2);
+                    setThresholdN(3);
+                    setStatus(null);
+                    setVerifyReport(null);
+                    setSealedInspection(null);
+                  }}
+                >
+                  Verify
+                </button>
+                <button
+                  type="button"
+                  className={`segment-btn ${fileAction === "seal" ? "active" : ""}`}
+                  style={{ flex: 1 }}
+                  onClick={() => {
+                    setFileAction("seal");
+                    setSourceFile("");
+                    setDestFile("");
+                    setPassword("");
+                    setRecipientKey("");
+                    setInputShares("");
+                    setGeneratedShares(null);
+                    setThresholdT(2);
+                    setThresholdN(3);
+                    setStatus(null);
+                    setVerifyReport(null);
+                    setSealedInspection(null);
+                  }}
+                >
+                  Seal / Purge
+                </button>
               </div>
 
-              <div className="segmented-control">
-                <button
-                  type="button"
-                  className={`segment-btn ${activeMode === "password" ? "active" : ""}`}
-                  onClick={() => {
-                    setActiveMode("password");
-                    setPassword("");
-                    setRecipientKey("");
-                    setStatus(null);
-                  }}
-                >
-                  Password
-                </button>
-                <button
-                  type="button"
-                  className={`segment-btn ${activeMode === "recipient" ? "active" : ""}`}
-                  onClick={() => {
-                    setActiveMode("recipient");
-                    setPassword("");
-                    setRecipientKey("");
-                    setStatus(null);
-                  }}
-                >
-                  Hybrid KEM
-                </button>
-              </div>
+              {(fileAction === "encrypt" || fileAction === "decrypt") && (
+                <div className="segmented-control" style={{ display: "flex", width: "100%" }}>
+                  <button
+                    type="button"
+                    className={`segment-btn ${activeMode === "password" ? "active" : ""}`}
+                    style={{ flex: 1 }}
+                    onClick={() => {
+                      setActiveMode("password");
+                      setPassword("");
+                      setRecipientKey("");
+                      setInputShares("");
+                      setGeneratedShares(null);
+                      setStatus(null);
+                    }}
+                  >
+                    Password
+                  </button>
+                  <button
+                    type="button"
+                    className={`segment-btn ${activeMode === "recipient" ? "active" : ""}`}
+                    style={{ flex: 1 }}
+                    onClick={() => {
+                      setActiveMode("recipient");
+                      setPassword("");
+                      setRecipientKey("");
+                      setInputShares("");
+                      setGeneratedShares(null);
+                      setStatus(null);
+                    }}
+                  >
+                    Hybrid KEM
+                  </button>
+                  <button
+                    type="button"
+                    className={`segment-btn ${activeMode === "threshold" ? "active" : ""}`}
+                    style={{ flex: 1 }}
+                    onClick={() => {
+                      setActiveMode("threshold");
+                      setPassword("");
+                      setRecipientKey("");
+                      setInputShares("");
+                      setGeneratedShares(null);
+                      setStatus(null);
+                    }}
+                  >
+                    Threshold (t-of-n)
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="form-group">
@@ -447,65 +679,426 @@ function App() {
               </div>
             </div>
 
-            <div className="form-group">
-              <label>Destination File</label>
-              <div className="file-picker">
-                <div className="file-path">{destFile || "Select save path..."}</div>
-                <button type="button" className="file-picker-btn" onClick={handlePickDest}>
-                  Browse
-                </button>
-              </div>
-            </div>
-
-            {activeMode === "password" ? (
-              <div className="form-row">
-                <div className="form-group" style={{ flex: 2 }}>
-                  <label>Password</label>
-                  <input
-                    type="password"
-                    className="text-input"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter wrap password..."
-                  />
-                </div>
-                {fileAction === "encrypt" && (
-                  <div className="form-group" style={{ flex: 1 }}>
-                    <label>KDF</label>
-                    <select
-                      className="select-input"
-                      value={kdfChoice}
-                      onChange={(e) => setKdfChoice(e.target.value)}
-                    >
-                      <option value="Argon2id">Argon2id</option>
-                      <option value="PBKDF2">PBKDF2</option>
-                    </select>
-                  </div>
-                )}
-              </div>
-            ) : (
+            {(fileAction === "encrypt" || fileAction === "decrypt") && (
               <div className="form-group">
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <label>{fileAction === "encrypt" ? "Recipient Public Key" : "Your Secret Key"}</label>
-                  <button type="button" className="btn-secondary" onClick={loadKeyFromFile}>
-                    Load File
+                <label>Destination File</label>
+                <div className="file-picker">
+                  <div className="file-path">{destFile || "Select save path..."}</div>
+                  <button type="button" className="file-picker-btn" onClick={handlePickDest}>
+                    Browse
                   </button>
                 </div>
-                <input
-                  type="text"
-                  className="text-input"
-                  value={recipientKey}
-                  onChange={(e) => setRecipientKey(e.target.value)}
-                  placeholder={fileAction === "encrypt" ? "Paste public key hex..." : "Paste secret key hex..."}
-                />
+              </div>
+            )}
+
+            {(fileAction === "encrypt" || fileAction === "decrypt") && (
+              activeMode === "password" ? (
+                <div className="form-row">
+                  <div className="form-group" style={{ flex: 2 }}>
+                    <label>Password</label>
+                    <input
+                      type="password"
+                      className="text-input"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter wrap password..."
+                    />
+                  </div>
+                  {fileAction === "encrypt" && (
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label>KDF</label>
+                      <select
+                        className="select-input"
+                        value={kdfChoice}
+                        onChange={(e) => setKdfChoice(e.target.value)}
+                      >
+                        <option value="Argon2id">Argon2id</option>
+                        <option value="PBKDF2">PBKDF2</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              ) : activeMode === "recipient" ? (
+                <div className="form-group">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <label>{fileAction === "encrypt" ? "Recipient Public Key" : "Your Secret Key"}</label>
+                    <button type="button" className="btn-secondary" onClick={loadKeyFromFile}>
+                      Load File
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    className="text-input"
+                    value={recipientKey}
+                    onChange={(e) => setRecipientKey(e.target.value)}
+                    placeholder={fileAction === "encrypt" ? "Paste public key hex..." : "Paste secret key hex..."}
+                  />
+                </div>
+              ) : (
+                fileAction === "encrypt" ? (
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Threshold (t)</label>
+                      <input
+                        type="number"
+                        className="text-input"
+                        value={thresholdT}
+                        min={2}
+                        max={thresholdN}
+                        onChange={(e) => setThresholdT(parseInt(e.target.value) || 2)}
+                        placeholder="Required shares (t)"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Total Shares (n)</label>
+                      <input
+                        type="number"
+                        className="text-input"
+                        value={thresholdN}
+                        min={thresholdT}
+                        max={255}
+                        onChange={(e) => setThresholdN(parseInt(e.target.value) || 3)}
+                        placeholder="Total shares to generate (n)"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="form-group">
+                    <label>Pasted Shares (One share per line)</label>
+                    <textarea
+                      className="text-input"
+                      value={inputShares}
+                      onChange={(e) => setInputShares(e.target.value)}
+                      placeholder="Paste shares here (one per line, e.g. VOLL_SHARE_...)"
+                      style={{ minHeight: "120px" }}
+                    />
+                  </div>
+                )
+              )
+            )}
+
+            {(fileAction === "decrypt" || fileAction === "verify") && (
+              <div className="verify-settings" style={{ borderTop: "1px solid #1f1f23", paddingTop: "14px", marginTop: "14px" }}>
+                <h4 style={{ fontSize: "11px", fontWeight: "600", color: "#e4e4e7", marginBottom: "12px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Shield Policy Configurations
+                </h4>
+                
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Release Mode</label>
+                    <select
+                      className="select-input"
+                      value={verifyReleaseMode}
+                      onChange={(e) => setVerifyReleaseMode(e.target.value)}
+                    >
+                      <option value="verified">Verified (Double-pass, strict)</option>
+                      <option value="streaming">Streaming (Fast, on-the-fly)</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Signature Policy</label>
+                    <select
+                      className="select-input"
+                      value={verifySignaturePolicy}
+                      onChange={(e) => setVerifySignaturePolicy(e.target.value)}
+                    >
+                      <option value="required">Required (v2/v3 check)</option>
+                      <option value="optional">Optional (v1 fallback)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Rollback Pin Epoch</label>
+                    <input
+                      type="number"
+                      className="text-input"
+                      value={verifyRollbackPin}
+                      onChange={(e) => setVerifyRollbackPin(e.target.value)}
+                      placeholder="e.g. 1 (optional)"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>On Tamper Reaction</label>
+                    <select
+                      className="select-input"
+                      value={verifyOnTamper}
+                      onChange={(e) => setVerifyOnTamper(e.target.value)}
+                    >
+                      <option value="abort">Abort immediately</option>
+                      <option value="report">Abort & report</option>
+                      <option value="recover">Attempt recovery</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "6px" }}>
+                  <input
+                    type="checkbox"
+                    id="verifyFounderAnchor"
+                    checked={verifyFounderAnchor}
+                    onChange={(e) => setVerifyFounderAnchor(e.target.checked)}
+                    style={{ accentColor: "#f97316" }}
+                  />
+                  <label htmlFor="verifyFounderAnchor" style={{ marginBottom: 0, textTransform: "none", cursor: "pointer" }}>
+                    Enforce Founder Anchor check
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {fileAction === "seal" && (
+              <div className="seal-settings" style={{ borderTop: "1px solid #1f1f23", paddingTop: "14px", marginTop: "14px" }}>
+                <div style={{ backgroundColor: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.25)", borderRadius: "6px", padding: "12px", marginBottom: "14px" }}>
+                  <h4 style={{ fontSize: "11px", fontWeight: "700", color: "#f87171", marginBottom: "6px", textTransform: "uppercase" }}>
+                    ⚠️ CRITICAL WARNING: IRREVERSIBLE OPERATION
+                  </h4>
+                  <p style={{ fontSize: "10px", color: "#fca5a5", lineHeight: "1.4" }}>
+                    Sealing permanently purges the container's wraps, making recovery of the Data Encryption Key (DEK) mathematically impossible.
+                  </p>
+                  <p style={{ fontSize: "9px", color: "#fca5a5", opacity: 0.8, lineHeight: "1.4", marginTop: "6px" }}>
+                    Note: Sealing cannot affect pre-existing cloud synchronization versions (e.g., Dropbox, OneDrive, iCloud previous commits) or backups stored elsewhere.
+                  </p>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label>Seal Mode</label>
+                    <select
+                      className="select-input"
+                      value={sealMode}
+                      onChange={(e) => setSealMode(e.target.value)}
+                    >
+                      <option value="seal">Seal (Keep Ciphertext)</option>
+                      <option value="purge">Purge (Crypto-Shred Ciphertext)</option>
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ flex: 2 }}>
+                    <label>Reason / Audit Label</label>
+                    <input
+                      type="text"
+                      className="text-input"
+                      value={sealReason}
+                      onChange={(e) => setSealReason(e.target.value)}
+                      placeholder="e.g. GDPR erasure request..."
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+                  <input
+                    type="checkbox"
+                    id="sealSignEnabled"
+                    checked={sealSignEnabled}
+                    onChange={(e) => setSealSignEnabled(e.target.checked)}
+                    style={{ accentColor: "#f97316" }}
+                  />
+                  <label htmlFor="sealSignEnabled" style={{ marginBottom: 0, textTransform: "none", cursor: "pointer" }}>
+                    Sign Sealed Marker (Recommended for v2/v3)
+                  </label>
+                </div>
+
+                {sealSignEnabled && (
+                  <div style={{ backgroundColor: "#141416", border: "1px solid #1f1f23", borderRadius: "6px", padding: "10px", marginBottom: "14px" }}>
+                    <div className="form-row">
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label>Signer Type</label>
+                        <select
+                          className="select-input"
+                          value={sealSignKind}
+                          onChange={(e) => setSealSignKind(e.target.value)}
+                        >
+                          <option value="plain">Ed25519 (v2)</option>
+                          <option value="hybrid">Post-Quantum (v3)</option>
+                        </select>
+                      </div>
+                      <div className="form-group" style={{ flex: 2 }}>
+                        <label>Key Log ID (Hex)</label>
+                        <input
+                          type="text"
+                          className="text-input"
+                          value={sealKeyLogId}
+                          onChange={(e) => setSealKeyLogId(e.target.value)}
+                          placeholder="32-byte hex ID..."
+                        />
+                      </div>
+                    </div>
+                    <div className="form-group">
+                      <label>Signer Public Key (Hex)</label>
+                      <input
+                        type="text"
+                        className="text-input"
+                        value={sealSignerPk}
+                        onChange={(e) => setSealSignerPk(e.target.value)}
+                        placeholder="Paste public key hex..."
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Signer Secret Key (Hex)</label>
+                      <input
+                        type="password"
+                        className="text-input"
+                        value={sealSignerSk}
+                        onChange={(e) => setSealSignerSk(e.target.value)}
+                        placeholder="Paste secret key hex..."
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="form-group">
+                  <label style={{ color: "#f87171" }}>Type "SEAL" to confirm</label>
+                  <input
+                    type="text"
+                    className="text-input"
+                    value={sealConfirmText}
+                    onChange={(e) => setSealConfirmText(e.target.value)}
+                    placeholder="Type SEAL..."
+                    style={{ borderColor: sealConfirmText === "SEAL" ? "#ef4444" : "#1f1f23" }}
+                  />
+                </div>
               </div>
             )}
 
             <div style={{ marginTop: "24px" }}>
-              <button type="submit" className="btn-primary" disabled={loading}>
-                {fileAction === "encrypt" ? "Encrypt File" : "Decrypt File"}
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={loading || (fileAction === "seal" && sealConfirmText !== "SEAL")}
+                style={{
+                  backgroundColor: fileAction === "seal" ? "#ef4444" : "#f97316",
+                }}
+              >
+                {fileAction === "encrypt"
+                  ? "Encrypt File"
+                  : fileAction === "decrypt"
+                  ? "Decrypt File"
+                  : fileAction === "verify"
+                  ? "Verify Container"
+                  : "Seal Container"}
               </button>
             </div>
+
+            {/* Generated Shares Display */}
+            {fileAction === "encrypt" && activeMode === "threshold" && generatedShares && generatedShares.length > 0 && (
+              <div className="display-box-container">
+                <div className="display-box-header">
+                  <span className="display-box-title">Generated Secret Shares ({thresholdT} of {thresholdN})</span>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => copyToClipboard(generatedShares.join("\n"), "All SSS shares")}
+                  >
+                    Copy All
+                  </button>
+                </div>
+                <div className="display-box" style={{ maxHeight: "200px" }}>
+                  {generatedShares.map((share, idx) => (
+                    <div key={idx} style={{ marginBottom: "8px", borderBottom: idx < generatedShares.length - 1 ? "1px solid #1f1f23" : "none", paddingBottom: "6px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                        <span style={{ fontSize: "10px", color: "#f97316", fontWeight: "600" }}>Share #{idx + 1}</span>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{ fontSize: "8px", padding: "2px 6px" }}
+                          onClick={() => copyToClipboard(share, `Share #${idx + 1}`)}
+                        >
+                          Copy Share
+                        </button>
+                      </div>
+                      <div style={{ fontFamily: "monospace", fontSize: "10px", color: "#e4e4e7", wordBreak: "break-all" }}>
+                        {share}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Verify Report Display */}
+            {fileAction === "verify" && verifyReport && (
+              <div className="display-box-container">
+                <div className="display-box-header">
+                  <span className="display-box-title">Shield Integrity Verification Report</span>
+                  <span className={`status-badge ${verifyReport === "Success" ? "success" : verifyReport === "ContainerSealed" ? "warning" : "error"}`} style={{
+                    fontSize: "9px",
+                    fontWeight: "700",
+                    padding: "2px 6px",
+                    borderRadius: "4px",
+                    textTransform: "uppercase",
+                    backgroundColor: verifyReport === "Success" ? "rgba(34, 197, 94, 0.15)" : verifyReport === "ContainerSealed" ? "rgba(245, 158, 11, 0.15)" : "rgba(239, 68, 68, 0.15)",
+                    color: verifyReport === "Success" ? "#4ade80" : verifyReport === "ContainerSealed" ? "#fbbf24" : "#f87171",
+                    border: verifyReport === "Success" ? "1px solid rgba(34, 197, 94, 0.25)" : verifyReport === "ContainerSealed" ? "1px solid rgba(245, 158, 11, 0.25)" : "1px solid rgba(239, 68, 68, 0.25)"
+                  }}>
+                    {verifyReport}
+                  </span>
+                </div>
+                <div className="display-box" style={{ maxHeight: "150px" }}>
+                  {verifyReport === "Success" ? (
+                    "✓ Container integrity verified. All cryptographic checks, chunk indexes, tag chains, and signatures are intact and valid."
+                  ) : verifyReport === "ContainerSealed" ? (
+                    "⚠ Container has been sovereignly sealed. Standard decryption is blocked. Sealed metadata is displayed below."
+                  ) : (
+                    `❌ Integrity check failed: ${verifyReport}. Do not attempt decryption as the container appears to be tampered with or corrupted.`
+                  )}
+                </div>
+
+                {/* Inspect sealed container if available */}
+                {sealedInspection && (
+                  <div className="sealed-details" style={{ marginTop: "12px", borderTop: "1px dashed #1f1f23", paddingTop: "12px" }}>
+                    <h5 style={{ fontSize: "10px", fontWeight: "600", color: "#fbbf24", marginBottom: "8px", textTransform: "uppercase" }}>
+                      Sealed Container Inspection
+                    </h5>
+                    <table style={{ width: "100%", fontSize: "11px", color: "#a1a1aa", borderCollapse: "collapse" }}>
+                      <tbody>
+                        <tr>
+                          <td style={{ padding: "3px 0", fontWeight: "500" }}>Version</td>
+                          <td style={{ padding: "3px 0", textAlign: "right", fontFamily: "monospace" }}>{sealedInspection.version}</td>
+                        </tr>
+                        <tr>
+                          <td style={{ padding: "3px 0", fontWeight: "500" }}>File ID</td>
+                          <td style={{ padding: "3px 0", textAlign: "right", fontFamily: "monospace", fontSize: "9px" }}>{sealedInspection.fileId}</td>
+                        </tr>
+                        <tr>
+                          <td style={{ padding: "3px 0", fontWeight: "500" }}>Plaintext Size</td>
+                          <td style={{ padding: "3px 0", textAlign: "right" }}>{sealedInspection.plaintextSize} bytes</td>
+                        </tr>
+                        <tr>
+                          <td style={{ padding: "3px 0", fontWeight: "500" }}>Sealed Mode</td>
+                          <td style={{ padding: "3px 0", textAlign: "right" }}>
+                            <span style={{
+                              fontWeight: "600",
+                              color: sealedInspection.sealedMode === 1 ? "#ef4444" : "#fbbf24"
+                            }}>
+                              {sealedInspection.sealedMode === 1 ? "PURGE (Shredded)" : "SEAL (Keyless)"}
+                            </span>
+                          </td>
+                        </tr>
+                        {sealedInspection.reason && (
+                          <tr>
+                            <td style={{ padding: "3px 0", fontWeight: "500" }}>Reason</td>
+                            <td style={{ padding: "3px 0", textAlign: "right", fontStyle: "italic" }}>"{sealedInspection.reason}"</td>
+                          </tr>
+                        )}
+                        {sealedInspection.timestamp > 0 && (
+                          <tr>
+                            <td style={{ padding: "3px 0", fontWeight: "500" }}>Sealed At</td>
+                            <td style={{ padding: "3px 0", textAlign: "right" }}>{new Date(sealedInspection.timestamp * 1000).toLocaleString()}</td>
+                          </tr>
+                        )}
+                        <tr>
+                          <td style={{ padding: "3px 0", fontWeight: "500" }}>Ciphertext Body</td>
+                          <td style={{ padding: "3px 0", textAlign: "right" }}>
+                            {sealedInspection.ciphertextPresent ? "Present (Encrypted)" : "Absent (Purged/Deleted)"}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
           </form>
         )}
 
@@ -523,6 +1116,10 @@ function App() {
                     setOutputText("");
                     setPassword("");
                     setRecipientKey("");
+                    setInputShares("");
+                    setGeneratedShares(null);
+                    setThresholdT(2);
+                    setThresholdN(3);
                     setStatus(null);
                   }}
                 >
@@ -537,6 +1134,10 @@ function App() {
                     setOutputText("");
                     setPassword("");
                     setRecipientKey("");
+                    setInputShares("");
+                    setGeneratedShares(null);
+                    setThresholdT(2);
+                    setThresholdN(3);
                     setStatus(null);
                   }}
                 >
@@ -552,6 +1153,8 @@ function App() {
                     setActiveMode("password");
                     setPassword("");
                     setRecipientKey("");
+                    setInputShares("");
+                    setGeneratedShares(null);
                     setStatus(null);
                   }}
                 >
@@ -564,10 +1167,26 @@ function App() {
                     setActiveMode("recipient");
                     setPassword("");
                     setRecipientKey("");
+                    setInputShares("");
+                    setGeneratedShares(null);
                     setStatus(null);
                   }}
                 >
                   Hybrid KEM
+                </button>
+                <button
+                  type="button"
+                  className={`segment-btn ${activeMode === "threshold" ? "active" : ""}`}
+                  onClick={() => {
+                    setActiveMode("threshold");
+                    setPassword("");
+                    setRecipientKey("");
+                    setInputShares("");
+                    setGeneratedShares(null);
+                    setStatus(null);
+                  }}
+                >
+                  Threshold (t-of-n)
                 </button>
               </div>
             </div>
@@ -615,7 +1234,7 @@ function App() {
                   </div>
                 )}
               </div>
-            ) : (
+            ) : activeMode === "recipient" ? (
               <div className="form-group">
                 <label>{textAction === "encrypt" ? "Recipient Public Key" : "Your Secret Key"}</label>
                 <input
@@ -626,6 +1245,46 @@ function App() {
                   placeholder="Paste hexadecimal key..."
                 />
               </div>
+            ) : (
+              textAction === "encrypt" ? (
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Threshold (t)</label>
+                    <input
+                      type="number"
+                      className="text-input"
+                      value={thresholdT}
+                      min={2}
+                      max={thresholdN}
+                      onChange={(e) => setThresholdT(parseInt(e.target.value) || 2)}
+                      placeholder="Required shares (t)"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Total Shares (n)</label>
+                    <input
+                      type="number"
+                      className="text-input"
+                      value={thresholdN}
+                      min={thresholdT}
+                      max={255}
+                      onChange={(e) => setThresholdN(parseInt(e.target.value) || 3)}
+                      placeholder="Total shares to generate (n)"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="form-group">
+                  <label>Pasted Shares (One share per line)</label>
+                  <textarea
+                    className="text-input"
+                    value={inputShares}
+                    onChange={(e) => setInputShares(e.target.value)}
+                    placeholder="Paste shares here (one per line, e.g. VOLL_SHARE_...)"
+                    style={{ minHeight: "120px" }}
+                  />
+                </div>
+              )
             )}
 
             <div style={{ marginTop: "18px", marginBottom: "16px" }}>
@@ -650,6 +1309,42 @@ function App() {
                   </div>
                 </div>
                 <div className="display-box">{outputText}</div>
+              </div>
+            )}
+
+            {/* Generated Shares Display for Text */}
+            {textAction === "encrypt" && activeMode === "threshold" && generatedShares && generatedShares.length > 0 && (
+              <div className="display-box-container">
+                <div className="display-box-header">
+                  <span className="display-box-title">Generated Secret Shares ({thresholdT} of {thresholdN})</span>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => copyToClipboard(generatedShares.join("\n"), "All SSS shares")}
+                  >
+                    Copy All
+                  </button>
+                </div>
+                <div className="display-box" style={{ maxHeight: "200px" }}>
+                  {generatedShares.map((share, idx) => (
+                    <div key={idx} style={{ marginBottom: "8px", borderBottom: idx < generatedShares.length - 1 ? "1px solid #1f1f23" : "none", paddingBottom: "6px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                        <span style={{ fontSize: "10px", color: "#f97316", fontWeight: "600" }}>Share #{idx + 1}</span>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{ fontSize: "8px", padding: "2px 6px" }}
+                          onClick={() => copyToClipboard(share, `Share #${idx + 1}`)}
+                        >
+                          Copy Share
+                        </button>
+                      </div>
+                      <div style={{ fontFamily: "monospace", fontSize: "10px", color: "#e4e4e7", wordBreak: "break-all" }}>
+                        {share}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </form>
@@ -698,7 +1393,16 @@ function App() {
         {/* Global Banner */}
         {status && (
           <div className={`status-msg ${status.type}`}>
-            {status.msg}
+            {status.msg === "ContainerSealed" ? (
+              <div style={{ textAlign: "left" }}>
+                <strong style={{ display: "block", marginBottom: "4px" }}>Access Denied: Container Sealed</strong>
+                <span style={{ fontSize: "11px", opacity: 0.9 }}>
+                  This container has been sovereignly sealed and cannot be decrypted. Access to the wrapping keys is permanently destroyed.
+                </span>
+              </div>
+            ) : (
+              status.msg
+            )}
           </div>
         )}
 

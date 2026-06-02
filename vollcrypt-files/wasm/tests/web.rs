@@ -138,3 +138,38 @@ async fn test_async_pipelined_roundtrip() {
 
     assert_eq!(dec_res.plaintext, plaintext);
 }
+
+#[wasm_bindgen_test]
+fn test_threshold_wrapping() {
+    let dek = generate_dek();
+    let file_id = generate_file_id();
+    let t = 2;
+    let n = 3;
+    let cipher_suite_id = 0;
+
+    let res_js = wrap_dek_with_threshold(&dek, &file_id, t, n, cipher_suite_id).unwrap();
+    let res: WrapThresholdResult = serde_wasm_bindgen::from_value(res_js).unwrap();
+    assert_eq!(res.shares.len(), n as usize);
+
+    // Test encode/decode share
+    let share_js = decode_share(&res.shares[0]).unwrap();
+    let share: ShareJson = serde_wasm_bindgen::from_value(share_js).unwrap();
+    assert_eq!(share.t, t);
+    assert_eq!(share.n, n);
+    let reencoded = encode_share(serde_wasm_bindgen::to_value(&share).unwrap()).unwrap();
+    assert_eq!(reencoded, res.shares[0]);
+
+    // Decrypt with 2 shares (met)
+    let subset_shares = vec![res.shares[0].clone(), res.shares[1].clone()];
+    let subset_shares_js = serde_wasm_bindgen::to_value(&subset_shares).unwrap();
+    let wrap_js = serde_wasm_bindgen::to_value(&res.wrap).unwrap();
+    let unwrapped = unwrap_dek_with_threshold_shares(wrap_js, &file_id, subset_shares_js, cipher_suite_id).unwrap();
+    assert_eq!(unwrapped, dek);
+
+    // Decrypt with 1 share (insufficient)
+    let bad_shares = vec![res.shares[0].clone()];
+    let bad_shares_js = serde_wasm_bindgen::to_value(&bad_shares).unwrap();
+    let wrap_js2 = serde_wasm_bindgen::to_value(&res.wrap).unwrap();
+    assert!(unwrap_dek_with_threshold_shares(wrap_js2, &file_id, bad_shares_js, cipher_suite_id).is_err());
+}
+

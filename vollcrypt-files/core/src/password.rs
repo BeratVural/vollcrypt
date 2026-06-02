@@ -119,7 +119,7 @@ pub fn unwrap_dek_with_password(
             kek.zeroize();
             dek_res
         }
-        WrapEntry::HybridKem { .. } | WrapEntry::GroupWrap { .. } => {
+        WrapEntry::HybridKem { .. } | WrapEntry::GroupWrap { .. } | WrapEntry::Threshold { .. } => {
             Err(FileFormatError::WrongWrapType)
         }
     }
