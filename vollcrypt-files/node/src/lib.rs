@@ -969,7 +969,7 @@ impl GroupManifest {
 
 #[napi(object)]
 pub struct SignedMetadata {
-    pub kind: String, // "Plain" | "Sealed"
+    pub kind: String, // "Plain" | "Sealed" | "SovereignSealed"
     pub signer_pubkey: Option<Buffer>,
     pub timestamp: u32,
     pub key_log_id: Option<Buffer>,
@@ -978,6 +978,8 @@ pub struct SignedMetadata {
     pub iv: Option<Buffer>,
     pub sealed_payload: Option<Buffer>,
     pub sealed_tag: Option<Buffer>,
+    pub sealed_mode: Option<u32>,
+    pub reason: Option<String>,
 }
 
 #[napi(object)]
@@ -1017,6 +1019,8 @@ fn signed_metadata_to_napi(meta: vollcrypt_files_core::SignedMetadata) -> Signed
             iv: None,
             sealed_payload: None,
             sealed_tag: None,
+            sealed_mode: None,
+            reason: None,
         },
         vollcrypt_files_core::SignedMetadata::Sealed {
             sealed_group_id,
@@ -1035,6 +1039,32 @@ fn signed_metadata_to_napi(meta: vollcrypt_files_core::SignedMetadata) -> Signed
             iv: Some(Buffer::from(iv.to_vec())),
             sealed_payload: Some(Buffer::from(sealed_payload)),
             sealed_tag: Some(Buffer::from(sealed_tag.to_vec())),
+            sealed_mode: None,
+            reason: None,
+        },
+        vollcrypt_files_core::SignedMetadata::SovereignSealed {
+            signer_pubkey,
+            mode,
+            reason,
+            timestamp,
+        } => SignedMetadata {
+            kind: "SovereignSealed".to_string(),
+            signer_pubkey: Some(Buffer::from(
+                if signer_pubkey.mldsa == [0u8; 1952] {
+                    signer_pubkey.ed25519.to_vec()
+                } else {
+                    signer_pubkey.write()
+                }
+            )),
+            timestamp: timestamp as u32,
+            key_log_id: None,
+            sealed_group_id: None,
+            sealed_gk_version: None,
+            iv: None,
+            sealed_payload: None,
+            sealed_tag: None,
+            sealed_mode: Some(mode as u32),
+            reason: Some(reason),
         },
     }
 }
@@ -1091,6 +1121,27 @@ fn napi_to_signed_metadata(meta: SignedMetadata) -> Result<vollcrypt_files_core:
                 iv,
                 sealed_payload,
                 sealed_tag,
+                timestamp: meta.timestamp as u64,
+            })
+        }
+        "SovereignSealed" => {
+            let pk_buf = meta
+                .signer_pubkey
+                .ok_or_else(|| Error::from_reason("Missing signer_pubkey"))?;
+            let signer_pubkey = to_hybrid_pubkey(pk_buf.as_ref(), "signer_pubkey")?;
+
+            let mode = meta
+                .sealed_mode
+                .ok_or_else(|| Error::from_reason("Missing sealed_mode"))? as u8;
+
+            let reason = meta
+                .reason
+                .ok_or_else(|| Error::from_reason("Missing reason"))?;
+
+            Ok(vollcrypt_files_core::SignedMetadata::SovereignSealed {
+                signer_pubkey,
+                mode,
+                reason,
                 timestamp: meta.timestamp as u64,
             })
         }
@@ -1660,11 +1711,73 @@ impl Task for EncryptFilePipelinedTask {
     }
 }
 
+#[napi(object)]
+pub struct NapiSealOptions {
+    pub mode: String, // "seal" | "purge"
+    pub reason: Option<String>,
+    pub sign_info: Option<PipelinedSignInfoObj>,
+}
+
+#[napi(object)]
+pub struct NapiShieldPolicy {
+    pub release_mode: String, // "verified" | "streaming"
+    pub signature: Option<String>, // "required" | "optional"
+    pub rollback_pin: Option<u32>,
+    pub founder_anchor: Option<bool>,
+    pub on_tamper: Option<String>, // "abort" | "report" | "recover"
+    pub verify_sealed_marker: Option<bool>,
+}
+
+fn napi_to_seal_options(opts: NapiSealOptions) -> Result<vollcrypt_files_core::SealOptions> {
+    let mode = match opts.mode.as_str() {
+        "seal" => vollcrypt_files_core::SealMode::Seal,
+        "purge" => vollcrypt_files_core::SealMode::Purge,
+        _ => return Err(Error::from_reason("mode must be 'seal' or 'purge'")),
+    };
+    let sign_info = match opts.sign_info {
+        Some(si) => Some(napi_to_pipelined_sign_info(si)?),
+        None => None,
+    };
+    Ok(vollcrypt_files_core::SealOptions {
+        mode,
+        reason: opts.reason,
+        sign_info,
+    })
+}
+
+fn napi_to_shield_policy(policy: NapiShieldPolicy) -> Result<vollcrypt_files_core::ShieldPolicy> {
+    let release_mode = match policy.release_mode.as_str() {
+        "verified" => vollcrypt_files_core::ReleaseMode::Verified,
+        "streaming" => vollcrypt_files_core::ReleaseMode::Streaming,
+        _ => return Err(Error::from_reason("release_mode must be 'verified' or 'streaming'")),
+    };
+    let signature = match policy.signature.as_deref() {
+        Some("required") | None => vollcrypt_files_core::SignaturePolicy::Required,
+        Some("optional") => vollcrypt_files_core::SignaturePolicy::Optional,
+        _ => return Err(Error::from_reason("signature must be 'required' or 'optional'")),
+    };
+    let on_tamper = match policy.on_tamper.as_deref() {
+        Some("abort") | None => vollcrypt_files_core::OnTamper::Abort,
+        Some("report") => vollcrypt_files_core::OnTamper::AbortWithReport,
+        Some("recover") => vollcrypt_files_core::OnTamper::AttemptRecovery,
+        _ => return Err(Error::from_reason("on_tamper must be 'abort', 'report' or 'recover'")),
+    };
+    Ok(vollcrypt_files_core::ShieldPolicy {
+        release_mode,
+        signature,
+        rollback_pin: policy.rollback_pin.map(|p| p as u64),
+        founder_anchor: policy.founder_anchor.unwrap_or(true),
+        on_tamper,
+        verify_sealed_marker: policy.verify_sealed_marker.unwrap_or(true),
+    })
+}
+
 pub struct DecryptFilePipelinedTask {
     source_path: String,
     dest_path: String,
     dek: [u8; 32],
     num_workers: usize,
+    policy: Option<vollcrypt_files_core::ShieldPolicy>,
 }
 
 impl Task for DecryptFilePipelinedTask {
@@ -1683,11 +1796,12 @@ impl Task for DecryptFilePipelinedTask {
                 Error::from_reason(format!("Failed to open/create destination file: {}", e))
             })?;
 
-        vollcrypt_files_core::decrypt_file_pipelined(
+        vollcrypt_files_core::decrypt_file_pipelined_with_policy(
             source_file,
             dest_file,
             &self.dek,
             self.num_workers,
+            self.policy.as_ref(),
         )
         .map_err(|e| Error::from_reason(e.to_string()))
     }
@@ -1697,8 +1811,136 @@ impl Task for DecryptFilePipelinedTask {
     }
 }
 
+pub struct SealContainerTask {
+    path: String,
+    options: vollcrypt_files_core::SealOptions,
+}
+
+impl Task for SealContainerTask {
+    type Output = ();
+    type JsValue = ();
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let data = std::fs::read(&self.path)
+            .map_err(|e| Error::from_reason(format!("Failed to read file for sealing: {}", e)))?;
+        let mut source = std::io::Cursor::new(data);
+        let mut dest_buf = Vec::new();
+        let mut dest = std::io::Cursor::new(&mut dest_buf);
+
+        let mode = self.options.mode;
+
+        vollcrypt_files_core::seal_container(&mut source, &mut dest, self.options.clone())
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+
+        if mode == vollcrypt_files_core::SealMode::Purge {
+            let original_len = source.get_ref().len();
+            let new_len = dest_buf.len();
+            if original_len > new_len {
+                let file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&self.path)
+                    .map_err(|e| Error::from_reason(format!("Failed to open file for purge overwrite: {}", e)))?;
+                let mut written = new_len;
+                let zeros = vec![0u8; 4096];
+                file.set_len(new_len as u64)
+                    .map_err(|e| Error::from_reason(format!("Failed to truncate file: {}", e)))?;
+            }
+        }
+
+        std::fs::write(&self.path, dest_buf)
+            .map_err(|e| Error::from_reason(format!("Failed to write sealed container: {}", e)))?;
+
+        Ok(())
+    }
+
+    fn resolve(&mut self, _env: Env, _output: Self::Output) -> Result<Self::JsValue> {
+        Ok(())
+    }
+}
+
+pub struct InspectSealedTask {
+    path: String,
+}
+
+#[napi(object)]
+pub struct SealedInspectionObj {
+    pub version: u8,
+    pub file_id: Buffer,
+    pub chunk_size: u32,
+    pub plaintext_size: f64,
+    pub merkle_root: Buffer,
+    pub hash_algorithm: u8,
+    pub sealed_mode: Option<u32>,
+    pub reason: Option<String>,
+    pub timestamp: Option<u32>,
+    pub ciphertext_present: bool,
+}
+
+impl Task for InspectSealedTask {
+    type Output = vollcrypt_files_core::SealedInspection;
+    type JsValue = SealedInspectionObj;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let file = std::fs::File::open(&self.path)
+            .map_err(|e| Error::from_reason(format!("Failed to open container for inspection: {}", e)))?;
+        vollcrypt_files_core::inspect_sealed(file)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(SealedInspectionObj {
+            version: output.version,
+            file_id: Buffer::from(output.file_id.to_vec()),
+            chunk_size: output.chunk_size,
+            plaintext_size: output.plaintext_size as f64,
+            merkle_root: Buffer::from(output.merkle_root.to_vec()),
+            hash_algorithm: output.hash_algorithm as u8,
+            sealed_mode: output.sealed_mode.map(|m| m as u32),
+            reason: output.reason,
+            timestamp: output.timestamp.map(|t| t as u32),
+            ciphertext_present: output.ciphertext_present,
+        })
+    }
+}
+
+#[napi(js_name = "sealContainer")]
+pub fn napi_seal_container(
+    path: String,
+    options: NapiSealOptions,
+) -> Result<AsyncTask<SealContainerTask>> {
+    let core_opts = napi_to_seal_options(options)?;
+    Ok(AsyncTask::new(SealContainerTask {
+        path,
+        options: core_opts,
+    }))
+}
+
+#[napi(js_name = "isSealed")]
+pub fn napi_is_sealed(header: HeaderObj) -> Result<bool> {
+    let core_header = napi_to_header(header)?;
+    Ok(vollcrypt_files_core::is_sealed(&core_header))
+}
+
+#[napi(js_name = "inspectSealedContainer")]
+pub fn napi_inspect_sealed(
+    path: String,
+) -> Result<AsyncTask<InspectSealedTask>> {
+    Ok(AsyncTask::new(InspectSealedTask { path }))
+}
+
+#[napi(js_name = "verifyContainer")]
+pub fn napi_verify_container(
+    path: String,
+    policy: NapiShieldPolicy,
+) -> Result<String> {
+    let file = std::fs::File::open(&path)
+        .map_err(|e| Error::from_reason(format!("Failed to open container for verification: {}", e)))?;
+    let core_policy = napi_to_shield_policy(policy)?;
+    let report = vollcrypt_files_core::verify_container(file, &core_policy);
+    Ok(format!("{:?}", report))
+}
+
 #[napi]
-#[allow(clippy::too_many_arguments)]
 pub fn encrypt_file_pipelined_async(
     source_path: String,
     dest_path: String,
@@ -1754,14 +1996,20 @@ pub fn decrypt_file_pipelined_async(
     dest_path: String,
     dek: Uint8Array,
     num_workers: u32,
+    shield: Option<NapiShieldPolicy>,
 ) -> Result<AsyncTask<DecryptFilePipelinedTask>> {
     let dek_arr = to_arr32(dek.as_ref(), "dek")?;
+    let core_policy = match shield {
+        Some(p) => Some(napi_to_shield_policy(p)?),
+        None => None,
+    };
 
     let task = DecryptFilePipelinedTask {
         source_path,
         dest_path,
         dek: dek_arr,
         num_workers: num_workers as usize,
+        policy: core_policy,
     };
 
     Ok(AsyncTask::new(task))

@@ -11,7 +11,7 @@ use crate::error::FileFormatError;
 use crate::header::{CipherId, Header, Mode, SignedMetadata};
 use crate::hybrid_sig::{HybridPublicKey, HybridSecretKey, HybridSignature};
 use crate::merkle::{chunk_leaf_hash_raw_with_algo, chunk_leaf_hash_with_algo, MerkleTree, StreamingMerkle};
-use crate::signature::{sign_header_plain, sign_header_sealed};
+use crate::signature::{sign_header_plain, sign_header_sealed, verify_header_signature_plain_policy, VerificationPolicy};
 use crate::wrap::WrapEntry;
 use crate::writer::IoWriteMode;
 
@@ -663,7 +663,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
 /// * `dest`: Writer where the decrypted plaintext is written.
 /// * `dek`: Data Encryption Key (32 bytes).
 /// * `num_workers`: Number of parallel worker threads for decryption.
-fn read_header_from_stream<R: Read>(mut source: R) -> Result<(Header, usize), FileFormatError> {
+pub(crate) fn read_header_from_stream<R: Read>(mut source: R) -> Result<(Header, usize), FileFormatError> {
     // 1. Read the fixed portion of the header first (80 bytes)
     let mut fixed_buf = [0u8; FIXED_HEADER_LEN];
     source
@@ -987,119 +987,113 @@ fn decrypt_file_pipelined_internal<R: Read + Send + 'static, W: Write>(
 /// either write to a temporary file and rename/commit only on `Ok`, or
 /// use `decrypt_verified` which verifies integrity completely before releasing
 /// any plaintext.
-pub fn decrypt_streaming_online<R: Read + Send + 'static, W: Write>(
+pub fn map_shield_report_to_error(report: crate::shield::ShieldReport) -> FileFormatError {
+    match report {
+        crate::shield::ShieldReport::Magic => FileFormatError::InvalidMagic,
+        crate::shield::ShieldReport::Version(v) => FileFormatError::UnsupportedVersion(v),
+        crate::shield::ShieldReport::HeaderField(f) => FileFormatError::IntegrityError(f),
+        crate::shield::ShieldReport::WrapTable => FileFormatError::IntegrityError("Wrap table integrity error".to_string()),
+        crate::shield::ShieldReport::Signature => FileFormatError::SignatureInvalid,
+        crate::shield::ShieldReport::ChunkIndexMismatch { expected, got } => FileFormatError::ChunkIndexOutOfOrder { expected, got },
+        crate::shield::ShieldReport::ChunkTag { index: _ } => FileFormatError::AesGcmDecryptFailed,
+        crate::shield::ShieldReport::MerkleRoot => FileFormatError::AesGcmDecryptFailed,
+        crate::shield::ShieldReport::MerkleProof { index: _ } => FileFormatError::AesGcmDecryptFailed,
+        crate::shield::ShieldReport::ContainerSealed => FileFormatError::ContainerSealed,
+        crate::shield::ShieldReport::Rollback { expected, got } => FileFormatError::RollbackError { expected, got },
+        crate::shield::ShieldReport::UntrustedGenesis => FileFormatError::UntrustedGenesis,
+        _ => FileFormatError::IntegrityError("Unknown shield verification failure".to_string()),
+    }
+}
+
+pub fn decrypt_streaming_online_policy<R: Read + Send + 'static, W: Write>(
     mut source: R,
     dest: W,
     dek: &[u8; 32],
     num_workers: usize,
+    policy: &crate::shield::ShieldPolicy,
 ) -> Result<Header, FileFormatError> {
+    let (header, _) = read_header_from_stream(&mut source)?;
+    if header.wraps.is_empty() {
+        return Err(FileFormatError::ContainerSealed);
+    }
+
+    // Verify signature if required
+    let sig_policy = match policy.signature {
+        crate::shield::SignaturePolicy::Required => VerificationPolicy::RequireSigned,
+        crate::shield::SignaturePolicy::Optional => VerificationPolicy::AllowLegacy,
+    };
+    if header.version == 2 || header.version == 3 {
+        verify_header_signature_plain_policy(&header, sig_policy)?;
+    } else if sig_policy == VerificationPolicy::RequireSigned {
+        return Err(FileFormatError::HeaderNotSigned);
+    }
+
+    let header_hash = header.canonical_header_hash();
+    decrypt_file_pipelined_internal(source, dest, dek, num_workers, &header, &header_hash)?;
+    Ok(header)
+}
+
+pub fn decrypt_streaming_online<R: Read + Send + 'static, W: Write>(
+    source: R,
+    dest: W,
+    dek: &[u8; 32],
+    num_workers: usize,
+) -> Result<Header, FileFormatError> {
+    decrypt_streaming_online_policy(source, dest, dek, num_workers, &crate::shield::ShieldPolicy::strict())
+}
+
+pub fn decrypt_verified_policy<R: Read + Seek + Send + 'static, W: Write>(
+    mut source: R,
+    dest: W,
+    dek: &[u8; 32],
+    num_workers: usize,
+    policy: &crate::shield::ShieldPolicy,
+) -> Result<Header, FileFormatError> {
+    let payload_start_pos = source.stream_position().map_err(|e| FileFormatError::IoError(e.to_string()))?;
+
+    // Call verify_container on the reader by reference
+    let report = crate::shield::verify_container(&mut source, policy);
+    if report != crate::shield::ShieldReport::Success {
+        return Err(map_shield_report_to_error(report));
+    }
+
+    // Seek back to the beginning of the payload
+    source.seek(SeekFrom::Start(payload_start_pos)).map_err(|e| FileFormatError::IoError(e.to_string()))?;
+
+    // Now read the header again and proceed with internal pipelined decryption
     let (header, _) = read_header_from_stream(&mut source)?;
     let header_hash = header.canonical_header_hash();
     decrypt_file_pipelined_internal(source, dest, dek, num_workers, &header, &header_hash)?;
     Ok(header)
 }
 
-/// Decrypts a file verifying its integrity completely before releasing any plaintext.
-///
-/// This is a secure "all-or-nothing" decryptor. It requires a seekable source to
-/// perform a first pass validating Merkle leaf hash tags, indexes, and roots
-/// before executing decryption and emitting plaintext in a second pass.
 pub fn decrypt_verified<R: Read + Seek + Send + 'static, W: Write>(
-    mut source: R,
+    source: R,
     dest: W,
     dek: &[u8; 32],
     num_workers: usize,
 ) -> Result<Header, FileFormatError> {
-    let _start_pos = source.stream_position().map_err(|e| FileFormatError::IoError(e.to_string()))?;
+    decrypt_verified_policy(source, dest, dek, num_workers, &crate::shield::ShieldPolicy::strict())
+}
 
-    // 1. Read header
-    let (header, _) = read_header_from_stream(&mut source)?;
-    let payload_start_pos = source.stream_position().map_err(|e| FileFormatError::IoError(e.to_string()))?;
-
-    let chunk_size = header.chunk_size as usize;
-    let plaintext_size = header.plaintext_size;
-    let hash_algo = header.hash_algorithm;
-
-    let total_chunks_u64 = if plaintext_size == 0 {
-        0
-    } else {
-        plaintext_size.div_ceil(chunk_size as u64)
+pub fn decrypt_file_pipelined_with_policy<R: Read + Seek + Send + 'static, W: Write>(
+    source: R,
+    dest: W,
+    dek: &[u8; 32],
+    num_workers: usize,
+    policy: Option<&crate::shield::ShieldPolicy>,
+) -> Result<Header, FileFormatError> {
+    let default_policy = crate::shield::ShieldPolicy {
+        signature: crate::shield::SignaturePolicy::Optional,
+        ..crate::shield::ShieldPolicy::strict()
     };
-    if total_chunks_u64 > u32::MAX as u64 {
-        return Err(FileFormatError::TooManyChunks);
-    }
-    let total_chunks = total_chunks_u64 as u32;
-
-    // First Pass: Verify integrity of all tags
-    let mut leaf_hashes = Vec::with_capacity(total_chunks as usize);
-    for idx in 0..total_chunks {
-        let is_last = idx == total_chunks - 1;
-        let chunk_plaintext_len = if is_last {
-            let rem = plaintext_size % chunk_size as u64;
-            if rem == 0 {
-                chunk_size
-            } else {
-                rem as usize
-            }
-        } else {
-            chunk_size
-        };
-
-        // Read index (4 bytes) and IV (12 bytes)
-        let mut prefix = [0u8; 16];
-        source.read_exact(&mut prefix).map_err(|e| FileFormatError::IoError(e.to_string()))?;
-        let read_idx = u32::from_be_bytes([prefix[0], prefix[1], prefix[2], prefix[3]]);
-        if read_idx != idx {
-            return Err(FileFormatError::ChunkIndexOutOfOrder { expected: idx, got: read_idx });
+    let pol = policy.unwrap_or(&default_policy);
+    match pol.release_mode {
+        crate::shield::ReleaseMode::Verified => decrypt_verified_policy(source, dest, dek, num_workers, pol),
+        crate::shield::ReleaseMode::Streaming => {
+            decrypt_streaming_online_policy(source, dest, dek, num_workers, pol)
         }
-        let iv: [u8; 12] = prefix[4..16].try_into().unwrap();
-
-        // Seek forward by chunk_plaintext_len (ciphertext size)
-        source.seek(std::io::SeekFrom::Current(chunk_plaintext_len as i64))
-            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
-
-        // Read tag (16 bytes)
-        let mut tag = [0u8; 16];
-        source.read_exact(&mut tag).map_err(|e| FileFormatError::IoError(e.to_string()))?;
-
-        // Compute leaf hash
-        let leaf = chunk_leaf_hash_raw_with_algo(idx, &iv, &tag, hash_algo);
-        leaf_hashes.push(leaf);
     }
-
-    // Verify there are no trailing bytes
-    let end_pos = source.stream_position().map_err(|e| FileFormatError::IoError(e.to_string()))?;
-    source.seek(std::io::SeekFrom::End(0)).map_err(|e| FileFormatError::IoError(e.to_string()))?;
-    let final_pos = source.stream_position().map_err(|e| FileFormatError::IoError(e.to_string()))?;
-    if final_pos != end_pos {
-        return Err(FileFormatError::TruncatedChunk {
-            expected: (final_pos - payload_start_pos) as usize,
-            got: (end_pos - payload_start_pos) as usize,
-        });
-    }
-
-    // Verify Merkle root
-    let recomputed_root = if leaf_hashes.is_empty() {
-        [0u8; 32]
-    } else {
-        let tree = MerkleTree::from_leaves_with_algo(leaf_hashes, hash_algo);
-        tree.root()
-    };
-
-    use subtle::ConstantTimeEq;
-    if recomputed_root.ct_eq(&header.merkle_root).unwrap_u8() != 1 {
-        return Err(FileFormatError::AesGcmDecryptFailed);
-    }
-
-    // Reset source to start of payload
-    source.seek(std::io::SeekFrom::Start(payload_start_pos))
-        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
-
-    // Second Pass: Safe Decryption
-    let header_hash = header.canonical_header_hash();
-    decrypt_file_pipelined_internal(source, dest, dek, num_workers, &header, &header_hash)?;
-
-    Ok(header)
 }
 
 /// Decrypts a file verifying its integrity completely before releasing any plaintext (safe by default).
@@ -1109,7 +1103,7 @@ pub fn decrypt_file_pipelined<R: Read + Seek + Send + 'static, W: Write>(
     dek: &[u8; 32],
     num_workers: usize,
 ) -> Result<Header, FileFormatError> {
-    decrypt_verified(source, dest, dek, num_workers)
+    decrypt_file_pipelined_with_policy(source, dest, dek, num_workers, None)
 }
 
 /// Encrypts in-memory plaintext asynchronously with WebCrypto/concurrent provider capability.
@@ -1270,12 +1264,41 @@ pub async fn encrypt_file_pipelined_async(
     Ok((header, final_output))
 }
 
-/// Decrypts in-memory ciphertext asynchronously with WebCrypto/concurrent provider capability.
-pub async fn decrypt_file_pipelined_async(
+pub async fn decrypt_file_pipelined_async_policy(
     ciphertext_bytes: &[u8],
     dek: &[u8; 32],
+    policy: Option<&crate::shield::ShieldPolicy>,
 ) -> Result<(Header, Vec<u8>), FileFormatError> {
+    let default_policy = crate::shield::ShieldPolicy {
+        signature: crate::shield::SignaturePolicy::Optional,
+        ..crate::shield::ShieldPolicy::strict()
+    };
+    let pol = policy.unwrap_or(&default_policy);
+
     let (header, header_len) = Header::parse(ciphertext_bytes)?;
+    if header.wraps.is_empty() {
+        return Err(FileFormatError::ContainerSealed);
+    }
+
+    // Verify signature if required
+    let sig_policy = match pol.signature {
+        crate::shield::SignaturePolicy::Required => VerificationPolicy::RequireSigned,
+        crate::shield::SignaturePolicy::Optional => VerificationPolicy::AllowLegacy,
+    };
+    if header.version == 2 || header.version == 3 {
+        verify_header_signature_plain_policy(&header, sig_policy)?;
+    } else if sig_policy == VerificationPolicy::RequireSigned {
+        return Err(FileFormatError::HeaderNotSigned);
+    }
+
+    if pol.release_mode == crate::shield::ReleaseMode::Verified {
+        let cursor = std::io::Cursor::new(ciphertext_bytes);
+        let report = crate::shield::verify_container(cursor, pol);
+        if report != crate::shield::ShieldReport::Success {
+            return Err(map_shield_report_to_error(report));
+        }
+    }
+
     let header_hash = header.canonical_header_hash();
 
     let chunk_size = header.chunk_size as usize;
@@ -1370,4 +1393,12 @@ pub async fn decrypt_file_pipelined_async(
     }
 
     Ok((header, plaintext))
+}
+
+/// Decrypts in-memory ciphertext asynchronously with WebCrypto/concurrent provider capability.
+pub async fn decrypt_file_pipelined_async(
+    ciphertext_bytes: &[u8],
+    dek: &[u8; 32],
+) -> Result<(Header, Vec<u8>), FileFormatError> {
+    decrypt_file_pipelined_async_policy(ciphertext_bytes, dek, None).await
 }

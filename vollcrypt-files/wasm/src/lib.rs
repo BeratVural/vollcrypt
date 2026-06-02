@@ -976,7 +976,7 @@ impl GroupManifest {
 
 #[derive(Serialize, Deserialize)]
 pub struct SignedMetadata {
-    pub kind: String, // "Plain" | "Sealed"
+    pub kind: String, // "Plain" | "Sealed" | "SovereignSealed"
     #[serde(rename = "signerPubkey")]
     pub signer_pubkey: Option<Vec<u8>>,
     pub timestamp: u32,
@@ -991,6 +991,9 @@ pub struct SignedMetadata {
     pub sealed_payload: Option<Vec<u8>>,
     #[serde(rename = "sealedTag")]
     pub sealed_tag: Option<Vec<u8>>,
+    #[serde(rename = "sealedMode")]
+    pub sealed_mode: Option<u32>,
+    pub reason: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1037,6 +1040,8 @@ fn signed_metadata_to_serde(meta: vollcrypt_files_core::SignedMetadata) -> Signe
             iv: None,
             sealed_payload: None,
             sealed_tag: None,
+            sealed_mode: None,
+            reason: None,
         },
         vollcrypt_files_core::SignedMetadata::Sealed {
             sealed_group_id,
@@ -1055,6 +1060,32 @@ fn signed_metadata_to_serde(meta: vollcrypt_files_core::SignedMetadata) -> Signe
             iv: Some(iv.to_vec()),
             sealed_payload: Some(sealed_payload),
             sealed_tag: Some(sealed_tag.to_vec()),
+            sealed_mode: None,
+            reason: None,
+        },
+        vollcrypt_files_core::SignedMetadata::SovereignSealed {
+            signer_pubkey,
+            mode,
+            reason,
+            timestamp,
+        } => SignedMetadata {
+            kind: "SovereignSealed".to_string(),
+            signer_pubkey: Some(
+                if signer_pubkey.mldsa == [0u8; 1952] {
+                    signer_pubkey.ed25519.to_vec()
+                } else {
+                    signer_pubkey.write()
+                }
+            ),
+            timestamp: timestamp as u32,
+            key_log_id: None,
+            sealed_group_id: None,
+            sealed_gk_version: None,
+            iv: None,
+            sealed_payload: None,
+            sealed_tag: None,
+            sealed_mode: Some(mode as u32),
+            reason: Some(reason),
         },
     }
 }
@@ -1112,6 +1143,23 @@ fn serde_to_signed_metadata(
                 iv,
                 sealed_payload,
                 sealed_tag,
+                timestamp: meta.timestamp as u64,
+            })
+        }
+        "SovereignSealed" => {
+            let pk_buf = meta
+                .signer_pubkey
+                .ok_or_else(|| JsValue::from_str("Missing signerPubkey"))?;
+            let signer_pubkey = to_hybrid_pubkey(&pk_buf, "signerPubkey")?;
+            let mode = meta
+                .sealed_mode
+                .ok_or_else(|| JsValue::from_str("Missing sealedMode"))? as u8;
+            let reason = meta.reason.clone().unwrap_or_default();
+
+            Ok(vollcrypt_files_core::SignedMetadata::SovereignSealed {
+                signer_pubkey,
+                mode,
+                reason,
                 timestamp: meta.timestamp as u64,
             })
         }
@@ -1577,7 +1625,7 @@ pub fn resolve_sender(
 }
 
 #[derive(Deserialize)]
-struct SignInfoJs {
+pub struct SignInfoJs {
     kind: String, // "Plain" | "Sealed"
     #[serde(rename = "signerPk")]
     signer_pk: Vec<u8>,
@@ -1738,4 +1786,182 @@ pub async fn decrypt_file_pipelined_async_wasm(
         }
         Err(e) => Err(to_js_err(e)),
     }
+}
+
+#[derive(Deserialize)]
+pub struct WasmSealOptions {
+    pub mode: String, // "seal" | "purge"
+    pub reason: Option<String>,
+    #[serde(rename = "signInfo")]
+    pub sign_info: Option<SignInfoJs>,
+}
+
+fn wasm_to_seal_options(opts: WasmSealOptions) -> Result<vollcrypt_files_core::SealOptions, JsValue> {
+    let mode = match opts.mode.as_str() {
+        "seal" => vollcrypt_files_core::SealMode::Seal,
+        "purge" => vollcrypt_files_core::SealMode::Purge,
+        _ => return Err(JsValue::from_str("mode must be 'seal' or 'purge'")),
+    };
+    let sign_info = match opts.sign_info {
+        Some(si) => {
+            let signer_pk = to_hybrid_pubkey(&si.signer_pk, "signerPk")?;
+            let signer_sk = to_hybrid_secret_key(&si.signer_sk, "signerSk")?;
+            let key_log_id = to_arr32(&si.key_log_id, "keyLogId")?;
+            match si.kind.as_str() {
+                "Plain" => Some(vollcrypt_files_core::PipelinedSignInfo::Plain {
+                    signer_pk,
+                    signer_sk,
+                    key_log_id,
+                    timestamp: si.timestamp,
+                }),
+                "Sealed" => {
+                    let group_id_buf = si.sealed_group_id.ok_or_else(|| JsValue::from_str("Missing sealedGroupId"))?;
+                    let sealed_group_id = to_arr16(&group_id_buf, "sealedGroupId")?;
+                    let sealed_gk_version = si.sealed_gk_version.ok_or_else(|| JsValue::from_str("Missing sealedGkVersion"))?;
+                    let sealed_gk_buf = si.sealed_gk.ok_or_else(|| JsValue::from_str("Missing sealedGk"))?;
+                    let sealed_gk = to_arr32(&sealed_gk_buf, "sealedGk")?;
+                    Some(vollcrypt_files_core::PipelinedSignInfo::Sealed {
+                        signer_pk,
+                        signer_sk,
+                        key_log_id,
+                        timestamp: si.timestamp,
+                        sealed_group_id,
+                        sealed_gk_version,
+                        sealed_gk,
+                    })
+                }
+                _ => return Err(JsValue::from_str("Unknown PipelinedSignInfo kind")),
+            }
+        }
+        None => None,
+    };
+    Ok(vollcrypt_files_core::SealOptions {
+        mode,
+        reason: opts.reason,
+        sign_info,
+    })
+}
+
+#[derive(Deserialize)]
+pub struct WasmShieldPolicy {
+    #[serde(rename = "releaseMode")]
+    pub release_mode: String,
+    pub signature: String,
+    #[serde(rename = "rollbackPin")]
+    pub rollback_pin: Option<f64>,
+    #[serde(rename = "founderAnchor")]
+    pub founder_anchor: Option<bool>,
+    #[serde(rename = "onTamper")]
+    pub on_tamper: String,
+    #[serde(rename = "verifySealedMarker")]
+    pub verify_sealed_marker: Option<bool>,
+}
+
+fn wasm_to_shield_policy(policy: WasmShieldPolicy) -> Result<vollcrypt_files_core::ShieldPolicy, JsValue> {
+    let release_mode = match policy.release_mode.as_str() {
+        "verified" => vollcrypt_files_core::ReleaseMode::Verified,
+        "streaming" => vollcrypt_files_core::ReleaseMode::Streaming,
+        _ => return Err(JsValue::from_str("releaseMode must be 'verified' or 'streaming'")),
+    };
+    let signature = match policy.signature.as_str() {
+        "required" => vollcrypt_files_core::SignaturePolicy::Required,
+        "optional" => vollcrypt_files_core::SignaturePolicy::Optional,
+        _ => return Err(JsValue::from_str("signature must be 'required' or 'optional'")),
+    };
+    let on_tamper = match policy.on_tamper.as_str() {
+        "abort" => vollcrypt_files_core::OnTamper::Abort,
+        "report" => vollcrypt_files_core::OnTamper::AbortWithReport,
+        "recover" => vollcrypt_files_core::OnTamper::AttemptRecovery,
+        _ => return Err(JsValue::from_str("onTamper must be 'abort', 'report' or 'recover'")),
+    };
+    Ok(vollcrypt_files_core::ShieldPolicy {
+        release_mode,
+        signature,
+        rollback_pin: policy.rollback_pin.map(|p| p as u64),
+        founder_anchor: policy.founder_anchor.unwrap_or(true),
+        on_tamper,
+        verify_sealed_marker: policy.verify_sealed_marker.unwrap_or(true),
+    })
+}
+
+#[wasm_bindgen(js_name = isSealed)]
+pub fn is_sealed_wasm(header_obj: JsValue) -> Result<bool, JsValue> {
+    let header_serde: HeaderObj = serde_wasm_bindgen::from_value(header_obj).map_err(to_js_err)?;
+    let core_header = serde_to_header(header_serde)?;
+    Ok(vollcrypt_files_core::is_sealed(&core_header))
+}
+
+#[wasm_bindgen(js_name = sealContainer)]
+pub fn seal_container_wasm(
+    container_bytes: &[u8],
+    options: JsValue,
+) -> Result<Vec<u8>, JsValue> {
+    let opts_wasm: WasmSealOptions = serde_wasm_bindgen::from_value(options).map_err(to_js_err)?;
+    let core_opts = wasm_to_seal_options(opts_wasm)?;
+
+    let mut source = std::io::Cursor::new(container_bytes);
+    let mut dest_buf = Vec::new();
+    let mut dest = std::io::Cursor::new(&mut dest_buf);
+
+    vollcrypt_files_core::seal_container(&mut source, &mut dest, core_opts)
+        .map_err(to_js_err)?;
+
+    Ok(dest_buf)
+}
+
+#[derive(Serialize)]
+pub struct WasmSealedInspection {
+    pub version: u8,
+    #[serde(rename = "fileId")]
+    pub file_id: Vec<u8>,
+    #[serde(rename = "chunkSize")]
+    pub chunk_size: u32,
+    #[serde(rename = "plaintextSize")]
+    pub plaintext_size: f64,
+    #[serde(rename = "merkleRoot")]
+    pub merkle_root: Vec<u8>,
+    #[serde(rename = "hashAlgorithm")]
+    pub hash_algorithm: u8,
+    #[serde(rename = "sealedMode")]
+    pub sealed_mode: Option<u32>,
+    pub reason: Option<String>,
+    pub timestamp: Option<u32>,
+    #[serde(rename = "ciphertextPresent")]
+    pub ciphertext_present: bool,
+}
+
+#[wasm_bindgen(js_name = inspectSealedContainer)]
+pub fn inspect_sealed_wasm(
+    container_bytes: &[u8],
+) -> Result<JsValue, JsValue> {
+    let cursor = std::io::Cursor::new(container_bytes);
+    let output = vollcrypt_files_core::inspect_sealed(cursor).map_err(to_js_err)?;
+
+    let res = WasmSealedInspection {
+        version: output.version,
+        file_id: output.file_id.to_vec(),
+        chunk_size: output.chunk_size,
+        plaintext_size: output.plaintext_size as f64,
+        merkle_root: output.merkle_root.to_vec(),
+        hash_algorithm: output.hash_algorithm as u8,
+        sealed_mode: output.sealed_mode.map(|m| m as u32),
+        reason: output.reason,
+        timestamp: output.timestamp.map(|t| t as u32),
+        ciphertext_present: output.ciphertext_present,
+    };
+
+    serde_wasm_bindgen::to_value(&res).map_err(to_js_err)
+}
+
+#[wasm_bindgen(js_name = verifyContainer)]
+pub fn verify_container_wasm(
+    container_bytes: &[u8],
+    policy: JsValue,
+) -> Result<String, JsValue> {
+    let policy_wasm: WasmShieldPolicy = serde_wasm_bindgen::from_value(policy).map_err(to_js_err)?;
+    let core_policy = wasm_to_shield_policy(policy_wasm)?;
+
+    let cursor = std::io::Cursor::new(container_bytes);
+    let report = vollcrypt_files_core::verify_container(cursor, &core_policy);
+    Ok(format!("{:?}", report))
 }

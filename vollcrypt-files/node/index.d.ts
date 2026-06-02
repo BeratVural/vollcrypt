@@ -64,6 +64,13 @@ export interface Ed25519KeypairObj {
 export declare function ed25519KeypairGenerate(): Ed25519KeypairObj
 export declare function ed25519Sign(sk: Uint8Array, message: Uint8Array): Buffer
 export declare function ed25519Verify(pk: Uint8Array, message: Uint8Array, signature: Uint8Array): boolean
+export interface HybridKeypairObj {
+  publicKey: Buffer
+  secretKey: Buffer
+}
+export declare function hybridKeypairGenerate(): HybridKeypairObj
+export declare function hybridSign(sk: Uint8Array, pk: Uint8Array, domain: string, context: Uint8Array, payload: Uint8Array): Buffer
+export declare function hybridVerify(pk: Uint8Array, domain: string, context: Uint8Array, payload: Uint8Array, signature: Uint8Array): boolean
 export interface MemberPublicKeyObj {
   recipient: KeySubpair
   signingPk: Buffer
@@ -78,6 +85,8 @@ export interface SignedMetadata {
   iv?: Buffer
   sealedPayload?: Buffer
   sealedTag?: Buffer
+  sealedMode?: number
+  reason?: string
 }
 export interface HeaderObj {
   version: number
@@ -87,6 +96,7 @@ export interface HeaderObj {
   chunkSize: number
   plaintextSize: number
   merkleRoot: Buffer
+  hashAlgorithm: number
   wraps: Array<WrapEntry>
   signedMetadata?: SignedMetadata
   signature?: Buffer
@@ -104,7 +114,7 @@ export declare function cryptoShredHeader(headerBytes: Uint8Array): Buffer
 export declare function signHeaderPlain(header: HeaderObj, signerPk: Uint8Array, signerSk: Uint8Array, keyLogId: Uint8Array, timestamp: number): HeaderObj
 export declare function signHeaderSealed(header: HeaderObj, signerPk: Uint8Array, signerSk: Uint8Array, keyLogId: Uint8Array, timestamp: number, sealedGroupId: Uint8Array, sealedGkVersion: number, sealedGk: Uint8Array): HeaderObj
 export declare function verifyHeaderSignaturePlain(header: HeaderObj): Buffer
-export declare function verifyHeaderSignatureSealed(header: HeaderObj, sealedGk: Uint8Array): Buffer
+export declare function verifyHeaderSignatureSealed(header: HeaderObj, sealedGk: Uint8Array, keyLog: KeyLog): Buffer
 export interface KeyLogEntry {
   kind: string
   userId?: Buffer
@@ -125,16 +135,49 @@ export interface SenderInfo {
 export declare function resolveSender(header: HeaderObj, keyLog: KeyLog, sealedGk?: Uint8Array | undefined | null): SenderInfo
 export interface PipelinedSignInfoObj {
   kind: string
-  signerEd25519Pk: Buffer
-  signerEd25519Sk: Buffer
+  signerPk: Buffer
+  signerSk: Buffer
   keyLogId: Buffer
   timestamp: number
   sealedGroupId?: Buffer
   sealedGkVersion?: number
   sealedGk?: Buffer
 }
-export declare function encryptFilePipelinedAsync(sourcePath: string, destPath: string, dek: Uint8Array, fileId: Uint8Array, chunkSize: number, wraps: Array<WrapEntry>, mode: number, numWorkers: number, signInfo?: PipelinedSignInfoObj | undefined | null): Promise<unknown>
-export declare function decryptFilePipelinedAsync(sourcePath: string, destPath: string, dek: Uint8Array, numWorkers: number): Promise<unknown>
+export interface IoWriteModeObj {
+  mode: string
+  batchSize?: number
+}
+export interface NapiSealOptions {
+  mode: string
+  reason?: string
+  signInfo?: PipelinedSignInfoObj
+}
+export interface NapiShieldPolicy {
+  releaseMode: string
+  signature?: string
+  rollbackPin?: number
+  founderAnchor?: boolean
+  onTamper?: string
+  verifySealedMarker?: boolean
+}
+export interface SealedInspectionObj {
+  version: number
+  fileId: Buffer
+  chunkSize: number
+  plaintextSize: number
+  merkleRoot: Buffer
+  hashAlgorithm: number
+  sealedMode?: number
+  reason?: string
+  timestamp?: number
+  ciphertextPresent: boolean
+}
+export declare function sealContainer(path: string, options: NapiSealOptions): Promise<unknown>
+export declare function isSealed(header: HeaderObj): boolean
+export declare function inspectSealedContainer(path: string): Promise<unknown>
+export declare function verifyContainer(path: string, policy: NapiShieldPolicy): string
+export declare function encryptFilePipelinedAsync(sourcePath: string, destPath: string, dek: Uint8Array, fileId: Uint8Array, chunkSize: number, wraps: Array<WrapEntry>, mode: number, numWorkers: number, signInfo?: PipelinedSignInfoObj | undefined | null, writeMode?: IoWriteModeObj | undefined | null): Promise<unknown>
+export declare function decryptFilePipelinedAsync(sourcePath: string, destPath: string, dek: Uint8Array, numWorkers: number, shield?: NapiShieldPolicy | undefined | null): Promise<unknown>
 export declare class GroupManifest {
   static genesis(groupId: Uint8Array, initialGk: Uint8Array, founderMemberId: Uint8Array, founderRecipientPk: KeySubpair, founderEd25519Pk: Uint8Array, founderEd25519Sk: Uint8Array, timestamp: number): GroupManifest
   static parse(bytes: Uint8Array): GroupManifest

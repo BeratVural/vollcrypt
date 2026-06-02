@@ -68,6 +68,28 @@ pub fn sign_header_sealed(
     Ok(())
 }
 
+pub fn sign_header_sovereign_sealed(
+    header: &mut Header,
+    signer_pk: &HybridPublicKey,
+    signer_sk: &HybridSecretKey,
+    mode: u8,
+    reason: String,
+    timestamp: u64,
+) -> Result<(), FileFormatError> {
+    header.version = 3;
+    header.signed_metadata = Some(SignedMetadata::SovereignSealed {
+        signer_pubkey: signer_pk.clone(),
+        mode,
+        reason,
+        timestamp,
+    });
+    header.signature = None;
+    let bytes_to_sign = header.signed_bytes();
+    let sig = hybrid_sign(signer_sk, signer_pk, "vollcrypt-file-sealed-marker-v1", &[], &bytes_to_sign);
+    header.signature = Some(sig);
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VerificationPolicy {
     #[default]
@@ -137,8 +159,9 @@ pub fn verify_header_signature_plain_policy(
 
     let signed_metadata = header.signed_metadata.as_ref().unwrap();
 
-    let signer_pubkey = match signed_metadata {
-        SignedMetadata::Plain { signer_pubkey, .. } => signer_pubkey,
+    let (signer_pubkey, is_sovereign_sealed) = match signed_metadata {
+        SignedMetadata::Plain { signer_pubkey, .. } => (signer_pubkey, false),
+        SignedMetadata::SovereignSealed { signer_pubkey, .. } => (signer_pubkey, true),
         SignedMetadata::Sealed { .. } => return Err(FileFormatError::HeaderSealed),
     };
 
@@ -146,7 +169,12 @@ pub fn verify_header_signature_plain_policy(
     let bytes_to_verify = header.signed_bytes();
 
     if header.version == 3 {
-        if !hybrid_verify(signer_pubkey, "vollf-hdr-plain", &[], &bytes_to_verify, signature) {
+        let domain = if is_sovereign_sealed {
+            "vollcrypt-file-sealed-marker-v1"
+        } else {
+            "vollf-hdr-plain"
+        };
+        if !hybrid_verify(signer_pubkey, domain, &[], &bytes_to_verify, signature) {
             return Err(FileFormatError::SignatureInvalid);
         }
     } else {
@@ -218,6 +246,7 @@ pub fn verify_header_signature_sealed_policy(
             timestamp,
             ..
         } => (sealed_payload, sealed_tag, iv, timestamp),
+        SignedMetadata::SovereignSealed { .. } => return Err(FileFormatError::HeaderSealed),
     };
 
     let signature = header.signature.as_ref().unwrap();
@@ -299,7 +328,7 @@ pub fn extract_key_log_id_plain(header: &Header) -> Result<[u8; 32], FileFormatE
         .ok_or(FileFormatError::HeaderNotSigned)?;
     match signed_metadata {
         SignedMetadata::Plain { key_log_id, .. } => Ok(*key_log_id),
-        SignedMetadata::Sealed { .. } => Err(FileFormatError::HeaderSealed),
+        SignedMetadata::Sealed { .. } | SignedMetadata::SovereignSealed { .. } => Err(FileFormatError::HeaderSealed),
     }
 }
 
@@ -320,6 +349,7 @@ pub fn extract_key_log_id_sealed(
             timestamp,
             ..
         } => (sealed_payload, sealed_tag, iv, timestamp),
+        SignedMetadata::SovereignSealed { .. } => return Err(FileFormatError::HeaderSealed),
     };
 
     let mut aad = Vec::with_capacity(24);

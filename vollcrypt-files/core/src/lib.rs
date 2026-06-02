@@ -26,6 +26,11 @@ pub mod signing;
 pub mod web_crypto;
 pub mod wrap;
 pub mod writer;
+pub mod shield;
+pub mod sovereign;
+
+pub use shield::{ReleaseMode, SignaturePolicy, OnTamper, ShieldPolicy, ShieldReport, verify_container};
+pub use sovereign::{SealMode, SealOptions, SealedInspection, is_sealed, inspect_sealed, seal_container};
 
 pub use aead::{
     aes256_gcm_decrypt, aes256_gcm_decrypt_async, aes256_gcm_decrypt_in_place,
@@ -72,6 +77,7 @@ pub use merkle::{
 pub use password::{unwrap_dek_with_password, wrap_dek_with_password, KdfChoice};
 pub use pipelined_io::{
     decrypt_file_pipelined, decrypt_verified, decrypt_streaming_online,
+    decrypt_file_pipelined_with_policy, decrypt_file_pipelined_async_policy,
     encrypt_file_pipelined, PipelinedSignInfo,
 };
 pub use random::{generate_dek, generate_file_id, generate_salt};
