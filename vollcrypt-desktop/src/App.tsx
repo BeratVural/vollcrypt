@@ -886,7 +886,6 @@ function App() {
         <nav className="nav-menu">
           <div
             className={`nav-item ${activeTab === "file" ? "active" : ""}`}
-            style={{ display: "flex", alignItems: "center", gap: "4px" }}
             onClick={() => {
               setActiveTab("file");
               setPassword("");
@@ -903,17 +902,9 @@ function App() {
             }}
           >
             File
-            <div className="info-tooltip-wrapper" style={{ marginLeft: "2px" }}>
-              <span className="info-icon">i</span>
-              <div className="tooltip-content">
-                <strong>File Cryptography:</strong>
-                Secure files using Master Passwords, Hybrid Keypairs, or Threshold (SSS) secret sharing.
-              </div>
-            </div>
           </div>
           <div
             className={`nav-item ${activeTab === "text" ? "active" : ""}`}
-            style={{ display: "flex", alignItems: "center", gap: "4px" }}
             onClick={() => {
               setActiveTab("text");
               setPassword("");
@@ -930,17 +921,10 @@ function App() {
             }}
           >
             Text
-            <div className="info-tooltip-wrapper" style={{ marginLeft: "2px" }}>
-              <span className="info-icon">i</span>
-              <div className="tooltip-content">
-                <strong>Text Cryptography:</strong>
-                Secure text messages using Master Passwords, Hybrid Keypairs, or Threshold (SSS) secret sharing.
-              </div>
-            </div>
           </div>
           <div
             className={`nav-item ${activeTab === "key" ? "active" : ""}`}
-            style={{ display: "flex", alignItems: "center", gap: "4px" }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "4px" }}
             onClick={() => {
               setActiveTab("key");
               setPassword("");
@@ -959,7 +943,7 @@ function App() {
             Keypair
             <div className="info-tooltip-wrapper" style={{ marginLeft: "2px" }}>
               <span className="info-icon">i</span>
-              <div className="tooltip-content">
+              <div className="tooltip-content right-aligned">
                 <strong>Keypair Generation:</strong>
                 Create quantum-resistant hybrid keypairs combining ML-KEM-768 with classical X25519.
               </div>

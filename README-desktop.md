@@ -34,6 +34,7 @@ graph TD
 - Custom titlebar controls are built in React with window dragging regions (`data-tauri-drag-region`), minimize, maximize/maximize-toggle, and close functions.
 - A GitHub repository link button is integrated next to the window controls, using Tauri's native opener API.
 - Frameless Windows 11 colored focus borders are disabled using `"shadow": false` to ensure a consistent dark background silhouette.
+- **Adjusted Viewport Dimensions**: The default startup window height was increased to `780` pixels to comfortably display advanced parameters (KDF settings, signature policies, drag-and-drop zones) without crowding the layout.
 
 ---
 
@@ -45,6 +46,7 @@ The desktop app encapsulates the following functionalities:
 - Derives strong keys from user-specified passwords using **Argon2id** (customizable parameters) or **PBKDF2-SHA256**.
 - Streams file contents in chunks utilizing **AES-256-GCM** for maximum performance and minimum memory footprint.
 - Automatically saves encrypted files with the `.voll` extension.
+- **Replace Original File Option**: Allows users to automatically overwrite/delete the raw plain text source file on disk upon successful encryption, automatically hiding the output path picker when active.
 
 ### 2. Asymmetric Keypair Generator
 - Generates post-quantum hybrid keypairs containing:
@@ -57,11 +59,14 @@ The desktop app encapsulates the following functionalities:
 - Encrypts target files to a recipient's public key (`.pub`) using the ML-KEM + X25519 hybrid exchange.
 - Decrypts files using the recipient's private key (`.sec`).
 - Verifies sender signature on decryption to prevent key substitution and MITM attacks.
+- **Replace Original File Option**: Allows users to automatically delete the raw plain text source file on disk upon successful encryption.
 
 ### 4. Threshold (t-of-n) SSS Wrap Mode
 - Secures container keys under a Shamir Secret Sharing (SSS) wrap policy over GF(2^8).
 - Automatically splits the container's Threshold Master Secret (TMS) into $n$ SSS shares.
 - Outputs copyable and distributable share strings prefixed with `vcs_` and protected by truncated SHA-256 integrity checksums.
+- **Offline QR Code Export**: Generates SSS shares as SVG vectors offline in the Rust backend, with in-app previews and high-resolution PNG download capability (painted onto a white-padded canvas to bypass Tauri cross-origin restrictions).
+- **Drag-and-Drop QR Code Scanning**: Features an offline, client-side drag-and-drop or upload area for SSS share images. Decodes share codes using multi-scale down-sampling to optimize detection rate for photos taken with mobile cameras.
 - Restores key access and decrypts containers directly once at least $t$ valid shares are supplied.
 
 ### 5. Sovereign Sealing & Crypto-Shredding
@@ -69,11 +74,13 @@ The desktop app encapsulates the following functionalities:
   - **Seal Mode**: Erases all key-wrapping entries from the container header, keeping the encrypted payload intact but completely keyless (auditable zero-recoverability).
   - **Purge Mode**: Erases all key-wrapping entries and overwrites/zeroizes the ciphertext block payload on disk (complete crypto-shredding).
 - Supports signing the sealed marker with a digital key (Ed25519 or Post-Quantum) for proof-of-erasure audits.
+- **Safe Temp File Handling**: The sealing file stream operations are scoped atomically. If the sealing or file replacement fails at any point, the backend automatically deletes the temporary `.tmp_seal` file from disk to prevent leftover clutter.
 
 ### 6. Shield Integrity Verification Policies
 - Lets users configure and audit container integrity signature policies before decryption:
   - **Release Modes**: Choose between strict double-pass verification (`ReleaseMode::Verified`) or speed-focused on-the-fly (`ReleaseMode::Streaming`) streaming.
   - **Tamper Reactions**: Define reactive policies (Abort, Abort & Report, or Attempt Block Recovery) when container anomalies, timestamp rollbacks, or founder anchor mismatches are detected.
+- **Automated Signature Policy Routing**: Automatically routes the signature policy to **Optional (v1 fallback)** when password or SSS threshold decryption tabs are selected to ensure friction-free decryption, and restores strict verification to **Required (v2/v3 check)** when switching back to recipient or group tabs.
 
 ### 7. Text Cryptography & File Interoperability
 - In-memory text encryption/decryption yielding Base64-encoded container packages.
@@ -81,6 +88,10 @@ The desktop app encapsulates the following functionalities:
   - Saved encrypted texts are decoded back to raw binary bytes and written to disk as `.voll` container files.
   - Users can decrypt these `.voll` text container files directly in either the Text decryption or File decryption tabs.
 - Decrypted text files automatically default to `.txt` extension presets on picker launch.
+
+### 8. UI/UX Enhancements
+- **Decryption Output Restrictions**: Safety enforcement removes the "Replace original file" option in Decryption panels to ensure decrypted data is always written to a new standalone file without modifying the encrypted source.
+- **Keypair Info Circle Tooltips**: Provides interactive, non-blocking informational tooltips next to key management and generation components. Far-right tooltips are dynamically aligned left to ensure they fit within the custom frameless window bounds.
 
 ---
 
