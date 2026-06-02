@@ -93,6 +93,52 @@ const deriveDecryptDest = (src: string, destDir: string) => {
   }
 };
 
+interface TourStep {
+  target: string;
+  title: string;
+  description: string;
+  placement: "bottom" | "top" | "left";
+  tab?: "file" | "text" | "key";
+  mode?: "password" | "recipient" | "threshold";
+  action?: "encrypt" | "decrypt" | "verify" | "seal";
+}
+
+const TOUR_STEPS: TourStep[] = [
+  {
+    target: ".nav-menu",
+    title: "Navigation Tabs",
+    description: "Switch between File processing, Text messaging, and Keypair management.",
+    placement: "bottom"
+  },
+  {
+    target: ".tour-action-control",
+    title: "Operation Mode",
+    description: "Choose to Encrypt, Decrypt, Verify signatures, or Seal containers.",
+    placement: "bottom",
+    tab: "file"
+  },
+  {
+    target: ".tour-file-picker",
+    title: "Source Files Selection",
+    description: "Select target documents or drag-and-drop them directly into the app.",
+    placement: "bottom",
+    tab: "file"
+  },
+  {
+    target: ".tour-mode-control",
+    title: "Encryption Options",
+    description: "Choose password protection, hybrid KEM keys, or Shamir Secret Sharing shares.",
+    placement: "top",
+    tab: "file"
+  },
+  {
+    target: ".titlebar-controls",
+    title: "Settings & Help",
+    description: "Access preferences, adjust performance profiles, or replay this tour anytime.",
+    placement: "left"
+  }
+];
+
 function App() {
   const clipboardTimerRef = useRef<any>(null);
   const handleMinimize = () => {
@@ -133,6 +179,76 @@ function App() {
   } | null>(null);
   const currentFileStartTimeRef = useRef<number | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+
+  const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number }>({
+    visible: false,
+    x: 0,
+    y: 0,
+  });
+
+  const [isQueueExpanded, setIsQueueExpanded] = useState(false);
+
+  const [tourStep, setTourStep] = useState<number | null>(null);
+  const [tourPosition, setTourPosition] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+
+  const handleResetForm = () => {
+    setSourceFiles([]);
+    setDestFile("");
+    setPassword("");
+    setRecipientKey("");
+    setInputText("");
+    setOutputText("");
+    setStatus(null);
+    setVerifyRollbackPin("");
+    setSealReason("");
+    setSealConfirmText("");
+    setSealSignerPk("");
+    setSealSignerSk("");
+    setSealKeyLogId("");
+    setGeneratedPk("");
+    setGeneratedSk("");
+    setInputShares("");
+    setGeneratedShares(null);
+    showStatus("info", "Form fields reset successfully.");
+  };
+
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      const menuWidth = 180;
+      const menuHeight = 160;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      
+      let x = e.clientX;
+      let y = e.clientY;
+      
+      if (x + menuWidth > viewportWidth) {
+        x = viewportWidth - menuWidth - 8;
+      }
+      if (y + menuHeight > viewportHeight) {
+        y = viewportHeight - menuHeight - 8;
+      }
+      
+      setContextMenu({
+        visible: true,
+        x,
+        y
+      });
+    };
+
+    const handleClick = () => {
+      setContextMenu((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+    };
+
+    window.addEventListener("contextmenu", handleContextMenu);
+    window.addEventListener("click", handleClick);
+
+    return () => {
+      window.removeEventListener("contextmenu", handleContextMenu);
+      window.removeEventListener("click", handleClick);
+    };
+  }, []);
 
   useEffect(() => {
     if (sourceFiles.length === 1) {
@@ -226,6 +342,7 @@ function App() {
             if (files && files.length > 0) {
               setSourceFiles(files);
               setActiveTab("file");
+              setIsQueueExpanded(false);
             }
           } catch (err: any) {
             console.error("Failed to expand dropped paths:", err);
@@ -305,6 +422,68 @@ function App() {
   const [activeQrShare, setActiveQrShare] = useState<string | null>(null);
   const [activeQrSvg, setActiveQrSvg] = useState<string | null>(null);
   const [activeQrTitle, setActiveQrTitle] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isSplashDone && isEulaApproved) {
+      const tourCompleted = localStorage.getItem("vollcrypt_onboarding_completed") === "true";
+      if (!tourCompleted) {
+        setTourStep(0);
+      }
+    }
+  }, [isSplashDone, isEulaApproved]);
+
+  useEffect(() => {
+    if (tourStep === null) {
+      setTourPosition(null);
+      return;
+    }
+
+    const step = TOUR_STEPS[tourStep];
+    if (!step) return;
+
+    if (step.tab) {
+      setActiveTab(step.tab);
+    }
+    if (step.mode) {
+      setActiveMode(step.mode);
+    }
+    if (step.action) {
+      setFileAction(step.action);
+    }
+
+    const padding = 6;
+    const updatePosition = () => {
+      const el = document.querySelector(step.target);
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          setTourPosition({
+            top: rect.top - padding,
+            left: rect.left - padding,
+            width: rect.width + padding * 2,
+            height: rect.height + padding * 2
+          });
+          return true;
+        }
+      }
+      return false;
+    };
+
+    updatePosition();
+
+    const intervalId = setInterval(updatePosition, 50);
+
+    const timeoutId = setTimeout(() => {
+      clearInterval(intervalId);
+    }, 2000);
+
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      clearInterval(intervalId);
+      clearTimeout(timeoutId);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [tourStep]);
 
   const handleShowQr = async (share: string, title: string) => {
     try {
@@ -545,6 +724,7 @@ function App() {
           setSourceFiles(files);
           setFileAction("encrypt");
           setActiveTab("file");
+          setIsQueueExpanded(false);
         }
       }
     }).catch(err => {
@@ -573,6 +753,7 @@ function App() {
       if (files) {
         const selected = Array.isArray(files) ? files : [files];
         setSourceFiles(selected);
+        setIsQueueExpanded(false);
       }
     } catch (err: any) {
       showStatus("error", `File selection failed: ${err}`);
@@ -591,6 +772,7 @@ function App() {
         const files: string[] = await invoke("expand_paths", { paths: [directory] });
         if (files && files.length > 0) {
           setSourceFiles(files);
+          setIsQueueExpanded(false);
         } else {
           showStatus("info", "No files found in the selected folder.");
         }
@@ -1097,6 +1279,46 @@ function App() {
     );
   }
 
+  const getTourTooltipStyle = () => {
+    if (!tourPosition) return {};
+    const step = TOUR_STEPS[tourStep || 0];
+    
+    const margin = 10;
+    const tooltipWidth = 280;
+    
+    let top = 0;
+    let left = 0;
+    
+    if (step.placement === "bottom") {
+      top = tourPosition.top + tourPosition.height + margin;
+      left = tourPosition.left + (tourPosition.width - tooltipWidth) / 2;
+    } else if (step.placement === "top") {
+      top = tourPosition.top - 120 - margin;
+      left = tourPosition.left + (tourPosition.width - tooltipWidth) / 2;
+    } else if (step.placement === "left") {
+      top = tourPosition.top + (tourPosition.height - 100) / 2;
+      left = tourPosition.left - tooltipWidth - margin;
+    }
+    
+    if (left < 10) left = 10;
+    if (left + tooltipWidth > window.innerWidth - 10) {
+      left = window.innerWidth - tooltipWidth - 10;
+    }
+    if (top < 10) top = 10;
+    if (top + 120 > window.innerHeight - 10) {
+      top = window.innerHeight - 120 - 10;
+    }
+    
+    return {
+      position: "fixed" as const,
+      top: `${top}px`,
+      left: `${left}px`,
+      width: `${tooltipWidth}px`,
+      zIndex: 9995,
+      transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)"
+    };
+  };
+
   return (
     <div className="window-frame">
       {platformInfo.os !== "macOS" && <ResizeHandles />}
@@ -1242,7 +1464,7 @@ function App() {
             Keypair
             <div className="info-tooltip-wrapper" style={{ marginLeft: "2px" }}>
               <span className="info-icon">i</span>
-              <div className="tooltip-content right-aligned">
+              <div className="tooltip-content right-aligned downward">
                 <strong>Keypair Generation:</strong>
                 Create quantum-resistant hybrid keypairs combining ML-KEM-768 with classical X25519.
               </div>
@@ -1254,7 +1476,7 @@ function App() {
         {activeTab === "file" && (
           <form onSubmit={handleFileProcess}>
             <div className="settings-row" style={{ flexDirection: "column", gap: "12px", alignItems: "stretch" }}>
-              <div className="segmented-control" style={{ display: "flex", width: "100%" }}>
+              <div className="segmented-control tour-action-control" style={{ display: "flex", width: "100%" }}>
                 <button
                   type="button"
                   className={`segment-btn ${fileAction === "encrypt" ? "active" : ""}`}
@@ -1361,7 +1583,7 @@ function App() {
                   Seal / Purge
                   <div className="info-tooltip-wrapper" style={{ marginLeft: "6px" }}>
                     <span className="info-icon">i</span>
-                    <div className="tooltip-content">
+                    <div className="tooltip-content right-aligned">
                       <strong>Seal / Purge:</strong>
                       Sovereignly locks the container, permanently destroying wrapper keys to prevent any future decryption.
                     </div>
@@ -1370,7 +1592,7 @@ function App() {
               </div>
 
               {(fileAction === "encrypt" || fileAction === "decrypt") && (
-                <div className="segmented-control" style={{ display: "flex", width: "100%" }}>
+                <div className="segmented-control tour-mode-control" style={{ display: "flex", width: "100%" }}>
                   <button
                     type="button"
                     className={`segment-btn ${activeMode === "password" ? "active" : ""}`}
@@ -1442,7 +1664,7 @@ function App() {
 
             </div>
 
-            <div className="form-group">
+            <div className="form-group tour-file-picker">
               <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
                 <label style={{ marginBottom: 0 }}>Source File(s)</label>
                 <div className="info-tooltip-wrapper">
@@ -1472,6 +1694,66 @@ function App() {
                   Folder
                 </button>
               </div>
+              {sourceFiles.length >= 2 && (
+                <div className="queue-container">
+                  <div 
+                    className="queue-header" 
+                    onClick={() => setIsQueueExpanded(!isQueueExpanded)}
+                    style={{ cursor: "pointer", userSelect: "none" }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <svg 
+                        viewBox="0 0 24 24" 
+                        width="12" 
+                        height="12" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        strokeWidth="2.5" 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round"
+                        style={{ 
+                          transform: isQueueExpanded ? "rotate(90deg)" : "rotate(0deg)", 
+                          transition: "transform 0.2s ease" 
+                        }}
+                      >
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                      <span>Selected Files Queue ({sourceFiles.length})</span>
+                    </div>
+                    <button 
+                      type="button" 
+                      className="queue-clear-btn" 
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        setSourceFiles([]); 
+                      }}
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                  {isQueueExpanded && (
+                    <div className="queue-list">
+                      {sourceFiles.map((file, idx) => (
+                        <div key={idx} className="queue-item" title={file}>
+                          <span className="queue-item-name">{getFilename(file)}</span>
+                          <button
+                            type="button"
+                            className="queue-item-remove"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const updated = sourceFiles.filter((_, i) => i !== idx);
+                              setSourceFiles(updated);
+                            }}
+                            title="Remove file"
+                          >
+                            x
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="field-helper">Choose the target file container(s) to process.</div>
             </div>
 
@@ -2988,6 +3270,25 @@ function App() {
                     )}
                   </div>
                 </div>
+
+                {/* Onboarding Section */}
+                <div className="settings-section">
+                  <span className="settings-section-title">App Onboarding</span>
+                  <div className="settings-description">
+                    Take a quick guided tour of VOLLcrypt's features:
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ width: "100%", padding: "8px 12px", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    onClick={() => {
+                      setShowSettingsModal(false);
+                      setTourStep(0);
+                    }}
+                  >
+                    Replay Welcome Tour
+                  </button>
+                </div>
               </div>
               <div className="settings-modal-footer">
                 <button
@@ -3040,6 +3341,127 @@ function App() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Custom Context Menu */}
+        {contextMenu.visible && (
+          <div 
+            className="app-context-menu" 
+            style={{ 
+              top: contextMenu.y, 
+              left: contextMenu.x 
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {sourceFiles.length > 0 && (
+              <button 
+                type="button" 
+                className="context-menu-item" 
+                onClick={() => {
+                  setSourceFiles([]);
+                  setContextMenu({ visible: false, x: 0, y: 0 });
+                }}
+              >
+                Clear File Queue
+              </button>
+            )}
+            <button 
+              type="button" 
+              className="context-menu-item" 
+              onClick={() => {
+                handleResetForm();
+                setContextMenu({ visible: false, x: 0, y: 0 });
+              }}
+            >
+              Reset Form Fields
+            </button>
+            <button 
+              type="button" 
+              className="context-menu-item" 
+              onClick={() => {
+                setShowSettingsModal(true);
+                setContextMenu({ visible: false, x: 0, y: 0 });
+              }}
+            >
+              Preferences
+            </button>
+            <div className="context-menu-divider"></div>
+            <button 
+              type="button" 
+              className="context-menu-item" 
+              onClick={() => {
+                handleOpenGithub();
+                setContextMenu({ visible: false, x: 0, y: 0 });
+              }}
+            >
+              GitHub Repository
+            </button>
+          </div>
+        )}
+        {/* Onboarding Guided Tour */}
+        {tourStep !== null && tourPosition && (
+          <>
+            <div 
+              className="tour-highlight-box" 
+              style={{
+                top: `${tourPosition.top}px`,
+                left: `${tourPosition.left}px`,
+                width: `${tourPosition.width}px`,
+                height: `${tourPosition.height}px`
+              }}
+            />
+            <div 
+              className="tour-tooltip-box" 
+              style={getTourTooltipStyle()}
+            >
+              <div className="tour-tooltip-title">
+                {TOUR_STEPS[tourStep].title}
+              </div>
+              <div className="tour-tooltip-desc">
+                {TOUR_STEPS[tourStep].description}
+              </div>
+              <div className="tour-tooltip-footer">
+                <span className="tour-step-indicator">
+                  Step {tourStep + 1} of {TOUR_STEPS.length}
+                </span>
+                <div className="tour-btn-group">
+                  <button 
+                    type="button" 
+                    className="tour-btn skip" 
+                    onClick={() => {
+                      localStorage.setItem("vollcrypt_onboarding_completed", "true");
+                      setTourStep(null);
+                    }}
+                  >
+                    Skip
+                  </button>
+                  {tourStep > 0 && (
+                    <button 
+                      type="button" 
+                      className="tour-btn back" 
+                      onClick={() => setTourStep(tourStep - 1)}
+                    >
+                      Back
+                    </button>
+                  )}
+                  <button 
+                    type="button" 
+                    className="tour-btn next" 
+                    onClick={() => {
+                      if (tourStep < TOUR_STEPS.length - 1) {
+                        setTourStep(tourStep + 1);
+                      } else {
+                        localStorage.setItem("vollcrypt_onboarding_completed", "true");
+                        setTourStep(null);
+                      }
+                    }}
+                  >
+                    {tourStep === TOUR_STEPS.length - 1 ? "Done" : "Next"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>
