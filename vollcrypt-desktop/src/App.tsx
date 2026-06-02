@@ -4,6 +4,7 @@ import { open, save as tauriSave } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { listen } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
 import jsQR from "jsqr";
 import "./App.css";
 
@@ -405,6 +406,7 @@ function App() {
 
   // Platform and EULA states
   const [platformInfo, setPlatformInfo] = useState<{ os: string; arch: string }>({ os: "", arch: "" });
+  const [appVersion, setAppVersion] = useState<string>("0.2.0");
   const [isEulaApproved, setIsEulaApproved] = useState<boolean>(true);
   const [eulaChecked, setEulaChecked] = useState(false);
   // Splash states
@@ -417,6 +419,7 @@ function App() {
   const [performanceProfile, setPerformanceProfile] = useState(() => localStorage.getItem("vollcrypt_perf_profile") || "balanced");
   const [clipboardClearEnabled, setClipboardClearEnabled] = useState(() => localStorage.getItem("vollcrypt_clip_enabled") !== "false");
   const [clipboardClearDelay, setClipboardClearDelay] = useState(() => Number(localStorage.getItem("vollcrypt_clip_delay") || "30"));
+  const [zoomLevel, setZoomLevel] = useState<"100%" | "110%" | "120%" | "130%">(() => (localStorage.getItem("vollcrypt_zoom_level") as any) || "100%");
 
   // QR Code States
   const [activeQrShare, setActiveQrShare] = useState<string | null>(null);
@@ -710,6 +713,10 @@ function App() {
         }
       })
       .catch(err => console.error("Failed to get platform info:", err));
+
+    getVersion()
+      .then(ver => setAppVersion(ver))
+      .catch(err => console.warn("Failed to get app version:", err));
 
     // Register operating system right-click context menu integration
     invoke("register_context_menu").catch(err => {
@@ -1186,6 +1193,8 @@ function App() {
     }
   };
 
+  const totalZoom = Number(zoomLevel.replace("%", "")) / 100;
+
   if (showSplash) {
     return (
       <div className="window-frame">
@@ -1223,7 +1232,7 @@ function App() {
           </div>
         </div>
 
-        <div className="app-container" style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
+        <div className="app-container" style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", zoom: totalZoom }}>
           <div className="main-card" style={{ maxWidth: "580px", padding: "24px" }}>
             <h2 style={{ fontSize: "14px", fontWeight: "700", color: "#ffffff", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: "JetBrains Mono, monospace" }}>
               End User License Agreement (EULA)
@@ -1370,10 +1379,25 @@ function App() {
             <span className="brand-voll" data-tauri-drag-region>VOLL</span><span className="brand-crypt" data-tauri-drag-region>crypt</span>
           </span>
           <span className="titlebar-version" data-tauri-drag-region>
-            v0.2.0 {platformInfo.os && platformInfo.arch ? `(${platformInfo.os} ${platformInfo.arch})` : ""}
+            v{appVersion} {platformInfo.os && platformInfo.arch ? `(${platformInfo.os} ${platformInfo.arch})` : ""}
           </span>
         </div>
         <div className="titlebar-controls">
+          <select
+            className="titlebar-zoom-select"
+            value={zoomLevel}
+            onChange={(e) => {
+              const val = e.target.value as "100%" | "110%" | "120%" | "130%";
+              setZoomLevel(val);
+              localStorage.setItem("vollcrypt_zoom_level", val);
+            }}
+            title="Layout Zoom"
+          >
+            <option value="100%">100%</option>
+            <option value="110%">110%</option>
+            <option value="120%">120%</option>
+            <option value="130%">130%</option>
+          </select>
           <button
             type="button"
             className="titlebar-btn github-btn"
@@ -1400,7 +1424,7 @@ function App() {
         </div>
       </div>
 
-      <div className="app-container">
+      <div className="app-container" style={{ zoom: totalZoom }}>
         <div className="main-card">
 
         {/* Tab Selector */}
@@ -3150,7 +3174,7 @@ function App() {
         {/* Settings Modal */}
         {showSettingsModal && (
           <div className="settings-modal-backdrop" onClick={() => setShowSettingsModal(false)}>
-            <div className="settings-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="settings-modal-card" style={{ maxHeight: `${85 / totalZoom}vh` }} onClick={(e) => e.stopPropagation()}>
               <div className="settings-modal-header">
                 <h3>Application Settings</h3>
                 <button type="button" className="settings-modal-close-btn" onClick={() => setShowSettingsModal(false)}>
@@ -3271,6 +3295,8 @@ function App() {
                   </div>
                 </div>
 
+
+
                 {/* Onboarding Section */}
                 <div className="settings-section">
                   <span className="settings-section-title">App Onboarding</span>
@@ -3307,7 +3333,7 @@ function App() {
         {/* SSS QR Viewer Modal */}
         {activeQrSvg && (
           <div className="settings-modal-backdrop" onClick={() => { setActiveQrSvg(null); setActiveQrShare(null); setActiveQrTitle(null); }}>
-            <div className="settings-modal-card" style={{ maxWidth: "320px", display: "flex", flexDirection: "column", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
+            <div className="settings-modal-card" style={{ maxWidth: "320px", display: "flex", flexDirection: "column", alignItems: "center", maxHeight: `${85 / totalZoom}vh` }} onClick={(e) => e.stopPropagation()}>
               <div className="settings-modal-header" style={{ width: "100%" }}>
                 <h3>{activeQrTitle} QR Code</h3>
                 <button type="button" className="settings-modal-close-btn" onClick={() => { setActiveQrSvg(null); setActiveQrShare(null); setActiveQrTitle(null); }}>

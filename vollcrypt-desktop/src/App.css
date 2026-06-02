@@ -460,6 +460,34 @@ textarea.text-input {
   gap: 6px;
 }
 
+.titlebar-zoom-select {
+  background-color: #141416;
+  border: 1px solid #27272a;
+  border-radius: 4px;
+  color: #a1a1aa;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  height: 22px;
+  cursor: pointer;
+  outline: none;
+  font-family: 'Inter', -apple-system, sans-serif;
+  transition: all 0.15s ease;
+  margin-right: 4px;
+  align-self: center;
+}
+
+.titlebar-zoom-select:hover {
+  border-color: var(--accent-color);
+  color: #ffffff;
+  background-color: #1c1c21;
+}
+
+.titlebar-zoom-select option {
+  background-color: #0c0c0e;
+  color: #a1a1aa;
+}
+
 .titlebar-btn {
   display: flex;
   justify-content: center;
