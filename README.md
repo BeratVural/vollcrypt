@@ -1,16 +1,22 @@
 <div align="center">
-
-# Vollcrypt
-
-**Cross-platform, quantum-resistant cryptography workspace for Node.js, WebAssembly, and Rust**
-
-[![CI](https://github.com/BeratVural/vollcrypt/actions/workflows/ci.yml/badge.svg)](https://github.com/BeratVural/vollcrypt/actions/workflows/ci.yml)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE-GPL)
-[![License: Commercial](https://img.shields.io/badge/License-Commercial-goldenrod.svg)](LICENSE-COMMERCIAL.md)
-[![FIPS 203](https://img.shields.io/badge/PQC-FIPS%20203%20ML--KEM--768-8A2BE2)](https://csrc.nist.gov/pubs/fips/203/final)
-
+  <h1>Vollcrypt</h1>
+  <p><strong>Cross-platform, quantum-resistant cryptography workspace for Node.js, WebAssembly, and Rust</strong></p>
+  
+  <p>
+    <a href="https://github.com/BeratVural/vollcrypt/actions/workflows/ci.yml">
+      <img src="https://github.com/BeratVural/vollcrypt/actions/workflows/ci.yml/badge.svg" alt="CI">
+    </a>
+    <a href="LICENSE-GPL">
+      <img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="License: GPL v3">
+    </a>
+    <a href="LICENSE-COMMERCIAL.md">
+      <img src="https://img.shields.io/badge/License-Commercial-goldenrod.svg" alt="License: Commercial">
+    </a>
+    <a href="https://csrc.nist.gov/pubs/fips/203/final">
+      <img src="https://img.shields.io/badge/PQC-FIPS%20203%20ML--KEM--768-8A2BE2" alt="FIPS 203">
+    </a>
+  </p>
 </div>
-
 ---
 
 Vollcrypt is a cryptographic library providing secure building blocks for end-to-end encrypted (E2EE) messaging systems and file transfer/storage tools. The core library is written in Rust and compiled to Node.js native bindings, WebAssembly, and native Rust.
