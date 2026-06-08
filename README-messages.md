@@ -1,12 +1,15 @@
 <div align="center">
-
-# Vollcrypt Messages
-
-**E2EE Message Encryption and Session Management module for Node.js, WebAssembly, and Rust**
-
-[![npm (node)](https://img.shields.io/npm/v/@vollcrypt/messages-node?label=%40vollcrypt%2Fmessages-node&color=cb3837)](https://www.npmjs.com/package/@vollcrypt/messages-node)
-[![npm (wasm)](https://img.shields.io/npm/v/@vollcrypt/messages-wasm?label=%40vollcrypt%2Fmessages-wasm&color=cb3837)](https://www.npmjs.com/package/@vollcrypt/messages-wasm)
-
+  <h1>Vollcrypt Messages</h1>
+  <p><strong>E2EE Message Encryption and Session Management module for Node.js, WebAssembly, and Rust</strong></p>
+  
+  <p>
+    <a href="https://www.npmjs.com/package/@vollcrypt/messages-node">
+      <img src="https://img.shields.io/npm/v/@vollcrypt/messages-node?label=%40vollcrypt%2Fmessages-node&color=cb3837" alt="npm (node)">
+    </a>
+    <a href="https://www.npmjs.com/package/@vollcrypt/messages-wasm">
+      <img src="https://img.shields.io/npm/v/@vollcrypt/messages-wasm?label=%40vollcrypt%2Fmessages-wasm&color=cb3837" alt="npm (wasm)">
+    </a>
+  </p>
 </div>
 
 ---

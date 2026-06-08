@@ -2,6 +2,58 @@
 
 **Frameless, dark-mode native desktop application for high-performance local file and text cryptography, built with Tauri (Rust) and React + TypeScript + Vanilla CSS.**
 
+
+---
+
+## Interface Showcase
+
+Here is a visual walkthrough of the Vollcrypt Desktop application interface:
+
+### 1. Main Cryptography Card & Drag-and-Drop Ingestion
+The application features a modern, frameless, dark-mode window with custom titlebar controls and intuitive drag-and-drop file imports.
+
+![Vollcrypt Drag-and-Drop Overlay](assets/screenshots/drag_drop_overlay.png)
+*Drag-and-drop overlay displaying the glassmorphic state when hovering files over the window.*
+
+![File Encryption Workspace](assets/screenshots/file_encrypt_queued.png)
+*File encryption panel with a selected folder path queued, Argon2id KDF configuration, and password field.*
+
+### 2. Advanced Security Configurations & Decryption
+In the Decrypt panel, users can configure release modes, signature verification policies, rollback pin epochs, and launch RAM-only previews.
+
+![File Decryption Workspace](assets/screenshots/file_decrypt_configs.png)
+*File decryption workspace displaying advanced Shield Policy Configurations and the Secure Preview launcher.*
+
+### 3. Secure Preview (RAM-Only Mode)
+The secure preview mode decrypts containers entirely in RAM to allow browsing folder structures and reviewing text files without writing plaintext data to disk.
+
+![Secure Preview Text Viewer](assets/screenshots/secure_preview_active.png)
+*In-memory secure preview rendering benchmark files and system performance metrics.*
+
+### 4. Container Verification & Sovereign Sealing
+Audit container signatures and tag integrity, or perform GDPR-compliant erasure/crypto-shredding operations.
+
+![Container Integrity Verification](assets/screenshots/container_verify_success.png)
+*Successful Shield Integrity Verification Report confirming valid signatures and tag chains.*
+
+![Sovereign Sealing & Crypto-Shredding](assets/screenshots/seal_purge_tab.png)
+*Irreversible Sealing workspace showing critical warnings and the Type-to-Confirm security input.*
+
+### 5. Shamir's Secret Sharing (Threshold Key-Splitting)
+Split container keys into n shares and reconstruct the original key using a threshold t of SSS shares, featuring offline QR code export and offline drag-and-drop QR scanning.
+
+![Shamir's Secret Sharing Generation](assets/screenshots/sss_shares_generated.png)
+*Secret shares generated with copyable strings, offline QR Code views, and individual share copy buttons.*
+
+![SSS Share QR Code View](assets/screenshots/sss_qr_code_modal.png)
+*Offline QR Code pop-up showing the share vector and PNG download button.*
+
+### 6. Preferences & Performance Tuning
+Configure performance profiles (High Performance, Balanced, Low Resource, Paranoid), clear clipboard history, and manage secure preview memory constraints.
+
+![Application Preferences](assets/screenshots/application_settings.png)
+*Preferences modal exposing file shredder controls and custom memory-limit dropdown selectors.*
+
 ---
 
 ## 🏗 Architectural Design
