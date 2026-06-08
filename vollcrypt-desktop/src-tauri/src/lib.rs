@@ -33,8 +33,22 @@ pub fn run() {
             get_cli_args,
             register_context_menu,
             unregister_context_menu,
-            expand_paths
+            expand_paths,
+            secure_preview_init,
+            secure_preview_get,
+            secure_preview_get_file,
+            secure_preview_cleanup,
+            prevent_screen_capture,
+            send_desktop_notification
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                let label = window.label();
+                if label == "secure_preview_window" {
+                    cleanup_all_preview_sessions();
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

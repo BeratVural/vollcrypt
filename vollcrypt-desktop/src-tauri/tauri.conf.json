@@ -35,6 +35,15 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "fileAssociations": [
+      {
+        "ext": ["voll"],
+        "name": "VOLLcrypt Encrypted Container",
+        "description": "VOLLcrypt secure encrypted file or folder container",
+        "mimeType": "application/vnd.vollcrypt.file",
+        "role": "Editor"
+      }
+    ],
     "licenseFile": "../License.rtf",
     "windows": {
       "webviewInstallMode": {

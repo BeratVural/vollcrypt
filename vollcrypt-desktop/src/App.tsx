@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save as tauriSave } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
@@ -141,6 +142,25 @@ const TOUR_STEPS: TourStep[] = [
 ];
 
 function App() {
+  const params = new URLSearchParams(window.location.search);
+  const previewSessionId = params.get("preview_session_id");
+  const previewMimeType = params.get("mime_type") || "";
+  const previewFilename = params.get("filename") || "";
+  const previewIsFolder = params.get("is_folder") === "true";
+  const previewSize = parseInt(params.get("size") || "0", 10);
+
+  if (previewSessionId) {
+    return (
+      <SecurePreview
+        sessionId={previewSessionId}
+        mimeType={previewMimeType}
+        filename={previewFilename}
+        isFolder={previewIsFolder}
+        size={previewSize}
+      />
+    );
+  }
+
   const clipboardTimerRef = useRef<any>(null);
   const handleMinimize = () => {
     getCurrentWindow().minimize();
@@ -342,6 +362,12 @@ function App() {
             const files: string[] = await invoke("expand_paths", { paths });
             if (files && files.length > 0) {
               setSourceFiles(files);
+              const hasVollFile = files.some(file => file.toLowerCase().endsWith(".voll"));
+              if (hasVollFile) {
+                setFileAction("decrypt");
+              } else {
+                setFileAction("encrypt");
+              }
               setActiveTab("file");
               setIsQueueExpanded(false);
             }
@@ -418,8 +444,52 @@ function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [performanceProfile, setPerformanceProfile] = useState(() => localStorage.getItem("vollcrypt_perf_profile") || "balanced");
   const [clipboardClearEnabled, setClipboardClearEnabled] = useState(() => localStorage.getItem("vollcrypt_clip_enabled") !== "false");
+  const [fileShredderEnabled, setFileShredderEnabled] = useState(() => localStorage.getItem("vollcrypt_shred_enabled") === "true");
   const [clipboardClearDelay, setClipboardClearDelay] = useState(() => Number(localStorage.getItem("vollcrypt_clip_delay") || "30"));
   const [zoomLevel, setZoomLevel] = useState<"100%" | "110%" | "120%" | "130%">(() => (localStorage.getItem("vollcrypt_zoom_level") as any) || "100%");
+  const [securePreviewLimit, setSecurePreviewLimit] = useState<number>(() => {
+    const val = localStorage.getItem("vollcrypt_secure_preview_limit");
+    return val ? parseInt(val, 10) : 500;
+  });
+  const [dropdownSelection, setDropdownSelection] = useState<string>(() => {
+    const presets = [50, 100, 200, 500, 1000, 2000, 5000, 10000];
+    const val = localStorage.getItem("vollcrypt_secure_preview_limit");
+    const parsed = val ? parseInt(val, 10) : 500;
+    return presets.includes(parsed) ? parsed.toString() : "custom";
+  });
+  const [customValue, setCustomValue] = useState<number>(() => {
+    const val = localStorage.getItem("vollcrypt_secure_preview_limit");
+    const parsed = val ? parseInt(val, 10) : 500;
+    return parsed % 1024 === 0 ? parsed / 1024 : parsed;
+  });
+  const [customUnit, setCustomUnit] = useState<"MB" | "GB">(() => {
+    const val = localStorage.getItem("vollcrypt_secure_preview_limit");
+    const parsed = val ? parseInt(val, 10) : 500;
+    return parsed % 1024 === 0 ? "GB" : "MB";
+  });
+
+  const handleDropdownChange = (val: string) => {
+    setDropdownSelection(val);
+    if (val !== "custom") {
+      const num = parseInt(val, 10);
+      setSecurePreviewLimit(num);
+    } else {
+      const limitMB = customUnit === "GB" ? customValue * 1024 : customValue;
+      setSecurePreviewLimit(limitMB);
+    }
+  };
+
+  const handleCustomValueChange = (valNum: number) => {
+    setCustomValue(valNum);
+    const limitMB = customUnit === "GB" ? valNum * 1024 : valNum;
+    setSecurePreviewLimit(limitMB);
+  };
+
+  const handleCustomUnitChange = (unit: "MB" | "GB") => {
+    setCustomUnit(unit);
+    const limitMB = unit === "GB" ? customValue * 1024 : customValue;
+    setSecurePreviewLimit(limitMB);
+  };
 
   // QR Code States
   const [activeQrShare, setActiveQrShare] = useState<string | null>(null);
@@ -661,8 +731,16 @@ function App() {
   }, [clipboardClearEnabled]);
 
   useEffect(() => {
+    localStorage.setItem("vollcrypt_shred_enabled", fileShredderEnabled.toString());
+  }, [fileShredderEnabled]);
+
+  useEffect(() => {
     localStorage.setItem("vollcrypt_clip_delay", clipboardClearDelay.toString());
   }, [clipboardClearDelay]);
+
+  useEffect(() => {
+    localStorage.setItem("vollcrypt_secure_preview_limit", securePreviewLimit.toString());
+  }, [securePreviewLimit]);
 
   useEffect(() => {
     let timeoutId: any;
@@ -729,7 +807,12 @@ function App() {
         const files = args.filter(arg => !arg.startsWith("-"));
         if (files.length > 0) {
           setSourceFiles(files);
-          setFileAction("encrypt");
+          const hasVollFile = files.some(file => file.toLowerCase().endsWith(".voll"));
+          if (hasVollFile) {
+            setFileAction("decrypt");
+          } else {
+            setFileAction("encrypt");
+          }
           setActiveTab("file");
           setIsQueueExpanded(false);
         }
@@ -775,19 +858,11 @@ function App() {
         title: "Select Source Folder",
       });
       if (directory && typeof directory === "string") {
-        setLoading(true);
-        const files: string[] = await invoke("expand_paths", { paths: [directory] });
-        if (files && files.length > 0) {
-          setSourceFiles(files);
-          setIsQueueExpanded(false);
-        } else {
-          showStatus("info", "No files found in the selected folder.");
-        }
+        setSourceFiles([directory]);
+        setIsQueueExpanded(false);
       }
     } catch (err: any) {
       showStatus("error", `Folder selection failed: ${err}`);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -813,6 +888,98 @@ function App() {
       }
     } catch (err: any) {
       showStatus("error", `Destination selection failed: ${err}`);
+    }
+  };
+
+  const handleSecurePreview = async () => {
+    try {
+      const existing = await WebviewWindow.getByLabel("secure_preview_window");
+      if (existing) {
+        await existing.setFocus();
+        showStatus("error", "A preview window is already open. Please close it before previewing a new file.");
+        return;
+      }
+    } catch (e) {
+      console.warn("Failed to check existing windows:", e);
+    }
+
+    if (sourceFiles.length === 0) {
+      showStatus("error", "Please select a file to preview.");
+      return;
+    }
+    if (sourceFiles.length > 1) {
+      showStatus("error", "Secure preview is only supported for a single file.");
+      return;
+    }
+
+    const currentFile = sourceFiles[0];
+    setLoading(true);
+    showStatus("info", "Decrypting container in memory...");
+
+    try {
+      let activeModeStr = "password";
+      let passwordArg = null;
+      let recipientSkArg = null;
+      let sharesArg = null;
+
+      if (activeMode === "password") {
+        if (!password) throw new Error("Decryption password is required.");
+        passwordArg = password;
+        activeModeStr = "password";
+      } else if (activeMode === "recipient") {
+        if (!recipientKey) throw new Error("Recipient Secret Key is required.");
+        recipientSkArg = recipientKey.trim();
+        activeModeStr = "recipient";
+      } else {
+        const parsedShares = inputShares
+          .split("\n")
+          .map(s => s.trim())
+          .filter(s => s.length > 0);
+        if (parsedShares.length === 0) throw new Error("Please paste at least t shares.");
+        sharesArg = parsedShares;
+        activeModeStr = "threshold";
+      }
+
+      // Initialize secure preview session in rust backend
+      const initResult: any = await invoke("secure_preview_init", {
+        sourcePath: currentFile,
+        password: passwordArg,
+        recipientSkHex: recipientSkArg,
+        shares: sharesArg,
+        activeMode: activeModeStr,
+        maxSizeMb: securePreviewLimit,
+      });
+
+      showStatus("success", "Preview decrypted to memory! Opening secure preview window...");
+
+      // Open new window
+      const label = "secure_preview_window";
+      const webview = new WebviewWindow(label, {
+        url: `index.html?preview_session_id=${initResult.sessionId}&mime_type=${encodeURIComponent(initResult.mimeType)}&filename=${encodeURIComponent(initResult.filename)}&is_folder=${initResult.isFolder}&size=${initResult.size}`,
+        title: `Vollcrypt Secure Preview - ${initResult.filename}`,
+        width: 1000,
+        height: 750,
+        minWidth: 600,
+        minHeight: 500,
+        resizable: true,
+        decorations: false,
+        transparent: true,
+        shadow: false,
+        center: true
+      });
+
+      webview.once("tauri://created", () => {
+        console.log("Secure preview window opened.");
+      });
+      webview.once("tauri://error", (e) => {
+        console.error("Failed to open secure preview window:", e);
+        showStatus("error", "Failed to open preview window.");
+      });
+    } catch (err: any) {
+      console.error(err);
+      showStatus("error", err.toString());
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -876,6 +1043,7 @@ function App() {
               kdfChoice,
               perfProfile: performanceProfile,
               deleteSource: replaceOriginal,
+              shredSource: fileShredderEnabled,
             });
           } else if (activeMode === "recipient") {
             if (!recipientKey) throw new Error("Recipient Public Key is required.");
@@ -885,6 +1053,7 @@ function App() {
               recipientPkHex: recipientKey.trim(),
               perfProfile: performanceProfile,
               deleteSource: replaceOriginal,
+              shredSource: fileShredderEnabled,
             });
           } else {
             if (thresholdT < 2) throw new Error("Threshold (t) must be at least 2.");
@@ -896,6 +1065,7 @@ function App() {
               n: thresholdN,
               perfProfile: performanceProfile,
               deleteSource: replaceOriginal,
+              shredSource: fileShredderEnabled,
             });
             setGeneratedShares(shares);
           }
@@ -919,6 +1089,7 @@ function App() {
               shield: shieldPolicy,
               perfProfile: performanceProfile,
               deleteSource: false,
+              shredSource: fileShredderEnabled,
             });
           } else if (activeMode === "recipient") {
             if (!recipientKey) throw new Error("Recipient Secret Key is required.");
@@ -929,6 +1100,7 @@ function App() {
               shield: shieldPolicy,
               perfProfile: performanceProfile,
               deleteSource: false,
+              shredSource: fileShredderEnabled,
             });
           } else {
             const parsedShares = inputShares
@@ -943,6 +1115,7 @@ function App() {
               shield: shieldPolicy,
               perfProfile: performanceProfile,
               deleteSource: false,
+              shredSource: fileShredderEnabled,
             });
           }
         } else if (fileAction === "verify") {
@@ -1003,11 +1176,25 @@ function App() {
     }
 
     if (errors.length === 0) {
-      showStatus("success", `Successfully processed all ${filesToProcess.length} file(s).`);
+      const msg = `Successfully processed all ${filesToProcess.length} file(s).`;
+      showStatus("success", msg);
+      invoke("send_desktop_notification", {
+        title: "VOLLcrypt Task Completed",
+        message: msg
+      }).catch(err => console.warn("Failed to send notification:", err));
     } else if (successCount > 0) {
+      const msg = `Completed ${successCount} of ${filesToProcess.length} file(s). Errors occurred.`;
       showStatus("info", `Completed ${successCount} of ${filesToProcess.length} file(s). Errors: ${errors.join("; ")}`);
+      invoke("send_desktop_notification", {
+        title: "VOLLcrypt Task Alert",
+        message: msg
+      }).catch(err => console.warn("Failed to send notification:", err));
     } else {
       showStatus("error", `Failed processing file(s): ${errors.join("; ")}`);
+      invoke("send_desktop_notification", {
+        title: "VOLLcrypt Task Failed",
+        message: `Failed processing files: ${errors.join("; ")}`
+      }).catch(err => console.warn("Failed to send notification:", err));
     }
     setFileProgress(null);
     currentFileStartTimeRef.current = null;
@@ -2413,13 +2600,15 @@ function App() {
               </div>
             )}
 
-            <div style={{ marginTop: "24px" }}>
+            <div style={{ marginTop: "24px", display: "flex", gap: "12px" }}>
               <button
                 type="submit"
                 className="btn-primary"
                 disabled={loading || (fileAction === "seal" && sealConfirmText !== "SEAL")}
                 style={{
                   backgroundColor: fileAction === "seal" ? "#ef4444" : "#f97316",
+                  flex: fileAction === "decrypt" ? 1 : "none",
+                  width: fileAction === "decrypt" ? "auto" : "100%",
                 }}
               >
                 {fileAction === "encrypt"
@@ -2430,6 +2619,39 @@ function App() {
                   ? "Verify Container"
                   : "Seal Container"}
               </button>
+              {fileAction === "decrypt" && (
+                <button
+                  type="button"
+                  disabled={loading || sourceFiles.length !== 1}
+                  onClick={handleSecurePreview}
+                  style={{
+                    flex: 1,
+                    padding: "12px",
+                    backgroundColor: "#16161a",
+                    border: "1px solid #27272a",
+                    color: "#ffffff",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    letterSpacing: "0.5px",
+                    textTransform: "uppercase",
+                    borderRadius: "6px",
+                    cursor: sourceFiles.length === 1 ? "pointer" : "not-allowed",
+                    transition: "all 0.2s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (sourceFiles.length === 1) {
+                      e.currentTarget.style.backgroundColor = "#222227";
+                      e.currentTarget.style.borderColor = "var(--accent-color)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "#16161a";
+                    e.currentTarget.style.borderColor = "#27272a";
+                  }}
+                >
+                  Secure Preview
+                </button>
+              )}
             </div>
 
             {/* Progress Display */}
@@ -3295,7 +3517,78 @@ function App() {
                   </div>
                 </div>
 
+                {/* File Shredder Section */}
+                <div className="settings-section">
+                  <span className="settings-section-title">Secure File Shredder (DoD 5220.22-M)</span>
+                  <div className="settings-description">
+                    When deleting original files after encryption, securely overwrite them with random passes to prevent forensic recovery:
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "4px" }}>
+                    <label className="switch">
+                      <input
+                        type="checkbox"
+                        checked={fileShredderEnabled}
+                        onChange={(e) => setFileShredderEnabled(e.target.checked)}
+                      />
+                      <span className="slider"></span>
+                    </label>
+                    <span style={{ fontSize: "11px", color: "#e4e4e7", userSelect: "none" }}>
+                      Enable secure file shredding (Shredder)
+                    </span>
+                  </div>
+                </div>
 
+                {/* Secure Preview Section */}
+                <div className="settings-section">
+                  <span className="settings-section-title">Secure Preview RAM Limit</span>
+                  <div className="settings-description">
+                    Configure the maximum file size allowed for RAM-only decryption and preview:
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "4px" }}>
+                    <span style={{ fontSize: "11px", color: "#a1a1aa" }}>Max Size Limit:</span>
+                    <select
+                      className="select-input"
+                      value={dropdownSelection}
+                      onChange={(e) => handleDropdownChange(e.target.value)}
+                      style={{ flex: 1, padding: "6px 8px", fontSize: "11px" }}
+                    >
+                      <option value="50">50 MB</option>
+                      <option value="100">100 MB</option>
+                      <option value="200">200 MB</option>
+                      <option value="500">500 MB (Recommended)</option>
+                      <option value="1024">1024 MB (1 GB)</option>
+                      <option value="2048">2048 MB (2 GB)</option>
+                      <option value="5120">5120 MB (5 GB)</option>
+                      <option value="10240">10240 MB (10 GB)</option>
+                      <option value="custom">Custom Limit...</option>
+                    </select>
+                  </div>
+                  {dropdownSelection === "custom" && (
+                    <div style={{ display: "flex", gap: "8px", marginTop: "8px", alignItems: "center" }}>
+                      <span style={{ fontSize: "11px", color: "#a1a1aa" }}>Custom Value:</span>
+                      <input
+                        type="number"
+                        className="text-input"
+                        value={customValue}
+                        min={1}
+                        onChange={(e) => handleCustomValueChange(parseInt(e.target.value, 10) || 1)}
+                        style={{ flex: 2, padding: "6px 8px", fontSize: "11px" }}
+                      />
+                      <select
+                        className="select-input"
+                        value={customUnit}
+                        onChange={(e) => handleCustomUnitChange(e.target.value as "MB" | "GB")}
+                        style={{ flex: 1, padding: "6px 8px", fontSize: "11px" }}
+                      >
+                        <option value="MB">MB</option>
+                        <option value="GB">GB</option>
+                      </select>
+                    </div>
+                  )}
+                  <div style={{ fontSize: "9px", color: "#71717a", marginTop: "6px", lineHeight: "1.4" }}>
+                    Warning: Setting larger limits increases RAM consumption and may trigger pagefile swapping on low-memory devices, potentially leaving temporary plaintext traces on disk.
+                  </div>
+                </div>
 
                 {/* Onboarding Section */}
                 <div className="settings-section">
@@ -3492,6 +3785,389 @@ function App() {
       </div>
     </div>
   </div>
+  );
+}
+
+// SVGs & Icons for Secure Preview (No emojis)
+const FolderIcon = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+  </svg>
+);
+
+const FileIcon = ({ color = "#a1a1aa" }: { color?: string }) => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+    <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+    <polyline points="13 2 13 9 20 9" />
+  </svg>
+);
+
+
+
+function detectMimeType(filename: string): string {
+  const parts = filename.split('.');
+  const ext = parts.length > 1 ? parts.pop()!.toLowerCase() : "";
+  switch (ext) {
+    case "pdf": return "application/pdf";
+    case "png": return "image/png";
+    case "jpg":
+    case "jpeg": return "image/jpeg";
+    case "gif": return "image/gif";
+    case "svg": return "image/svg+xml";
+    case "txt": return "text/plain";
+    case "md": return "text/markdown";
+    case "json": return "application/json";
+    case "log": return "text/plain";
+    case "mp3":
+    case "wav":
+    case "ogg": return `audio/${ext}`;
+    case "mp4":
+    case "webm":
+    case "mkv": return `video/${ext}`;
+    default: return "application/octet-stream";
+  }
+}
+
+interface SecurePreviewProps {
+  sessionId: string;
+  mimeType: string;
+  filename: string;
+  isFolder: boolean;
+  size: number;
+}
+
+function SecurePreview({ sessionId, mimeType, filename, isFolder, size }: SecurePreviewProps) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  const [fileDataUrl, setFileDataUrl] = useState<string | null>(null);
+  const [textContent, setTextContent] = useState<string | null>(null);
+  
+  const [folderFiles, setFolderFiles] = useState<any[]>([]);
+  const [selectedFile, setSelectedFile] = useState<any | null>(null);
+  const [selectedFileContentUrl, setSelectedFileContentUrl] = useState<string | null>(null);
+  const [selectedFileText, setSelectedFileText] = useState<string | null>(null);
+  const [selectedFileLoading, setSelectedFileLoading] = useState(false);
+  const [selectedFileMime, setSelectedFileMime] = useState<string>("");
+
+  const activeUrlRef = useRef<string | null>(null);
+
+  const cleanActiveUrl = () => {
+    if (activeUrlRef.current) {
+      URL.revokeObjectURL(activeUrlRef.current);
+      activeUrlRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    invoke("prevent_screen_capture").catch(err => {
+      console.error("Screen capture prevention failed:", err);
+    });
+
+    const preventDefault = (e: Event) => e.preventDefault();
+    document.addEventListener("contextmenu", preventDefault);
+    document.addEventListener("dragstart", preventDefault);
+    document.addEventListener("drop", preventDefault);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        const key = e.key.toLowerCase();
+        if (
+          key === "c" ||
+          key === "x" ||
+          key === "v" ||
+          key === "a" ||
+          key === "s" ||
+          key === "p" ||
+          key === "i" ||
+          key === "u"
+        ) {
+          e.preventDefault();
+        }
+      }
+      if (e.key === "F12") {
+        e.preventDefault();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("contextmenu", preventDefault);
+      document.removeEventListener("dragstart", preventDefault);
+      document.removeEventListener("drop", preventDefault);
+      document.removeEventListener("keydown", handleKeyDown);
+      
+      cleanActiveUrl();
+    };
+  }, [sessionId]);
+
+  useEffect(() => {
+    const loadContent = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const bytes = await invoke<number[]>("secure_preview_get", { sessionId });
+        const uint8Bytes = new Uint8Array(bytes);
+
+        if (isFolder) {
+          const textDecoder = new TextDecoder();
+          const jsonStr = textDecoder.decode(uint8Bytes);
+          const list = JSON.parse(jsonStr);
+          setFolderFiles(list);
+        } else {
+          displayBytes(uint8Bytes, mimeType);
+        }
+      } catch (err: any) {
+        console.error(err);
+        setError(err.toString());
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadContent();
+  }, [sessionId, isFolder, mimeType]);
+
+  const displayBytes = (bytes: Uint8Array, mime: string) => {
+    cleanActiveUrl();
+    setTextContent(null);
+    setFileDataUrl(null);
+
+    const isText = mime.startsWith("text/") || 
+                   mime === "application/json" || 
+                   mime === "application/javascript" ||
+                   mime === "application/xml" ||
+                   mime === "text/xml";
+
+    if (isText) {
+      const decoder = new TextDecoder();
+      const txt = decoder.decode(bytes);
+      setTextContent(txt);
+    } else {
+      const blob = new Blob([bytes], { type: mime });
+      const url = URL.createObjectURL(blob);
+      activeUrlRef.current = url;
+      setFileDataUrl(url);
+    }
+  };
+
+  const handleSelectFolderFile = async (file: any) => {
+    if (file.isDir) return;
+    
+    try {
+      setSelectedFileLoading(true);
+      setError(null);
+      setSelectedFile(file);
+      setSelectedFileContentUrl(null);
+      setSelectedFileText(null);
+
+      const bytes = await invoke<number[]>("secure_preview_get_file", {
+        sessionId,
+        relativePath: file.relativePath
+      });
+      const uint8Bytes = new Uint8Array(bytes);
+      
+      const fileMime = detectMimeType(file.relativePath);
+      setSelectedFileMime(fileMime);
+
+      const isText = fileMime.startsWith("text/") || 
+                     fileMime === "application/json" || 
+                     fileMime === "application/javascript" ||
+                     fileMime === "application/xml" ||
+                     fileMime === "text/xml";
+
+      cleanActiveUrl();
+
+      if (isText) {
+        const decoder = new TextDecoder();
+        const txt = decoder.decode(uint8Bytes);
+        setSelectedFileText(txt);
+      } else {
+        const blob = new Blob([uint8Bytes], { type: fileMime });
+        const url = URL.createObjectURL(blob);
+        activeUrlRef.current = url;
+        setSelectedFileContentUrl(url);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.toString());
+    } finally {
+      setSelectedFileLoading(false);
+    }
+  };
+
+  const sortedFiles = [...folderFiles].sort((a, b) => {
+    if (a.isDir !== b.isDir) {
+      return a.isDir ? -1 : 1;
+    }
+    return a.relativePath.localeCompare(b.relativePath);
+  });
+
+  const getMimeDisplay = (mime: string) => {
+    if (mime === "application/x-directory") return "Directory Archive";
+    return mime;
+  };
+
+  const renderPreviewContent = (url: string | null, text: string | null, mime: string) => {
+    if (loading || selectedFileLoading) {
+      return (
+        <div className="secure-preview-loading">
+          <div className="preview-spinner" />
+          <p>Decrypting payload to memory...</p>
+        </div>
+      );
+    }
+
+    if (error) {
+      return (
+        <div className="secure-preview-error-box">
+          <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: "12px" }}>
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <h4>Decryption Failure</h4>
+          <p>{error}</p>
+        </div>
+      );
+    }
+
+    if (text !== null) {
+      return (
+        <div className="secure-preview-text-container">
+          <pre className="secure-preview-text-box">{text}</pre>
+        </div>
+      );
+    }
+
+    if (url) {
+      if (mime.startsWith("image/")) {
+        return (
+          <div className="secure-preview-media-container">
+            <img src={url} className="secure-preview-image" alt="preview" />
+          </div>
+        );
+      }
+
+      if (mime.startsWith("video/")) {
+        return (
+          <div className="secure-preview-media-container">
+            <video src={url} className="secure-preview-video" controls controlsList="nodownload" />
+          </div>
+        );
+      }
+
+      if (mime.startsWith("audio/")) {
+        return (
+          <div className="secure-preview-media-container">
+            <audio src={url} className="secure-preview-audio" controls controlsList="nodownload" />
+          </div>
+        );
+      }
+
+      if (mime === "application/pdf") {
+        return (
+          <iframe src={url} className="secure-preview-pdf" title="pdf-preview" />
+        );
+      }
+    }
+
+    return (
+      <div className="secure-preview-fallback-box">
+        <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="#71717a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: "12px" }}>
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+          <line x1="9" y1="15" x2="15" y2="15" />
+        </svg>
+        <h4>Preview Unavailable</h4>
+        <p style={{ maxWidth: "400px", color: "#a1a1aa", fontSize: "12px", marginTop: "4px" }}>
+          In-memory preview is not supported for this file type ({mime}). For maximum security, we do not write files to disk during preview. Please decrypt this file normally to disk to view it using external programs.
+        </p>
+      </div>
+    );
+  };
+
+  return (
+    <div className="window-frame">
+      <ResizeHandles />
+      <div className="custom-titlebar" data-tauri-drag-region>
+        <div className="titlebar-brand" data-tauri-drag-region>
+          <span className="brand-text" data-tauri-drag-region>
+            <span className="brand-voll" data-tauri-drag-region>VOLL</span><span className="brand-crypt" data-tauri-drag-region>crypt</span>
+          </span>
+          <span className="titlebar-version" data-tauri-drag-region>
+            Secure Preview - {filename} ({formatBytes(size)})
+          </span>
+        </div>
+        <div className="titlebar-controls" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <div className="preview-security-badge" style={{ alignSelf: "center", marginRight: "6px", fontFamily: 'JetBrains Mono', fontSize: '9px', padding: '2px 8px' }}>
+            RAM-Only Mode
+          </div>
+          <button type="button" className="titlebar-btn" onClick={() => getCurrentWindow().minimize()} title="Minimize">⎯</button>
+          <button type="button" className="titlebar-btn close" onClick={() => getCurrentWindow().close()} title="Close">✕</button>
+        </div>
+      </div>
+
+      <div className="secure-preview-body">
+        {isFolder ? (
+          <div className="secure-preview-folder-layout">
+            <div className="secure-preview-folder-sidebar">
+              <div className="sidebar-section-title">Files in Archive</div>
+              <div className="sidebar-list">
+                {sortedFiles.map((f, idx) => {
+                  const isSelected = selectedFile?.relativePath === f.relativePath;
+                  return (
+                    <div
+                      key={idx}
+                      className={`sidebar-item ${f.isDir ? "directory" : "file"} ${isSelected ? "selected" : ""}`}
+                      onClick={() => !f.isDir && handleSelectFolderFile(f)}
+                      style={{ cursor: f.isDir ? "default" : "pointer" }}
+                    >
+                      {f.isDir ? <FolderIcon /> : <FileIcon color={isSelected ? "#ffffff" : "#a1a1aa"} />}
+                      <div className="item-info">
+                        <span className="item-name" title={f.relativePath}>{f.relativePath}</span>
+                        {!f.isDir && <span className="item-size">{formatBytes(f.size)}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="secure-preview-folder-main">
+              {selectedFile ? (
+                <>
+                  <div className="preview-main-header">
+                    <div>
+                      <div className="preview-main-title">{selectedFile.relativePath}</div>
+                      <div className="preview-main-subtitle">
+                        {formatBytes(selectedFile.size)} • {getMimeDisplay(selectedFileMime)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="preview-main-viewport">
+                    {renderPreviewContent(selectedFileContentUrl, selectedFileText, selectedFileMime)}
+                  </div>
+                </>
+              ) : (
+                <div className="preview-main-empty">
+                  <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="#27272a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: "12px" }}>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  <p>Select a file from the sidebar to view in-memory preview.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="secure-preview-single-layout">
+            {renderPreviewContent(fileDataUrl, textContent, mimeType)}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

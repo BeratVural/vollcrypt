@@ -1,4 +1,5 @@
 use std::io::{Read, Seek};
+use std::path::Path;
 use vollcrypt_files_core::{
     encrypt_file_pipelined, decrypt_file_pipelined,
     pipelined_io::{encrypt_file_pipelined_async, decrypt_file_pipelined_async},
@@ -9,6 +10,7 @@ use vollcrypt_files_core::{
     wrap_dek_with_threshold, unwrap_dek_with_threshold, encode_share, decode_share,
     Mode, KdfChoice, RecipientPublicKey, RecipientSecretKey,
     is_sealed,
+    pack_directory, unpack_directory, is_vda_archive,
 };
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -180,6 +182,131 @@ impl<R: Read + Seek> Seek for ProgressReader<R> {
     }
 }
 
+fn secure_shred_file(path: &std::path::Path) -> std::io::Result<()> {
+    use std::fs::OpenOptions;
+    use std::io::{Write, Seek, SeekFrom};
+    use rand::RngCore;
+
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let metadata = std::fs::metadata(path)?;
+    let size = metadata.len();
+    if size == 0 {
+        let _ = std::fs::remove_file(path);
+        return Ok(());
+    }
+
+    let mut file = OpenOptions::new()
+        .write(true)
+        .open(path)?;
+
+    let buffer_size = 65536; // 64KB buffer
+    let mut rng = rand::thread_rng();
+    let zero_buffer = vec![0u8; buffer_size];
+    let ff_buffer = vec![0xffu8; buffer_size];
+    let mut rand_buffer = vec![0u8; buffer_size];
+
+    // Pass 1: Zero out
+    let mut written = 0;
+    while written < size {
+        let to_write = std::cmp::min(buffer_size as u64, size - written) as usize;
+        file.write_all(&zero_buffer[..to_write])?;
+        written += to_write as u64;
+    }
+    file.sync_all()?;
+
+    // Pass 2: Overwrite with 0xFF
+    file.seek(SeekFrom::Start(0))?;
+    let mut written = 0;
+    while written < size {
+        let to_write = std::cmp::min(buffer_size as u64, size - written) as usize;
+        file.write_all(&ff_buffer[..to_write])?;
+        written += to_write as u64;
+    }
+    file.sync_all()?;
+
+    // Pass 3: Overwrite with random bytes
+    file.seek(SeekFrom::Start(0))?;
+    let mut written = 0;
+    while written < size {
+        let to_write = std::cmp::min(buffer_size as u64, size - written) as usize;
+        rng.fill_bytes(&mut rand_buffer[..to_write]);
+        file.write_all(&rand_buffer[..to_write])?;
+        written += to_write as u64;
+    }
+    file.sync_all()?;
+
+    // Truncate file and remove
+    file.set_len(0)?;
+    drop(file);
+    std::fs::remove_file(path)?;
+
+    Ok(())
+}
+
+fn secure_shred_dir(path: &std::path::Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    if path.is_dir() {
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let entry_path = entry.path();
+            if entry_path.is_dir() {
+                secure_shred_dir(&entry_path)?;
+            } else {
+                secure_shred_file(&entry_path)?;
+            }
+        }
+        std::fs::remove_dir(path)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn send_desktop_notification(title: String, message: String) {
+    #[cfg(target_os = "windows")]
+    {
+        let script = format!(
+            "[void] [System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms'); \
+             [void] [System.Reflection.Assembly]::LoadWithPartialName('System.Drawing'); \
+             $notification = New-Object System.Windows.Forms.NotifyIcon; \
+             $notification.Icon = [System.Drawing.SystemIcons]::Information; \
+             $notification.BalloonTipTitle = '{}'; \
+             $notification.BalloonTipText = '{}'; \
+             $notification.Visible = $true; \
+             $notification.ShowBalloonTip(5000)",
+            title.replace("'", "''"),
+            message.replace("'", "''")
+        );
+        let _ = std::process::Command::new("powershell")
+            .args(&["-WindowStyle", "Hidden", "-Command", &script])
+            .spawn();
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("notify-send")
+            .args(&[&title, &message])
+            .spawn();
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!(
+            "display notification \"{}\" with title \"{}\"",
+            message.replace("\"", "\\\""),
+            title.replace("\"", "\\\"")
+        );
+        let _ = std::process::Command::new("osascript")
+            .args(&["-e", &script])
+            .spawn();
+    }
+}
+
+
 #[tauri::command]
 pub async fn encrypt_file_password(
     window: tauri::Window,
@@ -189,11 +316,24 @@ pub async fn encrypt_file_password(
     kdf_choice: String,
     perf_profile: Option<String>,
     delete_source: Option<bool>,
+    shred_source: Option<bool>,
 ) -> Result<(), String> {
     let window_c = window.clone();
     tokio::task::spawn_blocking(move || {
         let dek = generate_dek();
         let file_id = generate_file_id();
+
+        let is_dir = Path::new(&source_path).is_dir();
+        let mut source_file_path = source_path.clone();
+        let mut temp_archive_path = None;
+
+        if is_dir {
+            let temp_path = format!("{}.vda.tmp", source_path);
+            pack_directory(Path::new(&source_path), Path::new(&temp_path), &dek)
+                .map_err(|e| format!("Folder packaging failed: {}", e))?;
+            source_file_path = temp_path.clone();
+            temp_archive_path = Some(temp_path);
+        }
 
         let kdf = get_kdf_choice(&kdf_choice, perf_profile.as_deref());
         let num_workers = get_num_workers(perf_profile.as_deref());
@@ -201,7 +341,7 @@ pub async fn encrypt_file_password(
         let wrap = wrap_dek_with_password(&dek, password.as_bytes(), kdf)
             .map_err(|e| e.to_string())?;
 
-        let source_file = std::fs::File::open(&source_path)
+        let source_file = std::fs::File::open(&source_file_path)
             .map_err(|e| format!("Failed to open source file: {}", e))?;
         let total_bytes = source_file.metadata().map(|m| m.len()).unwrap_or(0);
 
@@ -216,7 +356,7 @@ pub async fn encrypt_file_password(
         let dest = std::fs::File::create(&dest_path)
             .map_err(|e| format!("Failed to create destination file: {}", e))?;
 
-        encrypt_file_pipelined(
+        let enc_res = encrypt_file_pipelined(
             source,
             dest,
             &dek,
@@ -227,12 +367,33 @@ pub async fn encrypt_file_password(
             num_workers,
             None,
             None,
-        )
-        .map_err(|e| format!("Encryption failed: {}", e))?;
+        );
+
+        if let Some(ref path) = temp_archive_path {
+            let _ = std::fs::remove_file(path);
+        }
+
+        enc_res.map_err(|e| format!("Encryption failed: {}", e))?;
 
         if delete_source.unwrap_or(false) {
-            std::fs::remove_file(&source_path)
-                .map_err(|e| format!("Failed to delete original source file: {}", e))?;
+            let shred = shred_source.unwrap_or(false);
+            if shred {
+                if is_dir {
+                    secure_shred_dir(Path::new(&source_path))
+                        .map_err(|e| format!("Failed to shred original source folder: {}", e))?;
+                } else {
+                    secure_shred_file(Path::new(&source_path))
+                        .map_err(|e| format!("Failed to shred original source file: {}", e))?;
+                }
+            } else {
+                if is_dir {
+                    std::fs::remove_dir_all(&source_path)
+                        .map_err(|e| format!("Failed to delete original source folder: {}", e))?;
+                } else {
+                    std::fs::remove_file(&source_path)
+                        .map_err(|e| format!("Failed to delete original source file: {}", e))?;
+                }
+            }
         }
 
         Ok(())
@@ -250,6 +411,7 @@ pub async fn decrypt_file_password(
     shield: Option<ShieldPolicyJson>,
     perf_profile: Option<String>,
     delete_source: Option<bool>,
+    shred_source: Option<bool>,
 ) -> Result<(), String> {
     let window_c = window.clone();
     tokio::task::spawn_blocking(move || {
@@ -285,7 +447,8 @@ pub async fn decrypt_file_password(
             window: window_c,
         };
 
-        let dest = std::fs::File::create(&dest_path)
+        let temp_dec_path = format!("{}.tmp_dec", dest_path);
+        let dest = std::fs::File::create(&temp_dec_path)
             .map_err(|e| format!("Failed to create destination file: {}", e))?;
 
         let core_policy = match shield {
@@ -295,23 +458,51 @@ pub async fn decrypt_file_password(
 
         let num_workers = get_num_workers(perf_profile.as_deref());
 
-        if let Some(ref pol) = core_policy {
+        let decrypt_res = if let Some(ref pol) = core_policy {
             decrypt_file_pipelined_with_policy(source, dest, &dek, num_workers, Some(pol))
                 .map_err(|e| match e {
                     vollcrypt_files_core::FileFormatError::ContainerSealed => "ContainerSealed".to_string(),
                     other => format!("Decryption failed: {}", other),
-                })?;
+                })
         } else {
             decrypt_file_pipelined(source, dest, &dek, num_workers)
                 .map_err(|e| match e {
                     vollcrypt_files_core::FileFormatError::ContainerSealed => "ContainerSealed".to_string(),
                     other => format!("Decryption failed: {}", other),
-                })?;
+                })
+        };
+
+        if let Err(e) = decrypt_res {
+            let _ = std::fs::remove_file(&temp_dec_path);
+            return Err(e);
+        }
+
+        // Post-process: check if VDA archive
+        if is_vda_archive(Path::new(&temp_dec_path)) {
+            let unpack_res = unpack_directory(
+                Path::new(&temp_dec_path),
+                Path::new(&dest_path),
+                &dek,
+            );
+            let _ = std::fs::remove_file(&temp_dec_path);
+            unpack_res.map_err(|e| format!("Failed to unpack directory: {}", e))?;
+        } else {
+            if Path::new(&dest_path).exists() {
+                let _ = std::fs::remove_file(&dest_path);
+            }
+            std::fs::rename(&temp_dec_path, &dest_path)
+                .map_err(|e| format!("Failed to finalize decrypted file: {}", e))?;
         }
 
         if delete_source.unwrap_or(false) {
-            std::fs::remove_file(&source_path)
-                .map_err(|e| format!("Failed to delete original source file: {}", e))?;
+            let shred = shred_source.unwrap_or(false);
+            if shred {
+                secure_shred_file(Path::new(&source_path))
+                    .map_err(|e| format!("Failed to shred original source file: {}", e))?;
+            } else {
+                std::fs::remove_file(&source_path)
+                    .map_err(|e| format!("Failed to delete original source file: {}", e))?;
+            }
         }
 
         Ok(())
@@ -328,11 +519,24 @@ pub async fn encrypt_file_recipient(
     recipient_pk_hex: String,
     perf_profile: Option<String>,
     delete_source: Option<bool>,
+    shred_source: Option<bool>,
 ) -> Result<(), String> {
     let window_c = window.clone();
     tokio::task::spawn_blocking(move || {
         let dek = generate_dek();
         let file_id = generate_file_id();
+
+        let is_dir = Path::new(&source_path).is_dir();
+        let mut source_file_path = source_path.clone();
+        let mut temp_archive_path = None;
+
+        if is_dir {
+            let temp_path = format!("{}.vda.tmp", source_path);
+            pack_directory(Path::new(&source_path), Path::new(&temp_path), &dek)
+                .map_err(|e| format!("Folder packaging failed: {}", e))?;
+            source_file_path = temp_path.clone();
+            temp_archive_path = Some(temp_path);
+        }
 
         let mut wraps = Vec::new();
         for pk_hex in recipient_pk_hex.split(|c| c == ',' || c == '\n' || c == '\r') {
@@ -348,11 +552,19 @@ pub async fn encrypt_file_recipient(
         }
 
         if wraps.is_empty() {
+            if let Some(ref path) = temp_archive_path {
+                let _ = std::fs::remove_file(path);
+            }
             return Err("At least one recipient public key is required".to_string());
         }
 
-        let source_file = std::fs::File::open(&source_path)
-            .map_err(|e| format!("Failed to open source file: {}", e))?;
+        let source_file = std::fs::File::open(&source_file_path)
+            .map_err(|e| {
+                if let Some(ref path) = temp_archive_path {
+                    let _ = std::fs::remove_file(path);
+                }
+                format!("Failed to open source file: {}", e)
+            })?;
         let total_bytes = source_file.metadata().map(|m| m.len()).unwrap_or(0);
         let source = ProgressReader {
             inner: source_file,
@@ -362,11 +574,16 @@ pub async fn encrypt_file_recipient(
             window: window_c,
         };
         let dest = std::fs::File::create(&dest_path)
-            .map_err(|e| format!("Failed to create destination file: {}", e))?;
+            .map_err(|e| {
+                if let Some(ref path) = temp_archive_path {
+                    let _ = std::fs::remove_file(path);
+                }
+                format!("Failed to create destination file: {}", e)
+            })?;
 
         let num_workers = get_num_workers(perf_profile.as_deref());
 
-        encrypt_file_pipelined(
+        let enc_res = encrypt_file_pipelined(
             source,
             dest,
             &dek,
@@ -377,12 +594,33 @@ pub async fn encrypt_file_recipient(
             num_workers,
             None,
             None,
-        )
-        .map_err(|e| format!("Encryption failed: {}", e))?;
+        );
+
+        if let Some(ref path) = temp_archive_path {
+            let _ = std::fs::remove_file(path);
+        }
+
+        enc_res.map_err(|e| format!("Encryption failed: {}", e))?;
 
         if delete_source.unwrap_or(false) {
-            std::fs::remove_file(&source_path)
-                .map_err(|e| format!("Failed to delete original source file: {}", e))?;
+            let shred = shred_source.unwrap_or(false);
+            if shred {
+                if is_dir {
+                    secure_shred_dir(Path::new(&source_path))
+                        .map_err(|e| format!("Failed to shred original source folder: {}", e))?;
+                } else {
+                    secure_shred_file(Path::new(&source_path))
+                        .map_err(|e| format!("Failed to shred original source file: {}", e))?;
+                }
+            } else {
+                if is_dir {
+                    std::fs::remove_dir_all(&source_path)
+                        .map_err(|e| format!("Failed to delete original source folder: {}", e))?;
+                } else {
+                    std::fs::remove_file(&source_path)
+                        .map_err(|e| format!("Failed to delete original source file: {}", e))?;
+                }
+            }
         }
 
         Ok(())
@@ -400,6 +638,7 @@ pub async fn decrypt_file_recipient(
     shield: Option<ShieldPolicyJson>,
     perf_profile: Option<String>,
     delete_source: Option<bool>,
+    shred_source: Option<bool>,
 ) -> Result<(), String> {
     let window_c = window.clone();
     tokio::task::spawn_blocking(move || {
@@ -455,7 +694,8 @@ pub async fn decrypt_file_recipient(
             window: window_c,
         };
 
-        let dest = std::fs::File::create(&dest_path)
+        let temp_dec_path = format!("{}.tmp_dec", dest_path);
+        let dest = std::fs::File::create(&temp_dec_path)
             .map_err(|e| format!("Failed to create destination file: {}", e))?;
 
         let core_policy = match shield {
@@ -465,23 +705,51 @@ pub async fn decrypt_file_recipient(
 
         let num_workers = get_num_workers(perf_profile.as_deref());
 
-        if let Some(ref pol) = core_policy {
+        let decrypt_res = if let Some(ref pol) = core_policy {
             decrypt_file_pipelined_with_policy(source, dest, &dek, num_workers, Some(pol))
                 .map_err(|e| match e {
                     vollcrypt_files_core::FileFormatError::ContainerSealed => "ContainerSealed".to_string(),
                     other => format!("Decryption failed: {}", other),
-                })?;
+                })
         } else {
             decrypt_file_pipelined(source, dest, &dek, num_workers)
                 .map_err(|e| match e {
                     vollcrypt_files_core::FileFormatError::ContainerSealed => "ContainerSealed".to_string(),
                     other => format!("Decryption failed: {}", other),
-                })?;
+                })
+        };
+
+        if let Err(e) = decrypt_res {
+            let _ = std::fs::remove_file(&temp_dec_path);
+            return Err(e);
+        }
+
+        // Post-process: check if VDA archive
+        if is_vda_archive(Path::new(&temp_dec_path)) {
+            let unpack_res = unpack_directory(
+                Path::new(&temp_dec_path),
+                Path::new(&dest_path),
+                &dek,
+            );
+            let _ = std::fs::remove_file(&temp_dec_path);
+            unpack_res.map_err(|e| format!("Failed to unpack directory: {}", e))?;
+        } else {
+            if Path::new(&dest_path).exists() {
+                let _ = std::fs::remove_file(&dest_path);
+            }
+            std::fs::rename(&temp_dec_path, &dest_path)
+                .map_err(|e| format!("Failed to finalize decrypted file: {}", e))?;
         }
 
         if delete_source.unwrap_or(false) {
-            std::fs::remove_file(&source_path)
-                .map_err(|e| format!("Failed to delete original source file: {}", e))?;
+            let shred = shred_source.unwrap_or(false);
+            if shred {
+                secure_shred_file(Path::new(&source_path))
+                    .map_err(|e| format!("Failed to shred original source file: {}", e))?;
+            } else {
+                std::fs::remove_file(&source_path)
+                    .map_err(|e| format!("Failed to delete original source file: {}", e))?;
+            }
         }
 
         Ok(())
@@ -875,17 +1143,40 @@ pub async fn encrypt_file_threshold(
     n: u8,
     perf_profile: Option<String>,
     delete_source: Option<bool>,
+    shred_source: Option<bool>,
 ) -> Result<Vec<String>, String> {
     let window_c = window.clone();
     tokio::task::spawn_blocking(move || {
         let dek = generate_dek();
         let file_id = generate_file_id();
 
-        let (wrap, shares) = wrap_dek_with_threshold(&dek, &file_id, t, n, 0)
-            .map_err(|e| e.to_string())?;
+        let is_dir = Path::new(&source_path).is_dir();
+        let mut source_file_path = source_path.clone();
+        let mut temp_archive_path = None;
 
-        let source_file = std::fs::File::open(&source_path)
-            .map_err(|e| format!("Failed to open source file: {}", e))?;
+        if is_dir {
+            let temp_path = format!("{}.vda.tmp", source_path);
+            pack_directory(Path::new(&source_path), Path::new(&temp_path), &dek)
+                .map_err(|e| format!("Folder packaging failed: {}", e))?;
+            source_file_path = temp_path.clone();
+            temp_archive_path = Some(temp_path);
+        }
+
+        let (wrap, shares) = wrap_dek_with_threshold(&dek, &file_id, t, n, 0)
+            .map_err(|e| {
+                if let Some(ref path) = temp_archive_path {
+                    let _ = std::fs::remove_file(path);
+                }
+                e.to_string()
+            })?;
+
+        let source_file = std::fs::File::open(&source_file_path)
+            .map_err(|e| {
+                if let Some(ref path) = temp_archive_path {
+                    let _ = std::fs::remove_file(path);
+                }
+                format!("Failed to open source file: {}", e)
+            })?;
         let total_bytes = source_file.metadata().map(|m| m.len()).unwrap_or(0);
         let source = ProgressReader {
             inner: source_file,
@@ -895,11 +1186,16 @@ pub async fn encrypt_file_threshold(
             window: window_c,
         };
         let dest = std::fs::File::create(&dest_path)
-            .map_err(|e| format!("Failed to create destination file: {}", e))?;
+            .map_err(|e| {
+                if let Some(ref path) = temp_archive_path {
+                    let _ = std::fs::remove_file(path);
+                }
+                format!("Failed to create destination file: {}", e)
+            })?;
 
         let num_workers = get_num_workers(perf_profile.as_deref());
 
-        encrypt_file_pipelined(
+        let enc_res = encrypt_file_pipelined(
             source,
             dest,
             &dek,
@@ -910,12 +1206,33 @@ pub async fn encrypt_file_threshold(
             num_workers,
             None,
             None,
-        )
-        .map_err(|e| format!("Encryption failed: {}", e))?;
+        );
+
+        if let Some(ref path) = temp_archive_path {
+            let _ = std::fs::remove_file(path);
+        }
+
+        enc_res.map_err(|e| format!("Encryption failed: {}", e))?;
 
         if delete_source.unwrap_or(false) {
-            std::fs::remove_file(&source_path)
-                .map_err(|e| format!("Failed to delete original source file: {}", e))?;
+            let shred = shred_source.unwrap_or(false);
+            if shred {
+                if is_dir {
+                    secure_shred_dir(Path::new(&source_path))
+                        .map_err(|e| format!("Failed to shred original source folder: {}", e))?;
+                } else {
+                    secure_shred_file(Path::new(&source_path))
+                        .map_err(|e| format!("Failed to shred original source file: {}", e))?;
+                }
+            } else {
+                if is_dir {
+                    std::fs::remove_dir_all(&source_path)
+                        .map_err(|e| format!("Failed to delete original source folder: {}", e))?;
+                } else {
+                    std::fs::remove_file(&source_path)
+                        .map_err(|e| format!("Failed to delete original source file: {}", e))?;
+                }
+            }
         }
 
         let share_strs = shares
@@ -938,6 +1255,7 @@ pub async fn decrypt_file_threshold(
     shield: Option<ShieldPolicyJson>,
     perf_profile: Option<String>,
     delete_source: Option<bool>,
+    shred_source: Option<bool>,
 ) -> Result<(), String> {
     let window_c = window.clone();
     tokio::task::spawn_blocking(move || {
@@ -985,7 +1303,8 @@ pub async fn decrypt_file_threshold(
             window: window_c,
         };
 
-        let dest = std::fs::File::create(&dest_path)
+        let temp_dec_path = format!("{}.tmp_dec", dest_path);
+        let dest = std::fs::File::create(&temp_dec_path)
             .map_err(|e| format!("Failed to create destination file: {}", e))?;
 
         let core_policy = match shield {
@@ -995,23 +1314,51 @@ pub async fn decrypt_file_threshold(
 
         let num_workers = get_num_workers(perf_profile.as_deref());
 
-        if let Some(ref pol) = core_policy {
+        let decrypt_res = if let Some(ref pol) = core_policy {
             decrypt_file_pipelined_with_policy(source, dest, &dek, num_workers, Some(pol))
                 .map_err(|e| match e {
                     vollcrypt_files_core::FileFormatError::ContainerSealed => "ContainerSealed".to_string(),
                     other => format!("Decryption failed: {}", other),
-                })?;
+                })
         } else {
             decrypt_file_pipelined(source, dest, &dek, num_workers)
                 .map_err(|e| match e {
                     vollcrypt_files_core::FileFormatError::ContainerSealed => "ContainerSealed".to_string(),
                     other => format!("Decryption failed: {}", other),
-                })?;
+                })
+        };
+
+        if let Err(e) = decrypt_res {
+            let _ = std::fs::remove_file(&temp_dec_path);
+            return Err(e);
+        }
+
+        // Post-process: check if VDA archive
+        if is_vda_archive(Path::new(&temp_dec_path)) {
+            let unpack_res = unpack_directory(
+                Path::new(&temp_dec_path),
+                Path::new(&dest_path),
+                &dek,
+            );
+            let _ = std::fs::remove_file(&temp_dec_path);
+            unpack_res.map_err(|e| format!("Failed to unpack directory: {}", e))?;
+        } else {
+            if Path::new(&dest_path).exists() {
+                let _ = std::fs::remove_file(&dest_path);
+            }
+            std::fs::rename(&temp_dec_path, &dest_path)
+                .map_err(|e| format!("Failed to finalize decrypted file: {}", e))?;
         }
 
         if delete_source.unwrap_or(false) {
-            std::fs::remove_file(&source_path)
-                .map_err(|e| format!("Failed to delete original source file: {}", e))?;
+            let shred = shred_source.unwrap_or(false);
+            if shred {
+                secure_shred_file(Path::new(&source_path))
+                    .map_err(|e| format!("Failed to shred original source file: {}", e))?;
+            } else {
+                std::fs::remove_file(&source_path)
+                    .map_err(|e| format!("Failed to delete original source file: {}", e))?;
+            }
         }
 
         Ok(())
@@ -1141,54 +1488,59 @@ pub async fn register_context_menu() -> Result<(), String> {
             .map_err(|e| format!("Failed to get current executable path: {}", e))?;
         let exe_str = exe_path.to_string_lossy().to_string();
 
-        let status1 = std::process::Command::new("reg")
-            .args(&[
-                "add",
-                "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt",
-                "/ve",
-                "/t",
-                "REG_SZ",
-                "/d",
-                "Encrypt with VOLLcrypt",
-                "/f",
-            ])
-            .status()
-            .map_err(|e| format!("Failed to run reg: {}", e))?;
+        let default_icon = format!("\"{}\",0", exe_str);
+        let open_command = format!("\"{}\" \"%1\"", exe_str);
+        let icon_param = format!("\"{}\"", exe_str);
 
-        if !status1.success() {
-            return Err("Failed to register context menu in registry".to_string());
+        let reg_commands = vec![
+            // 1. File Association: .voll extension
+            vec!["add", "HKCU\\Software\\Classes\\.voll", "/ve", "/t", "REG_SZ", "/d", "VOLLcrypt.voll", "/f"],
+            vec!["add", "HKCU\\Software\\Classes\\.voll", "/v", "Content Type", "/t", "REG_SZ", "/d", "application/vnd.vollcrypt.file", "/f"],
+            
+            // 2. ProgID details
+            vec!["add", "HKCU\\Software\\Classes\\VOLLcrypt.voll", "/ve", "/t", "REG_SZ", "/d", "VOLLcrypt Secure Encrypted File", "/f"],
+            
+            // 3. DefaultIcon (pointing to the exe resource)
+            vec!["add", "HKCU\\Software\\Classes\\VOLLcrypt.voll\\DefaultIcon", "/ve", "/t", "REG_SZ", "/d", &default_icon, "/f"],
+            
+            // 4. Double click open command
+            vec!["add", "HKCU\\Software\\Classes\\VOLLcrypt.voll\\shell\\open\\command", "/ve", "/t", "REG_SZ", "/d", &open_command, "/f"],
+            
+            // 5. Encrypt with VOLLcrypt for all files except .voll
+            vec!["add", "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Encrypt", "/ve", "/t", "REG_SZ", "/d", "Encrypt with VOLLcrypt", "/f"],
+            vec!["add", "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Encrypt", "/v", "Icon", "/t", "REG_SZ", "/d", &icon_param, "/f"],
+            vec!["add", "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Encrypt", "/v", "AppliesTo", "/t", "REG_SZ", "/d", "NOT System.FileExtension:=\".voll\"", "/f"],
+            vec!["add", "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Encrypt\\command", "/ve", "/t", "REG_SZ", "/d", &open_command, "/f"],
+            
+            // 6. Encrypt with VOLLcrypt for folders/directories
+            vec!["add", "HKCU\\Software\\Classes\\Directory\\shell\\VOLLcrypt_Encrypt", "/ve", "/t", "REG_SZ", "/d", "Encrypt with VOLLcrypt", "/f"],
+            vec!["add", "HKCU\\Software\\Classes\\Directory\\shell\\VOLLcrypt_Encrypt", "/v", "Icon", "/t", "REG_SZ", "/d", &icon_param, "/f"],
+            vec!["add", "HKCU\\Software\\Classes\\Directory\\shell\\VOLLcrypt_Encrypt\\command", "/ve", "/t", "REG_SZ", "/d", &open_command, "/f"],
+            
+            // 7. Decrypt with VOLLcrypt for .voll files
+            vec!["add", "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Decrypt", "/ve", "/t", "REG_SZ", "/d", "Decrypt with VOLLcrypt", "/f"],
+            vec!["add", "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Decrypt", "/v", "Icon", "/t", "REG_SZ", "/d", &icon_param, "/f"],
+            vec!["add", "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Decrypt", "/v", "AppliesTo", "/t", "REG_SZ", "/d", "System.FileExtension:=\".voll\"", "/f"],
+            vec!["add", "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Decrypt\\command", "/ve", "/t", "REG_SZ", "/d", &open_command, "/f"],
+        ];
+
+        for args in reg_commands {
+            let status = std::process::Command::new("reg")
+                .args(&args)
+                .status()
+                .map_err(|e| format!("Failed to run reg: {}", e))?;
+            if !status.success() {
+                return Err(format!("Failed to execute registry command: reg {:?}", args));
+            }
         }
 
-        let _status2 = std::process::Command::new("reg")
-            .args(&[
-                "add",
-                "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt",
-                "/v",
-                "Icon",
-                "/t",
-                "REG_SZ",
-                "/d",
-                &format!("\"{}\"", exe_str),
-                "/f",
-            ])
-            .status();
-
-        let status3 = std::process::Command::new("reg")
-            .args(&[
-                "add",
-                "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt\\command",
-                "/ve",
-                "/t",
-                "REG_SZ",
-                "/d",
-                &format!("\"{}\" \"%1\"", exe_str),
-                "/f",
-            ])
-            .status()
-            .map_err(|e| format!("Failed to set registry command: {}", e))?;
-
-        if !status3.success() {
-            return Err("Failed to set command in registry".to_string());
+        unsafe {
+            windows::Win32::UI::Shell::SHChangeNotify(
+                windows::Win32::UI::Shell::SHCNE_ASSOCCHANGED,
+                windows::Win32::UI::Shell::SHCNF_IDLIST,
+                None,
+                None,
+            );
         }
     }
 
@@ -1422,13 +1774,29 @@ pub async fn register_context_menu() -> Result<(), String> {
 pub async fn unregister_context_menu() -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        let _ = std::process::Command::new("reg")
-            .args(&[
-                "delete",
-                "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt",
-                "/f",
-            ])
-            .status();
+        let keys_to_delete = vec![
+            "HKCU\\Software\\Classes\\.voll",
+            "HKCU\\Software\\Classes\\VOLLcrypt.voll",
+            "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Encrypt",
+            "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Decrypt",
+            "HKCU\\Software\\Classes\\Directory\\shell\\VOLLcrypt_Encrypt",
+            "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt",
+        ];
+
+        for key in keys_to_delete {
+            let _ = std::process::Command::new("reg")
+                .args(&["delete", key, "/f"])
+                .status();
+        }
+
+        unsafe {
+            windows::Win32::UI::Shell::SHChangeNotify(
+                windows::Win32::UI::Shell::SHCNE_ASSOCCHANGED,
+                windows::Win32::UI::Shell::SHCNF_IDLIST,
+                None,
+                None,
+            );
+        }
     }
 
     #[cfg(target_os = "linux")]
@@ -1449,34 +1817,520 @@ pub async fn unregister_context_menu() -> Result<(), String> {
     Ok(())
 }
 
-fn walk_dir_recursive(dir: &std::path::Path, files: &mut Vec<String>) -> std::io::Result<()> {
-    if dir.is_dir() {
-        for entry in std::fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_dir() {
-                walk_dir_recursive(&path, files)?;
-            } else if path.is_file() {
-                files.push(path.to_string_lossy().to_string());
-            }
-        }
-    }
-    Ok(())
-}
+
 
 #[tauri::command]
 pub fn expand_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
     let mut expanded = Vec::new();
     for p in paths {
         let path = std::path::Path::new(&p);
-        if path.is_dir() {
-            walk_dir_recursive(path, &mut expanded)
-                .map_err(|e| format!("Failed to read directory {}: {}", p, e))?;
-        } else if path.is_file() {
+        if path.exists() {
             expanded.push(p);
+        } else {
+            return Err(format!("Path does not exist: {}", p));
         }
     }
     Ok(expanded)
+}
+
+// --- Secure Preview Section ---
+
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use zeroize::Zeroize;
+use vollcrypt_files_core::aead::aes256_gcm_decrypt;
+
+#[derive(serde::Serialize, Clone)]
+pub struct VdaEntryInfo {
+    #[serde(rename = "relativePath")]
+    pub relative_path: String,
+    #[serde(rename = "isDir")]
+    pub is_dir: bool,
+    pub size: u64,
+}
+
+struct SecurePreviewSession {
+    data: Vec<u8>,
+    dek: [u8; 32],
+    is_folder: bool,
+    mime_type: String,
+    filename: String,
+    files: Vec<VdaEntryInfo>,
+}
+
+static PREVIEW_SESSIONS: OnceLock<Mutex<HashMap<String, SecurePreviewSession>>> = OnceLock::new();
+
+fn get_preview_sessions() -> &'static Mutex<HashMap<String, SecurePreviewSession>> {
+    PREVIEW_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn run_anti_debug_checks() {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::System::Diagnostics::Debug::IsDebuggerPresent;
+        unsafe {
+            if IsDebuggerPresent().as_bool() {
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
+fn lock_memory(bytes: &[u8]) {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::System::Memory::VirtualLock;
+        if !bytes.is_empty() {
+            unsafe {
+                let _ = VirtualLock(bytes.as_ptr() as *const _, bytes.len());
+            }
+        }
+    }
+}
+
+fn unlock_memory(bytes: &[u8]) {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::System::Memory::VirtualUnlock;
+        if !bytes.is_empty() {
+            unsafe {
+                let _ = VirtualUnlock(bytes.as_ptr() as *const _, bytes.len());
+            }
+        }
+    }
+}
+
+fn detect_mime_type(filename: &str) -> String {
+    let ext = filename.split('.').last().unwrap_or("").to_lowercase();
+    match ext.as_str() {
+        "pdf" => "application/pdf".to_string(),
+        "png" => "image/png".to_string(),
+        "jpg" | "jpeg" => "image/jpeg".to_string(),
+        "gif" => "image/gif".to_string(),
+        "svg" => "image/svg+xml".to_string(),
+        "txt" => "text/plain".to_string(),
+        "md" => "text/markdown".to_string(),
+        "json" => "application/json".to_string(),
+        "log" => "text/plain".to_string(),
+        "mp3" | "wav" | "ogg" => format!("audio/{}", ext),
+        "mp4" | "webm" | "mkv" => format!("video/{}", ext),
+        _ => "application/octet-stream".to_string(),
+    }
+}
+
+fn is_vda_archive_bytes(bytes: &[u8]) -> bool {
+    bytes.len() >= 4 && &bytes[0..4] == b"VDA\x01"
+}
+
+fn parse_vda_index(bytes: &[u8]) -> Result<Vec<VdaEntryInfo>, String> {
+    if bytes.len() < 8 {
+        return Err("VDA payload too short".to_string());
+    }
+    if &bytes[0..4] != b"VDA\x01" {
+        return Err("Invalid VDA magic".to_string());
+    }
+    let count = u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as usize;
+    let mut offset = 8;
+    let mut entries = Vec::new();
+
+    for _ in 0..count {
+        if offset + 4 > bytes.len() {
+            return Err("VDA index parsing overflow".to_string());
+        }
+        let path_len = u32::from_be_bytes([
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
+        ]) as usize;
+        offset += 4;
+
+        if offset + path_len + 1 > bytes.len() {
+            return Err("VDA index parsing overflow".to_string());
+        }
+        let path = String::from_utf8(bytes[offset..offset + path_len].to_vec())
+            .map_err(|e| format!("Invalid UTF-8 path: {}", e))?;
+        offset += path_len;
+
+        let is_dir = bytes[offset] == 1;
+        offset += 1;
+
+        let mut size = 0;
+        if !is_dir {
+            if offset + 8 + 12 + 16 > bytes.len() {
+                return Err("VDA index parsing overflow".to_string());
+            }
+            size = u64::from_be_bytes([
+                bytes[offset],
+                bytes[offset + 1],
+                bytes[offset + 2],
+                bytes[offset + 3],
+                bytes[offset + 4],
+                bytes[offset + 5],
+                bytes[offset + 6],
+                bytes[offset + 7],
+            ]);
+            offset += 8 + 12 + 16 + size as usize;
+        }
+
+        entries.push(VdaEntryInfo {
+            relative_path: path,
+            is_dir,
+            size,
+        });
+    }
+
+    Ok(entries)
+}
+
+fn extract_vda_file(
+    bytes: &[u8],
+    target_rel_path: &str,
+    dek: &[u8; 32],
+) -> Result<Vec<u8>, String> {
+    if bytes.len() < 8 {
+        return Err("VDA payload too short".to_string());
+    }
+    if &bytes[0..4] != b"VDA\x01" {
+        return Err("Invalid VDA magic".to_string());
+    }
+    let count = u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as usize;
+    let mut offset = 8;
+
+    for _ in 0..count {
+        if offset + 4 > bytes.len() {
+            return Err("VDA parsing overflow".to_string());
+        }
+        let path_len = u32::from_be_bytes([
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
+        ]) as usize;
+        offset += 4;
+
+        if offset + path_len + 1 > bytes.len() {
+            return Err("VDA parsing overflow".to_string());
+        }
+        let path = String::from_utf8(bytes[offset..offset + path_len].to_vec())
+            .map_err(|e| format!("Invalid UTF-8 path: {}", e))?;
+        offset += path_len;
+
+        let is_dir = bytes[offset] == 1;
+        offset += 1;
+
+        if is_dir {
+            if path == target_rel_path {
+                return Err("Requested path is a directory".to_string());
+            }
+        } else {
+            if offset + 8 + 12 + 16 > bytes.len() {
+                return Err("VDA parsing overflow".to_string());
+            }
+            let size = u64::from_be_bytes([
+                bytes[offset],
+                bytes[offset + 1],
+                bytes[offset + 2],
+                bytes[offset + 3],
+                bytes[offset + 4],
+                bytes[offset + 5],
+                bytes[offset + 6],
+                bytes[offset + 7],
+            ]) as usize;
+            offset += 8;
+
+            let mut iv = [0u8; 12];
+            iv.copy_from_slice(&bytes[offset..offset + 12]);
+            offset += 12;
+
+            let mut tag = [0u8; 16];
+            tag.copy_from_slice(&bytes[offset..offset + 16]);
+            offset += 16;
+
+            if offset + size > bytes.len() {
+                return Err("VDA parsing overflow".to_string());
+            }
+            let ciphertext = &bytes[offset..offset + size];
+            
+            if path == target_rel_path {
+                let file_key = vollcrypt_files_core::archive::derive_file_key(dek, &path)
+                    .map_err(|e| format!("Failed to derive file key: {}", e))?;
+                
+                let plaintext = aes256_gcm_decrypt(&file_key, &iv, &[], ciphertext, &tag)
+                    .map_err(|e| format!("AES-GCM decryption failed for file: {}", e))?;
+                
+                return Ok(plaintext);
+            }
+
+            offset += size;
+        }
+    }
+
+    Err("File not found in VDA archive".to_string())
+}
+
+fn decrypt_file_to_memory(
+    source_path: &str,
+    password: Option<String>,
+    recipient_sk_hex: Option<String>,
+    shares: Option<Vec<String>>,
+    active_mode: String,
+) -> Result<(Vec<u8>, vollcrypt_files_core::Header, [u8; 32]), String> {
+    let mut source_file = std::fs::File::open(source_path)
+        .map_err(|e| format!("Failed to open source file: {}", e))?;
+    
+    let mut buffer = vec![0u8; 65536];
+    let bytes_read = source_file.read(&mut buffer)
+        .map_err(|e| format!("Failed to read file header: {}", e))?;
+
+    let (header, _) = vollcrypt_files_core::Header::parse(&buffer[..bytes_read])
+        .map_err(|e| format!("Failed to parse file header: {}", e))?;
+
+    if is_sealed(&header) {
+        return Err("ContainerSealed".to_string());
+    }
+
+    let wrap = header.wraps.first()
+        .ok_or_else(|| "No wrap entries found in header".to_string())?;
+
+    let dek = match active_mode.as_str() {
+        "password" => {
+            let pass = password.ok_or_else(|| "Password is required for decryption".to_string())?;
+            unwrap_dek_with_password(wrap, pass.as_bytes())
+                .map_err(|e| format!("Wrong password or corrupted file: {}", e))?
+        }
+        "recipient" => {
+            let sk_hex = recipient_sk_hex.ok_or_else(|| "Recipient Secret Key is required".to_string())?;
+            let sk = deserialize_sk(&sk_hex)?;
+            
+            let mut dek_opt = None;
+            let mut last_err = None;
+            for w in &header.wraps {
+                match unwrap_key_with_recipient_key(w, &sk) {
+                    Ok(d) => {
+                        dek_opt = Some(d);
+                        break;
+                    }
+                    Err(e) => {
+                        last_err = Some(e);
+                    }
+                }
+            }
+            dek_opt.ok_or_else(|| {
+                format!(
+                    "Failed to unwrap DEK: {:?}",
+                    last_err.map(|e| e.to_string()).unwrap_or_default()
+                )
+            })?
+        }
+        "threshold" => {
+            let shs = shares.ok_or_else(|| "Shares are required for SSS decryption".to_string())?;
+            let mut decoded_shares = Vec::with_capacity(shs.len());
+            for s in &shs {
+                let decoded = decode_share(s)
+                    .map_err(|e| format!("Invalid share: {}", e))?;
+                decoded_shares.push(decoded);
+            }
+            unwrap_dek_with_threshold(
+                wrap,
+                &header.file_id,
+                &decoded_shares,
+                header.cipher_id as u8,
+            )
+            .map_err(|e| format!("Failed to unwrap DEK: {}", e))?
+        }
+        _ => return Err("Invalid decryption mode".to_string()),
+    };
+
+    source_file.seek(std::io::SeekFrom::Start(0))
+        .map_err(|e| format!("Failed to reset file read pointer: {}", e))?;
+
+    let num_workers = 4;
+    let mut decrypted_payload = Vec::new();
+
+    decrypt_file_pipelined(source_file, &mut decrypted_payload, &dek, num_workers)
+        .map_err(|e| format!("Decryption failed: {}", e))?;
+
+    Ok((decrypted_payload, header, dek))
+}
+
+#[derive(serde::Serialize)]
+pub struct SecurePreviewInitResult {
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
+    pub filename: String,
+    pub size: u64,
+    #[serde(rename = "isFolder")]
+    pub is_folder: bool,
+}
+
+#[tauri::command]
+pub async fn secure_preview_init(
+    source_path: String,
+    password: Option<String>,
+    recipient_sk_hex: Option<String>,
+    shares: Option<Vec<String>>,
+    active_mode: String,
+    max_size_mb: Option<u64>,
+) -> Result<SecurePreviewInitResult, String> {
+    run_anti_debug_checks();
+    
+    tokio::task::spawn_blocking(move || {
+        let (mut data, _header, dek) = decrypt_file_to_memory(
+            &source_path,
+            password,
+            recipient_sk_hex,
+            shares,
+            active_mode,
+        )?;
+
+        let size = data.len() as u64;
+        let limit_mb = max_size_mb.unwrap_or(500);
+        let max_size = limit_mb * 1024 * 1024;
+        if size > max_size {
+            data.zeroize();
+            return Err(format!("File exceeds {}MB secure preview limit. Please decrypt to disk to view.", limit_mb));
+        }
+
+        lock_memory(&data);
+
+        let filename = std::path::Path::new(&source_path)
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| "decrypted_file".to_string());
+
+        let mut clean_filename = filename.clone();
+        if filename.ends_with(".voll") {
+            clean_filename = filename[0..filename.len() - 5].to_string();
+        }
+
+        let is_folder = is_vda_archive_bytes(&data);
+
+        let mut files = Vec::new();
+        let mut mime_type = detect_mime_type(&clean_filename);
+
+        if is_folder {
+            mime_type = "application/x-directory".to_string();
+            match parse_vda_index(&data) {
+                Ok(entries) => {
+                    files = entries;
+                }
+                Err(e) => {
+                    unlock_memory(&data);
+                    data.zeroize();
+                    return Err(format!("Failed to parse folder archive: {}", e));
+                }
+            }
+        }
+
+        // Generate session ID
+        let mut session_bytes = [0u8; 16];
+        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut session_bytes);
+        let session_id = bytes_to_hex(&session_bytes);
+
+        let session = SecurePreviewSession {
+            data,
+            dek,
+            is_folder,
+            mime_type: mime_type.clone(),
+            filename: clean_filename.clone(),
+            files,
+        };
+
+        let mut sessions = get_preview_sessions().lock().unwrap();
+        sessions.insert(session_id.clone(), session);
+
+        Ok(SecurePreviewInitResult {
+            session_id,
+            mime_type,
+            filename: clean_filename,
+            size,
+            is_folder,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn secure_preview_get(session_id: String) -> Result<Vec<u8>, String> {
+    run_anti_debug_checks();
+
+    let mut sessions = get_preview_sessions().lock().unwrap();
+    
+    let is_folder = sessions.get(&session_id)
+        .map(|s| s.is_folder)
+        .ok_or_else(|| "Session not found or expired".to_string())?;
+
+    if is_folder {
+        let session = sessions.get(&session_id).unwrap();
+        let entries_json = serde_json::to_string(&session.files)
+            .map_err(|e| format!("Serialization failed: {}", e))?;
+        Ok(entries_json.into_bytes())
+    } else {
+        let mut session = sessions.remove(&session_id).unwrap();
+        let data = std::mem::take(&mut session.data);
+        unlock_memory(&data);
+        Ok(data)
+    }
+}
+
+#[tauri::command]
+pub async fn secure_preview_get_file(
+    session_id: String,
+    relative_path: String,
+) -> Result<Vec<u8>, String> {
+    run_anti_debug_checks();
+
+    let mut sessions = get_preview_sessions().lock().unwrap();
+    let session = sessions.get_mut(&session_id)
+        .ok_or_else(|| "Session not found or expired".to_string())?;
+
+    if !session.is_folder {
+        return Err("Session is not a folder".to_string());
+    }
+
+    let plaintext = extract_vda_file(&session.data, &relative_path, &session.dek)?;
+    lock_memory(&plaintext);
+    Ok(plaintext)
+}
+
+#[tauri::command]
+pub async fn secure_preview_cleanup(session_id: String) -> Result<(), String> {
+    let mut sessions = get_preview_sessions().lock().unwrap();
+    if let Some(mut session) = sessions.remove(&session_id) {
+        unlock_memory(&session.data);
+        session.data.zeroize();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn prevent_screen_capture(window: tauri::Window) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::UI::WindowsAndMessaging::{SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE};
+        let hwnd = window.hwnd().map_err(|e| format!("Failed to get HWND: {}", e))?;
+        unsafe {
+            SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
+                .map_err(|e| format!("Failed to set display affinity: {}", e))?;
+        }
+    }
+    Ok(())
+}
+
+pub fn cleanup_all_preview_sessions() {
+    if let Some(sessions) = PREVIEW_SESSIONS.get() {
+        if let Ok(mut sessions) = sessions.lock() {
+            for (_, mut session) in sessions.drain() {
+                unlock_memory(&session.data);
+                session.data.zeroize();
+            }
+            println!("Cleaned up all secure preview sessions.");
+        }
+    }
 }
 
 
