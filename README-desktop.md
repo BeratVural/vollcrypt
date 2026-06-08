@@ -89,7 +89,12 @@ The desktop app encapsulates the following functionalities:
   - Users can decrypt these `.voll` text container files directly in either the Text decryption or File decryption tabs.
 - Decrypted text files automatically default to `.txt` extension presets on picker launch.
 
-### 8. UI/UX Enhancements
+### 8. Secure File Shredder (DoD 5220.22-M)
+- Integrates a settings toggle to securely delete the original unencrypted files or folders on disk once the `.voll` encrypted container is successfully generated.
+- Employs the **DoD 5220.22-M** sanitization standard, overwriting the source file's byte storage with multiple passes of random data and zeroes before releasing the storage back to the OS.
+- Prevents forensic data recovery and reconstruction of the plain source files from physical disk sectors.
+
+### 9. UI/UX Enhancements
 - **Decryption Output Restrictions**: Safety enforcement removes the "Replace original file" option in Decryption panels to ensure decrypted data is always written to a new standalone file without modifying the encrypted source.
 - **Keypair Info Circle Tooltips**: Provides interactive, non-blocking informational tooltips next to key management and generation components. Far-right tooltips are dynamically aligned left to ensure they fit within the custom frameless window bounds.
 - **Real-Time Progress & ETA**: Provides visual feedback during file operations with a smooth progress bar, percentage tracker, and remaining time (ETA) display in English.
@@ -109,10 +114,35 @@ Automatically registers a native right-click shortcut on application launch to e
 Features native drag-and-drop file ingestion using Tauri's window event listeners:
 - Dragging files or directories over any part of the application window displays a fullscreen glassmorphic overlay.
 - Dropping items clears the overlay, recursively extracts all nested files, and loads them into the queue.
+- **Smart Tab Routing**: Automatically routes dropped files based on their extension. Dropping a `.voll` file immediately redirects the user to the Decrypt view and loads it into the input, while dropping other file extensions or folders loads them into the Encrypt view.
 
 ### 3. Recursive Folder Encryption & Decryption
 - Integrates a **Folder** selection picker next to the **Files** button.
 - Resolves folder paths recursively on the backend using standard Rust APIs, allowing entire directories to be scanned, queued, and processed sequentially with individual progress reporting.
+
+### 4. File Association & Shell Integration
+- **File Association**: Registers `.voll` files with the OS during installation or application launch. Double-clicking a `.voll` file in the native file manager (Explorer, Finder, Files) automatically launches VOLLcrypt and loads the file in the Decrypt tab.
+- **Custom File Icons**: Windows Explorer displays `.voll` containers with a custom, branded lock icon instead of a generic white paper icon.
+- **Instant Icon Cache Refresh**: On Windows, registers file associations and triggers the native `SHChangeNotify` API to instantly rebuild the desktop icon cache, applying new file associations without requiring a system reboot.
+
+### 5. Native Toast Notifications
+- Notifies users with cross-platform native bubble/toast notifications when long-running cryptographic operations (e.g. large file encryption or directory packing) complete in the background:
+  - **Windows**: Invokes an asynchronous PowerShell-based balloon notification (`NotifyIcon`) to reliably display messages even if native system notification settings are restricted.
+  - **Linux**: Executes standard `notify-send` commands to interface with system-wide notification daemons (GNOME, KDE, etc.).
+  - **macOS**: Fires AppleScript-based (`osascript`) notification displays native to macOS Notification Center.
+
+---
+
+## Cross-Platform Rendering & Theme Design
+
+VOLLcrypt's dark-themed, frameless visual layout has been carefully optimized and tested to ensure perfect color fidelity and rendering across **Windows, macOS, and Linux**:
+
+- **Color Consistency**: Achieved via CSS variables (`--accent-color`, `--accent-color-hover`) utilizing high-contrast HSL/hex palettes. The theme uses `#070708` as the base frame background, `#0f0f11` for the main cards, and `#f97316` for orange accents. This provides a highly premium and uniform appearance on both OLED and standard IPS panels.
+- **Visual Contrast**: Background-to-text contrast ratios meet WCAG AAA requirements (7:1+ for headers, 4.5:1+ for body text), assuring clear readability on varying monitors and systems.
+- **Transparent Webview Compositing**:
+  - The application uses `"transparent": true` in the Tauri window configuration to allow beautiful 10px rounded borders.
+  - To prevent rendering issues on Linux distributions where compositing might be disabled or handled differently, the `body` is styled transparently while the main `.window-frame` retains a solid `#070708` background. This ensures that no visual artifacts or pitch-black blocks appear on screen edges.
+- **Scrollbar Consistency**: Custom scrollbars use `-webkit-scrollbar` variables, which map natively to WebView2 (Windows), WebKit (macOS), and WebKitGTK (Linux) engines, maintaining clean, ultra-thin scrollbars styled in theme colors.
 
 ---
 
