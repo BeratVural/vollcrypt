@@ -3828,6 +3828,52 @@ function detectMimeType(filename: string): string {
   }
 }
 
+function isTextBuffer(bytes: Uint8Array): boolean {
+  if (bytes.length === 0) return true;
+  const checkLen = Math.min(bytes.length, 8000);
+  for (let i = 0; i < checkLen; i++) {
+    if (bytes[i] === 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function formatHexDump(bytes: Uint8Array): string {
+  const lines: string[] = [];
+  const maxBytes = Math.min(bytes.length, 16384);
+  for (let i = 0; i < maxBytes; i += 16) {
+    const chunk = bytes.slice(i, i + 16);
+    const offset = i.toString(16).padStart(8, '0');
+    const hexParts: string[] = [];
+    for (let j = 0; j < 16; j++) {
+      if (j < chunk.length) {
+        hexParts.push(chunk[j].toString(16).padStart(2, '0'));
+      } else {
+        hexParts.push("  ");
+      }
+    }
+    const hex1 = hexParts.slice(0, 8).join(" ");
+    const hex2 = hexParts.slice(8, 16).join(" ");
+    const hexString = `${hex1}  ${hex2}`;
+    const asciiChars: string[] = [];
+    for (let j = 0; j < chunk.length; j++) {
+      const byte = chunk[j];
+      if (byte >= 32 && byte <= 126) {
+        asciiChars.push(String.fromCharCode(byte));
+      } else {
+        asciiChars.push(".");
+      }
+    }
+    const asciiString = asciiChars.join("");
+    lines.push(`${offset}  ${hexString}  |${asciiString}|`);
+  }
+  if (bytes.length > maxBytes) {
+    lines.push(`... showing first ${maxBytes} bytes (${bytes.length - maxBytes} bytes truncated) ...`);
+  }
+  return lines.join("\n");
+}
+
 interface SecurePreviewProps {
   sessionId: string;
   mimeType: string;
@@ -3842,11 +3888,13 @@ function SecurePreview({ sessionId, mimeType, filename, isFolder, size }: Secure
   
   const [fileDataUrl, setFileDataUrl] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
+  const [rawBytes, setRawBytes] = useState<Uint8Array | null>(null);
   
   const [folderFiles, setFolderFiles] = useState<any[]>([]);
   const [selectedFile, setSelectedFile] = useState<any | null>(null);
   const [selectedFileContentUrl, setSelectedFileContentUrl] = useState<string | null>(null);
   const [selectedFileText, setSelectedFileText] = useState<string | null>(null);
+  const [selectedRawBytes, setSelectedRawBytes] = useState<Uint8Array | null>(null);
   const [selectedFileLoading, setSelectedFileLoading] = useState(false);
   const [selectedFileMime, setSelectedFileMime] = useState<string>("");
 
@@ -3916,6 +3964,7 @@ function SecurePreview({ sessionId, mimeType, filename, isFolder, size }: Secure
           const list = JSON.parse(jsonStr);
           setFolderFiles(list);
         } else {
+          setRawBytes(uint8Bytes);
           displayBytes(uint8Bytes, mimeType);
         }
       } catch (err: any) {
@@ -3934,13 +3983,17 @@ function SecurePreview({ sessionId, mimeType, filename, isFolder, size }: Secure
     setTextContent(null);
     setFileDataUrl(null);
 
-    const isText = mime.startsWith("text/") || 
-                   mime === "application/json" || 
-                   mime === "application/javascript" ||
-                   mime === "application/xml" ||
-                   mime === "text/xml";
+    const isMediaOrPdf = mime.startsWith("image/") || 
+                         mime.startsWith("video/") || 
+                         mime.startsWith("audio/") || 
+                         mime === "application/pdf";
 
-    if (isText) {
+    if (isMediaOrPdf) {
+      const blob = new Blob([bytes], { type: mime });
+      const url = URL.createObjectURL(blob);
+      activeUrlRef.current = url;
+      setFileDataUrl(url);
+    } else if (isTextBuffer(bytes)) {
       const decoder = new TextDecoder();
       const txt = decoder.decode(bytes);
       setTextContent(txt);
@@ -3961,25 +4014,31 @@ function SecurePreview({ sessionId, mimeType, filename, isFolder, size }: Secure
       setSelectedFile(file);
       setSelectedFileContentUrl(null);
       setSelectedFileText(null);
+      setSelectedRawBytes(null);
 
       const bytes = await invoke<number[]>("secure_preview_get_file", {
         sessionId,
         relativePath: file.relativePath
       });
       const uint8Bytes = new Uint8Array(bytes);
+      setSelectedRawBytes(uint8Bytes);
       
       const fileMime = detectMimeType(file.relativePath);
       setSelectedFileMime(fileMime);
 
-      const isText = fileMime.startsWith("text/") || 
-                     fileMime === "application/json" || 
-                     fileMime === "application/javascript" ||
-                     fileMime === "application/xml" ||
-                     fileMime === "text/xml";
+      const isMediaOrPdf = fileMime.startsWith("image/") || 
+                           fileMime.startsWith("video/") || 
+                           fileMime.startsWith("audio/") || 
+                           fileMime === "application/pdf";
 
       cleanActiveUrl();
 
-      if (isText) {
+      if (isMediaOrPdf) {
+        const blob = new Blob([uint8Bytes], { type: fileMime });
+        const url = URL.createObjectURL(blob);
+        activeUrlRef.current = url;
+        setSelectedFileContentUrl(url);
+      } else if (isTextBuffer(uint8Bytes)) {
         const decoder = new TextDecoder();
         const txt = decoder.decode(uint8Bytes);
         setSelectedFileText(txt);
@@ -4009,7 +4068,7 @@ function SecurePreview({ sessionId, mimeType, filename, isFolder, size }: Secure
     return mime;
   };
 
-  const renderPreviewContent = (url: string | null, text: string | null, mime: string) => {
+  const renderPreviewContent = (url: string | null, text: string | null, mime: string, bytes: Uint8Array | null) => {
     if (loading || selectedFileLoading) {
       return (
         <div className="secure-preview-loading">
@@ -4071,6 +4130,20 @@ function SecurePreview({ sessionId, mimeType, filename, isFolder, size }: Secure
           <iframe src={url} className="secure-preview-pdf" title="pdf-preview" />
         );
       }
+    }
+
+    if (bytes !== null) {
+      return (
+        <div className="secure-preview-hex-container">
+          <div className="hex-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 12px", background: "#16161a", borderBottom: "1px solid #1f1f23", fontSize: "10px", color: "#a1a1aa", fontFamily: "JetBrains Mono" }}>
+            <span>Binary File Hex Dump</span>
+            <span>Showing first 16KB ({formatBytes(bytes.length)})</span>
+          </div>
+          <pre className="secure-preview-hex-box">
+            {formatHexDump(bytes)}
+          </pre>
+        </div>
+      );
     }
 
     return (
@@ -4147,7 +4220,7 @@ function SecurePreview({ sessionId, mimeType, filename, isFolder, size }: Secure
                     </div>
                   </div>
                   <div className="preview-main-viewport">
-                    {renderPreviewContent(selectedFileContentUrl, selectedFileText, selectedFileMime)}
+                    {renderPreviewContent(selectedFileContentUrl, selectedFileText, selectedFileMime, selectedRawBytes)}
                   </div>
                 </>
               ) : (
@@ -4163,7 +4236,7 @@ function SecurePreview({ sessionId, mimeType, filename, isFolder, size }: Secure
           </div>
         ) : (
           <div className="secure-preview-single-layout">
-            {renderPreviewContent(fileDataUrl, textContent, mimeType)}
+            {renderPreviewContent(fileDataUrl, textContent, mimeType, rawBytes)}
           </div>
         )}
       </div>
