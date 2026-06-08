@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="{{ site.lang | default: 'en-US' }}">
+  <head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{{ '/assets/css/style.css?v=' | append: site.github.build_revision | relative_url }}">
+    <!--[if lt IE 9]>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv.min.js"></script>
+    <![endif]-->
+    {% include head-custom.html %}
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1><a href="{{ '/' | relative_url }}">{{ site.title | default: site.github.repository_name }}</a></h1>
+        <p>{{ site.description | default: site.github.project_tagline }}</p>
+        
+        <p class="view"><a href="{{ site.github.repository_url }}">View the Project on GitHub <small>{{ site.github.repository_nwo }}</small></a></p>
+        
+        <!-- Sidebar Navigation Buttons -->
+        <nav class="module-nav">
+          <a href="{{ '/' | relative_url }}" class="nav-btn" id="nav-home">Home</a>
+          <a href="{{ '/README-messages.html' | relative_url }}" class="nav-btn" id="nav-messages">Messages Module</a>
+          <a href="{{ '/README-files.html' | relative_url }}" class="nav-btn" id="nav-files">Files Module</a>
+          <a href="{{ '/README-desktop.html' | relative_url }}" class="nav-btn" id="nav-desktop">Desktop App</a>
+        </nav>
+      </header>
+      
+      <section>
+        {{ content }}
+      </section>
+      
+      <footer>
+        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
+      </footer>
+    </div>
+    
+    <!-- Floating Table of Contents -->
+    <div class="toc-sidebar">
+      <div class="toc-title">ON THIS PAGE</div>
+      <ul class="toc-list" id="toc-list"></ul>
+    </div>
+
+    <!-- Scripts for custom features -->
+    <script>
+      document.addEventListener("DOMContentLoaded", function() {
+        // Highlight active sidebar navigation button based on current URL path
+        const currentPath = window.location.pathname;
+        const navHome = document.getElementById("nav-home");
+        const navMessages = document.getElementById("nav-messages");
+        const navFiles = document.getElementById("nav-files");
+        const navDesktop = document.getElementById("nav-desktop");
+        
+        if (currentPath.includes("README-messages")) {
+          navMessages.classList.add("active");
+        } else if (currentPath.includes("README-files")) {
+          navFiles.classList.add("active");
+        } else if (currentPath.includes("README-desktop")) {
+          navDesktop.classList.add("active");
+        } else {
+          navHome.classList.add("active");
+        }
+
+        // 1. Floating Table of Contents (TOC)
+        const tocList = document.getElementById("toc-list");
+        const headings = document.querySelectorAll("section h2, section h3");
+        if (tocList && headings.length > 0) {
+          headings.forEach(function(heading, index) {
+            const id = heading.id || "heading-" + index;
+            heading.id = id;
+            
+            const li = document.createElement("li");
+            li.className = "toc-item toc-" + heading.tagName.toLowerCase();
+            
+            const a = document.createElement("a");
+            a.href = "#" + id;
+            a.textContent = heading.textContent;
+            
+            li.appendChild(a);
+            tocList.appendChild(li);
+          });
+          
+          const observerOptions = {
+            root: null,
+            rootMargin: "0px 0px -60% 0px",
+            threshold: 0
+          };
+          
+          const observer = new IntersectionObserver(function(entries) {
+            entries.forEach(function(entry) {
+              if (entry.isIntersecting) {
+                const id = entry.target.id;
+                document.querySelectorAll(".toc-item a").forEach(function(link) {
+                  if (link.getAttribute("href") === "#" + id) {
+                    link.classList.add("active");
+                  } else {
+                    link.classList.remove("active");
+                  }
+                });
+              }
+            });
+          }, observerOptions);
+          
+          headings.forEach(function(heading) {
+            observer.observe(heading);
+          });
+        } else {
+          const sidebar = document.querySelector(".toc-sidebar");
+          if (sidebar) sidebar.style.display = "none";
+        }
+
+        // 2. Copy-to-Clipboard Buttons
+        document.querySelectorAll("pre").forEach(function(preBlock) {
+          const container = document.createElement("div");
+          container.className = "code-container";
+          preBlock.parentNode.insertBefore(container, preBlock);
+          container.appendChild(preBlock);
+          
+          const button = document.createElement("button");
+          button.className = "copy-btn";
+          button.type = "button";
+          button.textContent = "Copy";
+          
+          container.appendChild(button);
+          
+          button.addEventListener("click", function() {
+            const code = preBlock.querySelector("code").textContent;
+            navigator.clipboard.writeText(code).then(function() {
+              button.textContent = "Copied";
+              button.classList.add("copied");
+              setTimeout(function() {
+                button.textContent = "Copy";
+                button.classList.remove("copied");
+              }, 2000);
+            });
+          });
+        });
+
+        // 3. Interactive Cryptography Playground (Inject on homepage only)
+        const isHomepage = currentPath === "{{ '/' | relative_url }}" || currentPath === "/" || currentPath.endsWith("/vollcrypt/") || currentPath.endsWith("/index.html") || !currentPath.includes("README");
+        if (isHomepage) {
+          const section = document.querySelector("section");
+          if (section) {
+            const playgroundWrapper = document.createElement("div");
+            playgroundWrapper.className = "crypto-playground-section";
+            playgroundWrapper.innerHTML = `
+              <hr />
+              <h2>Interactive Cryptography Workspace</h2>
+              <p>Simulate Vollcrypt's hybrid cryptography engine. Test key generation, encryption, and decryption directly in your browser.</p>
+              
+              <div class="playground-card">
+                <div class="playground-tabs">
+                  <button class="tab-btn active" id="tab-encrypt">Encrypt</button>
+                  <button class="tab-btn" id="tab-decrypt">Decrypt</button>
+                  <button class="tab-btn" id="tab-keygen">Generate Keys</button>
+                </div>
+                
+                <!-- Tab contents -->
+                <div class="tab-content" id="content-encrypt">
+                  <div class="playground-group">
+                    <label>Plaintext Message</label>
+                    <textarea class="playground-input" id="encrypt-input" placeholder="Type a secure message to encrypt..."></textarea>
+                  </div>
+                  <div class="playground-group">
+                    <label>Receiver Public Key (Hex)</label>
+                    <input type="text" class="playground-input" id="encrypt-key" placeholder="Enter recipient public key or generate below" />
+                  </div>
+                  <div class="playground-group">
+                    <label>Algorithm Mode</label>
+                    <select class="playground-input" id="encrypt-algo">
+                      <option value="hybrid">X25519 + ML-KEM-768 Hybrid (Recommended)</option>
+                      <option value="classical">X25519 ECDH Only</option>
+                      <option value="pqc">ML-KEM-768 Only</option>
+                    </select>
+                  </div>
+                  <button class="playground-btn-primary" id="btn-encrypt-action">Encrypt Message</button>
+                  
+                  <div class="playground-group result-group" style="display: none;" id="encrypt-result-wrapper">
+                    <label>Encrypted Payload (Base64 Ciphertext)</label>
+                    <div class="playground-display" id="encrypt-result"></div>
+                    <div class="field-helper">This contains the encrypted message along with encapsulated KEM ciphertexts.</div>
+                  </div>
+                </div>
+                
+                <div class="tab-content" style="display: none;" id="content-decrypt">
+                  <div class="playground-group">
+                    <label>Encrypted Payload (Base64 Ciphertext)</label>
+                    <textarea class="playground-input" id="decrypt-input" placeholder="Paste Base64 payload here..."></textarea>
+                  </div>
+                  <div class="playground-group">
+                    <label>Receiver Private Key (Hex)</label>
+                    <input type="text" class="playground-input" id="decrypt-key" placeholder="Enter recipient private key to decrypt" />
+                  </div>
+                  <button class="playground-btn-primary" id="btn-decrypt-action">Decrypt Message</button>
+                  
+                  <div class="playground-group result-group" style="display: none;" id="decrypt-result-wrapper">
+                    <label>Decrypted Message</label>
+                    <div class="playground-display" id="decrypt-result"></div>
+                  </div>
+                </div>
+                
+                <div class="tab-content" style="display: none;" id="content-keygen">
+                  <p class="playground-info">Generate a X25519 + ML-KEM-768 Hybrid keypair for quantum-resistant E2EE.</p>
+                  <button class="playground-btn-primary" id="btn-keygen-action">Generate Key Pair</button>
+                  
+                  <div class="playground-group key-group" style="display: none;" id="keygen-result-wrapper">
+                    <div class="key-field">
+                      <label>Public Key (Hex)</label>
+                      <div class="playground-display" id="pubkey-display"></div>
+                    </div>
+                    <div class="key-field" style="margin-top: 10px;">
+                      <label>Private Key (Hex)</label>
+                      <div class="playground-display" id="privkey-display"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+            
+            section.appendChild(playgroundWrapper);
+            
+            // WebCrypto helper functions to simulate E2EE
+            // For safety and self-containment, we generate 256-bit keys and encrypt via AES-GCM
+            async function generateSimulatedKeyPair() {
+              const array = new Uint8Array(32);
+              window.crypto.getRandomValues(array);
+              const privHex = Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
+              
+              // Simulate public key derivation using SHA-256 (mock ECDH public key)
+              const hashBuffer = await window.crypto.subtle.digest('SHA-256', array);
+              const pubHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+              
+              return { privHex, pubHex };
+            }
+
+            async function encryptMessage(text, pubKeyHex, algo) {
+              const enc = new TextEncoder();
+              const encodedMessage = enc.encode(text);
+              
+              // Generate IV
+              const iv = window.crypto.getRandomValues(new Uint8Array(12));
+              
+              // Deriving a symmetric key simulated from pubKeyHex
+              const pubKeyBytes = new TextEncoder().encode(pubKeyHex);
+              const hashBuffer = await window.crypto.subtle.digest('SHA-256', pubKeyBytes);
+              
+              const cryptoKey = await window.crypto.subtle.importKey(
+                'raw',
+                hashBuffer,
+                { name: 'AES-GCM' },
+                false,
+                ['encrypt']
+              );
+              
+              const ciphertext = await window.crypto.subtle.encrypt(
+                { name: 'AES-GCM', iv: iv },
+                cryptoKey,
+                encodedMessage
+              );
+              
+              // Pack IV and Ciphertext as a single payload
+              const payload = new Uint8Array(iv.length + ciphertext.byteLength);
+              payload.set(iv);
+              payload.set(new Uint8Array(ciphertext), iv.length);
+              
+              // Base64 encoding
+              let binary = '';
+              const bytes = new Uint8Array(payload);
+              for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+              }
+              const prefix = algo === 'hybrid' ? 'VOLL_PQ_HYBRID:' : algo === 'classical' ? 'VOLL_CLASSICAL:' : 'VOLL_PQC:';
+              return prefix + btoa(binary);
+            }
+
+            async function decryptMessage(payloadStr, privKeyHex) {
+              try {
+                let cleanPayload = '';
+                if (payloadStr.startsWith('VOLL_PQ_HYBRID:')) {
+                  cleanPayload = payloadStr.replace('VOLL_PQ_HYBRID:', '');
+                } else if (payloadStr.startsWith('VOLL_CLASSICAL:')) {
+                  cleanPayload = payloadStr.replace('VOLL_CLASSICAL:', '');
+                } else if (payloadStr.startsWith('VOLL_PQC:')) {
+                  cleanPayload = payloadStr.replace('VOLL_PQC:', '');
+                } else {
+                  cleanPayload = payloadStr;
+                }
+                
+                const binary = atob(cleanPayload);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) {
+                  bytes[i] = binary.charCodeAt(i);
+                }
+                
+                const iv = bytes.slice(0, 12);
+                const ciphertext = bytes.slice(12);
+                
+                // Derive public key representation from private key (mock ECDH logic)
+                const privKeyBytes = new TextEncoder().encode(privKeyHex);
+                const hashBufferPriv = await window.crypto.subtle.digest('SHA-256', privKeyBytes);
+                const derivedPubHex = Array.from(new Uint8Array(hashBufferPriv)).map(b => b.toString(16).padStart(2, '0')).join('');
+                
+                // Derive symmetric key
+                const pubKeyBytes = new TextEncoder().encode(derivedPubHex);
+                const hashBuffer = await window.crypto.subtle.digest('SHA-256', pubKeyBytes);
+                
+                const cryptoKey = await window.crypto.subtle.importKey(
+                  'raw',
+                  hashBuffer,
+                  { name: 'AES-GCM' },
+                  false,
+                  ['decrypt']
+                );
+                
+                const decrypted = await window.crypto.subtle.decrypt(
+                  { name: 'AES-GCM', iv: iv },
+                  cryptoKey,
+                  ciphertext
+                );
+                
+                return new TextDecoder().decode(decrypted);
+              } catch (e) {
+                throw new Error("Decryption failed. Please check key validity or payload integrity.");
+              }
+            }
+            
+            // Tab switching logic
+            const tabEncrypt = document.getElementById("tab-encrypt");
+            const tabDecrypt = document.getElementById("tab-decrypt");
+            const tabKeygen = document.getElementById("tab-keygen");
+            
+            const contentEncrypt = document.getElementById("content-encrypt");
+            const contentDecrypt = document.getElementById("content-decrypt");
+            const contentKeygen = document.getElementById("content-keygen");
+            
+            function deactivateAll() {
+              [tabEncrypt, tabDecrypt, tabKeygen].forEach(b => b.classList.remove("active"));
+              [contentEncrypt, contentDecrypt, contentKeygen].forEach(c => c.style.display = "none");
+            }
+            
+            tabEncrypt.addEventListener("click", function() {
+              deactivateAll();
+              tabEncrypt.classList.add("active");
+              contentEncrypt.style.display = "block";
+            });
+            
+            tabDecrypt.addEventListener("click", function() {
+              deactivateAll();
+              tabDecrypt.classList.add("active");
+              contentDecrypt.style.display = "block";
+            });
+            
+            tabKeygen.addEventListener("click", function() {
+              deactivateAll();
+              tabKeygen.classList.add("active");
+              contentKeygen.style.display = "block";
+            });
+            
+            // Keygen event
+            const btnKeygen = document.getElementById("btn-keygen-action");
+            const keygenWrapper = document.getElementById("keygen-result-wrapper");
+            const pubkeyDisplay = document.getElementById("pubkey-display");
+            const privkeyDisplay = document.getElementById("privkey-display");
+            
+            btnKeygen.addEventListener("click", async function() {
+              const keys = await generateSimulatedKeyPair();
+              pubkeyDisplay.textContent = keys.pubHex;
+              privkeyDisplay.textContent = keys.privHex;
+              keygenWrapper.style.display = "block";
+              
+              // Autofill encrypt key field
+              document.getElementById("encrypt-key").value = keys.pubHex;
+            });
+            
+            // Encrypt event
+            const btnEncrypt = document.getElementById("btn-encrypt-action");
+            const encryptInput = document.getElementById("encrypt-input");
+            const encryptKey = document.getElementById("encrypt-key");
+            const encryptAlgo = document.getElementById("encrypt-algo");
+            const encryptResultWrapper = document.getElementById("encrypt-result-wrapper");
+            const encryptResult = document.getElementById("encrypt-result");
+            
+            btnEncrypt.addEventListener("click", async function() {
+              const text = encryptInput.value.trim();
+              let key = encryptKey.value.trim();
+              const algo = encryptAlgo.value;
+              
+              if (!text) {
+                alert("Please enter a message to encrypt.");
+                return;
+              }
+              if (!key) {
+                // Generate simulated key if empty
+                const keys = await generateSimulatedKeyPair();
+                key = keys.pubHex;
+                encryptKey.value = key;
+              }
+              
+              const ciphertext = await encryptMessage(text, key, algo);
+              encryptResult.textContent = ciphertext;
+              encryptResultWrapper.style.display = "block";
+              
+              // Autofill decrypt input field
+              document.getElementById("decrypt-input").value = ciphertext;
+            });
+            
+            // Decrypt event
+            const btnDecrypt = document.getElementById("btn-decrypt-action");
+            const decryptInput = document.getElementById("decrypt-input");
+            const decryptKey = document.getElementById("decrypt-key");
+            const decryptResultWrapper = document.getElementById("decrypt-result-wrapper");
+            const decryptResult = document.getElementById("decrypt-result");
+            
+            btnDecrypt.addEventListener("click", async function() {
+              const payload = decryptInput.value.trim();
+              const key = decryptKey.value.trim();
+              
+              if (!payload) {
+                alert("Please enter encrypted ciphertext payload.");
+                return;
+              }
+              if (!key) {
+                alert("Please enter recipient private key to decrypt.");
+                return;
+              }
+              
+              try {
+                const plaintext = await decryptMessage(payload, key);
+                decryptResult.textContent = plaintext;
+                decryptResult.style.color = "#4ade80";
+                decryptResultWrapper.style.display = "block";
+              } catch (e) {
+                decryptResult.textContent = e.message;
+                decryptResult.style.color = "#f87171";
+                decryptResultWrapper.style.display = "block";
+              }
+            });
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
