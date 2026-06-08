@@ -29,9 +29,11 @@ pub mod writer;
 pub mod shield;
 pub mod sovereign;
 pub mod threshold;
+pub mod archive;
 
 pub use shield::{ReleaseMode, SignaturePolicy, OnTamper, ShieldPolicy, ShieldReport, verify_container};
 pub use sovereign::{SealMode, SealOptions, SealedInspection, is_sealed, inspect_sealed, seal_container};
+pub use archive::{pack_directory, unpack_directory, is_vda_archive, derive_file_key};
 
 pub use aead::{
     aes256_gcm_decrypt, aes256_gcm_decrypt_async, aes256_gcm_decrypt_in_place,
