@@ -3908,9 +3908,12 @@ function SecurePreview({ sessionId, mimeType, filename, isFolder, size }: Secure
   };
 
   useEffect(() => {
-    invoke("prevent_screen_capture").catch(err => {
-      console.error("Screen capture prevention failed:", err);
-    });
+    // Only prevent screen capture in production to allow screenshots during development
+    if (!import.meta.env.DEV) {
+      invoke("prevent_screen_capture").catch(err => {
+        console.error("Screen capture prevention failed:", err);
+      });
+    }
 
     const preventDefault = (e: Event) => e.preventDefault();
     document.addEventListener("contextmenu", preventDefault);
@@ -3989,7 +3992,7 @@ function SecurePreview({ sessionId, mimeType, filename, isFolder, size }: Secure
                          mime === "application/pdf";
 
     if (isMediaOrPdf) {
-      const blob = new Blob([bytes], { type: mime });
+      const blob = new Blob([bytes.buffer], { type: mime });
       const url = URL.createObjectURL(blob);
       activeUrlRef.current = url;
       setFileDataUrl(url);
@@ -3998,7 +4001,7 @@ function SecurePreview({ sessionId, mimeType, filename, isFolder, size }: Secure
       const txt = decoder.decode(bytes);
       setTextContent(txt);
     } else {
-      const blob = new Blob([bytes], { type: mime });
+      const blob = new Blob([bytes.buffer], { type: mime });
       const url = URL.createObjectURL(blob);
       activeUrlRef.current = url;
       setFileDataUrl(url);
@@ -4034,7 +4037,7 @@ function SecurePreview({ sessionId, mimeType, filename, isFolder, size }: Secure
       cleanActiveUrl();
 
       if (isMediaOrPdf) {
-        const blob = new Blob([uint8Bytes], { type: fileMime });
+        const blob = new Blob([uint8Bytes.buffer], { type: fileMime });
         const url = URL.createObjectURL(blob);
         activeUrlRef.current = url;
         setSelectedFileContentUrl(url);
@@ -4043,7 +4046,7 @@ function SecurePreview({ sessionId, mimeType, filename, isFolder, size }: Secure
         const txt = decoder.decode(uint8Bytes);
         setSelectedFileText(txt);
       } else {
-        const blob = new Blob([uint8Bytes], { type: fileMime });
+        const blob = new Blob([uint8Bytes.buffer], { type: fileMime });
         const url = URL.createObjectURL(blob);
         activeUrlRef.current = url;
         setSelectedFileContentUrl(url);
