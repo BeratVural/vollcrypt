@@ -1,5 +1,8 @@
 <div align="center">
-  <h1>Vollcrypt</h1>
+  <h1>
+    <strong>VOLL</strong><span style="font-family: 'Brush Script MT', 'Lucida Handwriting', 'Segoe Script', cursive; color: #ff7a00; font-weight: normal; font-size: 1.1em; margin-left: -2px; display: inline-block;">crypt</span>
+  </h1>
+  
   <p><strong>Cross-platform, quantum-resistant cryptography workspace for Node.js, WebAssembly, and Rust</strong></p>
   
   <p>
