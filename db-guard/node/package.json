@@ -1,0 +1,50 @@
+{
+  "name": "@vollcrypt/db-guard",
+  "version": "0.1.0",
+  "description": "Database field-level encryption integrations for Vollcrypt (Prisma, Mongoose, Drizzle, TypeORM)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "vollcrypt-db-guard": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "compliance-config.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BeratVural/vollcrypt.git",
+    "directory": "db-guard/node"
+  },
+  "author": "Berat Vural <berat.vural.tr@gmail.com>",
+  "license": "GPL-3.0-only OR LicenseRef-Commercial",
+  "bugs": {
+    "url": "https://github.com/BeratVural/vollcrypt/issues"
+  },
+  "homepage": "https://github.com/BeratVural/vollcrypt/tree/main/db-guard/node#readme",
+  "scripts": {
+    "build": "tsc && node scripts/generate-sbom.js",
+    "test": "node --import tsx --test tests/*.test.ts"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "@prisma/client": ">=4.7.0",
+    "mongoose": ">=6.0.0",
+    "drizzle-orm": ">=0.28.0",
+    "typeorm": ">=0.3.0"
+  },
+  "devDependencies": {
+    "@prisma/client": "^5.0.0",
+    "@types/node": "^20.11.0",
+    "mongoose": "^8.0.0",
+    "prisma": "^5.0.0",
+    "drizzle-orm": "^0.30.0",
+    "typeorm": "^0.3.20",
+    "tsx": "^4.7.0",
+    "typescript": "^5.5.2"
+  }
+}

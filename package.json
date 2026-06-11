@@ -10,7 +10,9 @@
     "build:files:wasm": "wasm-pack build vollcrypt-files/wasm --target web --out-dir pkg",
     "build:messages": "npm run build:messages:node && npm run build:messages:wasm",
     "build:files": "npm run build:files:node && npm run build:files:wasm",
-    "build": "npm run build:messages && npm run build:files",
+    "build:db-guard:node": "cd db-guard/node && npm install && npm run build",
+    "build": "npm run build:messages && npm run build:files && npm run build:db-guard:node",
+    "test:db-guard:node": "cd db-guard/node && npm run test",
     "test:cargo": "cargo test --all",
     "format": "cargo fmt --all"
   },

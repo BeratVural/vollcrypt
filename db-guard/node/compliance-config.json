@@ -1,0 +1,39 @@
+{
+  "kms": {
+    "provider": "aws",
+    "wrappedKey": "000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f",
+    "wrappedKek": "000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f",
+    "activeKeyVersion": "1"
+  },
+  "models": {
+    "User": ["email", "credit_card"]
+  },
+  "blindIndexes": {
+    "rootSalt": "000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f",
+    "models": {
+      "User": ["email"]
+    }
+  },
+  "cryptoRbac": {
+    "roles": {
+      "ADMIN": {
+        "decrypt": ["User.email", "User.credit_card"]
+      },
+      "SUPPORT": {
+        "decrypt": [],
+        "mask": {
+          "User.credit_card": "credit_card"
+        }
+      }
+    }
+  },
+  "rateLimiter": {
+    "maxDecryptionsPerSecond": 100,
+    "mode": "fail_closed",
+    "maxPageSize": 100,
+    "onPageSizeExceeded": "error"
+  },
+  "breakGlassThreshold": 2,
+  "breakGlassPublicKeys": ["2be3f91a7b204d104b60d3ce756b7555f7c7c437f1470b826d03c877b9349dd8", "1234f91a7b204d104b60d3ce756b7555f7c7c437f1470b826d03c877b9349dd8"],
+  "postQuantumEnabled": true
+}
