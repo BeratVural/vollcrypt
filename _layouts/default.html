@@ -24,6 +24,7 @@
           <a href="{{ '/README-messages.html' | relative_url }}" class="nav-btn" id="nav-messages">Messages Module</a>
           <a href="{{ '/README-files.html' | relative_url }}" class="nav-btn" id="nav-files">Files Module</a>
           <a href="{{ '/README-db-guard.html' | relative_url }}" class="nav-btn" id="nav-db-guard">DB Guard</a>
+          <a href="{{ '/README-db-proxy.html' | relative_url }}" class="nav-btn" id="nav-db-proxy">DB Proxy</a>
           <a href="{{ '/README-desktop.html' | relative_url }}" class="nav-btn" id="nav-desktop">Desktop App</a>
         </nav>
       </header>
@@ -52,6 +53,7 @@
         const navMessages = document.getElementById("nav-messages");
         const navFiles = document.getElementById("nav-files");
         const navDbGuard = document.getElementById("nav-db-guard");
+        const navDbProxy = document.getElementById("nav-db-proxy");
         const navDesktop = document.getElementById("nav-desktop");
         
         if (currentPath.includes("README-messages")) {
@@ -60,6 +62,8 @@
           navFiles.classList.add("active");
         } else if (currentPath.includes("README-db-guard")) {
           navDbGuard.classList.add("active");
+        } else if (currentPath.includes("README-db-proxy")) {
+          navDbProxy.classList.add("active");
         } else if (currentPath.includes("README-desktop")) {
           navDesktop.classList.add("active");
         } else {
