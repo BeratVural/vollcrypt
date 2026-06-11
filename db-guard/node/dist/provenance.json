@@ -1,0 +1,222 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "dist/blind-index.d.ts",
+      "digest": {
+        "sha256": "7e613b58cf47bc14d647cfbfa2a9cc0f9e805dbab7562daa00ac679c30830ba7"
+      }
+    },
+    {
+      "name": "dist/blind-index.js",
+      "digest": {
+        "sha256": "fb28a7038cc818346aeb212ece2e5d4f1db4b72fd3ed9dda78a1a7f5744d7455"
+      }
+    },
+    {
+      "name": "dist/cli.d.ts",
+      "digest": {
+        "sha256": "43e818adf60173644896298637f47b01d5819b17eda46eaa32d0c7d64724d012"
+      }
+    },
+    {
+      "name": "dist/cli.js",
+      "digest": {
+        "sha256": "bf91d9b9d820796590d8b030e409031623d177e45cc487da8bcb66af13078ec0"
+      }
+    },
+    {
+      "name": "dist/compliance.d.ts",
+      "digest": {
+        "sha256": "cfdccbe0a9cf27c428af69853b2a16f860dcdfc9ac2f2c65fe7305b7a5332d19"
+      }
+    },
+    {
+      "name": "dist/compliance.js",
+      "digest": {
+        "sha256": "0b660e3eafcc27a78d5c97c7d34837a25c68295660a3d1c7da0ae8e0a676bfb6"
+      }
+    },
+    {
+      "name": "dist/drizzle.d.ts",
+      "digest": {
+        "sha256": "cb43fec66c7da1e84b96a97e8a18b0d08606535c64236f66ff950250d0f23292"
+      }
+    },
+    {
+      "name": "dist/drizzle.js",
+      "digest": {
+        "sha256": "aad49d4c9dd41f2e44175465da6ae7f4a7ae35337ce12f7b3a87113ec0f25424"
+      }
+    },
+    {
+      "name": "dist/index.d.ts",
+      "digest": {
+        "sha256": "7f7c57559ed6b17bd5698a248c18d636c65f812406b685bb6b2fe243d6df59b8"
+      }
+    },
+    {
+      "name": "dist/index.js",
+      "digest": {
+        "sha256": "9a6c591ff862cca301b2b45455b884c2c5ab7e994dd4a31df1235ebdcff8393c"
+      }
+    },
+    {
+      "name": "dist/kms.d.ts",
+      "digest": {
+        "sha256": "822f37608176917f438febaaea06a3b65508c45474bd7e137c4df815c50b4854"
+      }
+    },
+    {
+      "name": "dist/kms.js",
+      "digest": {
+        "sha256": "4b1a32b35545e2e7944ebba3f84272b7421ffedd1cc3c7eb569e1a6b2fcc4a02"
+      }
+    },
+    {
+      "name": "dist/mongoose.d.ts",
+      "digest": {
+        "sha256": "a3bf00d62fecf9266325a9dd18c4ec272de9559355dbf3f9f43836a4688fe86b"
+      }
+    },
+    {
+      "name": "dist/mongoose.js",
+      "digest": {
+        "sha256": "42b2177825713fa1c618b80af6cf7a5d9f4055399c8e95b67018a0410add2a3f"
+      }
+    },
+    {
+      "name": "dist/prisma.d.ts",
+      "digest": {
+        "sha256": "f6b85a786a9bb964f0620df4bcad0787e5c972e853df35551cf8fc902bb79691"
+      }
+    },
+    {
+      "name": "dist/prisma.js",
+      "digest": {
+        "sha256": "e2b7a8fa24c120f59ab48ebb508a18c01e3e24245e04c197b08ad0e327a2d9a8"
+      }
+    },
+    {
+      "name": "dist/security.d.ts",
+      "digest": {
+        "sha256": "85bbbfdbf47b5ce72c29071004664aa8d4c872107a9f1826daaec53f3b40182b"
+      }
+    },
+    {
+      "name": "dist/security.js",
+      "digest": {
+        "sha256": "8d3d398281d7d268e874f540c58371a4ba6410e19d5804d2cdde8fb7628531da"
+      }
+    },
+    {
+      "name": "dist/typeorm.d.ts",
+      "digest": {
+        "sha256": "6cc82bbbe82e260abcc789495fe85f984138c5c8368901881edaece1ffa46d8c"
+      }
+    },
+    {
+      "name": "dist/typeorm.js",
+      "digest": {
+        "sha256": "154827069a5496e043a9f69b3249bd5dddd62690783dfa8675d06d0f574ac76b"
+      }
+    }
+  ],
+  "predicateType": "https://slsa.dev/provenance/v1.0",
+  "predicate": {
+    "buildDefinition": {
+      "buildType": "https://vollcrypt.dev/builders/npm-typescript/v1",
+      "externalParameters": {
+        "packageJson": {
+          "name": "@vollcrypt/db-guard",
+          "version": "0.1.0",
+          "scripts": {
+            "build": "tsc && node scripts/generate-sbom.js",
+            "test": "node --import tsx --test tests/*.test.ts"
+          }
+        }
+      },
+      "internalParameters": {
+        "nodeVersion": "v22.15.0",
+        "platform": "win32",
+        "arch": "x64"
+      },
+      "resolvedDependencies": [
+        {
+          "uri": "pkg:npm/@prisma/client@4.7.0",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:npm/mongoose@6.0.0",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:npm/drizzle-orm@0.28.0",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:npm/typeorm@0.3.0",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:rust/aes-gcm",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:rust/hkdf",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:rust/sha2",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:rust/rand",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:rust/diesel",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:rust/base64",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:rust/once_cell",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:rust/zeroize",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:rust/libsqlite3-sys",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:rust/sea-orm",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:rust/cryptoki",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:rust/secrecy",
+          "digest": {}
+        }
+      ]
+    },
+    "runDetails": {
+      "builder": {
+        "id": "https://vollcrypt.dev/builders/local-hermetic-env"
+      },
+      "metadata": {
+        "invocationId": "220408ced5826a8506b86289ee7afdc2",
+        "startedOn": "2026-06-11T12:41:50.519Z",
+        "finishedOn": "2026-06-11T12:41:50.520Z"
+      }
+    }
+  }
+}

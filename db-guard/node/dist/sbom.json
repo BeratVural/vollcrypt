@@ -1,0 +1,209 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:ca03635b-3097-43c2-b7e4-d4ec6e613fef",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-11T12:41:50.519Z",
+    "tools": [
+      {
+        "vendor": "Vollcrypt",
+        "name": "Supply-Chain SBOM Generator",
+        "version": "1.0.0"
+      }
+    ],
+    "component": {
+      "bomRef": "pkg:npm/@vollcrypt/db-guard@0.1.0",
+      "type": "library",
+      "name": "@vollcrypt/db-guard",
+      "version": "0.1.0",
+      "description": "Database field-level encryption integrations for Vollcrypt (Prisma, Mongoose, Drizzle, TypeORM)",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "7e613b58cf47bc14d647cfbfa2a9cc0f9e805dbab7562daa00ac679c30830ba7"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "fb28a7038cc818346aeb212ece2e5d4f1db4b72fd3ed9dda78a1a7f5744d7455"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "43e818adf60173644896298637f47b01d5819b17eda46eaa32d0c7d64724d012"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "bf91d9b9d820796590d8b030e409031623d177e45cc487da8bcb66af13078ec0"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "cfdccbe0a9cf27c428af69853b2a16f860dcdfc9ac2f2c65fe7305b7a5332d19"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "0b660e3eafcc27a78d5c97c7d34837a25c68295660a3d1c7da0ae8e0a676bfb6"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "cb43fec66c7da1e84b96a97e8a18b0d08606535c64236f66ff950250d0f23292"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "aad49d4c9dd41f2e44175465da6ae7f4a7ae35337ce12f7b3a87113ec0f25424"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "7f7c57559ed6b17bd5698a248c18d636c65f812406b685bb6b2fe243d6df59b8"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "9a6c591ff862cca301b2b45455b884c2c5ab7e994dd4a31df1235ebdcff8393c"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "822f37608176917f438febaaea06a3b65508c45474bd7e137c4df815c50b4854"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "4b1a32b35545e2e7944ebba3f84272b7421ffedd1cc3c7eb569e1a6b2fcc4a02"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "a3bf00d62fecf9266325a9dd18c4ec272de9559355dbf3f9f43836a4688fe86b"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "42b2177825713fa1c618b80af6cf7a5d9f4055399c8e95b67018a0410add2a3f"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "f6b85a786a9bb964f0620df4bcad0787e5c972e853df35551cf8fc902bb79691"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "e2b7a8fa24c120f59ab48ebb508a18c01e3e24245e04c197b08ad0e327a2d9a8"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "85bbbfdbf47b5ce72c29071004664aa8d4c872107a9f1826daaec53f3b40182b"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "8d3d398281d7d268e874f540c58371a4ba6410e19d5804d2cdde8fb7628531da"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "6cc82bbbe82e260abcc789495fe85f984138c5c8368901881edaece1ffa46d8c"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "154827069a5496e043a9f69b3249bd5dddd62690783dfa8675d06d0f574ac76b"
+        }
+      ]
+    },
+    "properties": [
+      {
+        "name": "slsa:buildLevel",
+        "value": "SLSA_Level_4"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "@prisma/client",
+      "version": ">=4.7.0",
+      "purl": "pkg:npm/@prisma/client@4.7.0"
+    },
+    {
+      "type": "library",
+      "name": "mongoose",
+      "version": ">=6.0.0",
+      "purl": "pkg:npm/mongoose@6.0.0"
+    },
+    {
+      "type": "library",
+      "name": "drizzle-orm",
+      "version": ">=0.28.0",
+      "purl": "pkg:npm/drizzle-orm@0.28.0"
+    },
+    {
+      "type": "library",
+      "name": "typeorm",
+      "version": ">=0.3.0",
+      "purl": "pkg:npm/typeorm@0.3.0"
+    },
+    {
+      "type": "library",
+      "name": "rust-crate:aes-gcm",
+      "version": "0.10.3",
+      "description": "Lokal/stand-alone Rust dependency used in core compilation layer"
+    },
+    {
+      "type": "library",
+      "name": "rust-crate:hkdf",
+      "version": "0.12.4",
+      "description": "Lokal/stand-alone Rust dependency used in core compilation layer"
+    },
+    {
+      "type": "library",
+      "name": "rust-crate:sha2",
+      "version": "0.10.9",
+      "description": "Lokal/stand-alone Rust dependency used in core compilation layer"
+    },
+    {
+      "type": "library",
+      "name": "rust-crate:rand",
+      "version": "0.8.5",
+      "description": "Lokal/stand-alone Rust dependency used in core compilation layer"
+    },
+    {
+      "type": "library",
+      "name": "rust-crate:diesel",
+      "version": "{ version = 2.2.0, default-features = false }",
+      "description": "Lokal/stand-alone Rust dependency used in core compilation layer"
+    },
+    {
+      "type": "library",
+      "name": "rust-crate:base64",
+      "version": "0.22",
+      "description": "Lokal/stand-alone Rust dependency used in core compilation layer"
+    },
+    {
+      "type": "library",
+      "name": "rust-crate:once_cell",
+      "version": "1.19",
+      "description": "Lokal/stand-alone Rust dependency used in core compilation layer"
+    },
+    {
+      "type": "library",
+      "name": "rust-crate:zeroize",
+      "version": "1.8",
+      "description": "Lokal/stand-alone Rust dependency used in core compilation layer"
+    },
+    {
+      "type": "library",
+      "name": "rust-crate:libsqlite3-sys",
+      "version": "{ version = 0.37, features = [bundled], optional = true }",
+      "description": "Lokal/stand-alone Rust dependency used in core compilation layer"
+    },
+    {
+      "type": "library",
+      "name": "rust-crate:sea-orm",
+      "version": "{ version = 1.1.0, default-features = false, optional = true }",
+      "description": "Lokal/stand-alone Rust dependency used in core compilation layer"
+    },
+    {
+      "type": "library",
+      "name": "rust-crate:cryptoki",
+      "version": "{ version = 0.7, optional = true }",
+      "description": "Lokal/stand-alone Rust dependency used in core compilation layer"
+    },
+    {
+      "type": "library",
+      "name": "rust-crate:secrecy",
+      "version": "{ version = 0.8.0, optional = true }",
+      "description": "Lokal/stand-alone Rust dependency used in core compilation layer"
+    }
+  ]
+}

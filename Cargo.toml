@@ -9,7 +9,8 @@ members = [
     "vollcrypt-files/bench",
     "vollcrypt-files/stress",
     "vollcrypt-files/adversarial",
-    "vollcrypt-desktop/src-tauri"
+    "vollcrypt-desktop/src-tauri",
+    "db-guard/rust"
 ]
 resolver = "2"
 
