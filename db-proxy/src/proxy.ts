@@ -41,7 +41,7 @@ export interface DbProxyOptions {
   noDlp?: boolean;
   noWaf?: boolean;
   noIpBanning?: boolean;
-  dbType?: 'postgres' | 'mysql' | 'mongodb';
+  dbType?: 'postgres' | 'mysql' | 'mongodb' | 'mssql' | 'oracle';
   fipsMode?: boolean;
   mpcShares?: Buffer[];
 }
@@ -354,6 +354,7 @@ export class DbProxyServer {
               noWaf: this.options.noWaf,
               role: 'GUEST',
               clientIp: clientIp || '127.0.0.1',
+              resolvedKeys: this.options.resolvedKeys,
               logSiem: (evt, sev, msg) => this.logSiemEvent(evt, sev, 'mysql_user', clientIp || '127.0.0.1', msg),
             });
           });
@@ -368,7 +369,38 @@ export class DbProxyServer {
               noWaf: this.options.noWaf,
               role: 'GUEST',
               clientIp: clientIp || '127.0.0.1',
+              resolvedKeys: this.options.resolvedKeys,
               logSiem: (evt, sev, msg) => this.logSiemEvent(evt, sev, 'mongo_user', clientIp || '127.0.0.1', msg),
+            });
+          });
+          return;
+        }
+
+        if (dbType === 'mssql') {
+          import('./drivers/mssql.js').then(({ handleMssqlConnection }) => {
+            handleMssqlConnection(clientSocket, {
+              dbHost: this.options.dbHost,
+              dbPort: this.options.dbPort,
+              noWaf: this.options.noWaf,
+              role: 'GUEST',
+              clientIp: clientIp || '127.0.0.1',
+              resolvedKeys: this.options.resolvedKeys,
+              logSiem: (evt, sev, msg) => this.logSiemEvent(evt, sev, 'mssql_user', clientIp || '127.0.0.1', msg),
+            });
+          });
+          return;
+        }
+
+        if (dbType === 'oracle') {
+          import('./drivers/oracle.js').then(({ handleOracleConnection }) => {
+            handleOracleConnection(clientSocket, {
+              dbHost: this.options.dbHost,
+              dbPort: this.options.dbPort,
+              noWaf: this.options.noWaf,
+              role: 'GUEST',
+              clientIp: clientIp || '127.0.0.1',
+              resolvedKeys: this.options.resolvedKeys,
+              logSiem: (evt, sev, msg) => this.logSiemEvent(evt, sev, 'oracle_user', clientIp || '127.0.0.1', msg),
             });
           });
           return;

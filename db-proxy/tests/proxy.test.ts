@@ -6,6 +6,8 @@ import pg from 'pg';
 import { encryptValue, resetFailClosedStatusForTesting } from '@vollcrypt/db-guard';
 import { DbProxyServer, DbProxyOptions, serializeErrorResponse } from '../src/proxy.js';
 import { serializeDataRow, serializeParameterStatus, parseParameterStatus } from '../src/pg-protocol.js';
+import { serializeLengthEncodedString, parseLengthEncodedString } from '../src/drivers/mysql.js';
+import { serializeBson, parseBson } from '../src/drivers/mongo.js';
 
 const KEY = Buffer.alloc(32, 0x01); // Ephemeral test key (32 bytes of 0x01)
 
@@ -1494,6 +1496,262 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     // Check that CEF SIEM log has FIPS_INIT message
     const logContent = fs.readFileSync('logs/siem.cef', 'utf8');
     assert.ok(logContent.includes('FIPS_INIT'));
+  });
+
+  await t.test('35. MySQL Transparent Text Row Decryption & Masking', async () => {
+    const MOCK_MYSQL_PORT = PROXY_PORT + 60;
+    const MYSQL_PROXY_PORT = PROXY_PORT + 61;
+
+    const encVal = encryptValue('supersecret_mysql', KEY, '1');
+    const cell1 = serializeLengthEncodedString('public');
+    const cell2 = serializeLengthEncodedString(encVal);
+    const payload = Buffer.concat([cell1, cell2]);
+
+    const mysqlMockRow = Buffer.alloc(4 + payload.length);
+    mysqlMockRow.writeUIntLE(payload.length, 0, 3);
+    mysqlMockRow[3] = 2; // sequence ID
+    payload.copy(mysqlMockRow, 4);
+
+    const mockMysqlServer = net.createServer((socket) => {
+      socket.on('data', () => {
+        socket.write(mysqlMockRow);
+      });
+    });
+    mockMysqlServer.listen(MOCK_MYSQL_PORT);
+
+    const mysqlProxyOptions: DbProxyOptions = {
+      port: MYSQL_PROXY_PORT,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_MYSQL_PORT,
+      resolvedKeys: { '1': KEY },
+      dbType: 'mysql',
+      minResponseTimeMs: 0,
+    };
+    const mysqlProxy = new DbProxyServer(mysqlProxyOptions);
+    await mysqlProxy.start();
+
+    const client = net.connect({ port: MYSQL_PROXY_PORT });
+    await new Promise((resolve) => client.on('connect', resolve));
+
+    const responsePromise = new Promise<Buffer>((resolve) => client.once('data', resolve));
+    client.write(Buffer.from([0, 0, 0, 0])); // trigger response
+
+    const res = await responsePromise;
+    client.end();
+    await mysqlProxy.stop();
+    mockMysqlServer.close();
+
+    assert.ok(res.length > 4);
+    const parsed1 = parseLengthEncodedString(res, 4);
+    assert.strictEqual(parsed1.value, 'public');
+    const parsed2 = parseLengthEncodedString(res, parsed1.nextOffset);
+    assert.strictEqual(parsed2.value, 'supersecret_mysql');
+  });
+
+  await t.test('36. MongoDB Recursive BSON Key Decryption', async () => {
+    const MOCK_MONGO_PORT = PROXY_PORT + 62;
+    const MONGO_PROXY_PORT = PROXY_PORT + 63;
+
+    const secretEnc = encryptValue('mongoSecret', KEY, '1');
+    const testDoc = {
+      ok: 1,
+      nested: {
+        secret: secretEnc,
+        arr: [
+          { secretItem: secretEnc }
+        ]
+      }
+    };
+    const bsonBuf = serializeBson(testDoc);
+    const mongoMockMsg = Buffer.alloc(21 + bsonBuf.length);
+    mongoMockMsg.writeInt32LE(mongoMockMsg.length, 0);
+    mongoMockMsg.writeInt32LE(12345, 4);
+    mongoMockMsg.writeInt32LE(0, 8);
+    mongoMockMsg.writeInt32LE(2013, 12); // OP_MSG
+    mongoMockMsg.writeInt32LE(0, 16);
+    mongoMockMsg[20] = 0x00;
+    bsonBuf.copy(mongoMockMsg, 21);
+
+    const mockMongoServer = net.createServer((socket) => {
+      socket.on('data', () => {
+        socket.write(mongoMockMsg);
+      });
+    });
+    mockMongoServer.listen(MOCK_MONGO_PORT);
+
+    const mongoProxyOptions: DbProxyOptions = {
+      port: MONGO_PROXY_PORT,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_MONGO_PORT,
+      resolvedKeys: { '1': KEY },
+      dbType: 'mongodb',
+      minResponseTimeMs: 0,
+    };
+    const mongoProxy = new DbProxyServer(mongoProxyOptions);
+    await mongoProxy.start();
+
+    const client = net.connect({ port: MONGO_PROXY_PORT });
+    await new Promise((resolve) => client.on('connect', resolve));
+
+    const responsePromise = new Promise<Buffer>((resolve) => client.once('data', resolve));
+    client.write(Buffer.from([0, 0, 0, 0])); // trigger response
+
+    const res = await responsePromise;
+    client.end();
+    await mongoProxy.stop();
+    mockMongoServer.close();
+
+    assert.ok(res.length > 21);
+    const opCode = res.readInt32LE(12);
+    assert.strictEqual(opCode, 2013);
+    const parsed = parseBson(res, 21);
+    assert.strictEqual(parsed.value.nested.secret, 'mongoSecret');
+    assert.strictEqual(parsed.value.nested.arr[0].secretItem, 'mongoSecret');
+  });
+
+  await t.test('37. MSSQL TDS 7.4 Batch Query Interception, Decryption & WAF Block', async () => {
+    const MOCK_MSSQL_PORT = PROXY_PORT + 64;
+    const MSSQL_PROXY_PORT = PROXY_PORT + 65;
+
+    const secretVal = 'mssqlSecret';
+    const encVal = encryptValue(secretVal, KEY, '1');
+    const encValBuf = Buffer.from(encVal, 'utf16le');
+
+    const before = Buffer.alloc(10);
+    before.writeUInt16LE(encValBuf.length, 8); // length prefix at offset 8
+    const after = Buffer.from(' padding\0', 'utf16le');
+    const mssqlMockRow = Buffer.concat([before, encValBuf, after]);
+
+    const mockMssqlServer = net.createServer((socket) => {
+      socket.on('data', () => {
+        socket.write(mssqlMockRow);
+      });
+    });
+    mockMssqlServer.listen(MOCK_MSSQL_PORT);
+
+    const mssqlProxyOptions: DbProxyOptions = {
+      port: MSSQL_PROXY_PORT,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_MSSQL_PORT,
+      resolvedKeys: { '1': KEY },
+      dbType: 'mssql',
+      minResponseTimeMs: 0,
+      config: {
+        users: { postgres: { role: 'LAWYER', userId: 'usr-lawyer' } }
+      }
+    };
+    const mssqlProxy = new DbProxyServer(mssqlProxyOptions);
+    await mssqlProxy.start();
+
+    // 1. Test Decryption E2E
+    const client = net.connect({ port: MSSQL_PROXY_PORT });
+    await new Promise((resolve) => client.on('connect', resolve));
+
+    const responsePromise = new Promise<Buffer>((resolve) => client.once('data', resolve));
+    client.write(Buffer.from([0, 0, 0, 0])); // trigger response
+
+    const res = await responsePromise;
+    client.end();
+
+    assert.ok(res.includes(Buffer.from('mssqlSecret', 'utf16le')));
+    const indexInBytes = res.indexOf(Buffer.from('mssqlSecret', 'utf16le'));
+    assert.strictEqual(res.readUInt16LE(indexInBytes - 2), Buffer.from('mssqlSecret', 'utf16le').length);
+
+    // 2. Test WAF Block
+    const wafClient = net.connect({ port: MSSQL_PROXY_PORT });
+    await new Promise((resolve) => wafClient.on('connect', resolve));
+
+    const sqlQuery = "SELECT * FROM users WHERE username = 'admin' OR '1'='1'";
+    const sqlBuf = Buffer.from(sqlQuery, 'utf16le');
+    const sqlReq = Buffer.alloc(8 + sqlBuf.length);
+    sqlReq[0] = 0x01; // SQL Batch
+    sqlReq[1] = 0x01; // EOM
+    sqlReq.writeUInt16BE(sqlReq.length, 2);
+    sqlBuf.copy(sqlReq, 8);
+
+    const wafResponsePromise = new Promise<Buffer>((resolve) => wafClient.once('data', resolve));
+    wafClient.write(sqlReq);
+
+    const wafRes = await wafResponsePromise;
+    wafClient.end();
+    await mssqlProxy.stop();
+    mockMssqlServer.close();
+
+    assert.strictEqual(wafRes[0], 0x04); // response header type
+    assert.ok(wafRes.includes(Buffer.from('SQL Injection', 'utf16le')));
+  });
+
+  await t.test('38. Oracle TNS 12 Batch Query Interception, Decryption & WAF Block', async (t) => {
+    const MOCK_ORACLE_PORT = PROXY_PORT + 70;
+    const ORACLE_PROXY_PORT = PROXY_PORT + 71;
+
+    const secretVal = 'oracleSecret';
+    const encVal = encryptValue(secretVal, KEY, '1');
+    const encValBuf = Buffer.from(encVal, 'ascii');
+
+    const before = Buffer.alloc(10);
+    before[4] = 0x06; // TNS Data Type
+    before[9] = encValBuf.length; // single-byte length prefix at offset 9
+    const after = Buffer.from(' padding\0', 'ascii');
+    const oracleMockRow = Buffer.concat([before, encValBuf, after]);
+    oracleMockRow.writeUInt16BE(oracleMockRow.length, 0); // length BE
+
+    const mockOracleServer = net.createServer((socket) => {
+      socket.on('data', () => {
+        socket.write(oracleMockRow);
+      });
+    });
+    mockOracleServer.listen(MOCK_ORACLE_PORT);
+
+    const oracleProxyOptions: DbProxyOptions = {
+      port: ORACLE_PROXY_PORT,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_ORACLE_PORT,
+      resolvedKeys: { '1': KEY },
+      dbType: 'oracle',
+      minResponseTimeMs: 0,
+      config: {
+        users: { postgres: { role: 'LAWYER', userId: 'usr-lawyer' } }
+      }
+    };
+    const oracleProxy = new DbProxyServer(oracleProxyOptions);
+    await oracleProxy.start();
+
+    // 1. Test Decryption E2E
+    const client = net.connect({ port: ORACLE_PROXY_PORT });
+    await new Promise((resolve) => client.on('connect', resolve));
+
+    const responsePromise = new Promise<Buffer>((resolve) => client.once('data', resolve));
+    client.write(Buffer.from([0, 0, 0, 0])); // trigger response
+
+    const res = await responsePromise;
+    client.end();
+
+    assert.ok(res.includes(Buffer.from('oracleSecret', 'ascii')));
+    const indexInBytes = res.indexOf(Buffer.from('oracleSecret', 'ascii'));
+    assert.strictEqual(res[indexInBytes - 1], Buffer.from('oracleSecret', 'ascii').length);
+
+    // 2. Test WAF Block
+    const wafClient = net.connect({ port: ORACLE_PROXY_PORT });
+    await new Promise((resolve) => wafClient.on('connect', resolve));
+
+    const sqlQuery = "SELECT * FROM users WHERE username = 'admin' OR '1'='1'";
+    const sqlBuf = Buffer.from(sqlQuery, 'ascii');
+    const sqlReq = Buffer.alloc(8 + sqlBuf.length);
+    sqlReq[4] = 0x06; // TNS Data type
+    sqlReq.writeUInt16BE(sqlReq.length, 0);
+    sqlBuf.copy(sqlReq, 8);
+
+    const wafResponsePromise = new Promise<Buffer>((resolve) => wafClient.once('data', resolve));
+    wafClient.write(sqlReq);
+
+    const wafRes = await wafResponsePromise;
+    wafClient.end();
+    await oracleProxy.stop();
+    mockOracleServer.close();
+
+    assert.strictEqual(wafRes[4], 0x04); // response Refuse type
+    assert.ok(wafRes.includes(Buffer.from('SQL Injection', 'ascii')));
   });
 
   // Clean up servers

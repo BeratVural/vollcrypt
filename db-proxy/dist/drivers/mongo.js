@@ -33,10 +33,159 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.parseBson = parseBson;
+exports.serializeBson = serializeBson;
+exports.decryptBsonObject = decryptBsonObject;
 exports.serializeMongoError = serializeMongoError;
 exports.handleMongoConnection = handleMongoConnection;
 const net = __importStar(require("net"));
 const waf_js_1 = require("../waf.js");
+const db_guard_1 = require("@vollcrypt/db-guard");
+function parseBson(buf, offset = 0) {
+    const size = buf.readInt32LE(offset);
+    const end = offset + size;
+    let cursor = offset + 4;
+    const obj = {};
+    while (cursor < end - 1) {
+        const type = buf[cursor];
+        cursor++;
+        const keyEnd = buf.indexOf(0, cursor);
+        if (keyEnd === -1 || keyEnd >= end)
+            break;
+        const key = buf.toString('utf8', cursor, keyEnd);
+        cursor = keyEnd + 1;
+        let value;
+        if (type === 0x01) { // Double
+            value = buf.readDoubleLE(cursor);
+            cursor += 8;
+        }
+        else if (type === 0x02) { // String
+            const strLen = buf.readInt32LE(cursor);
+            cursor += 4;
+            value = buf.toString('utf8', cursor, cursor + strLen - 1);
+            cursor += strLen;
+        }
+        else if (type === 0x03 || type === 0x04) { // Document or Array
+            const nested = parseBson(buf, cursor);
+            value = nested.value;
+            cursor = nested.nextOffset;
+            if (type === 0x04) {
+                value = Object.keys(value)
+                    .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
+                    .map((k) => value[k]);
+            }
+        }
+        else if (type === 0x05) { // Binary
+            const binLen = buf.readInt32LE(cursor);
+            cursor += 5; // Length + Subtype
+            value = buf.subarray(cursor, cursor + binLen);
+            cursor += binLen;
+        }
+        else if (type === 0x08) { // Boolean
+            value = buf[cursor] !== 0;
+            cursor += 1;
+        }
+        else if (type === 0x0a) { // Null
+            value = null;
+        }
+        else if (type === 0x10) { // Int32
+            value = buf.readInt32LE(cursor);
+            cursor += 4;
+        }
+        else if (type === 0x12) { // Int64
+            value = buf.readBigInt64LE(cursor);
+            cursor += 8;
+        }
+        else {
+            break;
+        }
+        obj[key] = value;
+    }
+    return { value: obj, nextOffset: end };
+}
+function serializeBson(obj) {
+    const buffers = [];
+    for (const [key, val] of Object.entries(obj)) {
+        const keyBuf = Buffer.from(key + '\0', 'utf8');
+        if (val === null || val === undefined) {
+            buffers.push(Buffer.concat([Buffer.from([0x0a]), keyBuf]));
+        }
+        else if (typeof val === 'number') {
+            if (Number.isInteger(val)) {
+                const valBuf = Buffer.alloc(4);
+                valBuf.writeInt32LE(val, 0);
+                buffers.push(Buffer.concat([Buffer.from([0x10]), keyBuf, valBuf]));
+            }
+            else {
+                const valBuf = Buffer.alloc(8);
+                valBuf.writeDoubleLE(val, 0);
+                buffers.push(Buffer.concat([Buffer.from([0x01]), keyBuf, valBuf]));
+            }
+        }
+        else if (typeof val === 'bigint') {
+            const valBuf = Buffer.alloc(8);
+            valBuf.writeBigInt64LE(val, 0);
+            buffers.push(Buffer.concat([Buffer.from([0x12]), keyBuf, valBuf]));
+        }
+        else if (typeof val === 'string') {
+            const valBuf = Buffer.from(val + '\0', 'utf8');
+            const lenBuf = Buffer.alloc(4);
+            lenBuf.writeInt32LE(valBuf.length, 0);
+            buffers.push(Buffer.concat([Buffer.from([0x02]), keyBuf, lenBuf, valBuf]));
+        }
+        else if (typeof val === 'boolean') {
+            buffers.push(Buffer.concat([Buffer.from([0x08]), keyBuf, Buffer.from([val ? 1 : 0])]));
+        }
+        else if (Buffer.isBuffer(val)) {
+            const lenBuf = Buffer.alloc(4);
+            lenBuf.writeInt32LE(val.length, 0);
+            buffers.push(Buffer.concat([Buffer.from([0x05]), keyBuf, lenBuf, Buffer.from([0]), val]));
+        }
+        else if (Array.isArray(val)) {
+            const arrayObj = {};
+            for (let i = 0; i < val.length; i++) {
+                arrayObj[i.toString()] = val[i];
+            }
+            const nestedBson = serializeBson(arrayObj);
+            buffers.push(Buffer.concat([Buffer.from([0x04]), keyBuf, nestedBson]));
+        }
+        else if (typeof val === 'object') {
+            const nestedBson = serializeBson(val);
+            buffers.push(Buffer.concat([Buffer.from([0x03]), keyBuf, nestedBson]));
+        }
+    }
+    const elements = Buffer.concat(buffers);
+    const sizeBuf = Buffer.alloc(4);
+    sizeBuf.writeInt32LE(elements.length + 5, 0);
+    return Buffer.concat([sizeBuf, elements, Buffer.from([0x00])]);
+}
+function decryptBsonObject(obj, keys, depth = 0) {
+    if (depth > 5)
+        return obj; // Prevent stack overflows
+    if (obj === null || obj === undefined)
+        return obj;
+    if (Array.isArray(obj)) {
+        return obj.map((item) => decryptBsonObject(item, keys, depth + 1));
+    }
+    if (typeof obj === 'object' && !Buffer.isBuffer(obj)) {
+        const copy = {};
+        for (const [k, v] of Object.entries(obj)) {
+            if (typeof v === 'string' && v.startsWith('VOLLVALT:')) {
+                try {
+                    copy[k] = (0, db_guard_1.decryptValue)(v, keys);
+                }
+                catch {
+                    copy[k] = v;
+                }
+            }
+            else {
+                copy[k] = decryptBsonObject(v, keys, depth + 1);
+            }
+        }
+        return copy;
+    }
+    return obj;
+}
 function serializeMongoError(message, code = 13) {
     const okName = Buffer.from('ok\0', 'ascii');
     const okVal = Buffer.alloc(8);
@@ -52,27 +201,64 @@ function serializeMongoError(message, code = 13) {
         Buffer.from([0x01]), okName, okVal,
         Buffer.from([0x02]), msgName, msgLen, msgVal,
         Buffer.from([0x10]), codeName, codeVal,
-        Buffer.from([0x00]) // Document terminator
+        Buffer.from([0x00])
     ]);
     const docSize = Buffer.alloc(4);
     docSize.writeInt32LE(body.length + 4, 0);
     const bsonDoc = Buffer.concat([docSize, body]);
     const header = Buffer.alloc(21);
-    header.writeInt32LE(16 + 4 + 1 + bsonDoc.length, 0); // messageLength
-    header.writeInt32LE(Math.floor(Math.random() * 100000), 4); // requestId
-    header.writeInt32LE(0, 8); // responseTo
-    header.writeInt32LE(2013, 12); // opCode OP_MSG
-    header.writeInt32LE(0, 16); // flags
-    header[20] = 0x00; // section type 0
+    header.writeInt32LE(16 + 4 + 1 + bsonDoc.length, 0);
+    header.writeInt32LE(Math.floor(Math.random() * 100000), 4);
+    header.writeInt32LE(0, 8);
+    header.writeInt32LE(2013, 12); // OP_MSG
+    header.writeInt32LE(0, 16);
+    header[20] = 0x00;
     return Buffer.concat([header, bsonDoc]);
 }
 function handleMongoConnection(clientSocket, options) {
+    let connected = false;
+    const queue = [];
     const backendSocket = net.connect({
         host: options.dbHost,
         port: options.dbPort,
+    }, () => {
+        connected = true;
+        for (const buf of queue) {
+            if (backendSocket.writable) {
+                backendSocket.write(buf);
+            }
+        }
+        queue.length = 0;
     });
-    clientSocket.pipe(backendSocket);
     backendSocket.on('data', (data) => {
+        if (data.length > 21) {
+            const opCode = data.readInt32LE(12);
+            if (opCode === 2013) { // OP_MSG
+                try {
+                    const flags = data.readInt32LE(16);
+                    const sectionType = data[20];
+                    if (sectionType === 0x00) {
+                        const bsonOffset = 21;
+                        const { value: parsedDoc } = parseBson(data, bsonOffset);
+                        const decryptedDoc = decryptBsonObject(parsedDoc, options.resolvedKeys);
+                        const newBson = serializeBson(decryptedDoc);
+                        const newMsg = Buffer.alloc(21 + newBson.length);
+                        newMsg.writeInt32LE(newMsg.length, 0);
+                        data.copy(newMsg, 4, 4, 16); // Copy request info
+                        newMsg.writeInt32LE(flags, 16);
+                        newMsg[20] = 0x00;
+                        newBson.copy(newMsg, 21);
+                        if (clientSocket.writable) {
+                            clientSocket.write(newMsg);
+                        }
+                        return;
+                    }
+                }
+                catch {
+                    // Fallback to direct forward on parse failure
+                }
+            }
+        }
         if (clientSocket.writable) {
             clientSocket.write(data);
         }
@@ -80,7 +266,7 @@ function handleMongoConnection(clientSocket, options) {
     clientSocket.on('data', (data) => {
         if (data.length > 16 && !options.noWaf) {
             const opCode = data.readInt32LE(12);
-            if (opCode === 2013 || opCode === 2004) { // OP_MSG or OP_QUERY
+            if (opCode === 2013 || opCode === 2004) {
                 const payloadStr = data.toString('utf8');
                 try {
                     if (payloadStr.includes('dropDatabase') || payloadStr.includes('$where')) {
@@ -92,8 +278,17 @@ function handleMongoConnection(clientSocket, options) {
                     options.logSiem('WAF_MONGO_BLOCK', 9, `MongoDB WAF violation blocked: ${err.message}`);
                     const errPacket = serializeMongoError(err.message, 13);
                     clientSocket.write(errPacket);
+                    return;
                 }
             }
+        }
+        if (connected) {
+            if (backendSocket.writable) {
+                backendSocket.write(data);
+            }
+        }
+        else {
+            queue.push(data);
         }
     });
     clientSocket.on('error', () => {
