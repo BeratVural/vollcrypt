@@ -18,6 +18,8 @@ import {
   decryptValue,
   decryptWithSecurity,
 } from '@vollcrypt/db-guard';
+import { validateQuery } from './waf.js';
+import { scanAndMaskCell } from './dlp.js';
 
 export interface DbProxyOptions {
   port: number;
@@ -116,6 +118,11 @@ export class DbProxyServer {
     let currentColumns: string[] = [];
     let isSslNegotiated = false;
 
+    // Prepared statement and portal schema caches to prevent Extended Protocol bypasses
+    const statements = new Map<string, { query: string; columns?: string[] }>();
+    const portals = new Map<string, { statementName: string; columns?: string[] }>();
+    let lastDescribeRequest: { type: string; name: string } | null = null;
+
     // Handle client to backend stream
     clientSocket.on('data', (data) => {
       try {
@@ -137,6 +144,73 @@ export class DbProxyServer {
 
             backendSocket.write(msg);
           } else {
+            // WAF Validation and Prepared Statement tracking
+            const type = msg[0];
+            let queryStr: string | null = null;
+
+            if (type === 81) { // 'Q' (Simple Query)
+              queryStr = msg.subarray(5, msg.length - 1).toString('utf8');
+              currentColumns = []; // Reset simple query schema state
+            } else if (type === 80) { // 'P' (Parse prepared statement)
+              const destNameNull = msg.indexOf(0, 5);
+              if (destNameNull !== -1) {
+                const statementName = msg.toString('utf8', 5, destNameNull);
+                const queryStart = destNameNull + 1;
+                const queryNull = msg.indexOf(0, queryStart);
+                if (queryNull !== -1) {
+                  queryStr = msg.toString('utf8', queryStart, queryNull);
+                  statements.set(statementName, { query: queryStr });
+                }
+              }
+            } else if (type === 66) { // 'B' (Bind portal)
+              const portalNull = msg.indexOf(0, 5);
+              if (portalNull !== -1) {
+                const portalName = msg.toString('utf8', 5, portalNull);
+                const stmtStart = portalNull + 1;
+                const stmtNull = msg.indexOf(0, stmtStart);
+                if (stmtNull !== -1) {
+                  const statementName = msg.toString('utf8', stmtStart, stmtNull);
+                  const stmt = statements.get(statementName);
+                  portals.set(portalName, {
+                    statementName,
+                    columns: stmt?.columns,
+                  });
+                }
+              }
+            } else if (type === 68) { // 'D' (Describe)
+              if (msg.length >= 7) {
+                const descType = String.fromCharCode(msg[5]);
+                const nameNull = msg.indexOf(0, 6);
+                if (nameNull !== -1) {
+                  const name = msg.toString('utf8', 6, nameNull);
+                  lastDescribeRequest = { type: descType, name };
+                }
+              }
+            } else if (type === 69) { // 'E' (Execute)
+              const portalNull = msg.indexOf(0, 5);
+              if (portalNull !== -1) {
+                const portalName = msg.toString('utf8', 5, portalNull);
+                const portal = portals.get(portalName);
+                if (portal && portal.columns) {
+                  currentColumns = portal.columns;
+                }
+              }
+            }
+
+            if (queryStr) {
+              try {
+                validateQuery(queryStr, userContext.role);
+              } catch (err) {
+                const violationMsg = (err as Error).message;
+                // Write standard PostgreSQL protocol error frame back to the client
+                clientSocket.write(serializeErrorResponse(`Vollcrypt WAF Blocked: ${violationMsg}`));
+                // Send ReadyForQuery ('Z') so client CLI / DBeaver doesn't hang
+                const readyForQuery = Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
+                clientSocket.write(readyForQuery);
+                continue;
+              }
+            }
+
             backendSocket.write(msg);
           }
         }
@@ -156,6 +230,21 @@ export class DbProxyServer {
 
           if (type === 84) { // 'T' -> RowDescription
             currentColumns = parseRowDescription(msg);
+            
+            // Map the parsed description to the active prepared statement or portal
+            if (lastDescribeRequest) {
+              if (lastDescribeRequest.type === 'S') {
+                const stmt = statements.get(lastDescribeRequest.name);
+                if (stmt) {
+                  stmt.columns = currentColumns;
+                }
+              } else if (lastDescribeRequest.type === 'P') {
+                const portal = portals.get(lastDescribeRequest.name);
+                if (portal) {
+                  portal.columns = currentColumns;
+                }
+              }
+            }
             clientSocket.write(msg);
           } else if (type === 68) { // 'D' -> DataRow
             const values = parseDataRow(msg);
@@ -209,7 +298,13 @@ export class DbProxyServer {
                   break;
                 }
               } else {
-                modifiedValues.push(val);
+                // DLP Auto-PII scanning on unencrypted text cells
+                const maskedVal = scanAndMaskCell(strVal);
+                if (maskedVal !== strVal) {
+                  modifiedValues.push(Buffer.from(maskedVal, 'utf8'));
+                } else {
+                  modifiedValues.push(val);
+                }
               }
             }
 

@@ -90,6 +90,23 @@ function createMockDbServer(port: number, handler: (query: string) => Buffer[]):
             const query = msg.subarray(5, msg.length - 1).toString('utf8');
             const responses = handler(query);
             socket.write(Buffer.concat(responses));
+          } else if (type === 'P') {
+            // ParseComplete
+            socket.write(Buffer.from([0x31, 0, 0, 0, 4]));
+          } else if (type === 'B') {
+            // BindComplete
+            socket.write(Buffer.from([0x32, 0, 0, 0, 4]));
+          } else if (type === 'D') {
+            // Describe -> RowDescription ('T')
+            const responses = handler('fetch-users-prepared');
+            socket.write(responses[0]);
+          } else if (type === 'E') {
+            // Execute -> DataRow ('D') + CommandComplete ('C')
+            const responses = handler('fetch-users-prepared');
+            socket.write(Buffer.concat([responses[1], responses[2]]));
+          } else if (type === 'S') {
+            // Sync -> ReadyForQuery ('Z')
+            socket.write(Buffer.from([0x5a, 0, 0, 0, 5, 0x49]));
           } else if (type === 'X') {
             socket.end();
           }
@@ -113,6 +130,48 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
 
   // Setup the mock DB server
   const mockDb = createMockDbServer(MOCK_DB_PORT, (query) => {
+    if (query.includes('plain_data')) {
+      const rowDesc = buildRowDescription(['id', 'name', 'unencrypted_cc', 'unencrypted_email', 'unencrypted_tc', 'unencrypted_iban']);
+      const dataRow = serializeDataRow([
+        Buffer.from('2', 'utf8'),
+        Buffer.from('Alice', 'utf8'),
+        Buffer.from('4321 5555 6666 7777', 'utf8'),
+        Buffer.from('alice@company.com', 'utf8'),
+        Buffer.from('98765432101', 'utf8'),
+        Buffer.from('TR560006200000012345678901', 'utf8'),
+      ]);
+      const cmdComplete = Buffer.alloc(18);
+      cmdComplete.write('C', 0, 'ascii');
+      cmdComplete.writeInt32BE(17, 1);
+      cmdComplete.write('SELECT 1\0', 5, 'ascii');
+      const readyForQuery = Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
+      return [rowDesc, dataRow, cmdComplete, readyForQuery];
+    }
+
+    if (query.includes('concat_data')) {
+      const rowDesc = buildRowDescription(['id', 'unencrypted_cc', 'unencrypted_email']);
+      const dataRow = serializeDataRow([
+        Buffer.from('3', 'utf8'),
+        Buffer.from('CC Number: 4321 5555 6666 7777', 'utf8'),
+        Buffer.from('Email address: alice@company.com', 'utf8'),
+      ]);
+      const cmdComplete = Buffer.alloc(18);
+      cmdComplete.write('C', 0, 'ascii');
+      cmdComplete.writeInt32BE(17, 1);
+      cmdComplete.write('SELECT 1\0', 5, 'ascii');
+      const readyForQuery = Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
+      return [rowDesc, dataRow, cmdComplete, readyForQuery];
+    }
+
+    if (query.includes('DROP TABLE')) {
+      const cmdComplete = Buffer.alloc(20);
+      cmdComplete.write('C', 0, 'ascii');
+      cmdComplete.writeInt32BE(19, 1);
+      cmdComplete.write('DROP TABLE\0', 5, 'ascii');
+      const readyForQuery = Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
+      return [cmdComplete, readyForQuery];
+    }
+
     // Return row metadata: id, email, tc_no, credit_card
     const rowDesc = buildRowDescription(['id', 'users.email', 'users.tc_no', 'users.credit_card']);
     
@@ -304,6 +363,178 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       await strictProxy.stop();
       resetFailClosedStatusForTesting();
     }
+  });
+
+  await t.test('6. WAF should block SQL injection attempts', async () => {
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT,
+      user: 'postgres',
+      database: 'testdb',
+    });
+
+    await client.connect();
+    try {
+      await client.query("SELECT * FROM users WHERE username = 'admin' OR '1'='1'");
+      assert.fail('WAF should have blocked SQL Injection');
+    } catch (err) {
+      assert.match(
+        (err as Error).message,
+        /Vollcrypt WAF Blocked: SQL Injection signature detected/
+      );
+    } finally {
+      await client.end();
+    }
+  });
+
+  await t.test('7. WAF should block DDL commands for non-OWNER roles', async () => {
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT,
+      user: 'analyst_hr',
+      database: 'testdb',
+    });
+
+    await client.connect();
+    try {
+      await client.query('DROP TABLE logs');
+      assert.fail('WAF should have blocked DROP TABLE for HR_ADMIN');
+    } catch (err) {
+      assert.match(
+        (err as Error).message,
+        /Vollcrypt WAF Blocked: Unauthorized command: role "HR_ADMIN" is not permitted to execute DDL queries/
+      );
+    } finally {
+      await client.end();
+    }
+  });
+
+  await t.test('8. WAF should allow DDL commands for OWNER role', async () => {
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT,
+      user: 'postgres',
+      database: 'testdb',
+    });
+
+    await client.connect();
+    const res = await client.query('DROP TABLE logs');
+    await client.end();
+
+    assert.ok(res);
+  });
+
+  await t.test('9. DLP should dynamically scan and mask unencrypted PII strings in query responses', async () => {
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT,
+      user: 'postgres',
+      database: 'testdb',
+    });
+
+    await client.connect();
+    const res = await client.query('SELECT * FROM plain_data');
+    await client.end();
+
+    assert.strictEqual(res.rows.length, 1);
+    assert.strictEqual(res.rows[0].id, '2');
+    assert.strictEqual(res.rows[0].name, 'Alice');
+    
+    // Verifying credit card auto-masking
+    assert.strictEqual(res.rows[0].unencrypted_cc, '4321-XXXX-XXXX-7777');
+    
+    // Verifying email auto-masking
+    assert.strictEqual(res.rows[0].unencrypted_email, 'ali***@company.com');
+    
+    // Verifying national ID auto-masking
+    assert.strictEqual(res.rows[0].unencrypted_tc, '987XXXXXX01');
+    
+    // Verifying IBAN auto-masking
+    assert.strictEqual(res.rows[0].unencrypted_iban, 'TR56XXXXXXXXXXXXXXXXXX8901');
+  });
+
+  await t.test('10. WAF should block DDL commands attempted via comment delimiters or newlines', async () => {
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT,
+      user: 'analyst_hr',
+      database: 'testdb',
+    });
+
+    await client.connect();
+
+    // Test bypass attempt via comment delimiters (DROP/**/TABLE)
+    try {
+      await client.query('DROP/**/TABLE logs');
+      assert.fail('WAF should have blocked comment-delimited DROP TABLE');
+    } catch (err) {
+      assert.match(
+        (err as Error).message,
+        /Vollcrypt WAF Blocked: Unauthorized command: role "HR_ADMIN" is not permitted to execute DDL queries/
+      );
+    }
+
+    // Test bypass attempt via newline delimiter (DROP\nTABLE)
+    try {
+      await client.query('DROP\nTABLE logs');
+      assert.fail('WAF should have blocked newline-delimited DROP TABLE');
+    } catch (err) {
+      assert.match(
+        (err as Error).message,
+        /Vollcrypt WAF Blocked: Unauthorized command: role "HR_ADMIN" is not permitted to execute DDL queries/
+      );
+    }
+
+    await client.end();
+  });
+
+  await t.test('11. DLP should dynamically scan and mask concatenated PII fields to block extraction bypasses', async () => {
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT,
+      user: 'postgres',
+      database: 'testdb',
+    });
+
+    await client.connect();
+    const res = await client.query('SELECT * FROM concat_data');
+    await client.end();
+
+    assert.strictEqual(res.rows.length, 1);
+    assert.strictEqual(res.rows[0].id, '3');
+    // Verify CC was matched and masked inside the concatenated string
+    assert.strictEqual(res.rows[0].unencrypted_cc, 'CC Number: 4321-XXXX-XXXX-7777');
+    // Verify Email was matched and masked inside the concatenated string
+    assert.strictEqual(res.rows[0].unencrypted_email, 'Email address: ali***@company.com');
+  });
+
+  await t.test('12. Prepared statement column mapping state should remain in-sync across multiple executions (Extended Protocol)', async () => {
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT,
+      user: 'analyst_marketing', // Unauthorized for credit card (should be masked)
+      database: 'testdb',
+    });
+
+    await client.connect();
+
+    // Prepare a statement S1 (this will trigger Parse + Describe, caching row description columns)
+    const prepQuery = {
+      name: 'fetch-users-prepared',
+      text: 'SELECT id, users.email, users.tc_no, users.credit_card FROM users'
+    };
+
+    // First execution
+    const res1 = await client.query(prepQuery);
+    assert.strictEqual(res1.rows[0]['users.credit_card'], '1111-XXXX-XXXX-4444');
+
+    // Second execution on same session
+    // The database does NOT send a new RowDescription packet because the statement is already described.
+    // The proxy must use its statement cache to maintain schema sync.
+    const res2 = await client.query(prepQuery);
+    assert.strictEqual(res2.rows[0]['users.credit_card'], '1111-XXXX-XXXX-4444');
+
+    await client.end();
   });
 
   // Clean up servers

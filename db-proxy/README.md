@@ -10,9 +10,10 @@ A zero-trust, wire-protocol database cryptographic gateway for PostgreSQL. It tr
 
 - **Protocol-Level Interception**: Intercepts PostgreSQL v3.0 wire traffic to inspect backend `DataRow` packets without parsing or modifying complex SQL command dialects.
 - **SSL/TLS Fallback Negotiation**: Auto-refuses database client `SSLRequest` frames by responding with standard protocol fallback indicators, forcing clients to establish unencrypted TCP connections to the local proxy. This eliminates local certificate management overhead.
-- **Dynamic Data Masking (DDM)**: Integrates DDM rules (email, credit card, national ID masking) from `@vollcrypt/db-guard` based on the active connection user.
+- **Built-in Database Firewall (Database WAF / SQLi Protection)**: Scans incoming query packets ('Q' Simple Queries and 'P' Parse Extended Queries) to block SQL Injection signatures and unauthorized DDL operations (DROP, TRUNCATE, ALTER) based on the client's role.
+- **Dynamic Data Loss Prevention (DLP)**: Scans raw, unencrypted database cell responses for PII formats (Credit Cards, Emails, National IDs, and IBANs) and automatically applies masking filters in transit.
 - **Cryptographic Access Control**: Translates query-time column metadata (`RowDescription` packets) to match column tags against RBAC permissions.
-- **PostgreSQL Error Frame Mapping**: Generates authentic PostgreSQL error packets (code `42501` - Insufficient Privilege) when an unauthorized client requests columns they are not permitted to decrypt.
+- **PostgreSQL Error Frame Mapping**: Generates authentic PostgreSQL error packets (code `42501` - Insufficient Privilege) when an unauthorized client requests columns they are not permitted to decrypt or performs forbidden SQL commands.
 - **Fail-Closed Protection**: Shuts down decryption, zeroizes keys in memory, and blocks subsequent queries if the decryption rate limit or access violation threshold is crossed.
 
 ---
@@ -68,6 +69,24 @@ The proxy is configured via a JSON configuration file (`config.json`). This file
 
 ---
 
+## Dynamic Role Mapping & Masking Behavior
+
+When a SQL client connects to the proxy, the proxy parses the connection parameters:
+
+1. **Connection Username**: Resolved to a role context (e.g. connecting as `analyst_hr` maps to the `HR_ADMIN` role).
+2. **Query Validation (WAF)**:
+   - If SQL Injection signatures are found (e.g. `' OR 1=1`), the query is aborted.
+   - If DDL operations (e.g. `DROP TABLE`) are run by a non-`OWNER` role, the query is aborted.
+   - An ErrorResponse packet is sent to the client socket, and the query is stopped without ever touching the database server.
+3. **Response Inspection (DLP & Decryption)**: 
+   - A query returning columns starting with the ciphertext header `VOLLVALT:` is scanned.
+     - If the role is authorized to decrypt the column, the proxy returns the plaintext cell.
+     - If the role is unauthorized but has a masking rule, the proxy returns the masked cell.
+     - If the role is unauthorized and no masking rule is defined, the query aborts immediately. The proxy sends a native PostgreSQL error packet (`42501` - Insufficient Privilege) back to the client.
+   - Raw columns (without `VOLLVALT:` prefix) are scanned by the DLP engine. If a cell matches Credit Cards, Emails, National IDs, or IBAN formats, it is dynamically masked before transmission.
+
+---
+
 ## Build from Source
 
 Navigate to the `db-proxy` folder and build the package:
@@ -83,6 +102,16 @@ Run the integration tests:
 ```bash
 npm test
 ```
+
+---
+
+## Enterprise Features Roadmap
+
+### 1. Post-Quantum mTLS Termination
+Implement custom hybrid mTLS handshakes (Ed25519 + ML-DSA-65) for client-to-proxy certificate authentication, cryptographically preventing unauthorized machines from establishing TCP connections to the gateway.
+
+### 2. Cryptographic Connection Pooling
+Multiplex client connections into a persistent backend pool to reduce database connection allocation costs, and cache KMS key handshakes locally in memory within the secure cache wrapper.
 
 ---
 

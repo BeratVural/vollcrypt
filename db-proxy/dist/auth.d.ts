@@ -15,6 +15,7 @@ export interface ProxyConfig {
             mask?: Record<string, 'credit_card' | 'email' | 'tc_no' | string>;
         }>;
     };
+    rateLimiter?: any;
 }
 /**
  * Resolves a database user context based on the incoming username and configuration.

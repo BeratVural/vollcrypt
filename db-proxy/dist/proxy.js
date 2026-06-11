@@ -40,6 +40,8 @@ const buffer_1 = require("buffer");
 const pg_protocol_js_1 = require("./pg-protocol.js");
 const auth_js_1 = require("./auth.js");
 const db_guard_1 = require("@vollcrypt/db-guard");
+const waf_js_1 = require("./waf.js");
+const dlp_js_1 = require("./dlp.js");
 /**
  * Serializes a PostgreSQL protocol ErrorResponse ('E') message.
  */
@@ -117,6 +119,10 @@ class DbProxyServer {
         let userContext = null;
         let currentColumns = [];
         let isSslNegotiated = false;
+        // Prepared statement and portal schema caches to prevent Extended Protocol bypasses
+        const statements = new Map();
+        const portals = new Map();
+        let lastDescribeRequest = null;
         // Handle client to backend stream
         clientSocket.on('data', (data) => {
             try {
@@ -137,6 +143,75 @@ class DbProxyServer {
                         backendSocket.write(msg);
                     }
                     else {
+                        // WAF Validation and Prepared Statement tracking
+                        const type = msg[0];
+                        let queryStr = null;
+                        if (type === 81) { // 'Q' (Simple Query)
+                            queryStr = msg.subarray(5, msg.length - 1).toString('utf8');
+                            currentColumns = []; // Reset simple query schema state
+                        }
+                        else if (type === 80) { // 'P' (Parse prepared statement)
+                            const destNameNull = msg.indexOf(0, 5);
+                            if (destNameNull !== -1) {
+                                const statementName = msg.toString('utf8', 5, destNameNull);
+                                const queryStart = destNameNull + 1;
+                                const queryNull = msg.indexOf(0, queryStart);
+                                if (queryNull !== -1) {
+                                    queryStr = msg.toString('utf8', queryStart, queryNull);
+                                    statements.set(statementName, { query: queryStr });
+                                }
+                            }
+                        }
+                        else if (type === 66) { // 'B' (Bind portal)
+                            const portalNull = msg.indexOf(0, 5);
+                            if (portalNull !== -1) {
+                                const portalName = msg.toString('utf8', 5, portalNull);
+                                const stmtStart = portalNull + 1;
+                                const stmtNull = msg.indexOf(0, stmtStart);
+                                if (stmtNull !== -1) {
+                                    const statementName = msg.toString('utf8', stmtStart, stmtNull);
+                                    const stmt = statements.get(statementName);
+                                    portals.set(portalName, {
+                                        statementName,
+                                        columns: stmt?.columns,
+                                    });
+                                }
+                            }
+                        }
+                        else if (type === 68) { // 'D' (Describe)
+                            if (msg.length >= 7) {
+                                const descType = String.fromCharCode(msg[5]);
+                                const nameNull = msg.indexOf(0, 6);
+                                if (nameNull !== -1) {
+                                    const name = msg.toString('utf8', 6, nameNull);
+                                    lastDescribeRequest = { type: descType, name };
+                                }
+                            }
+                        }
+                        else if (type === 69) { // 'E' (Execute)
+                            const portalNull = msg.indexOf(0, 5);
+                            if (portalNull !== -1) {
+                                const portalName = msg.toString('utf8', 5, portalNull);
+                                const portal = portals.get(portalName);
+                                if (portal && portal.columns) {
+                                    currentColumns = portal.columns;
+                                }
+                            }
+                        }
+                        if (queryStr) {
+                            try {
+                                (0, waf_js_1.validateQuery)(queryStr, userContext.role);
+                            }
+                            catch (err) {
+                                const violationMsg = err.message;
+                                // Write standard PostgreSQL protocol error frame back to the client
+                                clientSocket.write(serializeErrorResponse(`Vollcrypt WAF Blocked: ${violationMsg}`));
+                                // Send ReadyForQuery ('Z') so client CLI / DBeaver doesn't hang
+                                const readyForQuery = buffer_1.Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
+                                clientSocket.write(readyForQuery);
+                                continue;
+                            }
+                        }
                         backendSocket.write(msg);
                     }
                 }
@@ -155,6 +230,21 @@ class DbProxyServer {
                     const type = msg[0];
                     if (type === 84) { // 'T' -> RowDescription
                         currentColumns = (0, pg_protocol_js_1.parseRowDescription)(msg);
+                        // Map the parsed description to the active prepared statement or portal
+                        if (lastDescribeRequest) {
+                            if (lastDescribeRequest.type === 'S') {
+                                const stmt = statements.get(lastDescribeRequest.name);
+                                if (stmt) {
+                                    stmt.columns = currentColumns;
+                                }
+                            }
+                            else if (lastDescribeRequest.type === 'P') {
+                                const portal = portals.get(lastDescribeRequest.name);
+                                if (portal) {
+                                    portal.columns = currentColumns;
+                                }
+                            }
+                        }
                         clientSocket.write(msg);
                     }
                     else if (type === 68) { // 'D' -> DataRow
@@ -185,6 +275,7 @@ class DbProxyServer {
                                         }
                                         return (0, db_guard_1.decryptWithSecurity)(strVal, (cipherText) => (0, db_guard_1.decryptValue)(cipherText, this.options.resolvedKeys), modelName, fieldName, undefined, {
                                             cryptoRbac: (0, auth_js_1.getRbacConfig)(this.options.config),
+                                            rateLimiter: this.options.config?.rateLimiter,
                                         });
                                     });
                                     const decryptedStr = typeof decrypted === 'string' ? decrypted : JSON.stringify(decrypted);
@@ -196,7 +287,14 @@ class DbProxyServer {
                                 }
                             }
                             else {
-                                modifiedValues.push(val);
+                                // DLP Auto-PII scanning on unencrypted text cells
+                                const maskedVal = (0, dlp_js_1.scanAndMaskCell)(strVal);
+                                if (maskedVal !== strVal) {
+                                    modifiedValues.push(buffer_1.Buffer.from(maskedVal, 'utf8'));
+                                }
+                                else {
+                                    modifiedValues.push(val);
+                                }
                             }
                         }
                         if (encryptionError) {
