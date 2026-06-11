@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:b8aadc07-8233-45bf-9549-5cb5de4573da",
+  "serialNumber": "urn:uuid:3f1b85cc-1214-411d-b559-97018328b572",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-06-11T12:56:18.421Z",
+    "timestamp": "2026-06-11T13:14:40.057Z",
     "tools": [
       {
         "vendor": "Vollcrypt",
@@ -13,10 +13,10 @@
       }
     ],
     "component": {
-      "bomRef": "pkg:npm/@vollcrypt/db-guard@0.1.0",
+      "bomRef": "pkg:npm/@vollcrypt/db-guard@0.1.1",
       "type": "library",
       "name": "@vollcrypt/db-guard",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Database field-level encryption integrations for Vollcrypt (Prisma, Mongoose, Drizzle, TypeORM)",
       "hashes": [
         {
@@ -85,11 +85,11 @@
         },
         {
           "alg": "SHA-256",
-          "content": "85bbbfdbf47b5ce72c29071004664aa8d4c872107a9f1826daaec53f3b40182b"
+          "content": "554d9ba00f800470666ab66127079df889b8d717a9cf7b28ab252f0adad64304"
         },
         {
           "alg": "SHA-256",
-          "content": "8d3d398281d7d268e874f540c58371a4ba6410e19d5804d2cdde8fb7628531da"
+          "content": "5e907c9f5ec9fb93ef07f6360d7f8572aa5a1ea1c0a32d0b10496477d0b8fd33"
         },
         {
           "alg": "SHA-256",

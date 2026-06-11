@@ -19,6 +19,8 @@ export interface UserContext {
     maxPageSize?: number;
     onPageSizeExceeded?: 'warn' | 'error' | 'bypass';
     tenantId?: string;
+    decryptCount?: number;
+    windowStart?: number;
 }
 export declare const dbGuardContextStore: AsyncLocalStorage<UserContext>;
 export declare function maskValue(val: any, rule: 'credit_card' | 'email' | 'tc_no' | ((v: any) => any) | string): any;
