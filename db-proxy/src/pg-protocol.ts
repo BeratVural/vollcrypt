@@ -243,4 +243,43 @@ export function serializePasswordMessage(password: string): Buffer {
   return buf;
 }
 
+/**
+ * Serializes a PostgreSQL Query ('Q') packet.
+ */
+export function serializeQueryMessage(query: string): Buffer {
+  const queryBuf = Buffer.from(query, 'utf8');
+  const msgLen = 4 + queryBuf.length + 1;
+  const buf = Buffer.alloc(1 + msgLen);
+  buf.write('Q', 0, 'ascii');
+  buf.writeInt32BE(msgLen, 1);
+  queryBuf.copy(buf, 5);
+  buf.writeUInt8(0, 5 + queryBuf.length);
+  return buf;
+}
+
+/**
+ * Serializes a PostgreSQL Parse ('P') packet, replacing the query string.
+ */
+export function serializeParseMessage(
+  statementName: string,
+  query: string,
+  originalMsg: Buffer,
+  queryNull: number
+): Buffer {
+  const stmtBuf = Buffer.from(statementName, 'utf8');
+  const queryBuf = Buffer.from(query, 'utf8');
+  const trailingBytes = originalMsg.subarray(queryNull + 1);
+  const msgLen = 4 + stmtBuf.length + 1 + queryBuf.length + 1 + trailingBytes.length;
+  const buf = Buffer.alloc(1 + msgLen);
+  buf.write('P', 0, 'ascii');
+  buf.writeInt32BE(msgLen, 1);
+  stmtBuf.copy(buf, 5);
+  buf.writeUInt8(0, 5 + stmtBuf.length);
+  queryBuf.copy(buf, 5 + stmtBuf.length + 1);
+  buf.writeUInt8(0, 5 + stmtBuf.length + 1 + queryBuf.length);
+  trailingBytes.copy(buf, 5 + stmtBuf.length + 1 + queryBuf.length + 1);
+  return buf;
+}
+
+
 

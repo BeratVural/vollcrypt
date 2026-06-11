@@ -14,6 +14,10 @@ export interface FirewallConfig {
     mode: 'learning' | 'blocking';
     allowlistPath?: string;
   };
+  jitApprovalRequired?: boolean;
+  anomalyEngine?: {
+    enabled: boolean;
+  };
 }
 
 export interface ProxyConfig {

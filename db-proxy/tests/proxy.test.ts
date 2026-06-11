@@ -187,6 +187,56 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       return [cmdComplete, readyForQuery];
     }
 
+    if (query.includes('XXXX-XXXX-XXXX-') && query.includes('AS credit_card')) {
+      const rowDesc = buildRowDescription(['credit_card']);
+      const dataRow = serializeDataRow([Buffer.from('XXXX-XXXX-XXXX-4444', 'utf8')]);
+      const cmdComplete = Buffer.alloc(18);
+      cmdComplete.write('C', 0, 'ascii');
+      cmdComplete.writeInt32BE(17, 1);
+      cmdComplete.write('SELECT 1\0', 5, 'ascii');
+      const readyForQuery = Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
+      return [rowDesc, dataRow, cmdComplete, readyForQuery];
+    }
+
+    if (query.includes("WHERE tenant_id = 'org_marketing'")) {
+      const rowDesc = buildRowDescription(['invoice_id', 'tenant_id']);
+      const dataRow = serializeDataRow([
+        Buffer.from('inv_01', 'utf8'),
+        Buffer.from('org_marketing', 'utf8'),
+      ]);
+      const cmdComplete = Buffer.alloc(18);
+      cmdComplete.write('C', 0, 'ascii');
+      cmdComplete.writeInt32BE(17, 1);
+      cmdComplete.write('SELECT 1\0', 5, 'ascii');
+      const readyForQuery = Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
+      return [rowDesc, dataRow, cmdComplete, readyForQuery];
+    }
+
+    if (query.includes('avg_salary')) {
+      const rowDesc = buildRowDescription(['avg_salary']);
+      const dataRow = serializeDataRow([Buffer.from('5000.00', 'utf8')]);
+      const cmdComplete = Buffer.alloc(18);
+      cmdComplete.write('C', 0, 'ascii');
+      cmdComplete.writeInt32BE(17, 1);
+      cmdComplete.write('SELECT 1\0', 5, 'ascii');
+      const readyForQuery = Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
+      return [rowDesc, dataRow, cmdComplete, readyForQuery];
+    }
+
+    if (query.includes('high_egress_data')) {
+      const rowDesc = buildRowDescription(['id']);
+      const rows: Buffer[] = [];
+      for (let i = 0; i < 105; i++) {
+        rows.push(serializeDataRow([Buffer.from(String(i), 'utf8')]));
+      }
+      const cmdComplete = Buffer.alloc(18);
+      cmdComplete.write('C', 0, 'ascii');
+      cmdComplete.writeInt32BE(17, 1);
+      cmdComplete.write('SELECT 1\0', 5, 'ascii');
+      const readyForQuery = Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
+      return [rowDesc, ...rows, cmdComplete, readyForQuery];
+    }
+
     // Return row metadata: id, email, tc_no, credit_card
     const rowDesc = buildRowDescription(['id', 'users.email', 'users.tc_no', 'users.credit_card']);
     
@@ -215,6 +265,7 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       postgres: { role: 'OWNER', userId: 'usr-admin' },
       analyst_hr: { role: 'HR_ADMIN', userId: 'usr-hr-01' },
       analyst_marketing: { role: 'MARKETING', userId: 'usr-mkt-01' },
+      tenant_user: { role: 'MARKETING', userId: 'usr-mkt-tenant', tenantId: 'org_marketing' },
       unauthorized_user: { role: 'GUEST', userId: 'usr-guest-01' },
     },
     cryptoRbac: {
@@ -941,6 +992,508 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     assert.strictEqual(res.rows[0].name, 'Alice');
 
     await client.end();
+  });
+
+  await t.test('22. SQL Query Rewriting and Masking (Dynamic Masking Expression Injection)', async () => {
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT,
+      user: 'analyst_marketing',
+      database: 'testdb',
+    });
+
+    await client.connect();
+    const res = await client.query('SELECT credit_card FROM users');
+    assert.strictEqual(res.rows[0].credit_card, 'XXXX-XXXX-XXXX-4444');
+    await client.end();
+  });
+
+  await t.test('23. Automatic Row-Level Security (RLS) Tenant Injection', async () => {
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT,
+      user: 'tenant_user',
+      database: 'testdb',
+    });
+
+    await client.connect();
+    const res = await client.query('SELECT * FROM invoices');
+    assert.strictEqual(res.rows[0].invoice_id, 'inv_01');
+    assert.strictEqual(res.rows[0].tenant_id, 'org_marketing');
+    await client.end();
+  });
+
+  await t.test('24. Differential Privacy (Laplace Noise Aggregate Injection)', async () => {
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT,
+      user: 'postgres',
+      database: 'testdb',
+    });
+
+    await client.connect();
+    const res = await client.query('SELECT avg_salary FROM salary_stats');
+    const val = parseFloat(res.rows[0].avg_salary);
+    assert.ok(!isNaN(val));
+    assert.notStrictEqual(val, 5000.00);
+    assert.ok(Math.abs(val - 5000.00) < 10.0);
+    await client.end();
+  });
+
+  await t.test('25. Behavioral Anomaly Throttling and SIEM Logging', async () => {
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT,
+      user: 'postgres',
+      database: 'testdb',
+    });
+
+    // Clean up or delete existing SIEM log file so we can isolate this test
+    if (fs.existsSync('logs/siem.cef')) {
+      fs.unlinkSync('logs/siem.cef');
+    }
+
+    await client.connect();
+    const start = Date.now();
+    const res = await client.query('SELECT * FROM high_egress_data');
+    const duration = Date.now() - start;
+
+    assert.strictEqual(res.rows.length, 105);
+    // Since total egress rows is 105 (>100), we expect throttling (50ms delay for rows > 100)
+    // 5 rows * 50ms = 250ms delay. So duration should be at least 200ms.
+    assert.ok(duration >= 200, `Throttling did not introduce expected delay (duration: ${duration}ms)`);
+
+    // Verify SIEM CEF log was created and contains expected information
+    assert.ok(fs.existsSync('logs/siem.cef'));
+    const cefContent = fs.readFileSync('logs/siem.cef', 'utf8');
+    assert.match(cefContent, /ANOMALY_DETECTED/);
+    assert.match(cefContent, /High row egress volume anomaly detected/);
+    await client.end();
+  });
+
+  await t.test('26. Timing Attack Mitigation (Query and WAF Constant-Time Padding)', async () => {
+    const timeProxyOptions: DbProxyOptions = {
+      port: PROXY_PORT + 30,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_DB_PORT,
+      config: {
+        users: { postgres: { role: 'OWNER', userId: 'usr-admin' } }
+      },
+      resolvedKeys: { '1': KEY },
+      minResponseTimeMs: 40,
+    };
+
+    const timeProxy = new DbProxyServer(timeProxyOptions);
+    await timeProxy.start();
+
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT + 30,
+      user: 'postgres',
+      database: 'testdb',
+    });
+
+    await client.connect();
+
+    // 1. Check query execution timing
+    const t0 = Date.now();
+    await client.query('SELECT 1');
+    const d0 = Date.now() - t0;
+    assert.ok(d0 >= 35, `Query round-trip was too fast (duration: ${d0}ms)`);
+
+    // 2. Check WAF block timing
+    const t1 = Date.now();
+    try {
+      await client.query("SELECT * FROM users WHERE username = 'admin' OR '1'='1'");
+      assert.fail('Should have blocked SQLi');
+    } catch (err) {
+      const d1 = Date.now() - t1;
+      assert.ok(d1 >= 35, `WAF block was too fast (duration: ${d1}ms)`);
+      assert.match((err as Error).message, /Vollcrypt WAF Blocked/);
+    }
+
+    await client.end();
+    await timeProxy.stop();
+  });
+
+  await t.test('27. Enclave Remote Attestation SQL Interception', async () => {
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT,
+      user: 'postgres',
+      database: 'testdb',
+    });
+
+    await client.connect();
+    const res = await client.query('SELECT VOLLCRYPT_ATTESTATION_REPORT();');
+    await client.end();
+
+    assert.strictEqual(res.rows.length, 1);
+    const reportStr = res.rows[0].attestation_report;
+    assert.ok(reportStr);
+    
+    const report = JSON.parse(reportStr);
+    assert.strictEqual(report.attestation_type, 'Intel SGX Quote');
+    assert.ok(report.mrenclave);
+    assert.ok(report.mrsigner);
+    assert.ok(report.quote_signature);
+  });
+
+  await t.test('28. P2P Clustering and IP Ban Synchronization', async () => {
+    const node1Options: DbProxyOptions = {
+      port: PROXY_PORT + 40,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_DB_PORT,
+      config: {
+        users: { postgres: { role: 'OWNER', userId: 'usr-admin' } },
+        firewall: {
+          ipBanning: { enabled: true }
+        }
+      },
+      resolvedKeys: { '1': KEY },
+      gossipPort: 16001,
+      peers: ['127.0.0.1:16001', '127.0.0.1:16002'],
+      minResponseTimeMs: 0,
+    };
+
+    const node2Options: DbProxyOptions = {
+      port: PROXY_PORT + 41,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_DB_PORT,
+      config: {
+        users: { postgres: { role: 'OWNER', userId: 'usr-admin' } },
+        firewall: {
+          ipBanning: { enabled: true }
+        }
+      },
+      resolvedKeys: { '1': KEY },
+      gossipPort: 16002,
+      peers: ['127.0.0.1:16001', '127.0.0.1:16002'],
+      minResponseTimeMs: 0,
+    };
+
+    const node1 = new DbProxyServer(node1Options);
+    const node2 = new DbProxyServer(node2Options);
+
+    await node1.start();
+    await node2.start();
+
+    // Give cluster a moment to sync P2P sockets
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    // 1. Connect client to Node 1 and trigger WAF violation (SQLi)
+    const client1 = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT + 40,
+      user: 'postgres',
+      database: 'testdb',
+    });
+
+    await client1.connect();
+    try {
+      await client1.query("SELECT * FROM users WHERE username = 'admin' OR '1'='1'");
+    } catch (err) {
+      // Expected block
+    }
+    await client1.end();
+
+    // Wait a brief moment for the cluster BAN_IP gossip message to propagate
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    // 2. Try to connect to Node 2. It should immediately drop the connection!
+    const client2 = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT + 41,
+      user: 'postgres',
+      database: 'testdb',
+      connectionTimeoutMillis: 1000,
+    });
+
+    try {
+      await client2.connect();
+      assert.fail('Node 2 should have immediately dropped the connection from the banned IP');
+    } catch (err) {
+      assert.ok(err);
+    } finally {
+      await node1.stop();
+      await node2.stop();
+    }
+  });
+
+  await t.test('29. CLI Hybrid Parser and Interactive Menu Configuration', async () => {
+    const { handleHybridStartup } = await import('../src/index.js');
+
+    const defaults = {
+      minResponseTimeMs: 15,
+      noAttestation: false,
+      noDlp: false,
+      noWaf: false,
+      noIpBanning: false,
+      fipsMode: false,
+      jitApprovalRequired: false,
+      anomalyEngine: false,
+    };
+
+    const originalTTY = process.stdin.isTTY;
+    const originalWrite = process.stdout.write;
+    const originalSetRawMode = process.stdin.setRawMode;
+
+    try {
+      // Silence stdout
+      process.stdout.write = () => true;
+
+      // Mock TTY as false (non-interactive fallback)
+      Object.defineProperty(process.stdin, 'isTTY', {
+        value: false,
+        configurable: true
+      });
+
+      const resNonTty = await handleHybridStartup(defaults);
+      assert.deepStrictEqual(resNonTty, defaults);
+
+      // Mock TTY as true (interactive)
+      Object.defineProperty(process.stdin, 'isTTY', {
+        value: true,
+        configurable: true
+      });
+      process.stdin.setRawMode = (() => process.stdin) as any;
+
+      // Case 2: TTY true, emit ENTER immediately to start with defaults
+      const pEnter = handleHybridStartup(defaults);
+      process.stdin.emit('keypress', '', { name: 'enter' });
+      const resEnter = await pEnter;
+      assert.deepStrictEqual(resEnter, defaults);
+
+      // Case 3: TTY true, press SPACE to enter menu, toggle Enclave Remote Attestation [OFF], then confirm with ENTER
+      const pSpace = handleHybridStartup(defaults);
+      process.stdin.emit('keypress', '', { name: 'space' });
+      // In showInteractiveMenu:
+      // index 0: Timing Attack Mitigation
+      // index 1: Enclave Remote Attestation
+      // Let's press down arrow to go to Enclave Remote Attestation, then space to toggle, then enter
+      process.stdin.emit('keypress', '', { name: 'down' });
+      process.stdin.emit('keypress', '', { name: 'space' });
+      process.stdin.emit('keypress', '', { name: 'enter' });
+
+      const resSpace = await pSpace;
+      assert.strictEqual(resSpace.noAttestation, true);
+      assert.strictEqual(resSpace.noDlp, false); // untouched
+
+      // Case 4: Toggle FIPS mode (index 5)
+      const pFips = handleHybridStartup(defaults);
+      process.stdin.emit('keypress', '', { name: 'space' });
+      // Go down 5 times to FIPS Compliance
+      process.stdin.emit('keypress', '', { name: 'down' });
+      process.stdin.emit('keypress', '', { name: 'down' });
+      process.stdin.emit('keypress', '', { name: 'down' });
+      process.stdin.emit('keypress', '', { name: 'down' });
+      process.stdin.emit('keypress', '', { name: 'down' });
+      process.stdin.emit('keypress', '', { name: 'space' });
+      process.stdin.emit('keypress', '', { name: 'enter' });
+
+      const resFips = await pFips;
+      assert.strictEqual(resFips.fipsMode, true);
+    } finally {
+      process.stdout.write = originalWrite;
+      process.stdin.setRawMode = originalSetRawMode;
+      Object.defineProperty(process.stdin, 'isTTY', {
+        value: originalTTY,
+        configurable: true
+      });
+    }
+  });
+
+  await t.test('30. Multi-Database Protocol Proxy WAF Interception (MySQL and MongoDB)', async () => {
+    // 1. MySQL WAF block test
+    const mysqlOptions: DbProxyOptions = {
+      port: PROXY_PORT + 50,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_DB_PORT,
+      resolvedKeys: { '1': KEY },
+      dbType: 'mysql',
+      minResponseTimeMs: 0,
+    };
+    const mysqlProxy = new DbProxyServer(mysqlOptions);
+    await mysqlProxy.start();
+
+    // Connect mock MySQL socket client
+    const mysqlClient = net.connect({ port: PROXY_PORT + 50 });
+    await new Promise((resolve) => mysqlClient.on('connect', resolve));
+
+    // Send mock COM_QUERY packet (packet len 42, sequence 0, command 0x03)
+    const sqlQuery = "SELECT * FROM users WHERE username = 'admin' OR '1'='1'";
+    const queryBuf = Buffer.from(sqlQuery, 'utf8');
+    const mysqlReq = Buffer.alloc(5 + queryBuf.length);
+    mysqlReq.writeUIntLE(queryBuf.length + 1, 0, 3); // Payload len
+    mysqlReq[3] = 0; // Seq ID
+    mysqlReq[4] = 0x03; // COM_QUERY
+    queryBuf.copy(mysqlReq, 5);
+
+    const mysqlResponsePromise = new Promise<Buffer>((resolve) => mysqlClient.once('data', resolve));
+    mysqlClient.write(mysqlReq);
+
+    const mysqlRes = await mysqlResponsePromise;
+    mysqlClient.end();
+    await mysqlProxy.stop();
+
+    // Verify response is MySQL Error Packet (0xff)
+    assert.strictEqual(mysqlRes[4], 0xff);
+    assert.ok(mysqlRes.toString('utf8').includes('SQL Injection'));
+
+    // 2. MongoDB WAF block test
+    const mongoOptions: DbProxyOptions = {
+      port: PROXY_PORT + 51,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_DB_PORT,
+      resolvedKeys: { '1': KEY },
+      dbType: 'mongodb',
+      minResponseTimeMs: 0,
+    };
+    const mongoProxy = new DbProxyServer(mongoOptions);
+    await mongoProxy.start();
+
+    const mongoClient = net.connect({ port: PROXY_PORT + 51 });
+    await new Promise((resolve) => mongoClient.on('connect', resolve));
+
+    // Construct mock OP_MSG containing a dangerous dropDatabase command
+    const mongoCommand = "dropDatabase";
+    const mongoCmdBuf = Buffer.from(mongoCommand, 'utf8');
+    const mongoReq = Buffer.alloc(16 + mongoCmdBuf.length);
+    mongoReq.writeInt32LE(mongoReq.length, 0); // messageLength
+    mongoReq.writeInt32LE(1, 4); // requestId
+    mongoReq.writeInt32LE(0, 8); // responseTo
+    mongoReq.writeInt32LE(2013, 12); // OP_MSG
+    mongoCmdBuf.copy(mongoReq, 16);
+
+    const mongoResponsePromise = new Promise<Buffer>((resolve) => mongoClient.once('data', resolve));
+    mongoClient.write(mongoReq);
+
+    const mongoRes = await mongoResponsePromise;
+    mongoClient.end();
+    await mongoProxy.stop();
+
+    // Verify response has OP_MSG opcode (2013) and includes BSON error text
+    const resOpCode = mongoRes.readInt32LE(12);
+    assert.strictEqual(resOpCode, 2013);
+    assert.ok(mongoRes.toString('utf8').includes('dropDatabase'));
+  });
+
+  await t.test('31. MPC Split-Key Decryption Key Reconstruction', async () => {
+    // Create 3 shares of a 32-byte key
+    const share1 = Buffer.alloc(32, 0x0f);
+    const share2 = Buffer.alloc(32, 0xf0);
+    const share3 = Buffer.alloc(32, 0xaa); // 0x0f ^ 0xf0 ^ 0xaa = 0x55
+
+    const mpcOptions: DbProxyOptions = {
+      port: PROXY_PORT + 52,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_DB_PORT,
+      resolvedKeys: {},
+      mpcShares: [share1, share2, share3],
+      minResponseTimeMs: 0,
+    };
+    const mpcProxy = new DbProxyServer(mpcOptions);
+    await mpcProxy.start();
+
+    // Reconstructed key in resolvedKeys['1'] should be 32 bytes of 0x55
+    const reconstructedKey = (mpcProxy as any).options.resolvedKeys['1'];
+    assert.ok(reconstructedKey);
+    assert.strictEqual(reconstructedKey[0], 0x55);
+    await mpcProxy.stop();
+  });
+
+  await t.test('32. AI-Driven Semantic Anomaly Threat Scoring and Blocking', async () => {
+    const anomalyOptions: DbProxyOptions = {
+      port: PROXY_PORT + 53,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_DB_PORT,
+      resolvedKeys: { '1': KEY },
+      config: {
+        users: { postgres: { role: 'LAWYER', userId: 'usr-lawyer' } },
+        firewall: {
+          anomalyEngine: { enabled: true }
+        }
+      },
+      minResponseTimeMs: 0,
+    };
+    const anomalyProxy = new DbProxyServer(anomalyOptions);
+    await anomalyProxy.start();
+
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT + 53,
+      user: 'postgres',
+      database: 'testdb',
+    });
+
+    await client.connect();
+
+    // Normal query similar to baseline profile
+    const normalRes = await client.query('SELECT * FROM users WHERE id = 1');
+    assert.ok(normalRes);
+
+    // Highly anomalous query: 'DROP TABLE log_audits CASCADE'
+    try {
+      await client.query('DROP TABLE log_audits CASCADE');
+      assert.fail('Anomalous query should be blocked by AI anomaly engine');
+    } catch (err: any) {
+      assert.ok(err.message.includes('AI Anomaly'));
+    } finally {
+      await client.end();
+      await anomalyProxy.stop();
+    }
+  });
+
+  await t.test('33. JIT Asynchronous Access Approval Webhook Simulation', async () => {
+    const jitOptions: DbProxyOptions = {
+      port: PROXY_PORT + 54,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_DB_PORT,
+      resolvedKeys: { '1': KEY },
+      config: {
+        users: { postgres: { role: 'LAWYER', userId: 'usr-lawyer' } },
+        firewall: {
+          jitApprovalRequired: true
+        }
+      },
+      minResponseTimeMs: 0,
+    };
+    const jitProxy = new DbProxyServer(jitOptions);
+    await jitProxy.start();
+
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT + 54,
+      user: 'postgres',
+      database: 'testdb',
+    });
+
+    await client.connect();
+
+    // Query should trigger JIT webhook simulation, pause connection, get approved, and execute successfully
+    const res = await client.query('SELECT 1');
+    assert.ok(res);
+
+    await client.end();
+    await jitProxy.stop();
+  });
+
+  await t.test('34. FIPS 140-3 Compliance Boundary Mode Log Verification', async () => {
+    const fipsOptions: DbProxyOptions = {
+      port: PROXY_PORT + 55,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_DB_PORT,
+      resolvedKeys: { '1': KEY },
+      fipsMode: true,
+      minResponseTimeMs: 0,
+    };
+    const fipsProxy = new DbProxyServer(fipsOptions);
+    await fipsProxy.start();
+    await fipsProxy.stop();
+
+    // Check that CEF SIEM log has FIPS_INIT message
+    const logContent = fs.readFileSync('logs/siem.cef', 'utf8');
+    assert.ok(logContent.includes('FIPS_INIT'));
   });
 
   // Clean up servers

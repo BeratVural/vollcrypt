@@ -19,3 +19,22 @@ export declare function generateFingerprint(query: string): string;
  * Evaluates semantic threats in a SQL query and returns a combined threat score.
  */
 export declare function evaluateThreatScore(query: string): number;
+/**
+ * Rewrites SQL queries to inject RLS tenant isolation and database-level masking rules.
+ */
+/**
+ * Tokenizes SQL query string to isolate strings and symbols.
+ */
+export declare function tokenizeSql(sql: string): string[];
+/**
+ * Rewrites SQL queries to inject RLS tenant isolation and database-level masking rules.
+ */
+export declare function rewriteQuery(sql: string, role: string, tenantId: string | undefined, config: any): string;
+/**
+ * Generates Laplace noise for Differential Privacy.
+ */
+export declare function generateLaplaceNoise(scale: number): number;
+/**
+ * Generates mock Remote Attestation Quote for secure enclave execution verification.
+ */
+export declare function getMockAttestationReport(): any;
