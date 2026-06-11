@@ -32,6 +32,7 @@ Explore the specific modules of Vollcrypt:
 *   📁 **[Vollcrypt Files Module Documentation (README-files.md)](README-files.md)** - Active Development, streaming chunk-based encryption, and Merkle tree verification.
 *   🖥️ **[Vollcrypt Desktop App Module Documentation (README-desktop.md)](README-desktop.md)** - Frameless, dark-mode native desktop application for file and text cryptography.
 *   **[Vollcrypt DB-Guard Module Documentation (README-db-guard.md)](README-db-guard.md)** - FIPS-compliant database field-level encryption integrations (Prisma, Mongoose, Drizzle, TypeORM, Diesel, SeaORM) with dynamic KMS routing and PKCS#11 HSM support.
+*   **[Vollcrypt DB-Proxy Module Documentation (README-db-proxy.md)](README-db-proxy.md)** - Zero-trust database protocol proxy (PostgreSQL) executing dynamic envelope decryption and dynamic data masking (DDM) on-the-fly for off-the-shelf BI tools and SQL clients.
 
 ---
 
@@ -42,6 +43,8 @@ This repository is organized as a monorepo containing the following modules:
 *   `vollcrypt-messages/`: The Rust implementation and bindings for E2EE messaging (Node.js and WebAssembly).
 *   `vollcrypt-files/`: The Rust implementation and core logic for E2EE file/stream chunking and verification.
 *   `vollcrypt-desktop/`: Cross-platform desktop application built with Tauri (Rust) and React + Vanilla CSS.
+*   `db-guard/`: FIPS-compliant database field-level encryption adapters for Node.js ORMs and Rust ORMs.
+*   `db-proxy/`: A database wire-protocol proxy for transparent field decryption and masking in-transit.
 
 ```mermaid
 graph TD

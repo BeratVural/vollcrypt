@@ -1,0 +1,39 @@
+{
+  "name": "@vollcrypt/db-proxy",
+  "version": "0.1.0",
+  "description": "Database cryptographic gateway proxy for transparent PostgreSQL field-level decryption",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "vollcrypt-db-proxy": "dist/index.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BeratVural/vollcrypt.git",
+    "directory": "db-proxy"
+  },
+  "author": "Berat Vural <berat.vural.tr@gmail.com>",
+  "license": "GPL-3.0-only OR LicenseRef-Commercial",
+  "bugs": {
+    "url": "https://github.com/BeratVural/vollcrypt/issues"
+  },
+  "homepage": "https://github.com/BeratVural/vollcrypt/tree/main/db-proxy#readme",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "node --import tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@vollcrypt/db-guard": "file:../db-guard/node"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.11.0",
+    "pg": "^8.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.5.2"
+  }
+}
