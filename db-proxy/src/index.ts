@@ -211,7 +211,7 @@ async function runCli() {
   let fipsMode = false;
   let jitApprovalRequired = false;
   let anomalyEngine = false;
-  let dbType: 'postgres' | 'mysql' | 'mongodb' = 'postgres';
+  let dbType: 'postgres' | 'mysql' | 'mongodb' | 'mssql' | 'oracle' = 'postgres';
   let gossipPort: number | undefined;
   let peers: string[] | undefined;
   let interactiveMode: boolean | null = null;

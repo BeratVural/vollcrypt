@@ -14,3 +14,5 @@ CEF:0|Vollcrypt|DB-Proxy|1.0|WAF_BLOCK|WAF_BLOCK|8|src=::ffff:127.0.0.1 usrName=
 CEF:0|Vollcrypt|DB-Proxy|1.0|JIT_REQUESTED|JIT_REQUESTED|6|src=::ffff:127.0.0.1 usrName=usr-lawyer msg=JIT request triggered for query: SELECT 1
 CEF:0|Vollcrypt|DB-Proxy|1.0|JIT_APPROVED|JIT_APPROVED|6|src=127.0.0.1 usrName=system msg=JIT request automatically approved for user usr-lawyer
 CEF:0|Vollcrypt|DB-Proxy|1.0|FIPS_INIT|FIPS_INIT|1|src=127.0.0.1 usrName=system msg=FIPS 140-3 boundary compliance enabled. FIPS status: false
+CEF:0|Vollcrypt|DB-Proxy|1.0|WAF_MSSQL_BLOCK|WAF_MSSQL_BLOCK|9|src=::1 usrName=mssql_user msg=MSSQL WAF violation blocked: SQL Injection signature detected: query matched security rule /\b(or|and)\s+['"][^'"]*['"]\s*=\s*['"][^'"]*['"]/i
+CEF:0|Vollcrypt|DB-Proxy|1.0|WAF_ORACLE_BLOCK|WAF_ORACLE_BLOCK|9|src=::1 usrName=oracle_user msg=Oracle WAF violation blocked: SQL Injection signature detected: query matched security rule /\b(or|and)\s+['"][^'"]*['"]\s*=\s*['"][^'"]*['"]/i

@@ -14,7 +14,7 @@ export interface DbProxyOptions {
     noDlp?: boolean;
     noWaf?: boolean;
     noIpBanning?: boolean;
-    dbType?: 'postgres' | 'mysql' | 'mongodb';
+    dbType?: 'postgres' | 'mysql' | 'mongodb' | 'mssql' | 'oracle';
     fipsMode?: boolean;
     mpcShares?: Buffer[];
 }
