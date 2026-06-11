@@ -192,3 +192,55 @@ export class PostgresStreamParser {
     return messages;
   }
 }
+
+export interface ParameterStatus {
+  name: string;
+  value: string;
+}
+
+/**
+ * Parses a PostgreSQL ParameterStatus ('S') packet.
+ */
+export function parseParameterStatus(buf: Buffer): ParameterStatus | null {
+  if (buf[0] !== 0x53) return null; // 'S'
+  const nameNull = buf.indexOf(0, 5);
+  if (nameNull === -1) return null;
+  const name = buf.toString('utf8', 5, nameNull);
+  const valueNull = buf.indexOf(0, nameNull + 1);
+  if (valueNull === -1) return null;
+  const value = buf.toString('utf8', nameNull + 1, valueNull);
+  return { name, value };
+}
+
+/**
+ * Serializes a PostgreSQL ParameterStatus ('S') packet.
+ */
+export function serializeParameterStatus(name: string, value: string): Buffer {
+  const nameBuf = Buffer.from(name, 'utf8');
+  const valueBuf = Buffer.from(value, 'utf8');
+  const msgLen = 4 + nameBuf.length + 1 + valueBuf.length + 1;
+  const buf = Buffer.alloc(1 + msgLen);
+  buf.write('S', 0, 'ascii');
+  buf.writeInt32BE(msgLen, 1);
+  nameBuf.copy(buf, 5);
+  buf.writeUInt8(0, 5 + nameBuf.length);
+  valueBuf.copy(buf, 5 + nameBuf.length + 1);
+  buf.writeUInt8(0, 5 + nameBuf.length + 1 + valueBuf.length);
+  return buf;
+}
+
+/**
+ * Serializes a PostgreSQL PasswordMessage ('p') packet.
+ */
+export function serializePasswordMessage(password: string): Buffer {
+  const passBuf = Buffer.from(password, 'utf8');
+  const msgLen = 4 + passBuf.length + 1;
+  const buf = Buffer.alloc(1 + msgLen);
+  buf.write('p', 0, 'ascii');
+  buf.writeInt32BE(msgLen, 1);
+  passBuf.copy(buf, 5);
+  buf.writeUInt8(0, 5 + passBuf.length);
+  return buf;
+}
+
+

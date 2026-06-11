@@ -3,6 +3,23 @@ export interface ProxyUserContext {
     role: string;
     tenantId?: string;
 }
+export interface FirewallConfig {
+    versionMask?: string;
+    maxRowsPerQuery?: number;
+    temporalConstraints?: Record<string, {
+        startHour: number;
+        endHour: number;
+        allowedDays: number[];
+    }>;
+    rateLimits?: {
+        maxQueriesPerSecond: number;
+    };
+    fingerprinting?: {
+        enabled: boolean;
+        mode: 'learning' | 'blocking';
+        allowlistPath?: string;
+    };
+}
 export interface ProxyConfig {
     users: Record<string, {
         role: string;
@@ -16,6 +33,7 @@ export interface ProxyConfig {
         }>;
     };
     rateLimiter?: any;
+    firewall?: FirewallConfig;
 }
 /**
  * Resolves a database user context based on the incoming username and configuration.

@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert';
 import * as net from 'net';
+import * as fs from 'fs';
 import pg from 'pg';
 import { encryptValue, resetFailClosedStatusForTesting } from '@vollcrypt/db-guard';
-import { DbProxyServer, DbProxyOptions } from '../src/proxy.js';
-import { serializeDataRow } from '../src/pg-protocol.js';
+import { DbProxyServer, DbProxyOptions, serializeErrorResponse } from '../src/proxy.js';
+import { serializeDataRow, serializeParameterStatus, parseParameterStatus } from '../src/pg-protocol.js';
 
 const KEY = Buffer.alloc(32, 0x01); // Ephemeral test key (32 bytes of 0x01)
 
@@ -71,10 +72,11 @@ function createMockDbServer(port: number, handler: (query: string) => Buffer[]):
             // SSLRequest
             socket.write(Buffer.from('N', 'ascii'));
           } else {
-            // StartupMessage -> AuthOk + ReadyForQuery
+            // StartupMessage -> AuthOk + ParameterStatus + ReadyForQuery
             const authOk = Buffer.from([0x52, 0, 0, 0, 8, 0, 0, 0, 0]);
+            const serverVer = serializeParameterStatus('server_version', '12.4');
             const readyForQuery = Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
-            socket.write(Buffer.concat([authOk, readyForQuery]));
+            socket.write(Buffer.concat([authOk, serverVer, readyForQuery]));
           }
         } else {
           // Standard query message
@@ -146,6 +148,19 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       cmdComplete.write('SELECT 1\0', 5, 'ascii');
       const readyForQuery = Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
       return [rowDesc, dataRow, cmdComplete, readyForQuery];
+    }
+
+    if (query.includes('exfiltrate_data')) {
+      const rowDesc = buildRowDescription(['id', 'name']);
+      const r1 = serializeDataRow([Buffer.from('1', 'utf8'), Buffer.from('Row 1', 'utf8')]);
+      const r2 = serializeDataRow([Buffer.from('2', 'utf8'), Buffer.from('Row 2', 'utf8')]);
+      const r3 = serializeDataRow([Buffer.from('3', 'utf8'), Buffer.from('Row 3', 'utf8')]);
+      const cmdComplete = Buffer.alloc(18);
+      cmdComplete.write('C', 0, 'ascii');
+      cmdComplete.writeInt32BE(17, 1);
+      cmdComplete.write('SELECT 1\0', 5, 'ascii');
+      const readyForQuery = Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
+      return [rowDesc, r1, r2, r3, cmdComplete, readyForQuery];
     }
 
     if (query.includes('concat_data')) {
@@ -537,7 +552,470 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     await client.end();
   });
 
+  await t.test('13. Database version cloaking (ParameterStatus server_version masking)', async () => {
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT,
+      user: 'postgres',
+      database: 'testdb',
+    });
+
+    let versionReceived: string | undefined;
+    const connectPromise = client.connect();
+    
+    if ((client as any).connection) {
+      (client as any).connection.on('parameterStatus', (msg: any) => {
+        if (msg.parameterName === 'server_version') {
+          versionReceived = msg.parameterValue;
+        }
+      });
+    }
+
+    await connectPromise;
+    assert.strictEqual(versionReceived, '16.0'); // Masked from 12.4
+    await client.end();
+  });
+
+  await t.test('14. Query Fingerprinting Allowlisting (Learning and Blocking modes)', async () => {
+    const allowlistFile = 'tests/allowlist-temp.json';
+    if (fs.existsSync(allowlistFile)) {
+      fs.unlinkSync(allowlistFile);
+    }
+
+    const learningOptions: DbProxyOptions = {
+      port: PROXY_PORT + 20,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_DB_PORT,
+      config: {
+        users: { postgres: { role: 'OWNER', userId: 'usr-admin' } },
+        firewall: {
+          fingerprinting: {
+            enabled: true,
+            mode: 'learning',
+            allowlistPath: allowlistFile,
+          }
+        }
+      },
+      resolvedKeys: { '1': KEY },
+    };
+
+    const learningProxy = new DbProxyServer(learningOptions);
+    await learningProxy.start();
+
+    // 1. Connect and run a query under learning mode
+    const client1 = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT + 20,
+      user: 'postgres',
+      database: 'testdb',
+    });
+    await client1.connect();
+    await client1.query('SELECT * FROM plain_data');
+    await client1.end();
+    await learningProxy.stop();
+
+    // Verify allowlist file was written
+    assert.ok(fs.existsSync(allowlistFile));
+    const content = fs.readFileSync(allowlistFile, 'utf8');
+    assert.match(content, /SELECT \* FROM plain_data/);
+
+    // 2. Start blocking mode proxy
+    const blockingOptions: DbProxyOptions = {
+      port: PROXY_PORT + 21,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_DB_PORT,
+      config: {
+        users: { postgres: { role: 'OWNER', userId: 'usr-admin' } },
+        firewall: {
+          fingerprinting: {
+            enabled: true,
+            mode: 'blocking',
+            allowlistPath: allowlistFile,
+          }
+        }
+      },
+      resolvedKeys: { '1': KEY },
+    };
+
+    const blockingProxy = new DbProxyServer(blockingOptions);
+    await blockingProxy.start();
+
+    const client2 = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT + 21,
+      user: 'postgres',
+      database: 'testdb',
+    });
+    await client2.connect();
+
+    // Query matching fingerprint should succeed
+    const res = await client2.query('SELECT * FROM plain_data');
+    assert.ok(res);
+
+    // Query not matching fingerprint should be blocked
+    try {
+      await client2.query('SELECT id, name FROM plain_data');
+      assert.fail('Should have blocked unallowlisted query shape');
+    } catch (err) {
+      assert.match((err as Error).message, /Blocked by allowlist: query shape/);
+    } finally {
+      await client2.end();
+      await blockingProxy.stop();
+      if (fs.existsSync(allowlistFile)) {
+        fs.unlinkSync(allowlistFile);
+      }
+    }
+  });
+
+  await t.test('15. Semantic SQLi threat scoring and tautology blocking', async () => {
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT,
+      user: 'postgres',
+      database: 'testdb',
+    });
+
+    await client.connect();
+
+    // Stacked catalog access query (triggers stacked query + system catalog access = 9 score)
+    try {
+      await client.query("SELECT 1; SELECT * FROM pg_catalog.pg_tables");
+      assert.fail('Should have blocked stacked system catalog query');
+    } catch (err) {
+      assert.match((err as Error).message, /Semantic SQLi threat detected: query score is 9/);
+    }
+
+    // timing delays query
+    try {
+      await client.query("SELECT pg_sleep(5)");
+      assert.fail('Should have blocked sleep statement');
+    } catch (err) {
+      assert.match((err as Error).message, /Semantic SQLi threat detected: query score is 8/);
+    }
+
+    await client.end();
+  });
+
+  await t.test('16. Temporal role-based query restrictions', async () => {
+    const tempProxyOptions: DbProxyOptions = {
+      port: PROXY_PORT + 22,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_DB_PORT,
+      config: {
+        users: {
+          analyst_marketing: { role: 'MARKETING', userId: 'usr-mkt-01' },
+          postgres: { role: 'OWNER', userId: 'usr-admin' },
+        },
+        firewall: {
+          temporalConstraints: {
+            MARKETING: {
+              startHour: 9,
+              endHour: 18,
+              allowedDays: [], // Empty allowed days blocks query every day
+            }
+          }
+        }
+      },
+      resolvedKeys: { '1': KEY },
+    };
+
+    const tempProxy = new DbProxyServer(tempProxyOptions);
+    await tempProxy.start();
+
+    // Connecting with constrained role (MARKETING) should fail
+    const client1 = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT + 22,
+      user: 'analyst_marketing',
+      database: 'testdb',
+    });
+    await client1.connect();
+    try {
+      await client1.query('SELECT * FROM users');
+      assert.fail('Temporal constraint should have blocked the query');
+    } catch (err) {
+      assert.match((err as Error).message, /Temporal access restriction/);
+    } finally {
+      await client1.end();
+    }
+
+    // Connecting with OWNER role (no constraints) should succeed
+    const client2 = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT + 22,
+      user: 'postgres',
+      database: 'testdb',
+    });
+    await client2.connect();
+    const res = await client2.query('SELECT * FROM users');
+    assert.ok(res);
+    await client2.end();
+    await tempProxy.stop();
+  });
+
+  await t.test('17. Connection-scoped rate limiting (QPS limits)', async () => {
+    const rateProxyOptions: DbProxyOptions = {
+      port: PROXY_PORT + 23,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_DB_PORT,
+      config: {
+        users: { postgres: { role: 'OWNER', userId: 'usr-admin' } },
+        firewall: {
+          rateLimits: {
+            maxQueriesPerSecond: 2,
+          }
+        }
+      },
+      resolvedKeys: { '1': KEY },
+    };
+
+    const rateProxy = new DbProxyServer(rateProxyOptions);
+    await rateProxy.start();
+
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT + 23,
+      user: 'postgres',
+      database: 'testdb',
+    });
+    await client.connect();
+
+    // Send 3 queries in rapid succession
+    await client.query('SELECT 1');
+    await client.query('SELECT 2');
+    try {
+      await client.query('SELECT 3');
+      assert.fail('Third query should have exceeded QPS limits');
+    } catch (err) {
+      assert.match((err as Error).message, /Connection query rate limit exceeded/);
+    } finally {
+      await client.end();
+      await rateProxy.stop();
+    }
+  });
+
+  await t.test('18. Data egress mass exfiltration row limit', async () => {
+    const egressProxyOptions: DbProxyOptions = {
+      port: PROXY_PORT + 24,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_DB_PORT,
+      config: {
+        users: { postgres: { role: 'OWNER', userId: 'usr-admin' } },
+        firewall: {
+          maxRowsPerQuery: 2,
+        }
+      },
+      resolvedKeys: { '1': KEY },
+    };
+
+    const egressProxy = new DbProxyServer(egressProxyOptions);
+    await egressProxy.start();
+
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT + 24,
+      user: 'postgres',
+      database: 'testdb',
+    });
+    await client.connect();
+
+    try {
+      // Query "exfiltrate_data" returns 3 rows, but maxRowsPerQuery is 2
+      await client.query('SELECT * FROM exfiltrate_data');
+      assert.fail('Should have aborted due to mass exfiltration row limits');
+    } catch (err) {
+      assert.match((err as Error).message, /Mass exfiltration limit exceeded/);
+    } finally {
+      await client.end();
+      await egressProxy.stop();
+    }
+  });
+
+  await t.test('19. SSO Token Authenticator & Password Interception', async () => {
+    const SSO_DB_PORT = MOCK_DB_PORT + 50;
+    const SSO_PROXY_PORT = PROXY_PORT + 50;
+    const REAL_PASSWORD = 'super_secret_db_pass';
+
+    // Start mock DB requesting password authentication
+    const ssoDb = createMockAuthDbServer(SSO_DB_PORT, REAL_PASSWORD);
+
+    const ssoProxyOptions: DbProxyOptions = {
+      port: SSO_PROXY_PORT,
+      dbHost: '127.0.0.1',
+      dbPort: SSO_DB_PORT,
+      dbPassword: REAL_PASSWORD,
+      config: {
+        users: {
+          'ayse@company.com': { role: 'OWNER', userId: 'usr-sso-ayse' }
+        }
+      },
+      resolvedKeys: { '1': KEY }
+    };
+
+    const ssoProxy = new DbProxyServer(ssoProxyOptions);
+    await ssoProxy.start();
+
+    // Register active SSO session passcode
+    const tempPasscode = 'VPass_8b9a2c4d';
+    ssoProxy.registerSsoSession('ayse@company.com', tempPasscode, ['OWNER']);
+
+    // Attempt client connection using SSO passcode as password
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: SSO_PROXY_PORT,
+      user: 'ayse@company.com',
+      password: tempPasscode,
+      database: 'testdb',
+    });
+
+    await client.connect();
+    const res = await client.query('SELECT 1');
+    assert.strictEqual(res.rows[0].val, 'SSO OK');
+    await client.end();
+
+    // Verify invalid passcode is rejected
+    const badClient = new pg.Client({
+      host: '127.0.0.1',
+      port: SSO_PROXY_PORT,
+      user: 'ayse@company.com',
+      password: 'invalid_passcode',
+      database: 'testdb',
+    });
+
+    try {
+      await badClient.connect();
+      assert.fail('Should have rejected invalid SSO passcode');
+    } catch (err) {
+      assert.match((err as Error).message, /Authentication failed/);
+    }
+
+    await ssoProxy.stop();
+    ssoDb.close();
+  });
+
+  await t.test('20. Dynamic JIT Access Control Policy Checks', async () => {
+    // analyst_marketing normally has credit card masked
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT,
+      user: 'analyst_marketing',
+      database: 'testdb',
+    });
+
+    await client.connect();
+
+    // 1. Initial query: credit card should be masked
+    const res1 = await client.query('SELECT * FROM users');
+    assert.strictEqual(res1.rows[0]['users.credit_card'], '1111-XXXX-XXXX-4444');
+
+    // 2. Register dynamic JIT grant elevating to OWNER role (active for 500ms)
+    proxy.registerJitGrant('usr-mkt-01', 'OWNER', 500);
+
+    // 3. Immediate query: credit card should be fully decrypted
+    const res2 = await client.query('SELECT * FROM users');
+    assert.strictEqual(res2.rows[0]['users.credit_card'], '1111-2222-3333-4444');
+
+    // 4. Wait 600ms for JIT grant to expire
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    // 5. Query after expiry: should fallback to masked rules
+    const res3 = await client.query('SELECT * FROM users');
+    assert.strictEqual(res3.rows[0]['users.credit_card'], '1111-XXXX-XXXX-4444');
+
+    await client.end();
+  });
+
+  await t.test('21. High-Performance Selective Scanning (Direct Stream Bypass)', async () => {
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT,
+      user: 'postgres',
+      database: 'testdb',
+    });
+
+    await client.connect();
+
+    // Query plain_data which contains no sensitive columns.
+    // It should trigger direct stream bypass and return Alice
+    const res = await client.query('SELECT * FROM plain_data');
+    assert.strictEqual(res.rows[0].name, 'Alice');
+
+    await client.end();
+  });
+
   // Clean up servers
   await proxy.stop();
   mockDb.close();
 });
+
+// Helper for Mock Auth DB Server
+function createMockAuthDbServer(port: number, passwordExpected: string): net.Server {
+  const server = net.createServer((socket) => {
+    let buffer = Buffer.alloc(0);
+    let authenticated = false;
+
+    socket.on('data', (data) => {
+      buffer = Buffer.concat([buffer, data]);
+
+      while (true) {
+        if (buffer.length === 0) break;
+        const firstByte = buffer[0];
+
+        if (!authenticated) {
+          if (firstByte === 0) {
+            const len = buffer.readInt32BE(0);
+            if (buffer.length < len) break;
+            buffer = buffer.subarray(len);
+
+            // Send CleartextPassword authentication request ('R' with code 3)
+            const authReq = Buffer.from([0x52, 0, 0, 0, 8, 0, 0, 0, 3]);
+            socket.write(authReq);
+          } else if (firstByte === 112) { // 'p' PasswordMessage
+            const len = buffer.readInt32BE(1);
+            if (buffer.length < 1 + len) break;
+            const msg = buffer.subarray(0, 1 + len);
+            buffer = buffer.subarray(1 + len);
+
+            const password = msg.toString('utf8', 5, msg.length - 1);
+            if (password === passwordExpected) {
+              authenticated = true;
+              const authOk = Buffer.from([0x52, 0, 0, 0, 8, 0, 0, 0, 0]);
+              const serverVer = serializeParameterStatus('server_version', '12.4');
+              const readyForQuery = Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
+              socket.write(Buffer.concat([authOk, serverVer, readyForQuery]));
+            } else {
+              const err = serializeErrorResponse('Authentication failed: wrong password');
+              socket.write(err);
+              socket.end();
+            }
+          } else {
+            break;
+          }
+        } else {
+          if (buffer.length < 5) break;
+          const len = buffer.readInt32BE(1);
+          if (buffer.length < 1 + len) break;
+          const msg = buffer.subarray(0, 1 + len);
+          buffer = buffer.subarray(1 + len);
+
+          const type = String.fromCharCode(firstByte);
+          if (type === 'Q') {
+            const rowDesc = buildRowDescription(['id', 'val']);
+            const dataRow = serializeDataRow([Buffer.from('1', 'utf8'), Buffer.from('SSO OK', 'utf8')]);
+            const cmdComplete = Buffer.alloc(18);
+            cmdComplete.write('C', 0, 'ascii');
+            cmdComplete.writeInt32BE(17, 1);
+            cmdComplete.write('SELECT 1\0', 5, 'ascii');
+            const readyForQuery = Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
+            socket.write(Buffer.concat([rowDesc, dataRow, cmdComplete, readyForQuery]));
+          } else if (type === 'X') {
+            socket.end();
+          }
+        }
+      }
+    });
+  });
+
+  server.listen(port);
+  return server;
+}

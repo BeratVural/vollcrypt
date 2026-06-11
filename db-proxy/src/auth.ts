@@ -4,6 +4,18 @@ export interface ProxyUserContext {
   tenantId?: string;
 }
 
+export interface FirewallConfig {
+  versionMask?: string;
+  maxRowsPerQuery?: number;
+  temporalConstraints?: Record<string, { startHour: number; endHour: number; allowedDays: number[] }>;
+  rateLimits?: { maxQueriesPerSecond: number };
+  fingerprinting?: {
+    enabled: boolean;
+    mode: 'learning' | 'blocking';
+    allowlistPath?: string;
+  };
+}
+
 export interface ProxyConfig {
   users: Record<string, { role: string; userId: string; tenantId?: string }>;
   cryptoRbac?: {
@@ -16,6 +28,7 @@ export interface ProxyConfig {
     >;
   };
   rateLimiter?: any;
+  firewall?: FirewallConfig;
 }
 
 const DEFAULT_CONFIG: ProxyConfig = {

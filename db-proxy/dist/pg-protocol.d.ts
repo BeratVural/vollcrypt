@@ -27,3 +27,19 @@ export declare class PostgresStreamParser {
     private buffer;
     append(data: Buffer): Buffer[];
 }
+export interface ParameterStatus {
+    name: string;
+    value: string;
+}
+/**
+ * Parses a PostgreSQL ParameterStatus ('S') packet.
+ */
+export declare function parseParameterStatus(buf: Buffer): ParameterStatus | null;
+/**
+ * Serializes a PostgreSQL ParameterStatus ('S') packet.
+ */
+export declare function serializeParameterStatus(name: string, value: string): Buffer;
+/**
+ * Serializes a PostgreSQL PasswordMessage ('p') packet.
+ */
+export declare function serializePasswordMessage(password: string): Buffer;
