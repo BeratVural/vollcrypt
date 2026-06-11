@@ -52,13 +52,13 @@
     {
       "name": "dist/index.d.ts",
       "digest": {
-        "sha256": "7f7c57559ed6b17bd5698a248c18d636c65f812406b685bb6b2fe243d6df59b8"
+        "sha256": "ec2f9fbf66e83818e0fb9e9e97780941f7078def441e2b8a7e0a8fb99d64a532"
       }
     },
     {
       "name": "dist/index.js",
       "digest": {
-        "sha256": "9a6c591ff862cca301b2b45455b884c2c5ab7e994dd4a31df1235ebdcff8393c"
+        "sha256": "b2f9f7e6a8b238911e9e9e303b13be231af846180da1321275752126dacf1264"
       }
     },
     {
@@ -213,9 +213,9 @@
         "id": "https://vollcrypt.dev/builders/local-hermetic-env"
       },
       "metadata": {
-        "invocationId": "6a158baa8a336e407b4daf328603e46e",
-        "startedOn": "2026-06-11T12:43:47.573Z",
-        "finishedOn": "2026-06-11T12:43:47.574Z"
+        "invocationId": "ab05945e52aae3c97e9f3f050c9b1723",
+        "startedOn": "2026-06-11T12:56:18.421Z",
+        "finishedOn": "2026-06-11T12:56:18.422Z"
       }
     }
   }

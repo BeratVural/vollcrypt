@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:922e2014-383d-4a96-a592-7fea3b6d4dc3",
+  "serialNumber": "urn:uuid:b8aadc07-8233-45bf-9549-5cb5de4573da",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-06-11T12:43:47.573Z",
+    "timestamp": "2026-06-11T12:56:18.421Z",
     "tools": [
       {
         "vendor": "Vollcrypt",
@@ -53,11 +53,11 @@
         },
         {
           "alg": "SHA-256",
-          "content": "7f7c57559ed6b17bd5698a248c18d636c65f812406b685bb6b2fe243d6df59b8"
+          "content": "ec2f9fbf66e83818e0fb9e9e97780941f7078def441e2b8a7e0a8fb99d64a532"
         },
         {
           "alg": "SHA-256",
-          "content": "9a6c591ff862cca301b2b45455b884c2c5ab7e994dd4a31df1235ebdcff8393c"
+          "content": "b2f9f7e6a8b238911e9e9e303b13be231af846180da1321275752126dacf1264"
         },
         {
           "alg": "SHA-256",
