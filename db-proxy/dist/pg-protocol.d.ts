@@ -43,3 +43,11 @@ export declare function serializeParameterStatus(name: string, value: string): B
  * Serializes a PostgreSQL PasswordMessage ('p') packet.
  */
 export declare function serializePasswordMessage(password: string): Buffer;
+/**
+ * Serializes a PostgreSQL Query ('Q') packet.
+ */
+export declare function serializeQueryMessage(query: string): Buffer;
+/**
+ * Serializes a PostgreSQL Parse ('P') packet, replacing the query string.
+ */
+export declare function serializeParseMessage(statementName: string, query: string, originalMsg: Buffer, queryNull: number): Buffer;

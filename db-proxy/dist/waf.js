@@ -7,6 +7,10 @@ exports.normalizeQuery = normalizeQuery;
 exports.validateQuery = validateQuery;
 exports.generateFingerprint = generateFingerprint;
 exports.evaluateThreatScore = evaluateThreatScore;
+exports.tokenizeSql = tokenizeSql;
+exports.rewriteQuery = rewriteQuery;
+exports.generateLaplaceNoise = generateLaplaceNoise;
+exports.getMockAttestationReport = getMockAttestationReport;
 // Common SQL Injection patterns
 const SQLI_PATTERNS = [
     /\bunion\s+all\s+select\b/i,
@@ -105,4 +109,194 @@ function evaluateThreatScore(query) {
         score += 4;
     }
     return score;
+}
+/**
+ * Rewrites SQL queries to inject RLS tenant isolation and database-level masking rules.
+ */
+/**
+ * Tokenizes SQL query string to isolate strings and symbols.
+ */
+function tokenizeSql(sql) {
+    const tokens = [];
+    let current = '';
+    let inString = false;
+    let inDoubleQuote = false;
+    let i = 0;
+    while (i < sql.length) {
+        const char = sql[i];
+        if (inString) {
+            current += char;
+            if (char === "'") {
+                if (sql[i + 1] === "'") {
+                    current += "'"; // escaped single quote
+                    i++;
+                }
+                else {
+                    inString = false;
+                    tokens.push(current);
+                    current = '';
+                }
+            }
+        }
+        else if (inDoubleQuote) {
+            current += char;
+            if (char === '"') {
+                inDoubleQuote = false;
+                tokens.push(current);
+                current = '';
+            }
+        }
+        else {
+            if (char === "'") {
+                if (current)
+                    tokens.push(current);
+                current = "'";
+                inString = true;
+            }
+            else if (char === '"') {
+                if (current)
+                    tokens.push(current);
+                current = '"';
+                inDoubleQuote = true;
+            }
+            else if (/\s/.test(char)) {
+                if (current) {
+                    tokens.push(current);
+                    current = '';
+                }
+            }
+            else if ([',', '=', '(', ')', ';', '<', '>', '!'].includes(char)) {
+                if (current) {
+                    tokens.push(current);
+                    current = '';
+                }
+                tokens.push(char);
+            }
+            else {
+                current += char;
+            }
+        }
+        i++;
+    }
+    if (current)
+        tokens.push(current);
+    return tokens;
+}
+/**
+ * Rewrites SQL queries to inject RLS tenant isolation and database-level masking rules.
+ */
+function rewriteQuery(sql, role, tenantId, config) {
+    const normalized = normalizeQuery(sql);
+    const tokens = tokenizeSql(normalized);
+    // 1. Identify projection context and inject SQL-level masking expressions
+    const mask = config?.cryptoRbac?.roles?.[role]?.mask;
+    const rewrittenTokens = [];
+    let inProjection = false;
+    for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i];
+        const upperToken = token.toUpperCase();
+        if (upperToken === 'SELECT') {
+            inProjection = true;
+            rewrittenTokens.push(token);
+            continue;
+        }
+        if (upperToken === 'FROM') {
+            inProjection = false;
+            rewrittenTokens.push(token);
+            continue;
+        }
+        if (inProjection && mask) {
+            let foundMaskRule;
+            for (const [colPath, rule] of Object.entries(mask)) {
+                const parts = colPath.split('.');
+                const fieldName = parts[parts.length - 1];
+                if (token.toLowerCase() === fieldName.toLowerCase() || token.toLowerCase() === colPath.toLowerCase()) {
+                    const nextToken = tokens[i + 1];
+                    if (nextToken !== '=') {
+                        foundMaskRule = rule;
+                        break;
+                    }
+                }
+            }
+            if (foundMaskRule) {
+                let maskExpr = `'***'`;
+                const colName = token;
+                if (foundMaskRule === 'credit_card') {
+                    maskExpr = `'XXXX-XXXX-XXXX-' || right(${colName}, 4)`;
+                }
+                else if (foundMaskRule === 'tc_no') {
+                    maskExpr = `left(${colName}, 3) || 'XXXXXX' || right(${colName}, 2)`;
+                }
+                else if (foundMaskRule === 'email') {
+                    maskExpr = `'***@***.***'`;
+                }
+                rewrittenTokens.push(`${maskExpr} AS ${colName}`);
+                continue;
+            }
+        }
+        rewrittenTokens.push(token);
+    }
+    // 2. Inject RLS tenant isolation condition
+    if (tenantId) {
+        let whereIndex = -1;
+        for (let i = 0; i < rewrittenTokens.length; i++) {
+            if (rewrittenTokens[i].toUpperCase() === 'WHERE') {
+                whereIndex = i;
+                break;
+            }
+        }
+        if (whereIndex !== -1) {
+            rewrittenTokens.splice(whereIndex + 1, 0, `tenant_id = '${tenantId}'`, 'AND');
+        }
+        else {
+            let insertIndex = rewrittenTokens.length;
+            for (let i = 0; i < rewrittenTokens.length; i++) {
+                const t = rewrittenTokens[i].toUpperCase();
+                if (['GROUP', 'ORDER', 'LIMIT', 'UNION', 'HAVING', ';'].includes(t)) {
+                    insertIndex = i;
+                    break;
+                }
+            }
+            rewrittenTokens.splice(insertIndex, 0, 'WHERE', `tenant_id = '${tenantId}'`);
+        }
+    }
+    // Reconstruct the SQL query from tokens
+    let result = '';
+    for (let i = 0; i < rewrittenTokens.length; i++) {
+        const t = rewrittenTokens[i];
+        if (i > 0) {
+            const prev = rewrittenTokens[i - 1];
+            if (['(', ';'].includes(prev) || [',', ';', ')', '('].includes(t)) {
+                result += t;
+            }
+            else {
+                result += ' ' + t;
+            }
+        }
+        else {
+            result += t;
+        }
+    }
+    return result;
+}
+/**
+ * Generates Laplace noise for Differential Privacy.
+ */
+function generateLaplaceNoise(scale) {
+    const u = Math.random() - 0.5;
+    return -scale * Math.sign(u) * Math.log(1 - 2 * Math.abs(u));
+}
+/**
+ * Generates mock Remote Attestation Quote for secure enclave execution verification.
+ */
+function getMockAttestationReport() {
+    return {
+        attestation_type: "Intel SGX Quote",
+        mrenclave: "d3f4b5a6c7e8f901a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f901a2b3c4d5e6",
+        mrsigner: "a1b2c3d4e5f60102030405060708090a0b0c0d0e0f101112131415161718191a",
+        isv_prod_id: 1,
+        isv_svn: 1,
+        quote_signature: "30450221008f51a4b9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f802200a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b",
+        enclave_timestamp: new Date().toISOString()
+    };
 }
