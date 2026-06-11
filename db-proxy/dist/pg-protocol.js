@@ -5,6 +5,9 @@ exports.parseStartupMessage = parseStartupMessage;
 exports.parseRowDescription = parseRowDescription;
 exports.parseDataRow = parseDataRow;
 exports.serializeDataRow = serializeDataRow;
+exports.parseParameterStatus = parseParameterStatus;
+exports.serializeParameterStatus = serializeParameterStatus;
+exports.serializePasswordMessage = serializePasswordMessage;
 const buffer_1 = require("buffer");
 /**
  * Parses a PostgreSQL StartupMessage and extracts parameters like username and database name.
@@ -189,3 +192,48 @@ class PostgresStreamParser {
     }
 }
 exports.PostgresStreamParser = PostgresStreamParser;
+/**
+ * Parses a PostgreSQL ParameterStatus ('S') packet.
+ */
+function parseParameterStatus(buf) {
+    if (buf[0] !== 0x53)
+        return null; // 'S'
+    const nameNull = buf.indexOf(0, 5);
+    if (nameNull === -1)
+        return null;
+    const name = buf.toString('utf8', 5, nameNull);
+    const valueNull = buf.indexOf(0, nameNull + 1);
+    if (valueNull === -1)
+        return null;
+    const value = buf.toString('utf8', nameNull + 1, valueNull);
+    return { name, value };
+}
+/**
+ * Serializes a PostgreSQL ParameterStatus ('S') packet.
+ */
+function serializeParameterStatus(name, value) {
+    const nameBuf = buffer_1.Buffer.from(name, 'utf8');
+    const valueBuf = buffer_1.Buffer.from(value, 'utf8');
+    const msgLen = 4 + nameBuf.length + 1 + valueBuf.length + 1;
+    const buf = buffer_1.Buffer.alloc(1 + msgLen);
+    buf.write('S', 0, 'ascii');
+    buf.writeInt32BE(msgLen, 1);
+    nameBuf.copy(buf, 5);
+    buf.writeUInt8(0, 5 + nameBuf.length);
+    valueBuf.copy(buf, 5 + nameBuf.length + 1);
+    buf.writeUInt8(0, 5 + nameBuf.length + 1 + valueBuf.length);
+    return buf;
+}
+/**
+ * Serializes a PostgreSQL PasswordMessage ('p') packet.
+ */
+function serializePasswordMessage(password) {
+    const passBuf = buffer_1.Buffer.from(password, 'utf8');
+    const msgLen = 4 + passBuf.length + 1;
+    const buf = buffer_1.Buffer.alloc(1 + msgLen);
+    buf.write('p', 0, 'ascii');
+    buf.writeInt32BE(msgLen, 1);
+    passBuf.copy(buf, 5);
+    buf.writeUInt8(0, 5 + passBuf.length);
+    return buf;
+}

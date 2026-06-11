@@ -6,6 +6,7 @@ export interface DbProxyOptions {
     dbPort: number;
     config?: ProxyConfig;
     resolvedKeys: Record<string, Buffer>;
+    dbPassword?: string;
 }
 /**
  * Serializes a PostgreSQL protocol ErrorResponse ('E') message.
@@ -15,7 +16,14 @@ export declare class DbProxyServer {
     private options;
     private server;
     private activeConnections;
+    private allowlistedFingerprints;
+    private activeSsoSessions;
+    private activeJitGrants;
+    registerSsoSession(username: string, passcode: string, roles: string[], ttlMs?: number): void;
+    registerJitGrant(userId: string, role: string, durationMs: number): void;
     constructor(options: DbProxyOptions);
+    private loadAllowlist;
+    private saveAllowlist;
     start(): Promise<void>;
     stop(): Promise<void>;
     private handleConnection;

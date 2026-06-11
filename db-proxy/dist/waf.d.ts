@@ -11,3 +11,11 @@ export declare function normalizeQuery(query: string): string;
  * Throws an Error if a security policy violation is detected.
  */
 export declare function validateQuery(query: string, role: string): void;
+/**
+ * Generates an abstract fingerprint of the SQL query by stripping literals.
+ */
+export declare function generateFingerprint(query: string): string;
+/**
+ * Evaluates semantic threats in a SQL query and returns a combined threat score.
+ */
+export declare function evaluateThreatScore(query: string): number;

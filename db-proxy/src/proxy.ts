@@ -1,11 +1,15 @@
 import * as net from 'net';
 import { Buffer } from 'buffer';
+import * as fs from 'fs';
 import {
   PostgresStreamParser,
   parseStartupMessage,
   parseRowDescription,
   parseDataRow,
   serializeDataRow,
+  parseParameterStatus,
+  serializeParameterStatus,
+  serializePasswordMessage,
 } from './pg-protocol.js';
 import {
   resolveUserContext,
@@ -18,7 +22,7 @@ import {
   decryptValue,
   decryptWithSecurity,
 } from '@vollcrypt/db-guard';
-import { validateQuery } from './waf.js';
+import { validateQuery, generateFingerprint, evaluateThreatScore } from './waf.js';
 import { scanAndMaskCell } from './dlp.js';
 
 export interface DbProxyOptions {
@@ -27,6 +31,7 @@ export interface DbProxyOptions {
   dbPort: number;
   config?: ProxyConfig;
   resolvedKeys: Record<string, Buffer>;
+  dbPassword?: string;
 }
 
 /**
@@ -67,8 +72,58 @@ export function serializeErrorResponse(message: string, code: string = '42501'):
 export class DbProxyServer {
   private server: net.Server | null = null;
   private activeConnections = new Set<net.Socket>();
+  private allowlistedFingerprints = new Set<string>();
 
-  constructor(private options: DbProxyOptions) {}
+  private activeSsoSessions = new Map<string, { username: string; expiresAt: number; roles: string[] }>();
+  private activeJitGrants = new Map<string, { role: string; expiresAt: number }>();
+
+  public registerSsoSession(username: string, passcode: string, roles: string[], ttlMs: number = 900000) {
+    this.activeSsoSessions.set(passcode, {
+      username,
+      expiresAt: Date.now() + ttlMs,
+      roles,
+    });
+  }
+
+  public registerJitGrant(userId: string, role: string, durationMs: number) {
+    this.activeJitGrants.set(userId, {
+      role,
+      expiresAt: Date.now() + durationMs,
+    });
+  }
+
+  constructor(private options: DbProxyOptions) {
+    this.loadAllowlist();
+  }
+
+  private loadAllowlist() {
+    const config = this.options.config?.firewall?.fingerprinting;
+    if (config?.enabled && config.allowlistPath) {
+      if (fs.existsSync(config.allowlistPath)) {
+        try {
+          const content = fs.readFileSync(config.allowlistPath, 'utf8');
+          const list = JSON.parse(content);
+          if (Array.isArray(list)) {
+            this.allowlistedFingerprints = new Set(list);
+          }
+        } catch (err) {
+          console.error('Failed to parse WAF allowlist file:', err);
+        }
+      }
+    }
+  }
+
+  private saveAllowlist() {
+    const config = this.options.config?.firewall?.fingerprinting;
+    if (config?.enabled && config.allowlistPath) {
+      try {
+        const list = Array.from(this.allowlistedFingerprints);
+        fs.writeFileSync(config.allowlistPath, JSON.stringify(list, null, 2), 'utf8');
+      } catch (err) {
+        console.error('Failed to save WAF allowlist file:', err);
+      }
+    }
+  }
 
   public start(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -115,6 +170,7 @@ export class DbProxyServer {
     const backendParser = new PostgresStreamParser();
 
     let userContext: ProxyUserContext | null = null;
+    let originalUsername = '';
     const dbGuardContext: any = {
       role: 'GUEST',
       userId: 'guest-user',
@@ -123,6 +179,9 @@ export class DbProxyServer {
     };
     let currentColumns: string[] = [];
     let isSslNegotiated = false;
+    let rowCount = 0;
+    let bypassScanning = false;
+    const queryTimestamps: number[] = [];
 
     // Prepared statement and portal schema caches to prevent Extended Protocol bypasses
     const statements = new Map<string, { query: string; columns?: string[] }>();
@@ -146,6 +205,7 @@ export class DbProxyServer {
             // Otherwise, it must be the StartupMessage
             const params = parseStartupMessage(msg);
             const username = params.user || 'guest';
+            originalUsername = username;
             userContext = resolveUserContext(username, this.options.config);
             dbGuardContext.role = userContext.role;
             dbGuardContext.userId = userContext.userId;
@@ -156,9 +216,32 @@ export class DbProxyServer {
             const type = msg[0];
             let queryStr: string | null = null;
 
+            if (type === 112) { // 'p' (PasswordMessage)
+              const password = msg.toString('utf8', 5, msg.length - 1);
+              const ssoSession = this.activeSsoSessions.get(password);
+              if (ssoSession && ssoSession.expiresAt > Date.now()) {
+                userContext = {
+                  userId: `usr-sso-${ssoSession.username}`,
+                  role: ssoSession.roles[0] || 'GUEST',
+                };
+                dbGuardContext.role = userContext.role;
+                dbGuardContext.userId = userContext.userId;
+
+                const realDbPassword = this.options.dbPassword || 'postgres';
+                const newMsg = serializePasswordMessage(realDbPassword);
+                backendSocket.write(newMsg);
+                continue;
+              } else {
+                backendSocket.write(msg);
+                continue;
+              }
+            }
+
             if (type === 81) { // 'Q' (Simple Query)
               queryStr = msg.subarray(5, msg.length - 1).toString('utf8');
               currentColumns = []; // Reset simple query schema state
+              rowCount = 0;
+              bypassScanning = false;
             } else if (type === 80) { // 'P' (Parse prepared statement)
               const destNameNull = msg.indexOf(0, 5);
               if (destNameNull !== -1) {
@@ -195,6 +278,8 @@ export class DbProxyServer {
                 }
               }
             } else if (type === 69) { // 'E' (Execute)
+              rowCount = 0;
+              bypassScanning = false;
               const portalNull = msg.indexOf(0, 5);
               if (portalNull !== -1) {
                 const portalName = msg.toString('utf8', 5, portalNull);
@@ -207,7 +292,65 @@ export class DbProxyServer {
 
             if (queryStr) {
               try {
-                validateQuery(queryStr, userContext.role);
+                // 0. Dynamic JIT evaluation
+                const activeJit = this.activeJitGrants.get(dbGuardContext.userId);
+                if (activeJit) {
+                  if (activeJit.expiresAt > Date.now()) {
+                    dbGuardContext.role = activeJit.role;
+                  } else {
+                    const originalContext = resolveUserContext(originalUsername, this.options.config);
+                    dbGuardContext.role = originalContext.role;
+                  }
+                }
+
+                // 1. Rate limiting per connection
+                const nowMs = Date.now();
+                while (queryTimestamps.length > 0 && nowMs - queryTimestamps[0] > 1000) {
+                  queryTimestamps.shift();
+                }
+                const maxQps = this.options.config?.firewall?.rateLimits?.maxQueriesPerSecond;
+                if (maxQps && queryTimestamps.length >= maxQps) {
+                  throw new Error(`Connection query rate limit exceeded (Limit: ${maxQps}/sec)`);
+                }
+                queryTimestamps.push(nowMs);
+
+                // 2. Temporal constraints per role
+                const constraints = this.options.config?.firewall?.temporalConstraints?.[dbGuardContext.role];
+                if (constraints) {
+                  const now = new Date();
+                  const currentHour = now.getHours();
+                  const currentDay = now.getDay();
+                  if (!constraints.allowedDays.includes(currentDay) || currentHour < constraints.startHour || currentHour >= constraints.endHour) {
+                    throw new Error(`Temporal access restriction. Role "${dbGuardContext.role}" is not permitted to query database at this time.`);
+                  }
+                }
+
+                // 3. WAF signature & DDL checks
+                validateQuery(queryStr, dbGuardContext.role);
+
+                // 4. Semantic threat score analysis
+                const threatScore = evaluateThreatScore(queryStr);
+                const scoreLimit = 8; // threshold of 8 triggers block
+                if (threatScore >= scoreLimit) {
+                  throw new Error(`Semantic SQLi threat detected: query score is ${threatScore} (Limit: ${scoreLimit})`);
+                }
+
+                // 5. Query Fingerprinting & Allowlisting
+                const fpConfig = this.options.config?.firewall?.fingerprinting;
+                if (fpConfig?.enabled) {
+                  const fingerprint = generateFingerprint(queryStr);
+                  if (fpConfig.mode === 'learning') {
+                    if (!this.allowlistedFingerprints.has(fingerprint)) {
+                      this.allowlistedFingerprints.add(fingerprint);
+                      this.saveAllowlist();
+                    }
+                  } else if (fpConfig.mode === 'blocking') {
+                    if (!this.allowlistedFingerprints.has(fingerprint)) {
+                      throw new Error(`Blocked by allowlist: query shape "${fingerprint}" is not recognized`);
+                    }
+                  }
+                }
+
               } catch (err) {
                 const violationMsg = (err as Error).message;
                 // Write standard PostgreSQL protocol error frame back to the client
@@ -239,6 +382,13 @@ export class DbProxyServer {
           if (type === 84) { // 'T' -> RowDescription
             currentColumns = parseRowDescription(msg);
             
+            const sensitiveKeywords = ['credit_card', 'email', 'tc_no', 'phone', 'iban', 'cc', 'ssn', 'salary', 'password', 'secret'];
+            const hasSensitive = currentColumns.some(col => {
+              const colLower = col.toLowerCase();
+              return sensitiveKeywords.some(kw => colLower.includes(kw));
+            });
+            bypassScanning = !hasSensitive;
+
             // Map the parsed description to the active prepared statement or portal
             if (lastDescribeRequest) {
               if (lastDescribeRequest.type === 'S') {
@@ -255,6 +405,22 @@ export class DbProxyServer {
             }
             clientSocket.write(msg);
           } else if (type === 68) { // 'D' -> DataRow
+            rowCount++;
+            const maxRows = this.options.config?.firewall?.maxRowsPerQuery || 5000;
+            if (rowCount > maxRows) {
+              clientSocket.write(serializeErrorResponse(`Vollcrypt WAF Blocked: Mass exfiltration limit exceeded (Limit: ${maxRows})`));
+              clientSocket.destroy();
+              backendSocket.destroy();
+              break;
+            }
+
+            if (bypassScanning) {
+              if (!msg.includes('VOLLVALT:')) {
+                clientSocket.write(msg);
+                continue;
+              }
+            }
+
             const values = parseDataRow(msg);
             const modifiedValues: (Buffer | null)[] = [];
             let encryptionError: Error | null = null;
@@ -320,6 +486,15 @@ export class DbProxyServer {
             } else {
               const newMsg = serializeDataRow(modifiedValues);
               clientSocket.write(newMsg);
+            }
+          } else if (type === 83) { // 'S' -> ParameterStatus
+            const status = parseParameterStatus(msg);
+            if (status && status.name === 'server_version') {
+              const maskedVersion = this.options.config?.firewall?.versionMask || '16.0';
+              const newMsg = serializeParameterStatus('server_version', maskedVersion);
+              clientSocket.write(newMsg);
+            } else {
+              clientSocket.write(msg);
             }
           } else {
             clientSocket.write(msg);

@@ -37,6 +37,7 @@ exports.DbProxyServer = void 0;
 exports.serializeErrorResponse = serializeErrorResponse;
 const net = __importStar(require("net"));
 const buffer_1 = require("buffer");
+const fs = __importStar(require("fs"));
 const pg_protocol_js_1 = require("./pg-protocol.js");
 const auth_js_1 = require("./auth.js");
 const db_guard_1 = require("@vollcrypt/db-guard");
@@ -76,8 +77,54 @@ class DbProxyServer {
     options;
     server = null;
     activeConnections = new Set();
+    allowlistedFingerprints = new Set();
+    activeSsoSessions = new Map();
+    activeJitGrants = new Map();
+    registerSsoSession(username, passcode, roles, ttlMs = 900000) {
+        this.activeSsoSessions.set(passcode, {
+            username,
+            expiresAt: Date.now() + ttlMs,
+            roles,
+        });
+    }
+    registerJitGrant(userId, role, durationMs) {
+        this.activeJitGrants.set(userId, {
+            role,
+            expiresAt: Date.now() + durationMs,
+        });
+    }
     constructor(options) {
         this.options = options;
+        this.loadAllowlist();
+    }
+    loadAllowlist() {
+        const config = this.options.config?.firewall?.fingerprinting;
+        if (config?.enabled && config.allowlistPath) {
+            if (fs.existsSync(config.allowlistPath)) {
+                try {
+                    const content = fs.readFileSync(config.allowlistPath, 'utf8');
+                    const list = JSON.parse(content);
+                    if (Array.isArray(list)) {
+                        this.allowlistedFingerprints = new Set(list);
+                    }
+                }
+                catch (err) {
+                    console.error('Failed to parse WAF allowlist file:', err);
+                }
+            }
+        }
+    }
+    saveAllowlist() {
+        const config = this.options.config?.firewall?.fingerprinting;
+        if (config?.enabled && config.allowlistPath) {
+            try {
+                const list = Array.from(this.allowlistedFingerprints);
+                fs.writeFileSync(config.allowlistPath, JSON.stringify(list, null, 2), 'utf8');
+            }
+            catch (err) {
+                console.error('Failed to save WAF allowlist file:', err);
+            }
+        }
     }
     start() {
         return new Promise((resolve, reject) => {
@@ -117,6 +164,7 @@ class DbProxyServer {
         const clientParser = new pg_protocol_js_1.PostgresStreamParser();
         const backendParser = new pg_protocol_js_1.PostgresStreamParser();
         let userContext = null;
+        let originalUsername = '';
         const dbGuardContext = {
             role: 'GUEST',
             userId: 'guest-user',
@@ -125,6 +173,9 @@ class DbProxyServer {
         };
         let currentColumns = [];
         let isSslNegotiated = false;
+        let rowCount = 0;
+        let bypassScanning = false;
+        const queryTimestamps = [];
         // Prepared statement and portal schema caches to prevent Extended Protocol bypasses
         const statements = new Map();
         const portals = new Map();
@@ -145,6 +196,7 @@ class DbProxyServer {
                         // Otherwise, it must be the StartupMessage
                         const params = (0, pg_protocol_js_1.parseStartupMessage)(msg);
                         const username = params.user || 'guest';
+                        originalUsername = username;
                         userContext = (0, auth_js_1.resolveUserContext)(username, this.options.config);
                         dbGuardContext.role = userContext.role;
                         dbGuardContext.userId = userContext.userId;
@@ -154,9 +206,31 @@ class DbProxyServer {
                         // WAF Validation and Prepared Statement tracking
                         const type = msg[0];
                         let queryStr = null;
+                        if (type === 112) { // 'p' (PasswordMessage)
+                            const password = msg.toString('utf8', 5, msg.length - 1);
+                            const ssoSession = this.activeSsoSessions.get(password);
+                            if (ssoSession && ssoSession.expiresAt > Date.now()) {
+                                userContext = {
+                                    userId: `usr-sso-${ssoSession.username}`,
+                                    role: ssoSession.roles[0] || 'GUEST',
+                                };
+                                dbGuardContext.role = userContext.role;
+                                dbGuardContext.userId = userContext.userId;
+                                const realDbPassword = this.options.dbPassword || 'postgres';
+                                const newMsg = (0, pg_protocol_js_1.serializePasswordMessage)(realDbPassword);
+                                backendSocket.write(newMsg);
+                                continue;
+                            }
+                            else {
+                                backendSocket.write(msg);
+                                continue;
+                            }
+                        }
                         if (type === 81) { // 'Q' (Simple Query)
                             queryStr = msg.subarray(5, msg.length - 1).toString('utf8');
                             currentColumns = []; // Reset simple query schema state
+                            rowCount = 0;
+                            bypassScanning = false;
                         }
                         else if (type === 80) { // 'P' (Parse prepared statement)
                             const destNameNull = msg.indexOf(0, 5);
@@ -197,6 +271,8 @@ class DbProxyServer {
                             }
                         }
                         else if (type === 69) { // 'E' (Execute)
+                            rowCount = 0;
+                            bypassScanning = false;
                             const portalNull = msg.indexOf(0, 5);
                             if (portalNull !== -1) {
                                 const portalName = msg.toString('utf8', 5, portalNull);
@@ -208,7 +284,61 @@ class DbProxyServer {
                         }
                         if (queryStr) {
                             try {
-                                (0, waf_js_1.validateQuery)(queryStr, userContext.role);
+                                // 0. Dynamic JIT evaluation
+                                const activeJit = this.activeJitGrants.get(dbGuardContext.userId);
+                                if (activeJit) {
+                                    if (activeJit.expiresAt > Date.now()) {
+                                        dbGuardContext.role = activeJit.role;
+                                    }
+                                    else {
+                                        const originalContext = (0, auth_js_1.resolveUserContext)(originalUsername, this.options.config);
+                                        dbGuardContext.role = originalContext.role;
+                                    }
+                                }
+                                // 1. Rate limiting per connection
+                                const nowMs = Date.now();
+                                while (queryTimestamps.length > 0 && nowMs - queryTimestamps[0] > 1000) {
+                                    queryTimestamps.shift();
+                                }
+                                const maxQps = this.options.config?.firewall?.rateLimits?.maxQueriesPerSecond;
+                                if (maxQps && queryTimestamps.length >= maxQps) {
+                                    throw new Error(`Connection query rate limit exceeded (Limit: ${maxQps}/sec)`);
+                                }
+                                queryTimestamps.push(nowMs);
+                                // 2. Temporal constraints per role
+                                const constraints = this.options.config?.firewall?.temporalConstraints?.[dbGuardContext.role];
+                                if (constraints) {
+                                    const now = new Date();
+                                    const currentHour = now.getHours();
+                                    const currentDay = now.getDay();
+                                    if (!constraints.allowedDays.includes(currentDay) || currentHour < constraints.startHour || currentHour >= constraints.endHour) {
+                                        throw new Error(`Temporal access restriction. Role "${dbGuardContext.role}" is not permitted to query database at this time.`);
+                                    }
+                                }
+                                // 3. WAF signature & DDL checks
+                                (0, waf_js_1.validateQuery)(queryStr, dbGuardContext.role);
+                                // 4. Semantic threat score analysis
+                                const threatScore = (0, waf_js_1.evaluateThreatScore)(queryStr);
+                                const scoreLimit = 8; // threshold of 8 triggers block
+                                if (threatScore >= scoreLimit) {
+                                    throw new Error(`Semantic SQLi threat detected: query score is ${threatScore} (Limit: ${scoreLimit})`);
+                                }
+                                // 5. Query Fingerprinting & Allowlisting
+                                const fpConfig = this.options.config?.firewall?.fingerprinting;
+                                if (fpConfig?.enabled) {
+                                    const fingerprint = (0, waf_js_1.generateFingerprint)(queryStr);
+                                    if (fpConfig.mode === 'learning') {
+                                        if (!this.allowlistedFingerprints.has(fingerprint)) {
+                                            this.allowlistedFingerprints.add(fingerprint);
+                                            this.saveAllowlist();
+                                        }
+                                    }
+                                    else if (fpConfig.mode === 'blocking') {
+                                        if (!this.allowlistedFingerprints.has(fingerprint)) {
+                                            throw new Error(`Blocked by allowlist: query shape "${fingerprint}" is not recognized`);
+                                        }
+                                    }
+                                }
                             }
                             catch (err) {
                                 const violationMsg = err.message;
@@ -238,6 +368,12 @@ class DbProxyServer {
                     const type = msg[0];
                     if (type === 84) { // 'T' -> RowDescription
                         currentColumns = (0, pg_protocol_js_1.parseRowDescription)(msg);
+                        const sensitiveKeywords = ['credit_card', 'email', 'tc_no', 'phone', 'iban', 'cc', 'ssn', 'salary', 'password', 'secret'];
+                        const hasSensitive = currentColumns.some(col => {
+                            const colLower = col.toLowerCase();
+                            return sensitiveKeywords.some(kw => colLower.includes(kw));
+                        });
+                        bypassScanning = !hasSensitive;
                         // Map the parsed description to the active prepared statement or portal
                         if (lastDescribeRequest) {
                             if (lastDescribeRequest.type === 'S') {
@@ -256,6 +392,20 @@ class DbProxyServer {
                         clientSocket.write(msg);
                     }
                     else if (type === 68) { // 'D' -> DataRow
+                        rowCount++;
+                        const maxRows = this.options.config?.firewall?.maxRowsPerQuery || 5000;
+                        if (rowCount > maxRows) {
+                            clientSocket.write(serializeErrorResponse(`Vollcrypt WAF Blocked: Mass exfiltration limit exceeded (Limit: ${maxRows})`));
+                            clientSocket.destroy();
+                            backendSocket.destroy();
+                            break;
+                        }
+                        if (bypassScanning) {
+                            if (!msg.includes('VOLLVALT:')) {
+                                clientSocket.write(msg);
+                                continue;
+                            }
+                        }
                         const values = (0, pg_protocol_js_1.parseDataRow)(msg);
                         const modifiedValues = [];
                         let encryptionError = null;
@@ -310,6 +460,17 @@ class DbProxyServer {
                         else {
                             const newMsg = (0, pg_protocol_js_1.serializeDataRow)(modifiedValues);
                             clientSocket.write(newMsg);
+                        }
+                    }
+                    else if (type === 83) { // 'S' -> ParameterStatus
+                        const status = (0, pg_protocol_js_1.parseParameterStatus)(msg);
+                        if (status && status.name === 'server_version') {
+                            const maskedVersion = this.options.config?.firewall?.versionMask || '16.0';
+                            const newMsg = (0, pg_protocol_js_1.serializeParameterStatus)('server_version', maskedVersion);
+                            clientSocket.write(newMsg);
+                        }
+                        else {
+                            clientSocket.write(msg);
                         }
                     }
                     else {
