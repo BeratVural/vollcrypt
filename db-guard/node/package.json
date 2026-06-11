@@ -1,6 +1,6 @@
 {
   "name": "@vollcrypt/db-guard",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Database field-level encryption integrations for Vollcrypt (Prisma, Mongoose, Drizzle, TypeORM)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
