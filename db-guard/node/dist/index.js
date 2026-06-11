@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.generateComplianceHtmlReport = exports.auditConfiguration = exports.maskValue = exports.VERSION_ALGORITHMS = exports.CRYPTO_ALGORITHMS = exports.parseCiphertext = exports.activateBreakGlass = exports.getBreakGlassKey = exports.isBreakGlassActive = exports.deactivateBreakGlass = exports.configureBreakGlass = exports.resetSecureKeyCacheForTesting = exports.setCachedKey = exports.getCachedKey = exports.resetAuditLoggerForTesting = exports.resetFailClosedStatusForTesting = exports.checkPageSize = exports.checkRateLimit = exports.decryptWithSecurity = exports.configureAuditLogger = exports.dbGuardContextStore = exports.computeBlindIndex = exports.Pkcs11KmsProvider = exports.unwrapDekLocal = exports.VaultKmsProvider = exports.GcpKmsProvider = exports.AwsKmsProvider = exports.createTypeOrmSubscriber = exports.createDrizzleGuard = exports.mongooseDbGuard = exports.resolveKeys = exports.decryptValue = exports.encryptValue = exports.prismaDbGuard = void 0;
+exports.generateComplianceHtmlReport = exports.auditConfiguration = exports.maskValue = exports.VERSION_ALGORITHMS = exports.CRYPTO_ALGORITHMS = exports.parseCiphertext = exports.activateBreakGlass = exports.getBreakGlassKey = exports.isBreakGlassActive = exports.deactivateBreakGlass = exports.configureBreakGlass = exports.resetSecureKeyCacheForTesting = exports.setCachedKey = exports.getCachedKey = exports.resetAuditLoggerForTesting = exports.resetFailClosedStatusForTesting = exports.checkPageSize = exports.checkRateLimit = exports.decryptWithSecurity = exports.configureAuditLogger = exports.dbGuardContextStore = exports.computeBlindIndex = exports.Pkcs11KmsProvider = exports.unwrapDekLocal = exports.VaultKmsProvider = exports.GcpKmsProvider = exports.AwsKmsProvider = exports.wrapOracleConnection = exports.wrapSqliteDatabase = exports.createTypeOrmSubscriber = exports.createDrizzleGuard = exports.mongooseDbGuard = exports.resolveKeys = exports.decryptValue = exports.encryptValue = exports.prismaDbGuard = void 0;
 var prisma_1 = require("./prisma");
 Object.defineProperty(exports, "prismaDbGuard", { enumerable: true, get: function () { return prisma_1.prismaDbGuard; } });
 Object.defineProperty(exports, "encryptValue", { enumerable: true, get: function () { return prisma_1.encryptValue; } });
@@ -12,6 +12,9 @@ var drizzle_1 = require("./drizzle");
 Object.defineProperty(exports, "createDrizzleGuard", { enumerable: true, get: function () { return drizzle_1.createDrizzleGuard; } });
 var typeorm_1 = require("./typeorm");
 Object.defineProperty(exports, "createTypeOrmSubscriber", { enumerable: true, get: function () { return typeorm_1.createTypeOrmSubscriber; } });
+var drivers_1 = require("./drivers");
+Object.defineProperty(exports, "wrapSqliteDatabase", { enumerable: true, get: function () { return drivers_1.wrapSqliteDatabase; } });
+Object.defineProperty(exports, "wrapOracleConnection", { enumerable: true, get: function () { return drivers_1.wrapOracleConnection; } });
 var kms_1 = require("./kms");
 Object.defineProperty(exports, "AwsKmsProvider", { enumerable: true, get: function () { return kms_1.AwsKmsProvider; } });
 Object.defineProperty(exports, "GcpKmsProvider", { enumerable: true, get: function () { return kms_1.GcpKmsProvider; } });

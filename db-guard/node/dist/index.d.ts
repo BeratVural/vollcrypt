@@ -2,6 +2,7 @@ export { prismaDbGuard, PrismaDbGuardOptions, encryptValue, decryptValue, resolv
 export { mongooseDbGuard, MongooseDbGuardOptions } from './mongoose';
 export { createDrizzleGuard } from './drizzle';
 export { createTypeOrmSubscriber } from './typeorm';
+export { wrapSqliteDatabase, wrapOracleConnection, DbGuardDriverOptions } from './drivers';
 export { KmsProvider, AwsKmsProvider, GcpKmsProvider, VaultKmsProvider, unwrapDekLocal, Pkcs11KmsProvider } from './kms';
 export { computeBlindIndex } from './blind-index';
 export { dbGuardContextStore, configureAuditLogger, decryptWithSecurity, checkRateLimit, checkPageSize, resetFailClosedStatusForTesting, resetAuditLoggerForTesting, getCachedKey, setCachedKey, resetSecureKeyCacheForTesting, configureBreakGlass, deactivateBreakGlass, isBreakGlassActive, getBreakGlassKey, activateBreakGlass, parseCiphertext, CRYPTO_ALGORITHMS, VERSION_ALGORITHMS, maskValue } from './security';
