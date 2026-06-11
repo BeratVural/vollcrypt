@@ -117,6 +117,12 @@ class DbProxyServer {
         const clientParser = new pg_protocol_js_1.PostgresStreamParser();
         const backendParser = new pg_protocol_js_1.PostgresStreamParser();
         let userContext = null;
+        const dbGuardContext = {
+            role: 'GUEST',
+            userId: 'guest-user',
+            maxDecryptionsPerSecond: this.options.config?.rateLimiter?.maxDecryptionsPerSecond,
+            rateLimiterMode: this.options.config?.rateLimiter?.mode,
+        };
         let currentColumns = [];
         let isSslNegotiated = false;
         // Prepared statement and portal schema caches to prevent Extended Protocol bypasses
@@ -140,6 +146,8 @@ class DbProxyServer {
                         const params = (0, pg_protocol_js_1.parseStartupMessage)(msg);
                         const username = params.user || 'guest';
                         userContext = (0, auth_js_1.resolveUserContext)(username, this.options.config);
+                        dbGuardContext.role = userContext.role;
+                        dbGuardContext.userId = userContext.userId;
                         backendSocket.write(msg);
                     }
                     else {
@@ -262,10 +270,7 @@ class DbProxyServer {
                                 const columnName = currentColumns[i] || `col_${i}`;
                                 try {
                                     // Decrypt using security controls inside user context store
-                                    const decrypted = db_guard_1.dbGuardContextStore.run({
-                                        role: userContext?.role || 'GUEST',
-                                        userId: userContext?.userId || 'guest-user',
-                                    }, () => {
+                                    const decrypted = db_guard_1.dbGuardContextStore.run(dbGuardContext, () => {
                                         let modelName = 'default';
                                         let fieldName = columnName;
                                         if (columnName.includes('.')) {

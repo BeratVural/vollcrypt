@@ -100,13 +100,13 @@
     {
       "name": "dist/security.d.ts",
       "digest": {
-        "sha256": "85bbbfdbf47b5ce72c29071004664aa8d4c872107a9f1826daaec53f3b40182b"
+        "sha256": "554d9ba00f800470666ab66127079df889b8d717a9cf7b28ab252f0adad64304"
       }
     },
     {
       "name": "dist/security.js",
       "digest": {
-        "sha256": "8d3d398281d7d268e874f540c58371a4ba6410e19d5804d2cdde8fb7628531da"
+        "sha256": "5e907c9f5ec9fb93ef07f6360d7f8572aa5a1ea1c0a32d0b10496477d0b8fd33"
       }
     },
     {
@@ -129,7 +129,7 @@
       "externalParameters": {
         "packageJson": {
           "name": "@vollcrypt/db-guard",
-          "version": "0.1.0",
+          "version": "0.1.1",
           "scripts": {
             "build": "tsc && node scripts/generate-sbom.js",
             "test": "node --import tsx --test tests/*.test.ts"
@@ -213,9 +213,9 @@
         "id": "https://vollcrypt.dev/builders/local-hermetic-env"
       },
       "metadata": {
-        "invocationId": "ab05945e52aae3c97e9f3f050c9b1723",
-        "startedOn": "2026-06-11T12:56:18.421Z",
-        "finishedOn": "2026-06-11T12:56:18.422Z"
+        "invocationId": "4038ab2da0eed20086c5bb329a4db9f2",
+        "startedOn": "2026-06-11T13:14:40.057Z",
+        "finishedOn": "2026-06-11T13:14:40.058Z"
       }
     }
   }

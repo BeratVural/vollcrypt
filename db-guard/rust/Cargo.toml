@@ -29,3 +29,16 @@ pkcs11 = ["dep:cryptoki", "dep:secrecy"]
 diesel = { version = "2.2.0", features = ["sqlite"] }
 libsqlite3-sys = { version = "0.37", features = ["bundled"] }
 sea-orm = { version = "1.1.0", default-features = false }
+
+[[test]]
+name = "diesel_tests"
+required-features = ["sqlite"]
+
+[[test]]
+name = "seaorm_tests"
+required-features = ["sea-orm"]
+
+[[test]]
+name = "pkcs11_tests"
+required-features = ["pkcs11"]
+

@@ -115,6 +115,12 @@ export class DbProxyServer {
     const backendParser = new PostgresStreamParser();
 
     let userContext: ProxyUserContext | null = null;
+    const dbGuardContext: any = {
+      role: 'GUEST',
+      userId: 'guest-user',
+      maxDecryptionsPerSecond: this.options.config?.rateLimiter?.maxDecryptionsPerSecond,
+      rateLimiterMode: this.options.config?.rateLimiter?.mode,
+    };
     let currentColumns: string[] = [];
     let isSslNegotiated = false;
 
@@ -141,6 +147,8 @@ export class DbProxyServer {
             const params = parseStartupMessage(msg);
             const username = params.user || 'guest';
             userContext = resolveUserContext(username, this.options.config);
+            dbGuardContext.role = userContext.role;
+            dbGuardContext.userId = userContext.userId;
 
             backendSocket.write(msg);
           } else {
@@ -264,10 +272,7 @@ export class DbProxyServer {
                 try {
                   // Decrypt using security controls inside user context store
                   const decrypted = dbGuardContextStore.run(
-                    {
-                      role: userContext?.role || 'GUEST',
-                      userId: userContext?.userId || 'guest-user',
-                    },
+                    dbGuardContext,
                     () => {
                       let modelName = 'default';
                       let fieldName = columnName;

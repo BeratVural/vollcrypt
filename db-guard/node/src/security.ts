@@ -131,6 +131,8 @@ export interface UserContext {
   maxPageSize?: number;
   onPageSizeExceeded?: 'warn' | 'error' | 'bypass';
   tenantId?: string;
+  decryptCount?: number;
+  windowStart?: number;
 }
 
 // 1. Request Context Store (AsyncLocalStorage)
@@ -377,17 +379,38 @@ export function checkRateLimit(options?: RateLimiterOptions) {
   const mode = context?.rateLimiterMode || options?.mode || 'fail_closed';
   const now = Date.now();
 
-  if (now - windowStart > 1000) {
-    decryptCount = 0;
-    windowStart = now;
-  }
+  if (context) {
+    if (context.windowStart === undefined || context.decryptCount === undefined) {
+      context.windowStart = now;
+      context.decryptCount = 0;
+    }
 
-  decryptCount++;
-  if (decryptCount > limit) {
-    if (mode === 'fail_closed') {
-      triggerFailClosed(options?.onFailClosed);
-    } else if (mode === 'warn') {
-      console.warn(`Vollcrypt Warning: Decryption rate limit exceeded. ${decryptCount} decryptions in the current window (limit: ${limit}).`);
+    if (now - context.windowStart > 1000) {
+      context.decryptCount = 0;
+      context.windowStart = now;
+    }
+
+    context.decryptCount++;
+    if (context.decryptCount > limit) {
+      if (mode === 'fail_closed') {
+        triggerFailClosed(options?.onFailClosed);
+      } else if (mode === 'warn') {
+        console.warn(`Vollcrypt Warning: Decryption rate limit exceeded. ${context.decryptCount} decryptions in the current window (limit: ${limit}).`);
+      }
+    }
+  } else {
+    if (now - windowStart > 1000) {
+      decryptCount = 0;
+      windowStart = now;
+    }
+
+    decryptCount++;
+    if (decryptCount > limit) {
+      if (mode === 'fail_closed') {
+        triggerFailClosed(options?.onFailClosed);
+      } else if (mode === 'warn') {
+        console.warn(`Vollcrypt Warning: Decryption rate limit exceeded. ${decryptCount} decryptions in the current window (limit: ${limit}).`);
+      }
     }
   }
 }
