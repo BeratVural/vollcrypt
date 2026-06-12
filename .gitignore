@@ -41,3 +41,8 @@ Thumbs.db
 
 # Environment
 .env
+
+# Presentation
+presentation/
+
+scratch/
