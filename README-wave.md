@@ -24,8 +24,15 @@ Unlike `vollcrypt-messages`, **Vollcrypt Wave** is fully independent and impleme
 1.  **Independent Cryptographic Core**: Self-contained cryptographic implementation utilizing modern primitives (`x25519-dalek`, `ml-kem`, `aes-gcm`, `hkdf`, `sha2`) without depending on external Vollcrypt modules.
 2.  **Quantum-Resistant Hybrid Key Exchange**: Combines **ML-KEM-768** (FIPS 203) and **X25519** ECDH via HKDF-SHA256 to ensure that tactical networks resist both classical and future quantum-based decryption attacks.
 3.  **Cryptographic Frequency Hopping (FHSS)**: Generates deterministic pseudo-random frequency hopping channels based on a shared **Word of Day (WOD)** and high-precision **Time of Day (TOD)**, mimicking white noise patterns.
-4.  **Dynamic Ephemeral Aliasing**: Completely hides physical subscriber and radio IDs over-the-air. Radios dynamically derive call sign pseudonyms (aliases) using time-rotating HMAC keys, rendering traffic analysis by adversaries impossible.
-5.  **Audio Steganography (LSB & Noise Masking)**: Permits embedding of low-bitrate data (e.g., GPS coordinates, tactical statuses, or text messages) directly inside digitized voice audio frames without degrading voice quality or raising suspicion.
+4.  **Dynamic Ephemeral Aliasing (Frekans Alias)**: Completely hides physical subscriber and radio IDs over-the-air. Radios dynamically derive call sign pseudonyms (aliases) using time-rotating HMAC keys. Additionally, the encrypted frame envelope can contain an optional `target_logical_freq` parameter, directing receiving transceivers to instantly switch physical frequencies upon packet decryption.
+5.  **Steganography (LSB & DSSS Noise Floor)**:
+    *   *Audio Steganography (LSB):* Embeds data (e.g., GPS coordinates) in the least significant bits of 16-bit PCM voice frames.
+    *   *Sinyal Gürültü Altına Gömme (DSSS):* Implements LPI/LPD (Low Probability of Intercept/Detection) by spreading bits over a 256-chip pseudo-random noise sequence. This buries the signal deep inside the noise floor, which can only be decoded by authorized receivers possessing the shared cryptographic key.
+6.  **Frequency Formatting & Modulation (Carrier Hopping)**: Maps channel indices to physical RF bands (e.g., VHF 30-88 MHz with 25 kHz spacing) and encodes data bits to modulation-ready FSK symbols. Implements **Time-Synchronized Hopping Switching** (Zaman Senkronize Atlamalı Anahtarlama), where data blocks are dynamically packaged onto shifting carrier frequencies at the SDR level to bypass physical antenna tuning limitations.
+7.  **TOD Time Synchronization**: Implements a secure time exchange protocol with HMAC-SHA256 authenticity verification and exponential clock drift correction to keep FHSS channels locked in phase.
+8.  **Adaptive Audio Compression (4-bit Codec)**: Incorporates an integrated IMA ADPCM voice compressor that reduces 16-bit PCM voice streams by 4:1 (25% size) to fit narrow tactical radio bandwidths.
+9.  **Tactical Mesh Routing**: Employs an ad-hoc packet router that routes data across intermediate nodes using hop-limit budgets and duplicate packet suppression to avoid loop storms.
+10. **Wave-TCP Lossless Delivery Layer**: Provides a reliable sliding-window ARQ (Automatic Repeat reQuest) transport layer that splits payloads into small radio-friendly segments, tracking sequence ACKs and retransmitting lost packets to guarantee 100% lossless delivery over noisy RF links.
 
 ---
 
@@ -59,6 +66,11 @@ sequenceDiagram
 *   `src/alias.rs`: Handles the generation and validation of ephemeral cryptographic aliases.
 *   `src/stego.rs`: Provides audio steganography capabilities, embedding digital bits into voice frames.
 *   `src/wave_packet.rs`: Defines the low-overhead, highly compact frame structure required for radio channels.
+*   `src/modulation.rs`: Maps channel indices to physical RF bands and handles FSK modulation symbol formatting.
+*   `src/sync.rs`: Implements secure TOD time synchronization with HMAC authentication.
+*   `src/codec.rs`: Provides the integrated 4-bit ADPCM voice audio compression/decompression codec.
+*   `src/routing.rs`: Manages ad-hoc mesh routing and duplicate packet suppression.
+*   `src/wave_tcp.rs`: Implements the reliable ARQ packet retransmission and reassembly layer.
 
 ---
 
@@ -106,15 +118,18 @@ assert_eq!(extracted_data, secret_gps_data);
 
 ---
 
-## Security Specifications
+## Security & Physical Specifications
 
-| Layer | Primitive | Purpose |
+| Layer | Primitive / Mechanism | Purpose |
 | :--- | :--- | :--- |
 | **COMSEC (KEM)** | ML-KEM-768 + X25519 | Quantum-resistant asymmetric key exchange |
 | **COMSEC (Sym)** | AES-256-GCM | Encrypted payload integrity & confidentiality |
-| **TRANSEC (FHSS)** | AES-128-CTR | Pseudo-random hop sequence generator |
-| **TRANSEC (Stego)** | LSB Audio Encoder | Covert channel for GPS/metadata injection |
-| **TRANSEC (Alias)** | HMAC-SHA256 | Prevents radio tracking & traffic correlation |
+| **TRANSEC (FHSS)** | AES-128-CTR / AES-256 | Pseudo-random hop sequence generator |
+| **TRANSEC (Stego)** | LSB & 256-Chip DSSS | Covert audio steganography & noise floor signal hiding (LPI/LPD) |
+| **TRANSEC (Alias)** | HMAC-SHA256 | Ephemeral call signs and logical channel header transitions |
+| **TRANSEC (GPS Sync)**| `TimeSynchronizer` GPS Lock | Bypasses software clock drift smoothing when atomic clock/GPS locks are available |
+| **PHYSICAL (Synthesizer)** | PLL Hopping Guard Bands | Restricts consecutive carrier jumps (`max_hop_delta_hz`) to allow PLL loop lock |
+| **PHYSICAL (Limits)** | Min/Max Frequency checks | HardwareConfig checks that prevent commands exceeding physical antenna specifications |
 
 ---
 
