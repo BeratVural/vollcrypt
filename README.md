@@ -43,6 +43,7 @@ This repository is organized as a monorepo containing the following modules:
 
 *   `vollcrypt-messages/`: The Rust implementation and bindings for E2EE messaging (Node.js and WebAssembly).
 *   `vollcrypt-files/`: The Rust implementation and core logic for E2EE file/stream chunking and verification.
+*   `vollcrypt-wave/`: Standalone, `#![no_std]` zero-allocation tactical radio COMSEC & TRANSEC protocol implementation in Rust.
 *   `vollcrypt-desktop/`: Cross-platform desktop application built with Tauri (Rust) and React + Vanilla CSS.
 *   `db-guard/`: FIPS-compliant database field-level encryption adapters for Node.js ORMs and Rust ORMs.
 *   `db-proxy/`: A database wire-protocol proxy for transparent field decryption and masking in-transit.
@@ -52,10 +53,12 @@ graph TD
     classDef rust fill:#df5c3f,stroke:#333,stroke-width:1px,color:#fff;
     classDef bindings fill:#f0db4f,stroke:#333,stroke-width:1px,color:#333;
     classDef runtime fill:#43853d,stroke:#333,stroke-width:1px,color:#fff;
+    classDef hardware fill:#00a3a6,stroke:#333,stroke-width:1px,color:#fff;
 
     subgraph Core ["Vollcrypt Core Workspace"]
         vollcrypt_core["vollcrypt-files-core (Rust)"]:::rust
         vollcrypt_messages_core["vollcrypt-core (Rust)"]:::rust
+        vollcrypt_wave["vollcrypt-wave (Rust - no_std)"]:::rust
     end
 
     subgraph Bindings ["Binding Adapters"]
@@ -70,6 +73,7 @@ graph TD
         web_app["Web Browser / Front-end (e.g. Next.js)"]:::runtime
         native_app["Native Rust Applications / Daemons"]:::rust
         desktop_app["Vollcrypt Desktop App (Tauri v2 + React)"]:::runtime
+        embedded_app["Tactical SDR / Bare-metal Hardware"]:::hardware
     end
 
     vollcrypt_messages_core --> napi
@@ -83,6 +87,9 @@ graph TD
     files_node --> node_app
     files_wasm --> web_app
     vollcrypt_messages_core --> native_app
+    
+    vollcrypt_wave --> embedded_app
+    vollcrypt_wave --> native_app
 ```
 
 ---

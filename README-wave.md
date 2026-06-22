@@ -1,3 +1,8 @@
+---
+layout: default
+title: Vollcrypt Wave
+---
+
 <div align="center">
   <h1>Vollcrypt Wave</h1>
   <p><strong>Tactical Radio COMSEC & TRANSEC Protocol for Military & Covert Communication</strong></p>
@@ -121,13 +126,13 @@ The `vollcrypt-wave` library is structured as a zero-dependency, `#![no_std]` Ru
 | **TRANSEC (Covert)** | 256-Chip DSSS Spreading | Hides signal below noise floor (LPI/LPD) |
 | **PHYSICAL (Sync)** | $\Delta v = \frac{\Delta \phi \cdot c}{2\pi \cdot \Delta t \cdot f_0}$ | Kinematic Doppler correction |
 | **PHYSICAL (Masking)** | Root-Raised-Cosine (RRC) | Bounds chaotic spectrum within yasal mask B (LPD) |
-| **PHYSICAL (AGC)** | $\text{RMS} = \sqrt{\frac{1}{N}\sum |s_i|^2}$ | Vector amplitude normalization |
+| **PHYSICAL (AGC)** | $\text{RMS} = \sqrt{\frac{1}{N}\sum \mid s_i \mid^2}$ | Vector amplitude normalization |
 | **RESILIENCE (FEC)** | PGZ RS(32, 28) + Viterbi (Rate 1/2) | Double-layer error correction |
 | **INFO THEORY (FEC)**| $C = B \log_2(1 + \text{SNR})$ & $GF(2^8)$ BM | Shannon capacity & Galois adaptation ($P \in [2, 32]$) |
 | **RESILIENCE (Acoustic)**| CPFSK (19k/21k Hz) + Goertzel | Ultrasonic communication fallback |
 | **RESILIENCE (Sync)**   | SHA-256 + HKDF + Look-Ahead | Deterministic P2P & Master Fork-Merge reconciliation |
 | **GUARDRAIL (OTAM)** | Ed25519 M-of-N Consensus | Prevent unauthorized control updates |
-| **CONTROL PLANE (Wave)** | $|t_{\text{local}} - t_{\text{packet}}| \le \Delta t$ & Ed25519 M-of-N | Control-plane validation and anti-rollback |
+| **CONTROL PLANE (Wave)** | $\mid t_{\text{local}} - t_{\text{packet}} \mid \le \Delta t$ & Ed25519 M-of-N | Control-plane validation and anti-rollback |
 | **PHYSICAL (Colocation)** | Blanking Bus + Priority | Co-site receiver blanking & preemption |
 | **PHYSICAL (Localization)** | Gauss-Newton $2 \times 2$ Hyperbolic Solver | Passive TDoA transmitter coordinate lookup |
 | **TRANSEC (Compression)** | Galois-grid 12-bit integer delta-packing | 24-bit compact coordinates transmission |
