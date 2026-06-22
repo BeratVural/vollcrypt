@@ -1,0 +1,699 @@
+﻿cargo : warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+At line:1 char:1
++ cargo clippy -p vollcrypt-wave --all-targets -- -D warnings 2>&1 | Ou ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (warning: profil...workspace root::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+package:   C:\Users\iTopya\Desktop\Project\vollcrypt\vollcrypt-files\wasm\Cargo.toml
+workspace: C:\Users\iTopya\Desktop\Project\vollcrypt\Cargo.toml
+    Checking vollcrypt-wave v0.1.0 (C:\Users\iTopya\Desktop\Project\vollcrypt\vollcrypt-wave)
+error: unused import: `core::convert::TryInto`
+   --> vollcrypt-wave\src\lib.rs:104:5
+    |
+104 | use core::convert::TryInto;
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `-D unused-imports` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(unused_imports)]`
+
+error: unused import: `alloc::vec::Vec`
+   --> vollcrypt-wave\src\side_channel.rs:270:9
+    |
+270 |     use alloc::vec::Vec;
+    |         ^^^^^^^^^^^^^^^
+    |
+    = note: `-D unused-imports` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(unused_imports)]`
+
+error: unused import: `core::convert::TryInto`
+   --> vollcrypt-wave\src\lib.rs:104:5
+    |
+104 | use core::convert::TryInto;
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+
+error: the loop variable `i` is only used to index `signatures`
+   --> vollcrypt-wave\src\otam.rs:209:18
+    |
+209 |         for i in 0..num_signatures {
+    |                  ^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_range
+_loop
+    = note: `-D clippy::needless-range-loop` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::needless_range_loop)]`
+help: consider using an iterator
+    |
+209 -         for i in 0..num_signatures {
+209 +         for <item> in signatures.iter_mut().take(num_signatures) {
+    |
+
+error: the borrowed expression implements the required traits
+   --> vollcrypt-wave\src\otam.rs:472:23
+    |
+472 |         hasher.update(&chunk_index.to_be_bytes());
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^ help: change this to: `chunk_index.to_be_bytes()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borro
+ws_for_generic_args
+    = note: `-D clippy::needless-borrows-for-generic-args` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::needless_borrows_for_generic_args)]`
+
+error: manual implementation of `.is_multiple_of()`
+   --> vollcrypt-wave\src\otam.rs:518:12
+    |
+518 |         if idx % 2 == 0 {
+    |            ^^^^^^^^^^^^ help: replace with: `idx.is_multiple_of(2)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_mult
+iple_of
+    = note: `-D clippy::manual-is-multiple-of` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::manual_is_multiple_of)]`
+
+error: the borrowed expression implements the required traits
+   --> vollcrypt-wave\src\otam.rs:519:27
+    |
+519 |             hasher.update(&current);
+    |                           ^^^^^^^^ help: change this to: `current`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borro
+ws_for_generic_args
+
+error: the borrowed expression implements the required traits
+   --> vollcrypt-wave\src\otam.rs:520:27
+    |
+520 |             hasher.update(&sibling);
+    |                           ^^^^^^^^ help: change this to: `sibling`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borro
+ws_for_generic_args
+
+error: the borrowed expression implements the required traits
+   --> vollcrypt-wave\src\otam.rs:522:27
+    |
+522 |             hasher.update(&sibling);
+    |                           ^^^^^^^^ help: change this to: `sibling`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borro
+ws_for_generic_args
+
+error: the borrowed expression implements the required traits
+   --> vollcrypt-wave\src\otam.rs:523:27
+    |
+523 |             hasher.update(&current);
+    |                           ^^^^^^^^ help: change this to: `current`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borro
+ws_for_generic_args
+
+error: the loop variable `i` is only used to index `signatures`
+   --> vollcrypt-wave\src\otam.rs:768:18
+    |
+768 |         for i in 0..num_signatures {
+    |                  ^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_range
+_loop
+help: consider using an iterator
+    |
+768 -         for i in 0..num_signatures {
+768 +         for <item> in signatures.iter_mut().take(num_signatures) {
+    |
+
+error: manual absolute difference pattern without using `abs_diff`
+   --> vollcrypt-wave\src\otam.rs:849:16
+    |
+849 |       let diff = if local_time_ms >= envelope.timestamp {
+    |  ________________^
+850 | |         local_time_ms - envelope.timestamp
+851 | |     } else {
+852 | |         envelope.timestamp - local_time_ms
+853 | |     };
+    | |_____^ help: replace with `abs_diff`: `local_time_ms.abs_diff(envelope.timestamp)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_abs_dif
+f
+    = note: `-D clippy::manual-abs-diff` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::manual_abs_diff)]`
+
+error: the borrowed expression implements the required traits
+   --> vollcrypt-wave\src\chaos.rs:114:23
+    |
+114 |         hasher.update(&self.word_of_day);
+    |                       ^^^^^^^^^^^^^^^^^ help: change this to: `self.word_of_day`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borro
+ws_for_generic_args
+
+error: the borrowed expression implements the required traits
+   --> vollcrypt-wave\src\chaos.rs:115:23
+    |
+115 |         hasher.update(&timestamp_us.to_be_bytes());
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: change this to: `timestamp_us.to_be_bytes()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borro
+ws_for_generic_args
+
+error: manual `!RangeInclusive::contains` implementation
+  --> vollcrypt-wave\src\delta_grid.rs:46:47
+   |
+46 |         if grid_x < -2048 || grid_x > 2047 || grid_y < -2048 || grid_y > 2047 {
+   |                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `!(-2048..=2047).contains
+(&grid_y)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_co
+ntains
+   = note: `-D clippy::manual-range-contains` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::manual_range_contains)]`
+
+error: manual `!RangeInclusive::contains` implementation
+  --> vollcrypt-wave\src\delta_grid.rs:46:12
+   |
+46 |         if grid_x < -2048 || grid_x > 2047 || grid_y < -2048 || grid_y > 2047 {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `!(-2048..=2047).contains(&grid_x)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_co
+ntains
+
+error: clamp-like pattern without using clamp function
+  --> vollcrypt-wave\src\chaotic_burst.rs:52:9
+   |
+52 | /         if clamped < -0.99999 {
+53 | |             clamped = -0.99999;
+54 | |         }
+55 | |         if clamped > 0.99999 {
+56 | |             clamped = 0.99999;
+57 | |         }
+   | |_________^ help: replace with clamp: `clamped = clamped.clamp(-0.99999, 0.99999);`
+   |
+   = note: clamp will panic if max < min, min.is_nan(), or max.is_nan()
+   = note: clamp returns NaN if the input is NaN
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_clamp
+   = note: `-D clippy::manual-clamp` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::manual_clamp)]`
+
+error: the borrowed expression implements the required traits
+  --> vollcrypt-wave\src\electronic_attack.rs:63:23
+   |
+63 |         hasher.update(&seed);
+   |                       ^^^^^ help: change this to: `seed`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borrow
+s_for_generic_args
+
+error: clamp-like pattern without using clamp function
+   --> vollcrypt-wave\src\electronic_attack.rs:109:17
+    |
+109 | /                 if clamped < -0.99999 {
+110 | |                     clamped = -0.99999;
+111 | |                 }
+112 | |                 if clamped > 0.99999 {
+113 | |                     clamped = 0.99999;
+114 | |                 }
+    | |_________________^ help: replace with clamp: `clamped = clamped.clamp(-0.99999, 0.99999);`
+    |
+    = note: clamp will panic if max < min, min.is_nan(), or max.is_nan()
+    = note: clamp returns NaN if the input is NaN
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_clamp
+
+error: the loop variable `i` is used to index `taps`
+   --> vollcrypt-wave\src\modulation.rs:650:14
+    |
+650 |     for i in 0..num_taps {
+    |              ^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_range
+_loop
+help: consider using an iterator and enumerate()
+    |
+650 -     for i in 0..num_taps {
+650 +     for (i, <item>) in taps.iter_mut().enumerate().take(num_taps) {
+    |
+
+error: the loop variable `k` is used to index `taps`
+   --> vollcrypt-wave\src\modulation.rs:707:18
+    |
+707 |         for k in 0..num_taps {
+    |                  ^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_range
+_loop
+help: consider using an iterator and enumerate()
+    |
+707 -         for k in 0..num_taps {
+707 +         for (k, <item>) in taps.iter().enumerate().take(num_taps) {
+    |
+
+error: approximate value of `f{32, 64}::consts::FRAC_1_SQRT_2` found
+   --> vollcrypt-wave\src\modulation.rs:773:24
+    |
+773 | const QPSK_NORM: f64 = 0.7071067811865476; // 1 / sqrt(2)
+    |                        ^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider using the constant directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#approx_constan
+t
+    = note: `#[deny(clippy::approx_constant)]` on by default
+
+error: you should consider adding a `Default` implementation for `MockTransceiver`
+  --> vollcrypt-wave\src\hal.rs:72:9
+   |
+72 | /         pub fn new() -> Self {
+73 | |             Self {
+74 | |                 frequency_hz: 30_000_000, // Default 30 MHz (VHF base)
+75 | |                 tx_power_watts: 5.0,      // Default 5W tactical power
+...  |
+82 | |         }
+   | |_________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#new_without_def
+ault
+   = note: `-D clippy::new-without-default` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::new_without_default)]`
+help: try adding this
+   |
+71 ~     impl Default for MockTransceiver {
+72 +         fn default() -> Self {
+73 +             Self::new()
+74 +         }
+75 +     }
+76 + 
+77 ~     impl MockTransceiver {
+   |
+
+error: you should consider adding a `Default` implementation for `MockAudio`
+   --> vollcrypt-wave\src\hal.rs:173:9
+    |
+173 | /         pub fn new() -> Self {
+174 | |             Self {
+175 | |                 played_samples: Vec::new(),
+176 | |                 record_queue: Vec::new(),
+177 | |             }
+178 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#new_without_de
+fault
+help: try adding this
+    |
+172 ~     impl Default for MockAudio {
+173 +         fn default() -> Self {
+174 +             Self::new()
+175 +         }
+176 +     }
+177 + 
+178 ~     impl MockAudio {
+    |
+
+error: casting to the same type is unnecessary (`u8` -> `u8`)
+  --> vollcrypt-wave\src\stego.rs:41:27
+   |
+41 |                 let bit = ((byte >> i) & 1) as u8;
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^ help: try: `((byte >> i) & 1)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_cas
+t
+   = note: `-D clippy::unnecessary-cast` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::unnecessary_cast)]`
+
+error: the loop variable `i` is only used to index `audio`
+  --> vollcrypt-wave\src\stego.rs:70:18
+   |
+70 |         for i in 0..32 {
+   |                  ^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_range_
+loop
+help: consider using an iterator
+   |
+70 -         for i in 0..32 {
+70 +         for <item> in audio.iter().take(32) {
+   |
+
+error: the loop variable `i` is used to index `audio`
+  --> vollcrypt-wave\src\stego.rs:86:18
+   |
+86 |         for i in 32..total_bits_needed {
+   |                  ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_range_
+loop
+help: consider using an iterator and enumerate()
+   |
+86 -         for i in 32..total_bits_needed {
+86 +         for (i, <item>) in audio.iter().enumerate().take(total_bits_needed).skip(32) {
+   |
+
+error: casting to the same type is unnecessary (`u8` -> `u8`)
+   --> vollcrypt-wave\src\stego.rs:147:27
+    |
+147 |                 bits.push(((byte >> i) & 1) as u8);
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^ help: try: `(((byte >> i) & 1))`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_ca
+st
+
+error: the borrowed expression implements the required traits
+   --> vollcrypt-wave\src\stego.rs:228:27
+    |
+228 |             hasher.update(&state);
+    |                           ^^^^^^ help: change this to: `state`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borro
+ws_for_generic_args
+
+error: the loop variable `i` is used to index `syndromes`
+  --> vollcrypt-wave\src\fec.rs:77:14
+   |
+77 |     for i in 0..4 {
+   |              ^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_range_
+loop
+help: consider using an iterator and enumerate()
+   |
+77 -     for i in 0..4 {
+77 +     for (i, <item>) in syndromes.iter_mut().enumerate() {
+   |
+
+error: the loop variable `i` is used to index `syndromes`
+   --> vollcrypt-wave\src\fec.rs:291:14
+    |
+291 |     for i in 0..parity_len {
+    |              ^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_range
+_loop
+help: consider using an iterator and enumerate()
+    |
+291 -     for i in 0..parity_len {
+291 +     for (i, <item>) in syndromes.iter_mut().enumerate().take(parity_len) {
+    |
+
+error: the variable `step_count` is used as a loop counter
+   --> vollcrypt-wave\src\fec.rs:494:5
+    |
+494 |     for pair in encoded_bits.chunks_exact(2) {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using: `for (step_count, pair) in encoded_bits.chunks
+_exact(2).enumerate()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#explicit_count
+er_loop
+    = note: `-D clippy::explicit-counter-loop` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::explicit_counter_loop)]`
+
+error: manually reimplementing `div_ceil`
+   --> vollcrypt-wave\src\fec.rs:564:20
+    |
+564 |         let rows = (n + cols - 1) / cols;
+    |                    ^^^^^^^^^^^^^^^^^^^^^ help: consider using `.div_ceil()`: `n.div_ceil(cols)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_div_cei
+l
+    = note: `-D clippy::manual-div-ceil` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::manual_div_ceil)]`
+
+error: doc list item overindented
+  --> vollcrypt-wave\src\onion.rs:78:9
+   |
+78 |     ///           Must be the same length as `route`.
+   |         ^^^^^^^^^^ help: try using `  ` (2 spaces)
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#doc_overindente
+d_list_items
+   = note: `-D clippy::doc-overindented-list-items` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::doc_overindented_list_items)]`
+
+error: you should consider adding a `Default` implementation for `ProcessedTokenTracker`
+  --> vollcrypt-wave\src\mutual.rs:19:5
+   |
+19 | /     pub fn new() -> Self {
+20 | |         Self {
+21 | |             used_tokens: HashSet::new(),
+22 | |         }
+23 | |     }
+   | |_____^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#new_without_def
+ault
+help: try adding this
+   |
+18 + impl Default for ProcessedTokenTracker {
+19 +     fn default() -> Self {
+20 +         Self::new()
+21 +     }
+22 + }
+   |
+
+error: doc list item overindented
+  --> vollcrypt-wave\src\asym_onion.rs:81:9
+   |
+81 |     ///                   for each node in `route`. Must be the same length as `route`.
+   |         ^^^^^^^^^^^^^^^^^^ help: try using `  ` (2 spaces)
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#doc_overindente
+d_list_items
+
+error: large size difference between variants
+   --> vollcrypt-wave\src\asym_onion.rs:169:1
+    |
+169 | /  pub enum AsymmetricProcessOutcome {
+170 | |      /// The packet needs to be forwarded to the next node.
+171 | |/     Relay {
+172 | ||         next_hop: u16,
+173 | ||         next_packet: AsymmetricOnionPacket,
+174 | ||     },
+    | ||_____- the largest variant contains at least 1210 bytes
+175 | |      /// The packet has reached the destination.
+176 | |      Deliver(AsymmetricOnionInnerPayload),
+    | |      ------------------------------------ the second-largest variant contains at least 32 bytes
+177 | |  }
+    | |__^ the entire enum is at least 1216 bytes
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#large_enum_var
+iant
+    = note: `-D clippy::large-enum-variant` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::large_enum_variant)]`
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enu
+m
+    |
+173 -         next_packet: AsymmetricOnionPacket,
+173 +         next_packet: Box<AsymmetricOnionPacket>,
+    |
+
+error: manually reimplementing `div_ceil`
+  --> vollcrypt-wave\src\fountain.rs:68:26
+   |
+68 |         let block_size = (data.len() + k as usize - 1) / k as usize;
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using `.div_ceil()`: `data.len(
+).div_ceil(k as usize)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_div_ceil
+
+error: usage of `contains_key` followed by `insert` on a `HashMap`
+   --> vollcrypt-wave\src\fountain.rs:182:17
+    |
+182 | /                 if !self.resolved_blocks.contains_key(&resolved_block_idx) {
+183 | |                     self.resolved_blocks.insert(resolved_block_idx, payload.clone());
+184 | |                     progress = true;
+...   |
+195 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#map_entry
+    = note: `-D clippy::map-entry` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::map_entry)]`
+help: try
+    |
+182 ~                 if let std::collections::hash_map::Entry::Vacant(e) = self.resolved_blocks.entry(resolved_block_i
+dx) {
+183 +                     e.insert(payload.clone());
+184 +                     progress = true;
+185 + 
+186 +                     // Propagate the resolved block to all other remaining packets
+187 +                     for (remaining_indices, remaining_payload) in &mut self.received_packets {
+188 +                         if remaining_indices.contains(&resolved_block_idx) {
+189 +                             remaining_indices.remove(&resolved_block_idx);
+190 +                             for (p, r) in remaining_payload.iter_mut().zip(&payload) {
+191 +                                 *p ^= r;
+192 +                             }
+193 +                         }
+194 +                     }
+195 +                 }
+    |
+
+error: the borrowed expression implements the required traits
+   --> vollcrypt-wave\src\reconciliation.rs:246:23
+    |
+246 |         hasher.update(&node_id.to_be_bytes());
+    |                       ^^^^^^^^^^^^^^^^^^^^^^ help: change this to: `node_id.to_be_bytes()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borro
+ws_for_generic_args
+
+error: the borrowed expression implements the required traits
+   --> vollcrypt-wave\src\reconciliation.rs:247:23
+    |
+247 |         hasher.update(&timestamp.to_be_bytes());
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^ help: change this to: `timestamp.to_be_bytes()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borro
+ws_for_generic_args
+
+error: the borrowed expression implements the required traits
+  --> vollcrypt-wave\src\entropy.rs:52:23
+   |
+52 |         hasher.update(&sample.i.to_ne_bytes());
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^ help: change this to: `sample.i.to_ne_bytes()`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borrow
+s_for_generic_args
+
+error: the borrowed expression implements the required traits
+  --> vollcrypt-wave\src\entropy.rs:53:23
+   |
+53 |         hasher.update(&sample.q.to_ne_bytes());
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^ help: change this to: `sample.q.to_ne_bytes()`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borrow
+s_for_generic_args
+
+error: useless conversion to the same type: `[u8; 1088]`
+   --> vollcrypt-wave\src\adhoc.rs:363:26
+    |
+363 |     let ct: [u8; 1088] = ct_vec.try_into().map_err(|_| "Invalid ML-KEM ciphertext size")?;
+    |                          ^^^^^^^^^^^^^^^^^
+    |
+    = help: consider removing `.try_into()`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#useless_conver
+sion
+    = note: `-D clippy::useless-conversion` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::useless_conversion)]`
+
+error: useless conversion to the same type: `[u8; 1088]`
+   --> vollcrypt-wave\src\adhoc.rs:563:26
+    |
+563 |     let ct: [u8; 1088] = ct_vec.try_into().map_err(|_| "Invalid ML-KEM ciphertext size")?;
+    |                          ^^^^^^^^^^^^^^^^^
+    |
+    = help: consider removing `.try_into()`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#useless_conver
+sion
+
+error: you should consider adding a `Default` implementation for `ColocationBus`
+  --> vollcrypt-wave\src\colocation.rs:21:5
+   |
+21 | /     pub fn new() -> Self {
+22 | |         Self {
+23 | |             active_blanking: Mutex::new(None),
+24 | |         }
+25 | |     }
+   | |_____^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#new_without_def
+ault
+help: try adding this
+   |
+19 + impl Default for ColocationBus {
+20 +     fn default() -> Self {
+21 +         Self::new()
+22 +     }
+23 + }
+   |
+
+error: creating a mutable reference to mutable static
+  --> vollcrypt-wave\src\side_channel.rs:32:13
+   |
+32 |             DUMMY_DK.copy_from_slice(dk.as_bytes().as_ref());
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ mutable reference to mutable static
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+   = note: mutable references to mutable statics are dangerous; it's undefined behavior if any other pointer to the sta
+tic is used or if any other reference is created for the static while the mutable reference lives
+   = note: `-D static-mut-refs` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(static_mut_refs)]`
+
+error: creating a mutable reference to mutable static
+  --> vollcrypt-wave\src\side_channel.rs:33:13
+   |
+33 |             DUMMY_EK.copy_from_slice(ek.as_bytes().as_ref());
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ mutable reference to mutable static
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+   = note: mutable references to mutable statics are dangerous; it's undefined behavior if any other pointer to the sta
+tic is used or if any other reference is created for the static while the mutable reference lives
+
+error: creating a mutable reference to mutable static
+  --> vollcrypt-wave\src\side_channel.rs:35:13
+   |
+35 |             DUMMY_CT.copy_from_slice(ct.as_slice());
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ mutable reference to mutable static
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+   = note: mutable references to mutable statics are dangerous; it's undefined behavior if any other pointer to the sta
+tic is used or if any other reference is created for the static while the mutable reference lives
+
+error: creating a shared reference to mutable static
+  --> vollcrypt-wave\src\side_channel.rs:44:14
+   |
+44 |     unsafe { &DUMMY_DK }
+   |              ^^^^^^^^^ shared reference to mutable static
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+   = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a
+ mutable reference is created for it while the shared reference lives
+help: use `&raw const` instead to create a raw pointer
+   |
+44 |     unsafe { &raw const DUMMY_DK }
+   |               +++++++++
+
+error: creating a shared reference to mutable static
+  --> vollcrypt-wave\src\side_channel.rs:50:14
+   |
+50 |     unsafe { &DUMMY_EK }
+   |              ^^^^^^^^^ shared reference to mutable static
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+   = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a
+ mutable reference is created for it while the shared reference lives
+help: use `&raw const` instead to create a raw pointer
+   |
+50 |     unsafe { &raw const DUMMY_EK }
+   |               +++++++++
+
+error: creating a shared reference to mutable static
+  --> vollcrypt-wave\src\side_channel.rs:56:14
+   |
+56 |     unsafe { &DUMMY_CT }
+   |              ^^^^^^^^^ shared reference to mutable static
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+   = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a
+ mutable reference is created for it while the shared reference lives
+help: use `&raw const` instead to create a raw pointer
+   |
+56 |     unsafe { &raw const DUMMY_CT }
+   |               +++++++++
+
+error: variable does not need to be mutable
+   --> vollcrypt-wave\src\chaotic_burst.rs:110:13
+    |
+110 |         let mut seed1 = [0xAA; 32];
+    |             ----^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `-D unused-mut` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(unused_mut)]`
+
+error: could not compile `vollcrypt-wave` (lib) due to 50 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: variable does not need to be mutable
+   --> vollcrypt-wave\src\reconciliation.rs:586:13
+    |
+586 |         let mut manager = SplitBrainManager::new(initial_key, initial_hash, 10);
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+error: could not compile `vollcrypt-wave` (lib test) due to 53 previous errors

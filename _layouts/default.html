@@ -26,6 +26,7 @@
           <a href="{{ '/README-db-guard.html' | relative_url }}" class="nav-btn" id="nav-db-guard">DB Guard</a>
           <a href="{{ '/README-db-proxy.html' | relative_url }}" class="nav-btn" id="nav-db-proxy">DB Proxy</a>
           <a href="{{ '/README-desktop.html' | relative_url }}" class="nav-btn" id="nav-desktop">Desktop App</a>
+          <a href="{{ '/README-wave.html' | relative_url }}" class="nav-btn" id="nav-wave">Wave Module</a>
         </nav>
       </header>
       
@@ -55,6 +56,7 @@
         const navDbGuard = document.getElementById("nav-db-guard");
         const navDbProxy = document.getElementById("nav-db-proxy");
         const navDesktop = document.getElementById("nav-desktop");
+        const navWave = document.getElementById("nav-wave");
         
         if (currentPath.includes("README-messages")) {
           navMessages.classList.add("active");
@@ -66,6 +68,8 @@
           navDbProxy.classList.add("active");
         } else if (currentPath.includes("README-desktop")) {
           navDesktop.classList.add("active");
+        } else if (currentPath.includes("README-wave")) {
+          if (navWave) navWave.classList.add("active");
         } else {
           navHome.classList.add("active");
         }

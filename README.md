@@ -28,11 +28,12 @@ Vollcrypt is a cryptographic library providing secure building blocks for end-to
 
 Explore the specific modules of Vollcrypt:
 
-*   📩 **[Vollcrypt Messages Module Documentation (README-messages.md)](README-messages.md)** - Stable, E2EE messaging session managers, PCS ratchets, sealed sender, and transparency logs.
-*   📁 **[Vollcrypt Files Module Documentation (README-files.md)](README-files.md)** - Active Development, streaming chunk-based encryption, and Merkle tree verification.
-*   🖥️ **[Vollcrypt Desktop App Module Documentation (README-desktop.md)](README-desktop.md)** - Frameless, dark-mode native desktop application for file and text cryptography.
-*   **[Vollcrypt DB-Guard Module Documentation (README-db-guard.md)](README-db-guard.md)** - FIPS-compliant database field-level encryption integrations (Prisma, Mongoose, Drizzle, TypeORM, Diesel, SeaORM) with dynamic KMS routing and PKCS#11 HSM support.
-*   **[Vollcrypt DB-Proxy Module Documentation (README-db-proxy.md)](README-db-proxy.md)** - Zero-trust database protocol proxy (PostgreSQL) executing dynamic envelope decryption and dynamic data masking (DDM) on-the-fly for off-the-shelf BI tools and SQL clients.
+*    **[Vollcrypt Messages Module Documentation (README-messages.md)](README-messages.md)** - Stable, E2EE messaging session managers, PCS ratchets, sealed sender, and transparency logs.
+*    **[Vollcrypt Files Module Documentation (README-files.md)](README-files.md)** - Active Development, streaming chunk-based encryption, and Merkle tree verification.
+*    **[Vollcrypt Desktop App Module Documentation (README-desktop.md)](README-desktop.md)** - Frameless, dark-mode native desktop application for file and text cryptography.
+*    **[Vollcrypt DB-Guard Module Documentation (README-db-guard.md)](README-db-guard.md)** - FIPS-compliant database field-level encryption integrations (Prisma, Mongoose, Drizzle, TypeORM, Diesel, SeaORM) with dynamic KMS routing and PKCS#11 HSM support.
+*    **[Vollcrypt DB-Proxy Module Documentation (README-db-proxy.md)](README-db-proxy.md)** - Zero-trust database protocol proxy (PostgreSQL) executing dynamic envelope decryption and dynamic data masking (DDM) on-the-fly for off-the-shelf BI tools and SQL clients.
+*    **[Vollcrypt Wave Module Documentation (README-wave.md)](README-wave.md)** - Standalone, `#![no_std]` zero-allocation tactical radio COMSEC & TRANSEC protocol with deterministic chaos FHSS, dynamic aliasing, and Doppler sync.
 
 ---
 
@@ -86,39 +87,35 @@ graph TD
 
 ---
 
-## Security Properties
+## Core Capabilities & Cryptographic Guarantees
 
-| Property | Applied To | Mechanism | Guarantee / Protection |
-| :--- | :--- | :--- | :--- |
-| **Confidentiality** | Messages & Files | AES-256-GCM | Encrypted content cannot be read without the session/file key. Files are encrypted in chunk streams. |
-| **Integrity** | Messages | AES-256-GCM tag + Transcript Hash Chain | Messages cannot be modified, reordered, replayed, or deleted without detection. |
-| **Integrity** | Files | Merkle Tree over chunk authentication tags | Individual chunks cannot be swapped, reordered, or deleted. Allows verification of individual chunks without full download. |
-| **Forward Secrecy** | Messages | Time-windowed WindowKey (HKDF) | Compromising a current key does not expose past session messages. |
-| **Post-Compromise Security** | Messages | Ephemeral X25519 PCS ratchet | Session recovers automatically from key compromise within a few messages. |
-| **Quantum Resistance** | Messages & Files | X25519 + ML-KEM-768 Hybrid KEM | Session/file key exchange resists both classical and quantum attacks. |
-| **Sender Authenticity** | Messages & Files | Ed25519 signature on KEM ciphertext/metadata | Recipients can verify the authenticity of the sender and prevent MITM key substitution by the server. |
-| **Sender Privacy** | Messages | Sealed Sender (ECDH + AES-GCM) | The server routes messages without knowing the sender's identity. |
-| **Key Auditability** | Messages | Key Transparency log (signed hash chain) | Key modifications are append-only and public, preventing silent backdating of keys. |
-| **MITM Detection** | Messages | Out-of-band Verification Codes (Numeric/Emoji) | Humans can easily verify the fingerprint of their keys to ensure no MITM is present. |
-| **Password Derivation** | Messages & Files | PBKDF2 (600k iterations) & Argon2id (files only) | Derives high-entropy wrapping keys from user passwords to secure recovery seeds and keys. |
-| **Key Wrapping** | Messages & Files | AES-256-KW (RFC 3394) | Protects sensitive keys (DEK, SRK, Mnemonics) when stored in insecure local storage. |
+Vollcrypt workspace exposes a unified suite of quantum-resistant cryptographic engines, application-level clients, and transparent database security proxies:
 
----
+1. **Quantum-Resistant End-to-End Encryption (E2EE)**
+   Secures messaging sessions and file distribution pipelines against both current and future quantum computing threats.
+   * **Hybrid Key Encapsulation:** Combines FIPS 203 **ML-KEM-768** with classical **X25519** ECDH.
+   * **PCS & Forward Secrecy:** Continuous ephemeral key ratcheting isolates key compromise and secures historical archives.
+   * **Sender & Receiver Privacy:** Zero-knowledge Sealed Sender routing hides message metadata from delivery servers, and Blind Cluster Multicast hides recipient destinations.
 
-## Feature Support Matrix
+2. **Transparent Database & Zero-Trust Security**
+   Protects sensitive database records directly at-rest and in-transit without modifications to off-the-shelf software.
+   * **Field-Level Encryption (DB-Guard):** Modular ORM adapters (Drizzle, Mongoose, SeaORM, etc.) with dynamic KMS routing.
+   * **Zero-Trust Wire Proxy (DB-Proxy):** Transparently decrypts and masks PostgreSQL fields on-the-fly for business intelligence tools and SQL clients.
 
-| Feature | Messages Module (`vollcrypt-messages`) | Files Module (`vollcrypt-file`) | Maturity Level | Primary Use Case |
-| :--- | :--- | :--- | :--- | :--- |
-| **Symmetric Cipher** | AES-256-GCM | AES-256-GCM | Production-ready (Messages) / Beta (Files) | Bulk payload encryption |
-| **Classical Key Exchange** | X25519 ECDH | X25519 ECDH | Production-ready | Classical forward-secure key exchanges |
-| **Post-Quantum KEM** | ML-KEM-768 | ML-KEM-768 | Production-ready (FIPS 203) | Quantum-resistant session setup |
-| **Hybrid Key Transport** | Yes (X25519 + ML-KEM) | Yes (X25519 + ML-KEM) | Production-ready | Forward-secure, PQ-secure handshakes |
-| **Digital Signatures** | Ed25519 | Ed25519 | Production-ready | Key log entries, ciphertext authenticity |
-| **Password Derivation** | PBKDF2-SHA256 (600k) | PBKDF2-SHA256 (600k) & Argon2id | Production-ready | Local database / seed wrapping |
-| **Key Wrapping** | AES-256-KW (RFC 3394) | AES-256-KW (RFC 3394) | Production-ready | Secure key storage at rest |
-| **Integrity Verification** | Transcript Hash Chain | Merkle Tree over Chunk Tags | Production-ready (Messages) / Beta (Files) | Reordering protection (Messages) / Random access seek validation (Files) |
-| **Group Support** | - | Signed Group Manifest Log | Beta | Multi-recipient file sharing/rotation |
-| **Maturity** | **Stable** | **Active Development** | - | - |
+3. **High-Performance Desktop Cryptography**
+   Provides a cross-platform, native desktop application (Tauri v2 + React) designed to encrypt local files and text.
+   * **Stream Chunking & Verification:** Encrypts large files in chunks and validates integrity using Merkle trees without fully downloading the file.
+
+4. **Tactical & Covert Radio TRANSEC/COMSEC (Vollcrypt Wave)**
+   A `#![no_std]` bare-metal compatible library designed to secure digital and software-defined radios (SDR) under extreme noise and jamming environments.
+   * **Chaotic Frequency Hopping (FHSS):** Non-linear dynamical chaos systems (Logistic Map / Lorenz Attractors) generate hopping sequences indistinguishable from background noise.
+   * **Anti-Jamming & Acoustic Fallback:** Dynamically escapes jamming frequencies via emergency hopping or autonomous ultrasonic fallback.
+   * **Hardware Abstraction Layer (HAL):** Decouples radio front-end drivers (Aselsan, Harris, SDR) from the cryptography engine.
+
+5. **Anti-Tamper & Sovereign Control**
+   Establishes physical and logical guardrails for hardware devices.
+   * **Poison Pill Zeroization:** Wipes key material and permanently locks compromised devices via Ed25519-signed OTAZ commands.
+   * **Reactive Hardware Wiping:** Triggered automatically upon case intrusion or debugger JTAG connection detection.
 
 ---
 

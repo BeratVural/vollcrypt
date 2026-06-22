@@ -412,7 +412,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
                 break;
             }
 
-            if idx >= u32::MAX {
+            if idx == u32::MAX {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     "TooManyChunks: chunk count exceeds u32::MAX",
