@@ -1,7 +1,11 @@
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
-use vollcrypt_db_guard::{set_key, set_active_version, encrypt_field, decrypt_field};
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
 use vollcrypt_db_guard::diesel_impl::EncryptedString;
+use vollcrypt_db_guard::{decrypt_field, encrypt_field, set_active_version, set_key};
+
+static TEST_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 diesel::table! {
     users (id) {
@@ -21,6 +25,7 @@ struct User {
 
 #[test]
 fn test_diesel_encrypted_string_roundtrip() {
+    let _lock = TEST_MUTEX.lock().unwrap();
     // 1. Initialize encryption key
     let key_v1 = [42u8; 32];
     set_key("1", &key_v1);
@@ -66,15 +71,13 @@ fn test_diesel_encrypted_string_roundtrip() {
     assert_eq!(raw_rows.len(), 1);
     let stored_card = &raw_rows[0].credit_card;
     println!("STORED CARD IN DB: {:?}", stored_card);
-    
+
     // It must start with key version prefix "VOLLVALT:v1:" and be encrypted (not the raw string)
     assert!(stored_card.starts_with("VOLLVALT:v1:"));
     assert_ne!(stored_card, raw_card);
 
     // 5. Query using Diesel ORM to verify it decrypts automatically
-    let queried_users = users::table
-        .load::<User>(&mut conn)
-        .unwrap();
+    let queried_users = users::table.load::<User>(&mut conn).unwrap();
 
     assert_eq!(queried_users.len(), 1);
     assert_eq!(queried_users[0].credit_card.0, raw_card);
@@ -82,6 +85,7 @@ fn test_diesel_encrypted_string_roundtrip() {
 
 #[test]
 fn test_key_rotation() {
+    let _lock = TEST_MUTEX.lock().unwrap();
     let key_v1 = [1u8; 32];
     let key_v2 = [2u8; 32];
 
@@ -109,6 +113,7 @@ fn test_key_rotation() {
 
 #[test]
 fn test_rust_blind_indexing() {
+    let _lock = TEST_MUTEX.lock().unwrap();
     use vollcrypt_db_guard::compute_blind_index;
 
     let root_salt = b"test_root_salt_value_32_bytes_long";
@@ -125,15 +130,17 @@ fn test_rust_blind_indexing() {
     assert_eq!(idx_col1, idx_col1_again);
 
     // 3. Different value on same column must produce different blind index
-    let idx_col1_diff_val = compute_blind_index("different_value", root_salt, "users.email").unwrap();
+    let idx_col1_diff_val =
+        compute_blind_index("different_value", root_salt, "users.email").unwrap();
     assert_ne!(idx_col1, idx_col1_diff_val);
 }
 
 #[test]
 fn test_rust_context_and_rate_limiting() {
-    use vollcrypt_db_guard::{set_context, clear_context, UserContext, CURRENT_CONTEXT};
-    use vollcrypt_db_guard::{set_key, set_active_version, encrypt_field, decrypt_field};
-    use vollcrypt_db_guard::{set_max_decrypt_rate, reset_rust_fail_closed_for_testing};
+    let _lock = TEST_MUTEX.lock().unwrap();
+    use vollcrypt_db_guard::{clear_context, set_context, UserContext, CURRENT_CONTEXT};
+    use vollcrypt_db_guard::{decrypt_field, encrypt_field, set_active_version, set_key};
+    use vollcrypt_db_guard::{reset_rust_fail_closed_for_testing, set_max_decrypt_rate};
 
     // 1. Thread-local Context Verification
     let context = UserContext {
@@ -182,5 +189,7 @@ fn test_rust_context_and_rate_limiting() {
     reset_rust_fail_closed_for_testing(); // reset fail closed state to check key presence
     let res_after = decrypt_field(&encrypted);
     assert!(res_after.is_err());
-    assert!(res_after.unwrap_err().contains("Decryption key version not found"));
+    assert!(res_after
+        .unwrap_err()
+        .contains("Decryption key version not found"));
 }

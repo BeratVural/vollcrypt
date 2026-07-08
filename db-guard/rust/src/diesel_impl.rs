@@ -2,7 +2,7 @@ use diesel::backend::Backend;
 use diesel::deserialize::{self, FromSql, FromSqlRow};
 use diesel::expression::AsExpression;
 #[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
-use diesel::serialize::{self, ToSql, Output};
+use diesel::serialize::{self, Output, ToSql};
 use diesel::sql_types::Text;
 use std::fmt;
 #[cfg(any(feature = "postgres", feature = "mysql"))]

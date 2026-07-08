@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-use std::sync::RwLock;
 use once_cell::sync::Lazy;
-use zeroize::Zeroize;
-use std::sync::atomic::{AtomicUsize, Ordering, AtomicBool};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::RwLock;
 use std::time::Instant;
+use zeroize::Zeroize;
 
 #[derive(Clone, Debug)]
 pub struct UserContext {
@@ -170,7 +170,7 @@ pub fn encrypt_field(plaintext: &[u8]) -> Result<String, &'static str> {
     let (version, key) = get_active_key().ok_or("Active key not set in registry")?;
     let key = zeroize::Zeroizing::new(key);
     let ciphertext = encrypt_aes256gcm(&key, plaintext)?;
-    
+
     use base64::Engine;
     let b64 = base64::engine::general_purpose::STANDARD.encode(ciphertext);
     Ok(format!("VOLLVALT:v{}:{}", version, b64))
@@ -191,13 +191,15 @@ pub fn decrypt_field(stored_val: &str) -> Result<Vec<u8>, &'static str> {
     if !payload.starts_with('v') {
         return Err("Invalid stored ciphertext format: missing version prefix after magic bytes");
     }
-    let colon_pos = payload.find(':').ok_or("Invalid stored ciphertext format: missing colon divider")?;
+    let colon_pos = payload
+        .find(':')
+        .ok_or("Invalid stored ciphertext format: missing colon divider")?;
     let version = &payload[1..colon_pos];
     let b64_ciphertext = &payload[colon_pos + 1..];
 
     let key = get_key(version).ok_or("Decryption key version not found in registry")?;
     let key = zeroize::Zeroizing::new(key);
-    
+
     use base64::Engine;
     let ciphertext = base64::engine::general_purpose::STANDARD
         .decode(b64_ciphertext)
@@ -217,20 +219,10 @@ pub fn compute_blind_index(
     column_name: &str,
 ) -> Result<String, &'static str> {
     // 1. Derive column-specific key using HKDF-SHA256
-    let mut derived_column_key = derive_hkdf(
-        root_salt,
-        None,
-        Some(column_name.as_bytes()),
-        32,
-    )?;
+    let mut derived_column_key = derive_hkdf(root_salt, None, Some(column_name.as_bytes()), 32)?;
 
     // 2. Compute the final blind index using the derived column key
-    let blind_index = derive_hkdf(
-        &derived_column_key,
-        None,
-        Some(value.as_bytes()),
-        32,
-    )?;
+    let blind_index = derive_hkdf(&derived_column_key, None, Some(value.as_bytes()), 32)?;
 
     // 3. RAM Security: Zeroize the derived key immediately (Anti-Core Dump)
     derived_column_key.zeroize();
@@ -240,16 +232,13 @@ pub fn compute_blind_index(
         .iter()
         .map(|b| format!("{:02x}", b))
         .collect::<String>();
-        
+
     Ok(hex_str)
 }
 
 // Local cryptographic helper functions using standard crates
 
-fn encrypt_aes256gcm(
-    key: &[u8],
-    plaintext: &[u8],
-) -> Result<Vec<u8>, &'static str> {
+fn encrypt_aes256gcm(key: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, &'static str> {
     if key.len() != 32 {
         return Err("Invalid AES key length, must be 32 bytes");
     }
@@ -257,7 +246,7 @@ fn encrypt_aes256gcm(
         aead::{Aead, KeyInit, Payload},
         Aes256Gcm, Nonce,
     };
-    use rand::{RngCore, rngs::OsRng};
+    use rand::{rngs::OsRng, RngCore};
 
     let mut nonce_bytes = [0u8; 12];
     OsRng.fill_bytes(&mut nonce_bytes);
@@ -268,7 +257,9 @@ fn encrypt_aes256gcm(
         msg: plaintext,
         aad: &[],
     };
-    let ciphertext = cipher.encrypt(nonce, payload).map_err(|_| "Encryption failed")?;
+    let ciphertext = cipher
+        .encrypt(nonce, payload)
+        .map_err(|_| "Encryption failed")?;
 
     let mut result = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
     result.extend_from_slice(&nonce_bytes);
@@ -276,10 +267,7 @@ fn encrypt_aes256gcm(
     Ok(result)
 }
 
-fn decrypt_aes256gcm(
-    key: &[u8],
-    encrypted_data: &[u8],
-) -> Result<Vec<u8>, &'static str> {
+fn decrypt_aes256gcm(key: &[u8], encrypted_data: &[u8]) -> Result<Vec<u8>, &'static str> {
     if key.len() != 32 {
         return Err("Invalid AES key length, must be 32 bytes");
     }
@@ -298,7 +286,9 @@ fn decrypt_aes256gcm(
         msg: ciphertext,
         aad: &[],
     };
-    let plaintext = cipher.decrypt(nonce, payload).map_err(|_| "Decryption failed or MAC mismatch")?;
+    let plaintext = cipher
+        .decrypt(nonce, payload)
+        .map_err(|_| "Decryption failed or MAC mismatch")?;
     Ok(plaintext)
 }
 

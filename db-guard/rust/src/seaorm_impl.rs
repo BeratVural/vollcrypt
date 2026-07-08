@@ -1,5 +1,5 @@
-use sea_orm::{TryGetable, DbErr, Value, TryGetError, QueryResult};
-use sea_orm::sea_query::{ValueType, Nullable};
+use sea_orm::sea_query::{Nullable, ValueType};
+use sea_orm::{DbErr, QueryResult, TryGetError, TryGetable, Value};
 use std::fmt;
 use zeroize::Zeroize;
 
@@ -35,8 +35,8 @@ impl ValueType for EncryptedString {
     fn try_from(v: Value) -> Result<Self, sea_orm::sea_query::ValueTypeErr> {
         match v {
             Value::String(Some(s)) => {
-                let decrypted_bytes = crate::decrypt_field(&s)
-                    .map_err(|_| sea_orm::sea_query::ValueTypeErr)?;
+                let decrypted_bytes =
+                    crate::decrypt_field(&s).map_err(|_| sea_orm::sea_query::ValueTypeErr)?;
                 let decrypted_str = String::from_utf8(decrypted_bytes)
                     .map_err(|_| sea_orm::sea_query::ValueTypeErr)?;
                 Ok(EncryptedString(decrypted_str))
@@ -63,8 +63,9 @@ impl TryGetable for EncryptedString {
         let s = String::try_get_by(res, index)?;
         let decrypted_bytes = crate::decrypt_field(&s)
             .map_err(|e| TryGetError::DbErr(DbErr::Custom(format!("Decryption failed: {}", e))))?;
-        let decrypted_str = String::from_utf8(decrypted_bytes)
-            .map_err(|e| TryGetError::DbErr(DbErr::Custom(format!("UTF-8 decoding error: {}", e))))?;
+        let decrypted_str = String::from_utf8(decrypted_bytes).map_err(|e| {
+            TryGetError::DbErr(DbErr::Custom(format!("UTF-8 decoding error: {}", e)))
+        })?;
         Ok(EncryptedString(decrypted_str))
     }
 }
