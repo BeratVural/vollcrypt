@@ -439,7 +439,11 @@ test('pipelined file encryption and decryption roundtrip', async () => {
     encPath,
     decPath,
     dek,
-    4 // num_workers
+    4, // num_workers
+    {
+      releaseMode: "verified",
+      signature: "optional"
+    }
   );
 
   assert.deepStrictEqual(decHeader.fileId, fileId);

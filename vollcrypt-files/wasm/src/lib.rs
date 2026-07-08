@@ -1921,6 +1921,7 @@ pub async fn encrypt_file_pipelined_async_wasm(
 pub async fn decrypt_file_pipelined_async_wasm(
     ciphertext: &[u8],
     dek: &[u8],
+    policy: JsValue,
 ) -> Result<JsValue, JsValue> {
     let dek_arr = to_arr32(dek, "dek")?;
 
@@ -1930,7 +1931,14 @@ pub async fn decrypt_file_pipelined_async_wasm(
         vollcrypt_files_core::WasmWebCryptoProvider,
     ));
 
-    match vollcrypt_files_core::pipelined_io::decrypt_file_pipelined_async(ciphertext, &dek_arr)
+    let core_policy = if policy.is_null() || policy.is_undefined() {
+        None
+    } else {
+        let policy_wasm: WasmShieldPolicy = serde_wasm_bindgen::from_value(policy).map_err(to_js_err)?;
+        Some(wasm_to_shield_policy(policy_wasm)?)
+    };
+
+    match vollcrypt_files_core::pipelined_io::decrypt_file_pipelined_async_policy(ciphertext, &dek_arr, core_policy.as_ref())
         .await
     {
         Ok((header, plaintext)) => {
@@ -2007,13 +2015,13 @@ fn wasm_to_seal_options(opts: WasmSealOptions) -> Result<vollcrypt_files_core::S
 pub struct WasmShieldPolicy {
     #[serde(rename = "releaseMode")]
     pub release_mode: String,
-    pub signature: String,
+    pub signature: Option<String>,
     #[serde(rename = "rollbackPin")]
     pub rollback_pin: Option<f64>,
     #[serde(rename = "founderAnchor")]
     pub founder_anchor: Option<bool>,
     #[serde(rename = "onTamper")]
-    pub on_tamper: String,
+    pub on_tamper: Option<String>,
     #[serde(rename = "verifySealedMarker")]
     pub verify_sealed_marker: Option<bool>,
 }
@@ -2024,15 +2032,15 @@ fn wasm_to_shield_policy(policy: WasmShieldPolicy) -> Result<vollcrypt_files_cor
         "streaming" => vollcrypt_files_core::ReleaseMode::Streaming,
         _ => return Err(JsValue::from_str("releaseMode must be 'verified' or 'streaming'")),
     };
-    let signature = match policy.signature.as_str() {
-        "required" => vollcrypt_files_core::SignaturePolicy::Required,
-        "optional" => vollcrypt_files_core::SignaturePolicy::Optional,
+    let signature = match policy.signature.as_deref() {
+        Some("required") | None => vollcrypt_files_core::SignaturePolicy::Required,
+        Some("optional") => vollcrypt_files_core::SignaturePolicy::Optional,
         _ => return Err(JsValue::from_str("signature must be 'required' or 'optional'")),
     };
-    let on_tamper = match policy.on_tamper.as_str() {
-        "abort" => vollcrypt_files_core::OnTamper::Abort,
-        "report" => vollcrypt_files_core::OnTamper::AbortWithReport,
-        "recover" => vollcrypt_files_core::OnTamper::AttemptRecovery,
+    let on_tamper = match policy.on_tamper.as_deref() {
+        Some("abort") | None => vollcrypt_files_core::OnTamper::Abort,
+        Some("report") => vollcrypt_files_core::OnTamper::AbortWithReport,
+        Some("recover") => vollcrypt_files_core::OnTamper::AttemptRecovery,
         _ => return Err(JsValue::from_str("onTamper must be 'abort', 'report' or 'recover'")),
     };
     Ok(vollcrypt_files_core::ShieldPolicy {
