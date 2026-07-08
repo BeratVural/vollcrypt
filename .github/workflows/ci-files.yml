@@ -26,8 +26,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
+
+      - name: Remove wave submodule from Cargo.toml for CI
+        run: python -c "lines = [line for line in open('Cargo.toml') if 'vollcrypt-wave' not in line]; open('Cargo.toml', 'w').write(''.join(lines))"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -41,8 +42,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
+
+      - name: Remove wave submodule from Cargo.toml for CI
+        run: python -c "lines = [line for line in open('Cargo.toml') if 'vollcrypt-wave' not in line]; open('Cargo.toml', 'w').write(''.join(lines))"
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -64,8 +66,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
+
+      - name: Remove wave submodule from Cargo.toml for CI
+        run: python -c "lines = [line for line in open('Cargo.toml') if 'vollcrypt-wave' not in line]; open('Cargo.toml', 'w').write(''.join(lines))"
 
       - name: Install Node.js
         uses: actions/setup-node@v4
