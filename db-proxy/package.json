@@ -1,6 +1,6 @@
 {
   "name": "@vollcrypt/db-proxy",
-  "version": "0.1.2",
+  "version": "0.9.0",
   "description": "Database cryptographic gateway proxy for transparent PostgreSQL field-level decryption",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -27,7 +27,7 @@
     "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
-    "@vollcrypt/db-guard": "^0.1.2",
+    "@vollcrypt/db-guard": "^0.9.0",
     "selfsigned": "^5.5.0"
   },
   "devDependencies": {
