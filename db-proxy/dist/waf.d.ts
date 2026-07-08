@@ -34,7 +34,6 @@ export declare function rewriteQuery(sql: string, role: string, tenantId: string
  * Generates Laplace noise for Differential Privacy.
  */
 export declare function generateLaplaceNoise(scale: number): number;
-/**
- * Generates mock Remote Attestation Quote for secure enclave execution verification.
- */
-export declare function getMockAttestationReport(): any;
+export declare function identifyAggregates(sql: string): boolean[];
+export declare function extractProjectionColumns(sql: string): string[];
+export declare function extractTableName(sql: string): string;

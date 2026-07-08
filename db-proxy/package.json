@@ -27,7 +27,8 @@
     "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
-    "@vollcrypt/db-guard": "file:../db-guard/node"
+    "@vollcrypt/db-guard": "^0.1.2",
+    "selfsigned": "^5.5.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

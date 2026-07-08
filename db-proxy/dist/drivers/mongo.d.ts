@@ -4,7 +4,7 @@ export declare function parseBson(buf: Buffer, offset?: number): {
     nextOffset: number;
 };
 export declare function serializeBson(obj: any): Buffer;
-export declare function decryptBsonObject(obj: any, keys: Record<string, Buffer>, depth?: number): any;
+export declare function decryptBsonObject(obj: any, keys: Record<string, Buffer>, role?: string, userId?: string, tenantId?: string, config?: any, depth?: number, collectionName?: string): any;
 export declare function serializeMongoError(message: string, code?: number): Buffer;
 export declare function handleMongoConnection(clientSocket: net.Socket, options: {
     dbHost: string;
@@ -13,5 +13,6 @@ export declare function handleMongoConnection(clientSocket: net.Socket, options:
     role: string;
     clientIp: string;
     resolvedKeys: Record<string, Buffer>;
+    config?: any;
     logSiem: (event: string, severity: number, message: string) => void;
 }): void;

@@ -3,6 +3,10 @@
   "version": "0.2.0",
   "description": "Cross-platform Rust cryptography core",
   "private": true,
+  "workspaces": [
+    "db-guard/node",
+    "db-proxy"
+  ],
   "scripts": {
     "build:messages:node": "cd vollcrypt-messages/node && npm install && npm run build",
     "build:messages:wasm": "wasm-pack build vollcrypt-messages/wasm --target web --out-dir pkg",

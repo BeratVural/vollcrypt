@@ -1,7 +1,7 @@
 import * as net from 'net';
-import { validateQuery } from '../waf.js';
+import { validateQuery, extractProjectionColumns, extractTableName } from '../waf.js';
 import { decryptValue, decryptWithSecurity, dbGuardContextStore } from '@vollcrypt/db-guard';
-import { getRbacConfig } from '../auth.js';
+import { getRbacConfig, resolveUserContext } from '../auth.js';
 
 export function serializeMysqlError(message: string, code: number = 1142, sqlState: string = '42000'): Buffer {
   const msgBuf = Buffer.from(message, 'utf8');
@@ -81,7 +81,11 @@ export function decryptMysqlRow(
   packet: Buffer,
   keys: Record<string, Buffer>,
   role: string = 'GUEST',
-  config?: any
+  userId: string = 'guest-user',
+  tenantId?: string,
+  config?: any,
+  modelName: string = 'default',
+  columns: string[] = []
 ): Buffer {
   if (packet.length < 5) return packet;
   const payloadLen = packet.readUIntLE(0, 3);
@@ -110,13 +114,26 @@ export function decryptMysqlRow(
     if (cell && cell.startsWith('VOLLVALT:')) {
       modified = true;
       try {
-        const fieldName = `col_${idx}`;
+        let fieldName = columns[idx] || `col_${idx}`;
+        let model = modelName;
+        if (fieldName.includes('.')) {
+          const parts = fieldName.split('.');
+          fieldName = parts[parts.length - 1];
+          model = parts[0] === 'u' || parts[0] === 't' ? modelName : parts[0];
+        }
+
         const val = dbGuardContextStore.run(
-          { role, userId: 'guest-user' },
+          {
+            role,
+            userId,
+            tenantId,
+            maxDecryptionsPerSecond: config?.rateLimiter?.maxDecryptionsPerSecond,
+            rateLimiterMode: config?.rateLimiter?.mode,
+          },
           () => decryptWithSecurity(
             cell,
             (cipherText) => decryptValue(cipherText, keys),
-            'default',
+            model,
             fieldName,
             undefined,
             {
@@ -156,11 +173,17 @@ export function handleMysqlConnection(
     role: string;
     clientIp: string;
     resolvedKeys: Record<string, Buffer>;
+    config?: any;
     logSiem: (event: string, severity: number, message: string) => void;
   }
 ) {
   let connected = false;
   const queue: Buffer[] = [];
+  let currentRole = options.role;
+  let currentUserId = options.role === 'OWNER' ? 'usr-admin' : 'guest-user';
+  let currentTenantId: string | undefined;
+  let currentTable = 'default';
+  let currentColumns: string[] = [];
 
   const backendSocket = net.connect({
     host: options.dbHost,
@@ -179,7 +202,16 @@ export function handleMysqlConnection(
     // Attempt decryption on MySQL response rows
     let processedData: any = data;
     try {
-      processedData = decryptMysqlRow(data, options.resolvedKeys, options.role, options.config);
+      processedData = decryptMysqlRow(
+        data,
+        options.resolvedKeys,
+        currentRole,
+        currentUserId,
+        currentTenantId,
+        options.config,
+        currentTable,
+        currentColumns
+      );
     } catch (err: any) {
       options.logSiem('MYSQL_DECRYPT_ERROR', 8, `MySQL decryption error: ${err.message}`);
       const errPacket = serializeMysqlError(err.message, 1142, '42000');
@@ -195,17 +227,45 @@ export function handleMysqlConnection(
   clientSocket.on('data', (data) => {
     if (data.length > 5) {
       const packetLen = data.readUIntLE(0, 3);
+      const seqId = data[3];
       const command = data[4];
 
-      if (command === 0x03 && !options.noWaf) { // COM_QUERY
+      // HandshakeResponse41 parsing (usually seqId === 1 or 2 depending on SSL status)
+      // Check for login response handshake packet
+      if (seqId === 1 && packetLen > 32) {
+        // HandshakeResponse41 format offset 4: client capabilities (4 bytes), max packet size (4 bytes), charset (1 byte), reserved (23 bytes)
+        // Username starts at offset 36 (4 header + 32 handshake offset)
+        // Null terminated string.
+        let usernameEnd = 36;
+        while (usernameEnd < data.length && data[usernameEnd] !== 0x00) {
+          usernameEnd++;
+        }
+        if (usernameEnd > 36 && usernameEnd < data.length) {
+          const username = data.toString('utf8', 36, usernameEnd);
+          const userContext = resolveUserContext(username, options.config);
+          currentUserId = userContext.userId;
+          currentRole = userContext.role;
+          currentTenantId = userContext.tenantId;
+        }
+      }
+
+      if (command === 0x03 || command === 0x16) { // COM_QUERY or COM_STMT_PREPARE
         const query = data.toString('utf8', 5, 4 + packetLen);
+        if (!options.noWaf) {
+          try {
+            validateQuery(query, currentRole);
+          } catch (err: any) {
+            options.logSiem('WAF_MYSQL_BLOCK', 9, `MySQL WAF violation blocked: ${err.message}`);
+            const errPacket = serializeMysqlError(err.message, 1142, '42000');
+            clientSocket.write(errPacket);
+            return; // Halt and prevent forwarding to the backend DB
+          }
+        }
         try {
-          validateQuery(query, options.role);
-        } catch (err: any) {
-          options.logSiem('WAF_MYSQL_BLOCK', 9, `MySQL WAF violation blocked: ${err.message}`);
-          const errPacket = serializeMysqlError(err.message, 1142, '42000');
-          clientSocket.write(errPacket);
-          return; // Halt and prevent forwarding to the backend DB
+          currentTable = extractTableName(query);
+          currentColumns = extractProjectionColumns(query);
+        } catch (e) {
+          // ignore parsing error, fallback to default
         }
       }
     }
@@ -232,3 +292,4 @@ export function handleMysqlConnection(
     clientSocket.destroy();
   });
 }
+

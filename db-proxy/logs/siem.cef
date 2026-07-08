@@ -3,17 +3,21 @@ CEF:0|Vollcrypt|DB-Proxy|1.0|ANOMALY_DETECTED|ANOMALY_DETECTED|7|src=::ffff:127.
 CEF:0|Vollcrypt|DB-Proxy|1.0|ANOMALY_DETECTED|ANOMALY_DETECTED|7|src=::ffff:127.0.0.1 usrName=postgres msg=High row egress volume anomaly detected (Total: 103 rows in last 10s)
 CEF:0|Vollcrypt|DB-Proxy|1.0|ANOMALY_DETECTED|ANOMALY_DETECTED|7|src=::ffff:127.0.0.1 usrName=postgres msg=High row egress volume anomaly detected (Total: 104 rows in last 10s)
 CEF:0|Vollcrypt|DB-Proxy|1.0|ANOMALY_DETECTED|ANOMALY_DETECTED|7|src=::ffff:127.0.0.1 usrName=postgres msg=High row egress volume anomaly detected (Total: 105 rows in last 10s)
-CEF:0|Vollcrypt|DB-Proxy|1.0|WAF_BLOCK|WAF_BLOCK|8|src=::ffff:127.0.0.1 usrName=postgres msg=SQL Injection signature detected: query matched security rule /\b(or|and)\s+['"][^'"]*['"]\s*=\s*['"][^'"]*['"]/i
-CEF:0|Vollcrypt|DB-Proxy|1.0|MOCK_ATTESTATION_WARNING|MOCK_ATTESTATION_WARNING|8|src=::ffff:127.0.0.1 usrName=usr-admin msg=WARNING: Mock Remote Attestation report requested. Real enclave signatures are disabled or unsupported on this platform.
-CEF:0|Vollcrypt|DB-Proxy|1.0|WAF_BLOCK|WAF_BLOCK|8|src=::ffff:127.0.0.1 usrName=postgres msg=SQL Injection signature detected: query matched security rule /\b(or|and)\s+['"][^'"]*['"]\s*=\s*['"][^'"]*['"]/i
-CEF:0|Vollcrypt|DB-Proxy|1.0|CLUSTER_SYNC|CLUSTER_SYNC|5|src=127.0.0.1 usrName=cluster msg=Synchronized banned IP address from peer: ::ffff:127.0.0.1
-CEF:0|Vollcrypt|DB-Proxy|1.0|WAF_MYSQL_BLOCK|WAF_MYSQL_BLOCK|9|src=::1 usrName=mysql_user msg=MySQL WAF violation blocked: SQL Injection signature detected: query matched security rule /\b(or|and)\s+['"][^'"]*['"]\s*=\s*['"][^'"]*['"]/i
+CEF:0|Vollcrypt|DB-Proxy|1.0|WAF_BLOCK|WAF_BLOCK|8|src=::ffff:127.0.0.1 usrName=postgres msg=SQL Injection signature detected: query matched security rule /\\b(or\\|and)\\s+['"][^'"]*['"]\\s*=\\s*['"][^'"]*['"]/i
+CEF:0|Vollcrypt|DB-Proxy|1.0|WAF_BLOCK|WAF_BLOCK|8|src=::ffff:127.0.0.1 usrName=postgres msg=SQL Injection signature detected: query matched security rule /\\b(or\\|and)\\s+['"][^'"]*['"]\\s*=\\s*['"][^'"]*['"]/i
+CEF:0|Vollcrypt|DB-Proxy|1.0|CLUSTER_SYNC|CLUSTER_SYNC|5|src=127.0.0.1 usrName=cluster msg=Synchronized banned IP address from peer: 127.0.0.1
+CEF:0|Vollcrypt|DB-Proxy|1.0|WAF_MYSQL_BLOCK|WAF_MYSQL_BLOCK|9|src=::1 usrName=mysql_user msg=MySQL WAF violation blocked: SQL Injection signature detected: query matched security rule /\\b(or\\|and)\\s+['"][^'"]*['"]\\s*=\\s*['"][^'"]*['"]/i
 CEF:0|Vollcrypt|DB-Proxy|1.0|WAF_MONGO_BLOCK|WAF_MONGO_BLOCK|9|src=::1 usrName=mongo_user msg=MongoDB WAF violation blocked: Dangerous command dropDatabase or $where is not allowed
 CEF:0|Vollcrypt|DB-Proxy|1.0|MPC_KEY_INIT|MPC_KEY_INIT|1|src=127.0.0.1 usrName=system msg=Decryption key successfully reconstructed using MPC threshold shares.
 CEF:0|Vollcrypt|DB-Proxy|1.0|ANOMALY_THREAT_DETECTION|ANOMALY_THREAT_DETECTION|8|src=::ffff:127.0.0.1 usrName=usr-lawyer msg=Semantic anomaly detected with threat score 1.00: DROP TABLE log_audits CASCADE
 CEF:0|Vollcrypt|DB-Proxy|1.0|WAF_BLOCK|WAF_BLOCK|8|src=::ffff:127.0.0.1 usrName=postgres msg=Query blocked by AI Anomaly Threat Detection (Score: 1.00)
 CEF:0|Vollcrypt|DB-Proxy|1.0|JIT_REQUESTED|JIT_REQUESTED|6|src=::ffff:127.0.0.1 usrName=usr-lawyer msg=JIT request triggered for query: SELECT 1
-CEF:0|Vollcrypt|DB-Proxy|1.0|JIT_APPROVED|JIT_APPROVED|6|src=127.0.0.1 usrName=system msg=JIT request approved for user usr-lawyer based on administrative approved list
+CEF:0|Vollcrypt|DB-Proxy|1.0|JIT_APPROVED|JIT_APPROVED|6|src=127.0.0.1 usrName=system msg=JIT request approved for user usr-lawyer via webhook simulation
+CEF:0|Vollcrypt|DB-Proxy|1.0|JIT_REQUESTED|JIT_REQUESTED|6|src=::ffff:127.0.0.1 usrName=usr-lawyer msg=JIT request triggered for query: SELECT 1
+CEF:0|Vollcrypt|DB-Proxy|1.0|JIT_DENIED|JIT_DENIED|8|src=::ffff:127.0.0.1 usrName=usr-lawyer msg=JIT request denied for query: SELECT 1
+CEF:0|Vollcrypt|DB-Proxy|1.0|WAF_BLOCK|WAF_BLOCK|8|src=::ffff:127.0.0.1 usrName=postgres msg=JIT approval request denied: user is not in the approved JIT registry or webhook/token approval failed
+CEF:0|Vollcrypt|DB-Proxy|1.0|JIT_REQUESTED|JIT_REQUESTED|6|src=::ffff:127.0.0.1 usrName=usr-lawyer msg=JIT request triggered for query: SELECT 1; -- JIT_TOKEN: usr-lawyer:1783517463937:73d4b42b870aa2393c792bab692968b892ecdb8f8ab09e5af97938d19e19fb64
+CEF:0|Vollcrypt|DB-Proxy|1.0|JIT_APPROVED|JIT_APPROVED|6|src=127.0.0.1 usrName=system msg=JIT request approved for user usr-lawyer via cryptographically signed token
 CEF:0|Vollcrypt|DB-Proxy|1.0|FIPS_INIT|FIPS_INIT|1|src=127.0.0.1 usrName=system msg=FIPS 140-3 boundary compliance enabled. FIPS status: false
-CEF:0|Vollcrypt|DB-Proxy|1.0|WAF_MSSQL_BLOCK|WAF_MSSQL_BLOCK|9|src=::1 usrName=mssql_user msg=MSSQL WAF violation blocked: SQL Injection signature detected: query matched security rule /\b(or|and)\s+['"][^'"]*['"]\s*=\s*['"][^'"]*['"]/i
-CEF:0|Vollcrypt|DB-Proxy|1.0|WAF_ORACLE_BLOCK|WAF_ORACLE_BLOCK|9|src=::1 usrName=oracle_user msg=Oracle WAF violation blocked: SQL Injection signature detected: query matched security rule /\b(or|and)\s+['"][^'"]*['"]\s*=\s*['"][^'"]*['"]/i
+CEF:0|Vollcrypt|DB-Proxy|1.0|WAF_MSSQL_BLOCK|WAF_MSSQL_BLOCK|9|src=::1 usrName=mssql_user msg=MSSQL WAF violation blocked: SQL Injection signature detected: query matched security rule /\\b(or\\|and)\\s+['"][^'"]*['"]\\s*=\\s*['"][^'"]*['"]/i
+CEF:0|Vollcrypt|DB-Proxy|1.0|WAF_ORACLE_BLOCK|WAF_ORACLE_BLOCK|9|src=::1 usrName=oracle_user msg=Oracle WAF violation blocked: SQL Injection signature detected: query matched security rule /\\b(or\\|and)\\s+['"][^'"]*['"]\\s*=\\s*['"][^'"]*['"]/i

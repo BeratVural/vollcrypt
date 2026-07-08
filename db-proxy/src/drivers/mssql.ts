@@ -1,7 +1,7 @@
 import * as net from 'net';
-import { validateQuery } from '../waf.js';
+import { validateQuery, extractProjectionColumns, extractTableName } from '../waf.js';
 import { decryptValue, decryptWithSecurity, dbGuardContextStore } from '@vollcrypt/db-guard';
-import { getRbacConfig } from '../auth.js';
+import { getRbacConfig, resolveUserContext } from '../auth.js';
 
 export function serializeMssqlError(message: string, code: number = 50000): Buffer {
   const msgBuf = Buffer.from(message, 'utf16le');
@@ -47,60 +47,90 @@ export function decryptMssqlResponse(
   packet: Buffer,
   keys: Record<string, Buffer>,
   role: string = 'GUEST',
-  config?: any
+  userId: string = 'guest-user',
+  tenantId?: string,
+  config?: any,
+  modelName: string = 'default',
+  columns: string[] = []
 ): Buffer {
-  const payloadStr = packet.toString('utf16le');
-  const matchIndex = payloadStr.indexOf('VOLLVALT:');
-  if (matchIndex === -1) return packet;
+  if (packet.length < 8) return packet;
 
-  // Locate ciphertext boundaries
-  const ctextPart = payloadStr.substring(matchIndex);
-  const nullOrSpaceIndex = ctextPart.match(/[\s\0]/);
-  const ctext = nullOrSpaceIndex ? ctextPart.substring(0, nullOrSpaceIndex.index) : ctextPart;
+  const header = packet.subarray(0, 8);
+  const payload = packet.subarray(8);
 
-  try {
-    const ptext = dbGuardContextStore.run(
-      { role, userId: 'guest-user' },
-      () => decryptWithSecurity(
-        ctext,
-        (cipherText) => decryptValue(cipherText, keys),
-        'default',
-        'column',
-        undefined,
+  const decryptPayload = (buf: Buffer, cellIdx: number = 0): Buffer => {
+    const payloadStr = buf.toString('utf16le');
+    const matchIndex = payloadStr.indexOf('VOLLVALT:');
+    if (matchIndex === -1) return buf;
+
+    // Locate ciphertext boundaries
+    const ctextPart = payloadStr.substring(matchIndex);
+    const boundaryMatch = ctextPart.match(/[^A-Za-z0-9+/=:]/);
+    const ctext = boundaryMatch ? ctextPart.substring(0, boundaryMatch.index) : ctextPart;
+
+    try {
+      let fieldName = columns[cellIdx] || 'column';
+      let model = modelName;
+      if (fieldName.includes('.')) {
+        const parts = fieldName.split('.');
+        fieldName = parts[parts.length - 1];
+        model = parts[0] === 'u' || parts[0] === 't' ? modelName : parts[0];
+      }
+
+      const ptext = dbGuardContextStore.run(
         {
-          cryptoRbac: getRbacConfig(config),
-          rateLimiter: config?.rateLimiter,
+          role,
+          userId,
+          tenantId,
+          maxDecryptionsPerSecond: config?.rateLimiter?.maxDecryptionsPerSecond,
+          rateLimiterMode: config?.rateLimiter?.mode,
+        },
+        () => decryptWithSecurity(
+          ctext,
+          (cipherText) => decryptValue(cipherText, keys),
+          model,
+          fieldName,
+          undefined,
+          {
+            cryptoRbac: getRbacConfig(config),
+            rateLimiter: config?.rateLimiter,
+          }
+        )
+      );
+      const ptextBuf = Buffer.from(ptext, 'utf16le');
+      const ctextBuf = Buffer.from(ctext, 'utf16le');
+
+      const indexInBytes = buf.indexOf(ctextBuf);
+      if (indexInBytes !== -1) {
+        const before = buf.subarray(0, indexInBytes);
+        const after = buf.subarray(indexInBytes + ctextBuf.length);
+
+        // Adjust column length prefix (which resides immediately before the string in TDS)
+        if (indexInBytes >= 2) {
+          const oldLen = buf.readUInt16LE(indexInBytes - 2);
+          if (oldLen === ctextBuf.length) {
+            before.writeUInt16LE(ptextBuf.length, indexInBytes - 2);
+          }
         }
-      )
-    );
-    const ptextBuf = Buffer.from(ptext, 'utf16le');
-    const ctextBuf = Buffer.from(ctext, 'utf16le');
 
-    const indexInBytes = packet.indexOf(ctextBuf);
-    if (indexInBytes !== -1) {
-      const before = packet.subarray(0, indexInBytes);
-      const after = packet.subarray(indexInBytes + ctextBuf.length);
-
-      // Adjust column length prefix (which resides immediately before the string in TDS)
-      if (indexInBytes >= 2) {
-        const oldLen = packet.readUInt16LE(indexInBytes - 2);
-        if (oldLen === ctextBuf.length) {
-          before.writeUInt16LE(ptextBuf.length, indexInBytes - 2);
-        }
+        const processedAfter = decryptPayload(after, cellIdx + 1);
+        return Buffer.concat([before, ptextBuf, processedAfter]);
       }
-
-      const newPayload = Buffer.concat([before, ptextBuf, after]);
-      
-      // Update TDS header message length field
-      if (newPayload.length >= 8) {
-        newPayload.writeUInt16BE(newPayload.length, 2);
-      }
-      return newPayload;
+    } catch (err: any) {
+      throw err;
     }
-  } catch (err: any) {
-    throw err;
+    return buf;
+  };
+
+  const newPayload = decryptPayload(payload);
+  if (newPayload === payload) return packet;
+
+  const newPacket = Buffer.concat([header, newPayload]);
+  // Update TDS header message length field (bytes 2 and 3)
+  if (newPacket.length >= 4) {
+    newPacket.writeUInt16BE(newPacket.length, 2);
   }
-  return packet;
+  return newPacket;
 }
 
 export function handleMssqlConnection(
@@ -112,11 +142,17 @@ export function handleMssqlConnection(
     role: string;
     clientIp: string;
     resolvedKeys: Record<string, Buffer>;
+    config?: any;
     logSiem: (event: string, severity: number, message: string) => void;
   }
 ) {
   let connected = false;
   const queue: Buffer[] = [];
+  let currentRole = options.role;
+  let currentUserId = options.role === 'OWNER' ? 'usr-admin' : 'guest-user';
+  let currentTenantId: string | undefined;
+  let currentTable = 'default';
+  let currentColumns: string[] = [];
 
   const backendSocket = net.connect({
     host: options.dbHost,
@@ -134,7 +170,16 @@ export function handleMssqlConnection(
   backendSocket.on('data', (data) => {
     let processedData: any = data;
     try {
-      processedData = decryptMssqlResponse(data, options.resolvedKeys, options.role, options.config);
+      processedData = decryptMssqlResponse(
+        data,
+        options.resolvedKeys,
+        currentRole,
+        currentUserId,
+        currentTenantId,
+        options.config,
+        currentTable,
+        currentColumns
+      );
     } catch (err: any) {
       options.logSiem('MSSQL_DECRYPT_ERROR', 8, `MSSQL decryption error: ${err.message}`);
       const errPacket = serializeMssqlError(err.message);
@@ -148,17 +193,49 @@ export function handleMssqlConnection(
   });
 
   clientSocket.on('data', (data) => {
-    if (data.length > 8 && !options.noWaf) {
+    if (data.length > 8) {
       const type = data[0];
+
+      // Parse Login7 packet (type 0x10) to find username offset and length
+      if (type === 0x10 && data.length >= 50) {
+        try {
+          // Offsets for Login7 fields relative to the start of the payload (TDS header is 8 bytes)
+          // Username length and offset are specified in bytes 36-39 of Login7 body (offset 44-47 of packet)
+          const userNameOffset = data.readUInt16LE(44);
+          const userNameLen = data.readUInt16LE(46); // number of characters
+          let start = 8 + userNameOffset;
+          if (start + userNameLen * 2 > data.length) {
+            start = userNameOffset;
+          }
+          if (userNameLen > 0 && start + userNameLen * 2 <= data.length) {
+            const username = data.toString('utf16le', start, start + userNameLen * 2);
+            const userContext = resolveUserContext(username, options.config);
+            currentUserId = userContext.userId;
+            currentRole = userContext.role;
+            currentTenantId = userContext.tenantId;
+          }
+        } catch (e) {
+          // Ignore parser errors
+        }
+      }
+
       if (type === 0x01 || type === 0x03) { // SQL Batch or RPC
         const query = data.toString('utf16le', 8);
+        if (!options.noWaf) {
+          try {
+            validateQuery(query, currentRole);
+          } catch (err: any) {
+            options.logSiem('WAF_MSSQL_BLOCK', 9, `MSSQL WAF violation blocked: ${err.message}`);
+            const errPacket = serializeMssqlError(err.message, 50000);
+            clientSocket.write(errPacket);
+            return;
+          }
+        }
         try {
-          validateQuery(query, options.role);
-        } catch (err: any) {
-          options.logSiem('WAF_MSSQL_BLOCK', 9, `MSSQL WAF violation blocked: ${err.message}`);
-          const errPacket = serializeMssqlError(err.message, 50000);
-          clientSocket.write(errPacket);
-          return;
+          currentTable = extractTableName(query);
+          currentColumns = extractProjectionColumns(query);
+        } catch (e) {
+          // ignore parsing error
         }
       }
     }
@@ -185,3 +262,4 @@ export function handleMssqlConnection(
     clientSocket.destroy();
   });
 }
+

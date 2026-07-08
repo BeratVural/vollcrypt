@@ -8,10 +8,15 @@ export interface StartupParams {
  * Parses a PostgreSQL StartupMessage and extracts parameters like username and database name.
  */
 export declare function parseStartupMessage(buf: Buffer): StartupParams;
+export interface PgColumn {
+    name: string;
+    dataTypeOid: number;
+    formatCode: number;
+}
 /**
- * Parses a PostgreSQL RowDescription ('T') packet to extract column names.
+ * Parses a PostgreSQL RowDescription ('T') packet to extract column metadata.
  */
-export declare function parseRowDescription(buf: Buffer): string[];
+export declare function parseRowDescription(buf: Buffer): PgColumn[];
 /**
  * Parses a PostgreSQL DataRow ('D') packet into an array of Buffer values (or null).
  */
@@ -51,3 +56,11 @@ export declare function serializeQueryMessage(query: string): Buffer;
  * Serializes a PostgreSQL Parse ('P') packet, replacing the query string.
  */
 export declare function serializeParseMessage(statementName: string, query: string, originalMsg: Buffer, queryNull: number): Buffer;
+export interface PgCloseMessage {
+    type: 'S' | 'P';
+    name: string;
+}
+/**
+ * Parses a PostgreSQL Close ('C') frontend message.
+ */
+export declare function parseCloseMessage(buf: Buffer): PgCloseMessage | null;

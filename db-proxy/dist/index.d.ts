@@ -3,7 +3,6 @@ export * from './auth.js';
 export * from './proxy.js';
 export declare function showInteractiveMenu(defaults: {
     minResponseTimeMs: number;
-    noAttestation: boolean;
     noDlp: boolean;
     noWaf: boolean;
     noIpBanning: boolean;
@@ -13,7 +12,6 @@ export declare function showInteractiveMenu(defaults: {
 }): Promise<any>;
 export declare function handleHybridStartup(defaults: {
     minResponseTimeMs: number;
-    noAttestation: boolean;
     noDlp: boolean;
     noWaf: boolean;
     noIpBanning: boolean;

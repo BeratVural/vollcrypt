@@ -1,7 +1,7 @@
 import * as net from 'net';
 import { validateQuery } from '../waf.js';
 import { decryptValue, decryptWithSecurity, dbGuardContextStore } from '@vollcrypt/db-guard';
-import { getRbacConfig } from '../auth.js';
+import { getRbacConfig, resolveUserContext } from '../auth.js';
 
 export function parseBson(buf: Buffer, offset: number = 0): { value: any; nextOffset: number } {
   const size = buf.readInt32LE(offset);
@@ -117,14 +117,17 @@ export function decryptBsonObject(
   obj: any,
   keys: Record<string, Buffer>,
   role: string = 'GUEST',
+  userId: string = 'guest-user',
+  tenantId?: string,
   config?: any,
-  depth: number = 0
+  depth: number = 0,
+  collectionName: string = 'default'
 ): any {
   if (depth > 5) return obj; // Prevent stack overflows
   if (obj === null || obj === undefined) return obj;
 
   if (Array.isArray(obj)) {
-    return obj.map((item) => decryptBsonObject(item, keys, role, config, depth + 1));
+    return obj.map((item) => decryptBsonObject(item, keys, role, userId, tenantId, config, depth + 1, collectionName));
   }
 
   if (typeof obj === 'object' && !Buffer.isBuffer(obj)) {
@@ -133,11 +136,17 @@ export function decryptBsonObject(
       if (typeof v === 'string' && v.startsWith('VOLLVALT:')) {
         try {
           copy[k] = dbGuardContextStore.run(
-            { role, userId: 'guest-user' },
+            {
+              role,
+              userId,
+              tenantId,
+              maxDecryptionsPerSecond: config?.rateLimiter?.maxDecryptionsPerSecond,
+              rateLimiterMode: config?.rateLimiter?.mode,
+            },
             () => decryptWithSecurity(
               v,
               (cipherText) => decryptValue(cipherText, keys),
-              'default',
+              collectionName,
               k,
               undefined,
               {
@@ -150,7 +159,7 @@ export function decryptBsonObject(
           throw err;
         }
       } else {
-        copy[k] = decryptBsonObject(v, keys, role, config, depth + 1);
+        copy[k] = decryptBsonObject(v, keys, role, userId, tenantId, config, depth + 1, collectionName);
       }
     }
     return copy;
@@ -205,11 +214,16 @@ export function handleMongoConnection(
     role: string;
     clientIp: string;
     resolvedKeys: Record<string, Buffer>;
+    config?: any;
     logSiem: (event: string, severity: number, message: string) => void;
   }
 ) {
   let connected = false;
   const queue: Buffer[] = [];
+  let currentRole = options.role;
+  let currentUserId = options.role === 'OWNER' ? 'usr-admin' : 'guest-user';
+  let currentTenantId: string | undefined;
+  let currentCollection = 'default';
 
   const backendSocket = net.connect({
     host: options.dbHost,
@@ -234,7 +248,16 @@ export function handleMongoConnection(
           if (sectionType === 0x00) {
             const bsonOffset = 21;
             const { value: parsedDoc } = parseBson(data, bsonOffset);
-            const decryptedDoc = decryptBsonObject(parsedDoc, options.resolvedKeys, options.role, options.config);
+            const decryptedDoc = decryptBsonObject(
+              parsedDoc,
+              options.resolvedKeys,
+              currentRole,
+              currentUserId,
+              currentTenantId,
+              options.config,
+              0,
+              currentCollection
+            );
             const newBson = serializeBson(decryptedDoc);
 
             const newMsg = Buffer.alloc(21 + newBson.length);
@@ -264,20 +287,60 @@ export function handleMongoConnection(
   });
 
   clientSocket.on('data', (data) => {
-    if (data.length > 16 && !options.noWaf) {
+    if (data.length > 16) {
       const opCode = data.readInt32LE(12);
       if (opCode === 2013 || opCode === 2004) {
-        const payloadStr = data.toString('utf8');
-        try {
-          if (payloadStr.includes('dropDatabase') || payloadStr.includes('$where')) {
-            throw new Error('Dangerous command dropDatabase or $where is not allowed');
+        // Parse username from handshake saslStart command if present
+        if (opCode === 2013) {
+          const sectionType = data[20];
+          if (sectionType === 0x00) {
+            try {
+              const { value: commandDoc } = parseBson(data, 21);
+              if (commandDoc) {
+                const keys = Object.keys(commandDoc);
+                if (keys.length > 0) {
+                  const cmd = keys[0];
+                  const collectionVal = commandDoc[cmd];
+                  if (typeof collectionVal === 'string') {
+                    currentCollection = collectionVal;
+                  }
+                }
+              }
+              // Check saslStart or saslContinue command
+              if (commandDoc && commandDoc.saslStart) {
+                const payload = commandDoc.payload;
+                if (payload && Buffer.isBuffer(payload)) {
+                  const payloadStr = payload.toString('utf8');
+                  // SASL client first message usually looks like "n,,n=username,r=..." or "n=username,r=..."
+                  const match = payloadStr.match(/\bn=([^,]+)/);
+                  if (match && match[1]) {
+                    const username = match[1];
+                    const userContext = resolveUserContext(username, options.config);
+                    currentUserId = userContext.userId;
+                    currentRole = userContext.role;
+                    currentTenantId = userContext.tenantId;
+                  }
+                }
+              }
+            } catch (e) {
+              // Ignore BSON parsing error in incoming request, WAF might still handle it
+            }
           }
-          validateQuery(payloadStr, options.role);
-        } catch (err: any) {
-          options.logSiem('WAF_MONGO_BLOCK', 9, `MongoDB WAF violation blocked: ${err.message}`);
-          const errPacket = serializeMongoError(err.message, 13);
-          clientSocket.write(errPacket);
-          return;
+        }
+
+        if (!options.noWaf) {
+          const payloadStr = data.toString('utf8');
+          try {
+            if (payloadStr.includes('dropDatabase') || payloadStr.includes('$where')) {
+              throw new Error('Dangerous command dropDatabase or $where is not allowed');
+            }
+            validateQuery(payloadStr, currentRole);
+          } catch (err: any) {
+            options.logSiem('WAF_MONGO_BLOCK', 9, `MongoDB WAF violation blocked: ${err.message}`);
+            const errPacket = serializeMongoError(err.message, 13);
+            clientSocket.write(errPacket);
+            return;
+          }
         }
       }
     }
@@ -304,3 +367,4 @@ export function handleMongoConnection(
     clientSocket.destroy();
   });
 }
+

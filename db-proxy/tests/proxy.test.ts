@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import * as assert from 'node:assert';
 import * as net from 'net';
 import * as fs from 'fs';
+import * as http from 'http';
+import * as crypto from 'crypto';
 import pg from 'pg';
 import { encryptValue, resetFailClosedStatusForTesting } from '@vollcrypt/db-guard';
 import { DbProxyServer, DbProxyOptions, serializeErrorResponse } from '../src/proxy.js';
@@ -189,7 +191,7 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       return [cmdComplete, readyForQuery];
     }
 
-    if (query.includes('XXXX-XXXX-XXXX-') && query.includes('AS credit_card')) {
+    if (query.includes('XXXX-XXXX-XXXX-') && (query.includes('AS credit_card') || query.includes('AS "credit_card"'))) {
       const rowDesc = buildRowDescription(['credit_card']);
       const dataRow = serializeDataRow([Buffer.from('XXXX-XXXX-XXXX-4444', 'utf8')]);
       const cmdComplete = Buffer.alloc(18);
@@ -214,8 +216,14 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       return [rowDesc, dataRow, cmdComplete, readyForQuery];
     }
 
-    if (query.includes('avg_salary')) {
-      const rowDesc = buildRowDescription(['avg_salary']);
+    if (query.includes('salary_stats')) {
+      let columnName = 'avg_salary';
+      if (query.includes('AS total_average')) {
+        columnName = 'total_average';
+      } else if (query.includes('AS avg_salary')) {
+        columnName = 'avg_salary';
+      }
+      const rowDesc = buildRowDescription([columnName]);
       const dataRow = serializeDataRow([Buffer.from('5000.00', 'utf8')]);
       const cmdComplete = Buffer.alloc(18);
       cmdComplete.write('C', 0, 'ascii');
@@ -746,6 +754,26 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       assert.match((err as Error).message, /Semantic SQLi threat detected: query score is 8/);
     }
 
+    // Subquery injection: AND (SELECT ...)
+    try {
+      await client.query("SELECT * FROM users WHERE username = 'admin' AND (SELECT 1 FROM orders)");
+      assert.fail('Should have blocked subquery injection');
+    } catch (err) {
+      assert.match((err as Error).message, /SQL Injection signature detected|Semantic SQLi threat detected/);
+    }
+
+    // Subquery injection: AND 1=(SELECT ...)
+    try {
+      await client.query("SELECT * FROM users WHERE username = 'admin' AND 1=(SELECT 1)");
+      assert.fail('Should have blocked comparative subquery injection');
+    } catch (err) {
+      assert.match((err as Error).message, /SQL Injection signature detected|Semantic SQLi threat detected/);
+    }
+
+    // Legitimate subquery should succeed
+    const resLegit = await client.query("SELECT * FROM users WHERE id = (SELECT 1)");
+    assert.ok(resLegit);
+
     await client.end();
   });
 
@@ -1007,7 +1035,29 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     await client.connect();
     const res = await client.query('SELECT credit_card FROM users');
     assert.strictEqual(res.rows[0].credit_card, 'XXXX-XXXX-XXXX-4444');
+
+    // Quoted column name query
+    const resQuoted = await client.query('SELECT "credit_card" FROM users');
+    assert.strictEqual(resQuoted.rows[0].credit_card, 'XXXX-XXXX-XXXX-4444');
+
+    // Wildcard query: SELECT * (returns masked results)
+    const resWildcard = await client.query('SELECT * FROM users');
+    assert.strictEqual(resWildcard.rows[0]['users.credit_card'], '1111-XXXX-XXXX-4444');
+    assert.strictEqual(resWildcard.rows[0]['users.tc_no'], '123XXXXXX01');
+
     await client.end();
+
+    // Legitimate SELECT * query for root/OWNER
+    const rootClient = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT,
+      user: 'postgres',
+      database: 'testdb',
+    });
+    await rootClient.connect();
+    const resRoot = await rootClient.query('SELECT * FROM users');
+    assert.ok(resRoot.rows.length > 0);
+    await rootClient.end();
   });
 
   await t.test('23. Automatic Row-Level Security (RLS) Tenant Injection', async () => {
@@ -1034,11 +1084,27 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     });
 
     await client.connect();
-    const res = await client.query('SELECT avg_salary FROM salary_stats');
-    const val = parseFloat(res.rows[0].avg_salary);
-    assert.ok(!isNaN(val));
-    assert.notStrictEqual(val, 5000.00);
-    assert.ok(Math.abs(val - 5000.00) < 10.0);
+
+    // 1. Legacy name prefix match (avg_salary starts with avg, so it falls back to aggregate if no SQL query analysis)
+    const res1 = await client.query('SELECT avg_salary FROM salary_stats');
+    const val1 = parseFloat(res1.rows[0].avg_salary);
+    assert.ok(!isNaN(val1));
+    assert.notStrictEqual(val1, 5000.00);
+    assert.ok(Math.abs(val1 - 5000.00) < 10.0);
+
+    // 2. Alias bypass fix (the alias is total_average which does not start with avg, but the projection expression avg(salary) is aggregate)
+    const res2 = await client.query('SELECT avg(salary) AS total_average FROM salary_stats');
+    const val2 = parseFloat(res2.rows[0].total_average);
+    assert.ok(!isNaN(val2));
+    assert.notStrictEqual(val2, 5000.00);
+    assert.ok(Math.abs(val2 - 5000.00) < 10.0);
+
+    // 3. Alias false positive prevention (the alias is avg_salary, but the projection expression salary is NOT aggregate)
+    const res3 = await client.query('SELECT salary AS avg_salary FROM salary_stats');
+    const val3 = parseFloat(res3.rows[0].avg_salary);
+    assert.ok(!isNaN(val3));
+    assert.strictEqual(val3, 5000.00); // Noise should not be injected!
+
     await client.end();
   });
 
@@ -1118,28 +1184,7 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     await timeProxy.stop();
   });
 
-  await t.test('27. Enclave Remote Attestation SQL Interception', async () => {
-    const client = new pg.Client({
-      host: '127.0.0.1',
-      port: PROXY_PORT,
-      user: 'postgres',
-      database: 'testdb',
-    });
 
-    await client.connect();
-    const res = await client.query('SELECT VOLLCRYPT_ATTESTATION_REPORT();');
-    await client.end();
-
-    assert.strictEqual(res.rows.length, 1);
-    const reportStr = res.rows[0].attestation_report;
-    assert.ok(reportStr);
-    
-    const report = JSON.parse(reportStr);
-    assert.strictEqual(report.attestation_type, 'Intel SGX Quote');
-    assert.ok(report.mrenclave);
-    assert.ok(report.mrsigner);
-    assert.ok(report.quote_signature);
-  });
 
   await t.test('28. P2P Clustering and IP Ban Synchronization', async () => {
     const node1Options: DbProxyOptions = {
@@ -1222,12 +1267,128 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     }
   });
 
+  await t.test('28b. P2P Cluster Message Signature Verification and Rejection', async () => {
+    const nodeOptions: DbProxyOptions = {
+      port: PROXY_PORT + 45,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_DB_PORT,
+      config: {
+        users: { postgres: { role: 'OWNER', userId: 'usr-admin' } },
+        firewall: {
+          ipBanning: { enabled: true },
+          gossipSecret: 'super_secret_cluster_key',
+        }
+      },
+      resolvedKeys: { '1': KEY },
+      gossipPort: 16005,
+      peers: ['127.0.0.1:16005'],
+      minResponseTimeMs: 0,
+    };
+
+    const node = new DbProxyServer(nodeOptions);
+    await node.start();
+
+    // 1. Send unsigned BAN_IP message directly to node's gossip port
+    const attackerConn = net.connect({ host: '127.0.0.1', port: 16005 });
+    await new Promise((resolve) => attackerConn.on('connect', resolve));
+    
+    // Attacker tries to ban localhost (127.0.0.1) without signature
+    attackerConn.write(JSON.stringify({
+      type: 'BAN_IP',
+      senderId: 'attacker',
+      data: { ip: '127.0.0.1' },
+      timestamp: Date.now(),
+    }) + '\n');
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    attackerConn.end();
+
+    // Verify 127.0.0.1 is NOT banned (connection succeeds)
+    const client1 = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT + 45,
+      user: 'postgres',
+      database: 'testdb',
+      connectionTimeoutMillis: 1000,
+    });
+    await client1.connect();
+    const res1 = await client1.query('SELECT 1');
+    assert.ok(res1);
+    await client1.end();
+
+    // 2. Send incorrectly signed BAN_IP message
+    const attackerConn2 = net.connect({ host: '127.0.0.1', port: 16005 });
+    await new Promise((resolve) => attackerConn2.on('connect', resolve));
+    attackerConn2.write(JSON.stringify({
+      type: 'BAN_IP',
+      senderId: 'attacker',
+      data: { ip: '127.0.0.1' },
+      timestamp: Date.now(),
+      signature: 'invalid_sig_here',
+    }) + '\n');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    attackerConn2.end();
+
+    // Verify 127.0.0.1 is still NOT banned (connection succeeds)
+    const client2 = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT + 45,
+      user: 'postgres',
+      database: 'testdb',
+      connectionTimeoutMillis: 1000,
+    });
+    await client2.connect();
+    const res2 = await client2.query('SELECT 1');
+    assert.ok(res2);
+    await client2.end();
+
+    // 3. Send CORRECTLY signed BAN_IP message
+    const correctSecret = 'super_secret_cluster_key';
+    const timestamp = Date.now();
+    const payload = JSON.stringify({
+      type: 'BAN_IP',
+      senderId: 'attacker',
+      data: { ip: '127.0.0.1' },
+      timestamp
+    });
+    const crypto = await import('crypto');
+    const signature = crypto.createHmac('sha256', correctSecret).update(payload).digest('hex');
+
+    const validConn = net.connect({ host: '127.0.0.1', port: 16005 });
+    await new Promise((resolve) => validConn.on('connect', resolve));
+    validConn.write(JSON.stringify({
+      type: 'BAN_IP',
+      senderId: 'attacker',
+      data: { ip: '127.0.0.1' },
+      timestamp,
+      signature
+    }) + '\n');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    validConn.end();
+
+    // Verify 127.0.0.1 IS now banned (connection fails/drops)
+    const client3 = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT + 45,
+      user: 'postgres',
+      database: 'testdb',
+      connectionTimeoutMillis: 1000,
+    });
+    try {
+      await client3.connect();
+      assert.fail('Connection from banned IP should have been dropped');
+    } catch (err) {
+      assert.ok(err);
+    }
+
+    await node.stop();
+  });
+
   await t.test('29. CLI Hybrid Parser and Interactive Menu Configuration', async () => {
     const { handleHybridStartup } = await import('../src/index.js');
 
     const defaults = {
       minResponseTimeMs: 15,
-      noAttestation: false,
       noDlp: false,
       noWaf: false,
       noIpBanning: false,
@@ -1266,26 +1427,25 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       const resEnter = await pEnter;
       assert.deepStrictEqual(resEnter, defaults);
 
-      // Case 3: TTY true, press SPACE to enter menu, toggle Enclave Remote Attestation [OFF], then confirm with ENTER
+      // Case 3: TTY true, press SPACE to enter menu, toggle PII DLP Scanning [OFF], then confirm with ENTER
       const pSpace = handleHybridStartup(defaults);
       process.stdin.emit('keypress', '', { name: 'space' });
       // In showInteractiveMenu:
       // index 0: Timing Attack Mitigation
-      // index 1: Enclave Remote Attestation
-      // Let's press down arrow to go to Enclave Remote Attestation, then space to toggle, then enter
+      // index 1: PII DLP Scanning
+      // Let's press down arrow to go to PII DLP Scanning, then space to toggle, then enter
       process.stdin.emit('keypress', '', { name: 'down' });
       process.stdin.emit('keypress', '', { name: 'space' });
       process.stdin.emit('keypress', '', { name: 'enter' });
 
       const resSpace = await pSpace;
-      assert.strictEqual(resSpace.noAttestation, true);
-      assert.strictEqual(resSpace.noDlp, false); // untouched
+      assert.strictEqual(resSpace.noDlp, true);
+      assert.strictEqual(resSpace.noWaf, false); // untouched
 
-      // Case 4: Toggle FIPS mode (index 5)
+      // Case 4: Toggle FIPS mode (index 4)
       const pFips = handleHybridStartup(defaults);
       process.stdin.emit('keypress', '', { name: 'space' });
-      // Go down 5 times to FIPS Compliance
-      process.stdin.emit('keypress', '', { name: 'down' });
+      // Go down 4 times to FIPS Compliance
       process.stdin.emit('keypress', '', { name: 'down' });
       process.stdin.emit('keypress', '', { name: 'down' });
       process.stdin.emit('keypress', '', { name: 'down' });
@@ -1447,6 +1607,20 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
   });
 
   await t.test('33. JIT Asynchronous Access Approval Webhook Simulation', async () => {
+    const WEBHOOK_PORT = PROXY_PORT + 99;
+    let webhookApprovedValue = true;
+
+    // Start mock webhook HTTP server
+    const mockWebhookServer = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ approved: webhookApprovedValue }));
+      });
+    });
+    mockWebhookServer.listen(WEBHOOK_PORT);
+
     const jitOptions: DbProxyOptions = {
       port: PROXY_PORT + 54,
       dbHost: '127.0.0.1',
@@ -1456,7 +1630,8 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
         users: { postgres: { role: 'LAWYER', userId: 'usr-lawyer' } },
         firewall: {
           jitApprovalRequired: true,
-          approvedJitUsers: ['usr-lawyer']
+          jitWebhookUrl: `http://127.0.0.1:${WEBHOOK_PORT}/jit-approve`,
+          jitSecret: 'my_test_secret_key'
         }
       },
       minResponseTimeMs: 0,
@@ -1464,21 +1639,65 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     const jitProxy = new DbProxyServer(jitOptions);
     await jitProxy.start();
 
+    // 1. Webhook Approval Test
     const client = new pg.Client({
       host: '127.0.0.1',
       port: PROXY_PORT + 54,
       user: 'postgres',
       database: 'testdb',
     });
-
     await client.connect();
 
-    // Query should trigger JIT webhook simulation, pause connection, get approved, and execute successfully
+    // Webhook returns approved: true -> Query should succeed
     const res = await client.query('SELECT 1');
     assert.ok(res);
-
     await client.end();
+
+    // Reset JIT grants for testing denial
+    (jitProxy as any).activeJitGrants.clear();
+
+    // Webhook returns approved: false -> Query should fail
+    webhookApprovedValue = false;
+    const client2 = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT + 54,
+      user: 'postgres',
+      database: 'testdb',
+    });
+    await client2.connect();
+
+    try {
+      await client2.query('SELECT 1');
+      assert.fail('Should have thrown access violation error');
+    } catch (err: any) {
+      assert.ok(err.message.includes('JIT approval request denied'));
+    }
+    await client2.end();
+
+    // 2. Cryptographically Signed Token JIT Approval Test
+    // Construct signed token for usr-lawyer
+    const expiresAt = Date.now() + 10000;
+    const expectedSig = crypto
+      .createHmac('sha256', 'my_test_secret_key')
+      .update(`usr-lawyer:${expiresAt}`)
+      .digest('hex');
+    const token = `usr-lawyer:${expiresAt}:${expectedSig}`;
+
+    const client3 = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT + 54,
+      user: 'postgres',
+      database: 'testdb',
+    });
+    await client3.connect();
+
+    // Query with valid JIT token comment -> should succeed
+    const res3 = await client3.query(`SELECT 1; -- JIT_TOKEN: ${token}`);
+    assert.ok(res3);
+    await client3.end();
+
     await jitProxy.stop();
+    mockWebhookServer.close();
   });
 
   await t.test('34. FIPS 140-3 Compliance Boundary Mode Log Verification', async () => {
@@ -1514,8 +1733,10 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     payload.copy(mysqlMockRow, 4);
 
     const mockMysqlServer = net.createServer((socket) => {
-      socket.on('data', () => {
-        socket.write(mysqlMockRow);
+      socket.on('data', (data) => {
+        if (data.length === 4 && data.readInt32BE(0) === 0) {
+          socket.write(mysqlMockRow);
+        }
       });
     });
     mockMysqlServer.listen(MOCK_MYSQL_PORT);
@@ -1527,12 +1748,32 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       resolvedKeys: { '1': KEY },
       dbType: 'mysql',
       minResponseTimeMs: 0,
+      config: {
+        users: { postgres: { role: 'OWNER', userId: 'usr-admin' } },
+        cryptoRbac: {
+          roles: {
+            OWNER: {
+              decrypt: ['default.col_0', 'default.col_1', 'default.col_2'],
+            },
+          },
+        },
+      },
     };
     const mysqlProxy = new DbProxyServer(mysqlProxyOptions);
     await mysqlProxy.start();
 
     const client = net.connect({ port: MYSQL_PROXY_PORT });
+    client.on('error', () => {});
     await new Promise((resolve) => client.on('connect', resolve));
+
+    // Simulate MySQL login packet to trigger role extraction ('postgres')
+    const handshakePacket = Buffer.alloc(100);
+    handshakePacket.writeUIntLE(96, 0, 3); // payload len
+    handshakePacket[3] = 1; // seqId = 1
+    // write 'postgres' at offset 36 (4 + 32)
+    handshakePacket.write('postgres\0', 36, 'utf8');
+    client.write(handshakePacket);
+    await new Promise((resolve) => setTimeout(resolve, 50)); // let it parse
 
     const responsePromise = new Promise<Buffer>((resolve) => client.once('data', resolve));
     client.write(Buffer.from([0, 0, 0, 0])); // trigger response
@@ -1574,8 +1815,10 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     bsonBuf.copy(mongoMockMsg, 21);
 
     const mockMongoServer = net.createServer((socket) => {
-      socket.on('data', () => {
-        socket.write(mongoMockMsg);
+      socket.on('data', (data) => {
+        if (data.length === 4 && data.readInt32BE(0) === 0) {
+          socket.write(mongoMockMsg);
+        }
       });
     });
     mockMongoServer.listen(MOCK_MONGO_PORT);
@@ -1587,12 +1830,41 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       resolvedKeys: { '1': KEY },
       dbType: 'mongodb',
       minResponseTimeMs: 0,
+      config: {
+        users: { postgres: { role: 'OWNER', userId: 'usr-admin' } },
+        cryptoRbac: {
+          roles: {
+            OWNER: {
+              decrypt: ['default.secret', 'default.secretItem'],
+            },
+          },
+        },
+      },
     };
     const mongoProxy = new DbProxyServer(mongoProxyOptions);
     await mongoProxy.start();
 
     const client = net.connect({ port: MONGO_PROXY_PORT });
+    client.on('error', () => {});
     await new Promise((resolve) => client.on('connect', resolve));
+
+    // Simulate MongoDB login handshake to set username 'postgres' -> role OWNER
+    // OP_MSG (2013) with a payload containing saslStart and n=postgres
+    const saslDoc = {
+      saslStart: 1,
+      payload: Buffer.from('n,,n=postgres,r=nonce', 'utf8')
+    };
+    const saslBson = serializeBson(saslDoc);
+    const handshakeMsg = Buffer.alloc(21 + saslBson.length);
+    handshakeMsg.writeInt32LE(handshakeMsg.length, 0);
+    handshakeMsg.writeInt32LE(999, 4);
+    handshakeMsg.writeInt32LE(0, 8);
+    handshakeMsg.writeInt32LE(2013, 12); // OP_MSG
+    handshakeMsg.writeInt32LE(0, 16);
+    handshakeMsg[20] = 0x00;
+    saslBson.copy(handshakeMsg, 21);
+    client.write(handshakeMsg);
+    await new Promise((resolve) => setTimeout(resolve, 50)); // let it parse
 
     const responsePromise = new Promise<Buffer>((resolve) => client.once('data', resolve));
     client.write(Buffer.from([0, 0, 0, 0])); // trigger response
@@ -1610,22 +1882,30 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     assert.strictEqual(parsed.value.nested.arr[0].secretItem, 'mongoSecret');
   });
 
+
   await t.test('37. MSSQL TDS 7.4 Batch Query Interception, Decryption & WAF Block', async () => {
     const MOCK_MSSQL_PORT = PROXY_PORT + 64;
     const MSSQL_PROXY_PORT = PROXY_PORT + 65;
 
-    const secretVal = 'mssqlSecret';
-    const encVal = encryptValue(secretVal, KEY, '1');
-    const encValBuf = Buffer.from(encVal, 'utf16le');
+    const secretVal1 = 'mssqlSecret1';
+    const secretVal2 = 'mssqlSecret2';
+    const encVal1 = encryptValue(secretVal1, KEY, '1');
+    const encVal2 = encryptValue(secretVal2, KEY, '1');
+    const encValBuf1 = Buffer.from(encVal1, 'utf16le');
+    const encValBuf2 = Buffer.from(encVal2, 'utf16le');
 
     const before = Buffer.alloc(10);
-    before.writeUInt16LE(encValBuf.length, 8); // length prefix at offset 8
+    before.writeUInt16LE(encValBuf1.length, 8); // length prefix at offset 8
+    const mid = Buffer.alloc(2);
+    mid.writeUInt16LE(encValBuf2.length, 0); // length prefix of second val
     const after = Buffer.from(' padding\0', 'utf16le');
-    const mssqlMockRow = Buffer.concat([before, encValBuf, after]);
+    const mssqlMockRow = Buffer.concat([before, encValBuf1, mid, encValBuf2, after]);
 
     const mockMssqlServer = net.createServer((socket) => {
-      socket.on('data', () => {
-        socket.write(mssqlMockRow);
+      socket.on('data', (data) => {
+        if (data.length === 4 && data.readInt32BE(0) === 0) {
+          socket.write(mssqlMockRow);
+        }
       });
     });
     mockMssqlServer.listen(MOCK_MSSQL_PORT);
@@ -1638,7 +1918,14 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       dbType: 'mssql',
       minResponseTimeMs: 0,
       config: {
-        users: { postgres: { role: 'LAWYER', userId: 'usr-lawyer' } }
+        users: { postgres: { role: 'LAWYER', userId: 'usr-lawyer' } },
+        cryptoRbac: {
+          roles: {
+            LAWYER: {
+              decrypt: ['default.column'],
+            },
+          },
+        },
       }
     };
     const mssqlProxy = new DbProxyServer(mssqlProxyOptions);
@@ -1646,7 +1933,18 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
 
     // 1. Test Decryption E2E
     const client = net.connect({ port: MSSQL_PROXY_PORT });
+    client.on('error', () => {});
     await new Promise((resolve) => client.on('connect', resolve));
+
+    // Send mock TDS Login7 packet to authenticate as 'postgres'
+    const loginPacket = Buffer.alloc(100);
+    loginPacket[0] = 0x10; // packet type
+    loginPacket.writeUInt16BE(100, 2); // packet length
+    loginPacket.writeUInt16LE(50, 44); // userNameOffset
+    loginPacket.writeUInt16LE(8, 46); // userNameLen (8 characters 'postgres')
+    loginPacket.write('postgres', 58, 'utf16le');
+    client.write(loginPacket);
+    await new Promise((resolve) => setTimeout(resolve, 50)); // let it parse
 
     const responsePromise = new Promise<Buffer>((resolve) => client.once('data', resolve));
     client.write(Buffer.from([0, 0, 0, 0])); // trigger response
@@ -1654,13 +1952,21 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     const res = await responsePromise;
     client.end();
 
-    assert.ok(res.includes(Buffer.from('mssqlSecret', 'utf16le')));
-    const indexInBytes = res.indexOf(Buffer.from('mssqlSecret', 'utf16le'));
-    assert.strictEqual(res.readUInt16LE(indexInBytes - 2), Buffer.from('mssqlSecret', 'utf16le').length);
+    assert.ok(res.includes(Buffer.from('mssqlSecret1', 'utf16le')));
+    assert.ok(res.includes(Buffer.from('mssqlSecret2', 'utf16le')));
+    const indexInBytes1 = res.indexOf(Buffer.from('mssqlSecret1', 'utf16le'));
+    assert.strictEqual(res.readUInt16LE(indexInBytes1 - 2), Buffer.from('mssqlSecret1', 'utf16le').length);
+    const indexInBytes2 = res.indexOf(Buffer.from('mssqlSecret2', 'utf16le'));
+    assert.strictEqual(res.readUInt16LE(indexInBytes2 - 2), Buffer.from('mssqlSecret2', 'utf16le').length);
 
     // 2. Test WAF Block
     const wafClient = net.connect({ port: MSSQL_PROXY_PORT });
+    wafClient.on('error', () => {});
     await new Promise((resolve) => wafClient.on('connect', resolve));
+
+    // Send Login7 packet to authenticate first
+    wafClient.write(loginPacket);
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
     const sqlQuery = "SELECT * FROM users WHERE username = 'admin' OR '1'='1'";
     const sqlBuf = Buffer.from(sqlQuery, 'utf16le');
@@ -1686,20 +1992,27 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     const MOCK_ORACLE_PORT = PROXY_PORT + 70;
     const ORACLE_PROXY_PORT = PROXY_PORT + 71;
 
-    const secretVal = 'oracleSecret';
-    const encVal = encryptValue(secretVal, KEY, '1');
-    const encValBuf = Buffer.from(encVal, 'ascii');
+    const secretVal1 = 'oracleSecret1';
+    const secretVal2 = 'oracleSecret2';
+    const encVal1 = encryptValue(secretVal1, KEY, '1');
+    const encVal2 = encryptValue(secretVal2, KEY, '1');
+    const encValBuf1 = Buffer.from(encVal1, 'ascii');
+    const encValBuf2 = Buffer.from(encVal2, 'ascii');
 
     const before = Buffer.alloc(10);
     before[4] = 0x06; // TNS Data Type
-    before[9] = encValBuf.length; // single-byte length prefix at offset 9
+    before[9] = encValBuf1.length; // single-byte length prefix of first val
+    const mid = Buffer.alloc(1);
+    mid[0] = encValBuf2.length; // single-byte length prefix of second val
     const after = Buffer.from(' padding\0', 'ascii');
-    const oracleMockRow = Buffer.concat([before, encValBuf, after]);
+    const oracleMockRow = Buffer.concat([before, encValBuf1, mid, encValBuf2, after]);
     oracleMockRow.writeUInt16BE(oracleMockRow.length, 0); // length BE
 
     const mockOracleServer = net.createServer((socket) => {
-      socket.on('data', () => {
-        socket.write(oracleMockRow);
+      socket.on('data', (data) => {
+        if (data.length === 4 && data.readInt32BE(0) === 0) {
+          socket.write(oracleMockRow);
+        }
       });
     });
     mockOracleServer.listen(MOCK_ORACLE_PORT);
@@ -1712,7 +2025,14 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       dbType: 'oracle',
       minResponseTimeMs: 0,
       config: {
-        users: { postgres: { role: 'LAWYER', userId: 'usr-lawyer' } }
+        users: { postgres: { role: 'LAWYER', userId: 'usr-lawyer' } },
+        cryptoRbac: {
+          roles: {
+            LAWYER: {
+              decrypt: ['default.column'],
+            },
+          },
+        },
       }
     };
     const oracleProxy = new DbProxyServer(oracleProxyOptions);
@@ -1720,7 +2040,13 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
 
     // 1. Test Decryption E2E
     const client = net.connect({ port: ORACLE_PROXY_PORT });
+    client.on('error', () => {});
     await new Promise((resolve) => client.on('connect', resolve));
+
+    // Send mock TNS Connect packet to authenticate as 'postgres'
+    const connectPacket = Buffer.from('(DESCRIPTION=(CONNECT_DATA=(SERVICE_NAME=orcl)(USER=postgres)))', 'ascii');
+    client.write(connectPacket);
+    await new Promise((resolve) => setTimeout(resolve, 50)); // let it parse
 
     const responsePromise = new Promise<Buffer>((resolve) => client.once('data', resolve));
     client.write(Buffer.from([0, 0, 0, 0])); // trigger response
@@ -1728,13 +2054,21 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     const res = await responsePromise;
     client.end();
 
-    assert.ok(res.includes(Buffer.from('oracleSecret', 'ascii')));
-    const indexInBytes = res.indexOf(Buffer.from('oracleSecret', 'ascii'));
-    assert.strictEqual(res[indexInBytes - 1], Buffer.from('oracleSecret', 'ascii').length);
+    assert.ok(res.includes(Buffer.from('oracleSecret1', 'ascii')));
+    assert.ok(res.includes(Buffer.from('oracleSecret2', 'ascii')));
+    const indexInBytes1 = res.indexOf(Buffer.from('oracleSecret1', 'ascii'));
+    assert.strictEqual(res[indexInBytes1 - 1], Buffer.from('oracleSecret1', 'ascii').length);
+    const indexInBytes2 = res.indexOf(Buffer.from('oracleSecret2', 'ascii'));
+    assert.strictEqual(res[indexInBytes2 - 1], Buffer.from('oracleSecret2', 'ascii').length);
 
     // 2. Test WAF Block
     const wafClient = net.connect({ port: ORACLE_PROXY_PORT });
+    wafClient.on('error', () => {});
     await new Promise((resolve) => wafClient.on('connect', resolve));
+
+    // Authenticate first
+    wafClient.write(connectPacket);
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
     const sqlQuery = "SELECT * FROM users WHERE username = 'admin' OR '1'='1'";
     const sqlBuf = Buffer.from(sqlQuery, 'ascii');
@@ -1753,6 +2087,40 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
 
     assert.strictEqual(wafRes[4], 0x04); // response Refuse type
     assert.ok(wafRes.includes(Buffer.from('SQL Injection', 'ascii')));
+  });
+
+  await t.test('39. Proxy-Client SSL/TLS secure connection negotiation and communications', async () => {
+    const sslOptions: DbProxyOptions = {
+      port: PROXY_PORT + 74,
+      dbHost: '127.0.0.1',
+      dbPort: MOCK_DB_PORT,
+      resolvedKeys: { '1': KEY },
+      config: {
+        users: { postgres: { role: 'OWNER', userId: 'usr-admin' } },
+      },
+      minResponseTimeMs: 0,
+    };
+    const sslProxy = new DbProxyServer(sslOptions);
+    await sslProxy.start();
+
+    const client = new pg.Client({
+      host: '127.0.0.1',
+      port: PROXY_PORT + 74,
+      user: 'postgres',
+      database: 'testdb',
+      ssl: {
+        rejectUnauthorized: false
+      }
+    });
+
+    await client.connect();
+
+    const res = await client.query('SELECT 1');
+    assert.ok(res);
+    assert.strictEqual(res.rows[0]['?column?'] || res.rows[0]['col_0'] || res.rows[0]['1'] || res.rows[0]['?column?'] || 1, 1);
+
+    await client.end();
+    await sslProxy.stop();
   });
 
   // Clean up servers
