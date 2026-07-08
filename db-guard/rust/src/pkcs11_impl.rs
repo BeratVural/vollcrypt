@@ -1,19 +1,24 @@
-use std::path::Path;
-use cryptoki::context::{Pkcs11, CInitializeArgs};
-use cryptoki::session::UserType;
-use cryptoki::object::{Attribute, ObjectClass};
+use cryptoki::context::{CInitializeArgs, Pkcs11};
 use cryptoki::mechanism::Mechanism;
+use cryptoki::object::{Attribute, ObjectClass};
+use cryptoki::session::UserType;
 use secrecy::SecretString;
+use std::path::Path;
 
 fn decode_hex(s: &str) -> Result<Vec<u8>, String> {
+    if !s.is_ascii() {
+        return Err("Hex string contains non-ASCII characters".to_string());
+    }
     if s.len() % 2 != 0 {
         return Err("Hex string has odd length".to_string());
     }
-    (0..s.len())
+    let bytes = s.as_bytes();
+    (0..bytes.len())
         .step_by(2)
         .map(|i| {
-            u8::from_str_radix(&s[i..i + 2], 16)
-                .map_err(|e| format!("Invalid hex digit: {}", e))
+            let chunk = std::str::from_utf8(&bytes[i..i + 2])
+                .map_err(|e| format!("Invalid UTF-8: {}", e))?;
+            u8::from_str_radix(chunk, 16).map_err(|e| format!("Invalid hex digit: {}", e))
         })
         .collect()
 }
@@ -36,7 +41,8 @@ pub fn decrypt_with_hsm(
         }
     }
 
-    let slots = pkcs11.get_slots_with_token()
+    let slots = pkcs11
+        .get_slots_with_token()
         .map_err(|e| format!("Failed to get slots: {}", e))?;
 
     let slot_idx = slot_id.unwrap_or(0);
@@ -45,11 +51,13 @@ pub fn decrypt_with_hsm(
     }
     let slot = slots[slot_idx];
 
-    let session = pkcs11.open_ro_session(slot)
+    let session = pkcs11
+        .open_ro_session(slot)
         .map_err(|e| format!("Failed to open session: {}", e))?;
 
     let auth_pin = SecretString::new(pin.to_string());
-    session.login(UserType::User, Some(&auth_pin))
+    session
+        .login(UserType::User, Some(&auth_pin))
         .map_err(|e| format!("Login failed: {}", e))?;
 
     let result = (|| {
@@ -59,11 +67,15 @@ pub fn decrypt_with_hsm(
             Attribute::Id(key_id_bytes),
         ];
 
-        let keys = session.find_objects(&template)
+        let keys = session
+            .find_objects(&template)
             .map_err(|e| format!("Key search failed: {}", e))?;
 
         if keys.is_empty() {
-            return Err(format!("Secret key with ID {} not found in HSM.", key_id_hex));
+            return Err(format!(
+                "Secret key with ID {} not found in HSM.",
+                key_id_hex
+            ));
         }
         let key_handle = keys[0];
 
@@ -76,7 +88,8 @@ pub fn decrypt_with_hsm(
         };
 
         let mechanism = Mechanism::AesCbcPad(iv);
-        let decrypted = session.decrypt(&mechanism, key_handle, actual_ciphertext)
+        let decrypted = session
+            .decrypt(&mechanism, key_handle, actual_ciphertext)
             .map_err(|e| format!("PKCS#11 decryption failed: {}", e))?;
 
         Ok(decrypted)

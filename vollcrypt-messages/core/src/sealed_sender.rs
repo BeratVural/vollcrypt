@@ -37,7 +37,11 @@ pub fn seal(
 
     // 2. ECDH to compute shared secret
     let recipient_pk = PublicKey::from(*recipient_x25519_pub);
-    let mut shared_secret = ephemeral_sk.diffie_hellman(&recipient_pk).to_bytes();
+    let dh = ephemeral_sk.diffie_hellman(&recipient_pk);
+    if !dh.was_contributory() {
+        return Err(CryptoError::InvalidKeyLength);
+    }
+    let mut shared_secret = dh.to_bytes();
 
     // 3. Derive encryption key using HKDF-SHA256
     let mut encryption_key = derive_hkdf(
@@ -52,7 +56,7 @@ pub fn seal(
     shared_secret.zeroize();
 
     // 4. Pack inner plaintext: [2 bytes sender_id_len | sender_id | content]
-    let sender_id_len = sender_id.len() as u16;
+    let sender_id_len = u16::try_from(sender_id.len()).map_err(|_| CryptoError::InvalidKeyLength)?;
     let mut inner_plaintext = Vec::with_capacity(2 + sender_id.len() + content.len());
     inner_plaintext.extend_from_slice(&sender_id_len.to_be_bytes());
     inner_plaintext.extend_from_slice(sender_id);
@@ -102,7 +106,11 @@ pub fn unseal(
     // 3. ECDH to compute shared secret
     let ephemeral_pk = PublicKey::from(ephemeral_pk_bytes);
     let secret = StaticSecret::from(*our_x25519_sk);
-    let mut shared_secret = secret.diffie_hellman(&ephemeral_pk).to_bytes();
+    let dh = secret.diffie_hellman(&ephemeral_pk);
+    if !dh.was_contributory() {
+        return Err(CryptoError::InvalidSealedPacketFormat);
+    }
+    let mut shared_secret = dh.to_bytes();
 
     // 4. Derive encryption key using HKDF-SHA256
     let mut encryption_key = derive_hkdf(

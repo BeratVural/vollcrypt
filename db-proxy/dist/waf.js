@@ -10,13 +10,17 @@ exports.evaluateThreatScore = evaluateThreatScore;
 exports.tokenizeSql = tokenizeSql;
 exports.rewriteQuery = rewriteQuery;
 exports.generateLaplaceNoise = generateLaplaceNoise;
-exports.getMockAttestationReport = getMockAttestationReport;
+exports.identifyAggregates = identifyAggregates;
+exports.extractProjectionColumns = extractProjectionColumns;
+exports.extractTableName = extractTableName;
 // Common SQL Injection patterns
 const SQLI_PATTERNS = [
     /\bunion\s+all\s+select\b/i,
     /\bunion\s+select\b/i,
     /\b(or|and)\s+\d+\s*=\s*\d+\b/i,
     /\b(or|and)\s+['"][^'"]*['"]\s*=\s*['"][^'"]*['"]/i,
+    /\b(and|or)\s+(?:exists\s*)?\(\s*select\b/i,
+    /\b(and|or)\s+([a-zA-Z0-9_'"\(\)]+)\s*=\s*\(?\s*select\b/i,
     /--/i,
     /\/\*/i,
     /;\s*drop\s+/i,
@@ -108,6 +112,13 @@ function evaluateThreatScore(query) {
     if (/;\s*(select|insert|update|delete|drop|truncate|alter|create)\b/i.test(normalized)) {
         score += 4;
     }
+    // 6. Subquery-based injection (e.g. AND (SELECT ...), OR (SELECT ...), or comparative subquery injection)
+    if (/\b(?:and|or)\s+(?:exists\s*)?\(\s*select\b/i.test(normalized)) {
+        score += 8;
+    }
+    if (/\b(?:and|or)\s+([a-zA-Z0-9_'"\(\)]+)\s*=\s*\(?\s*select\b/i.test(normalized)) {
+        score += 8;
+    }
     return score;
 }
 /**
@@ -182,12 +193,23 @@ function tokenizeSql(sql) {
         tokens.push(current);
     return tokens;
 }
+function cleanColumnName(name) {
+    let cleaned = name.trim();
+    if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+        cleaned = cleaned.substring(1, cleaned.length - 1);
+    }
+    else if (cleaned.startsWith('`') && cleaned.endsWith('`')) {
+        cleaned = cleaned.substring(1, cleaned.length - 1);
+    }
+    else if (cleaned.startsWith('[') && cleaned.endsWith(']')) {
+        cleaned = cleaned.substring(1, cleaned.length - 1);
+    }
+    return cleaned;
+}
 /**
  * Rewrites SQL queries to inject RLS tenant isolation and database-level masking rules.
  */
-function rewriteQuery(sql, role, tenantId, config) {
-    const normalized = normalizeQuery(sql);
-    const tokens = tokenizeSql(normalized);
+function rewriteQueryBlock(tokens, role, tenantId, config) {
     // 1. Identify projection context and inject SQL-level masking expressions
     const mask = config?.cryptoRbac?.roles?.[role]?.mask;
     const rewrittenTokens = [];
@@ -207,10 +229,17 @@ function rewriteQuery(sql, role, tenantId, config) {
         }
         if (inProjection && mask) {
             let foundMaskRule;
+            const cleanedToken = cleanColumnName(token);
             for (const [colPath, rule] of Object.entries(mask)) {
                 const parts = colPath.split('.');
                 const fieldName = parts[parts.length - 1];
-                if (token.toLowerCase() === fieldName.toLowerCase() || token.toLowerCase() === colPath.toLowerCase()) {
+                const cleanedLower = cleanedToken.toLowerCase();
+                const fieldLower = fieldName.toLowerCase();
+                const colPathLower = colPath.toLowerCase();
+                // Support table aliases like u.credit_card or full paths like users.credit_card or exact column credit_card
+                if (cleanedLower === fieldLower ||
+                    cleanedLower === colPathLower ||
+                    cleanedLower.endsWith('.' + fieldLower)) {
                     const nextToken = tokens[i + 1];
                     if (nextToken !== '=') {
                         foundMaskRule = rule;
@@ -260,12 +289,58 @@ function rewriteQuery(sql, role, tenantId, config) {
             rewrittenTokens.splice(insertIndex, 0, 'WHERE', `tenant_id = '${tenantId}'`);
         }
     }
+    return rewrittenTokens;
+}
+/**
+ * Rewrites SQL queries to inject RLS tenant isolation and database-level masking rules.
+ */
+function rewriteQuery(sql, role, tenantId, config) {
+    const normalized = normalizeQuery(sql);
+    const tokens = tokenizeSql(normalized);
+    const blocks = [];
+    const operators = []; // To store 'UNION' or 'UNION' 'ALL'
+    let currentBlock = [];
+    let depth = 0;
+    let i = 0;
+    while (i < tokens.length) {
+        const token = tokens[i];
+        const upperToken = token.toUpperCase();
+        if (token === '(')
+            depth++;
+        else if (token === ')')
+            depth--;
+        if (depth === 0 && upperToken === 'UNION') {
+            blocks.push(currentBlock);
+            currentBlock = [];
+            const op = ['UNION'];
+            if (tokens[i + 1] && tokens[i + 1].toUpperCase() === 'ALL') {
+                op.push('ALL');
+                i++;
+            }
+            operators.push(op);
+        }
+        else {
+            currentBlock.push(token);
+        }
+        i++;
+    }
+    blocks.push(currentBlock);
+    // Rewrite each block
+    const rewrittenBlocks = blocks.map(block => rewriteQueryBlock(block, role, tenantId, config));
+    // Combine them back
+    const combinedTokens = [];
+    for (let j = 0; j < rewrittenBlocks.length; j++) {
+        combinedTokens.push(...rewrittenBlocks[j]);
+        if (j < operators.length) {
+            combinedTokens.push(...operators[j]);
+        }
+    }
     // Reconstruct the SQL query from tokens
     let result = '';
-    for (let i = 0; i < rewrittenTokens.length; i++) {
-        const t = rewrittenTokens[i];
-        if (i > 0) {
-            const prev = rewrittenTokens[i - 1];
+    for (let j = 0; j < combinedTokens.length; j++) {
+        const t = combinedTokens[j];
+        if (j > 0) {
+            const prev = combinedTokens[j - 1];
             if (['(', ';'].includes(prev) || [',', ';', ')', '('].includes(t)) {
                 result += t;
             }
@@ -286,17 +361,214 @@ function generateLaplaceNoise(scale) {
     const u = Math.random() - 0.5;
     return -scale * Math.sign(u) * Math.log(1 - 2 * Math.abs(u));
 }
-/**
- * Generates mock Remote Attestation Quote for secure enclave execution verification.
- */
-function getMockAttestationReport() {
-    return {
-        attestation_type: "Intel SGX Quote",
-        mrenclave: "d3f4b5a6c7e8f901a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f901a2b3c4d5e6",
-        mrsigner: "a1b2c3d4e5f60102030405060708090a0b0c0d0e0f101112131415161718191a",
-        isv_prod_id: 1,
-        isv_svn: 1,
-        quote_signature: "30450221008f51a4b9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f802200a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b",
-        enclave_timestamp: new Date().toISOString()
-    };
+function identifyAggregates(sql) {
+    const normalized = normalizeQuery(sql);
+    const tokens = tokenizeSql(normalized);
+    // Find the first SELECT token
+    let selectIdx = -1;
+    for (let i = 0; i < tokens.length; i++) {
+        if (tokens[i].toUpperCase() === 'SELECT') {
+            selectIdx = i;
+            break;
+        }
+    }
+    if (selectIdx === -1)
+        return [];
+    // Find the matching FROM token for the main SELECT (at depth 0)
+    let fromIdx = -1;
+    let depth = 0;
+    for (let i = selectIdx + 1; i < tokens.length; i++) {
+        const t = tokens[i].toUpperCase();
+        if (t === '(')
+            depth++;
+        else if (t === ')')
+            depth--;
+        else if (depth === 0 && t === 'FROM') {
+            fromIdx = i;
+            break;
+        }
+    }
+    const endIdx = fromIdx !== -1 ? fromIdx : tokens.length;
+    // Split projection tokens by commas at depth 0
+    const projectionItems = [];
+    let currentItem = [];
+    depth = 0;
+    for (let i = selectIdx + 1; i < endIdx; i++) {
+        const t = tokens[i];
+        if (t === '(')
+            depth++;
+        else if (t === ')')
+            depth--;
+        if (depth === 0 && t === ',') {
+            projectionItems.push(currentItem);
+            currentItem = [];
+        }
+        else {
+            currentItem.push(t);
+        }
+    }
+    if (currentItem.length > 0) {
+        projectionItems.push(currentItem);
+    }
+    return projectionItems.map(item => {
+        if (item.length === 0)
+            return false;
+        // Find the expression part before the alias
+        let exprTokens = [...item];
+        // Check for "AS" keyword at depth 0
+        let asIdx = -1;
+        let d = 0;
+        for (let i = 0; i < item.length; i++) {
+            const t = item[i];
+            if (t === '(')
+                d++;
+            else if (t === ')')
+                d--;
+            else if (d === 0 && t.toUpperCase() === 'AS') {
+                asIdx = i;
+                break;
+            }
+        }
+        if (asIdx !== -1) {
+            exprTokens = item.slice(0, asIdx);
+        }
+        else {
+            // Check if there is an implicit alias (multiple tokens at depth 0)
+            const depth0Indices = [];
+            let curDepth = 0;
+            for (let i = 0; i < item.length; i++) {
+                const t = item[i];
+                if (t === '(')
+                    curDepth++;
+                else if (t === ')')
+                    curDepth--;
+                else if (curDepth === 0) {
+                    depth0Indices.push(i);
+                }
+            }
+            if (depth0Indices.length >= 2) {
+                const lastDepth0Idx = depth0Indices[depth0Indices.length - 1];
+                exprTokens = item.slice(0, lastDepth0Idx);
+            }
+        }
+        if (exprTokens.length === 0)
+            return false;
+        // Check if exprTokens start with avg, sum, count (either function call or column name)
+        const firstToken = exprTokens[0].toLowerCase();
+        return firstToken.startsWith('avg') || firstToken.startsWith('sum') || firstToken.startsWith('count');
+    });
+}
+function extractProjectionColumns(sql) {
+    const normalized = normalizeQuery(sql);
+    const tokens = tokenizeSql(normalized);
+    // Find the first SELECT token
+    let selectIdx = -1;
+    for (let i = 0; i < tokens.length; i++) {
+        if (tokens[i].toUpperCase() === 'SELECT') {
+            selectIdx = i;
+            break;
+        }
+    }
+    if (selectIdx === -1)
+        return [];
+    // Find the matching FROM token
+    let fromIdx = -1;
+    let depth = 0;
+    for (let i = selectIdx + 1; i < tokens.length; i++) {
+        const t = tokens[i].toUpperCase();
+        if (t === '(')
+            depth++;
+        else if (t === ')')
+            depth--;
+        else if (depth === 0 && t === 'FROM') {
+            fromIdx = i;
+            break;
+        }
+    }
+    const endIdx = fromIdx !== -1 ? fromIdx : tokens.length;
+    const projectionItems = [];
+    let currentItem = [];
+    depth = 0;
+    for (let i = selectIdx + 1; i < endIdx; i++) {
+        const t = tokens[i];
+        if (t === '(')
+            depth++;
+        else if (t === ')')
+            depth--;
+        if (depth === 0 && t === ',') {
+            projectionItems.push(currentItem);
+            currentItem = [];
+        }
+        else {
+            currentItem.push(t);
+        }
+    }
+    if (currentItem.length > 0) {
+        projectionItems.push(currentItem);
+    }
+    return projectionItems.map(item => {
+        if (item.length === 0)
+            return '';
+        // Find alias or column name
+        let asIdx = -1;
+        let d = 0;
+        for (let i = 0; i < item.length; i++) {
+            const t = item[i];
+            if (t === '(')
+                d++;
+            else if (t === ')')
+                d--;
+            else if (d === 0 && t.toUpperCase() === 'AS') {
+                asIdx = i;
+                break;
+            }
+        }
+        if (asIdx !== -1 && item[asIdx + 1]) {
+            return cleanColumnName(item[asIdx + 1]);
+        }
+        // Check implicit alias
+        const depth0Indices = [];
+        let curDepth = 0;
+        for (let i = 0; i < item.length; i++) {
+            const t = item[i];
+            if (t === '(')
+                curDepth++;
+            else if (t === ')')
+                curDepth--;
+            else if (curDepth === 0) {
+                depth0Indices.push(i);
+            }
+        }
+        if (depth0Indices.length >= 2) {
+            const lastIdx = depth0Indices[depth0Indices.length - 1];
+            const lastToken = item[lastIdx];
+            if (!['+', '-', '*', '/', 'AND', 'OR'].includes(lastToken.toUpperCase())) {
+                return cleanColumnName(lastToken);
+            }
+        }
+        // Otherwise, clean the last token of the expression
+        const lastToken = item[item.length - 1];
+        return cleanColumnName(lastToken);
+    });
+}
+function extractTableName(sql) {
+    const normalized = normalizeQuery(sql);
+    const tokens = tokenizeSql(normalized);
+    let fromIdx = -1;
+    let depth = 0;
+    for (let i = 0; i < tokens.length; i++) {
+        const t = tokens[i].toUpperCase();
+        if (t === '(')
+            depth++;
+        else if (t === ')')
+            depth--;
+        else if (depth === 0 && t === 'FROM') {
+            fromIdx = i;
+            break;
+        }
+    }
+    if (fromIdx !== -1 && tokens[fromIdx + 1]) {
+        return cleanColumnName(tokens[fromIdx + 1]);
+    }
+    return 'users'; // default fallback
 }

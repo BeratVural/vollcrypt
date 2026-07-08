@@ -96,19 +96,24 @@ pub fn ratchet_srk_sender(
     current_srk: &[u8; 32],
     our_ratchet_secret: &[u8; 32],
     their_ratchet_pub: &[u8; 32],
-    _chat_id: &[u8], // maintained for API compatibility based on prompt
+    chat_id: &[u8],
     ratchet_step: u64,
 ) -> Result<[u8; 32], CryptoError> {
     // Step 1: ECDH
     let secret = StaticSecret::from(*our_ratchet_secret);
     let public = PublicKey::from(*their_ratchet_pub);
     let ephemeral_shared = secret.diffie_hellman(&public);
+    if !ephemeral_shared.was_contributory() {
+        return Err(CryptoError::RatchetComputationFailed);
+    }
     let mut ephemeral_shared_bytes = ephemeral_shared.to_bytes();
 
     // Step 2-4: input_material = current_srk || ephemeral_shared, then HKDF
-    let salt = ratchet_step.to_be_bytes();
+    let mut salt = Vec::with_capacity(8 + chat_id.len());
+    salt.extend_from_slice(&ratchet_step.to_be_bytes());
+    salt.extend_from_slice(chat_id);
 
-    let new_srk_vec = derive_hkdf_combined(
+    let mut new_srk_vec = derive_hkdf_combined(
         current_srk,
         &ephemeral_shared_bytes,
         Some(&salt),
@@ -122,6 +127,7 @@ pub fn ratchet_srk_sender(
 
     let mut new_srk = [0u8; 32];
     new_srk.copy_from_slice(&new_srk_vec);
+    new_srk_vec.zeroize();
 
     Ok(new_srk)
 }

@@ -11,13 +11,22 @@ use zeroize::Zeroize;
 /// The returned key material is sensitive. Caller must call `.zeroize()`
 /// on the returned `Vec<u8>` after use to prevent key material from
 /// remaining in memory.
-pub fn derive_pbkdf2(password: &[u8], salt: &[u8], iterations: u32, key_len: usize) -> Vec<u8> {
-    let mut derived_key = vec![0u8; key_len];
+pub fn derive_pbkdf2(
+    password: &[u8],
+    salt: &[u8],
+    iterations: u32,
+    key_len: usize,
+) -> Result<Vec<u8>, &'static str> {
+    if iterations < 1000 || iterations > 5_000_000 {
+        return Err("PBKDF2 iterations out of safety bounds (must be between 1,000 and 5,000,000)");
+    }
+    let clamped_len = key_len.min(8160);
+    let mut derived_key = vec![0u8; clamped_len];
     pbkdf2_hmac::<Sha256>(password, salt, iterations, &mut derived_key);
 
     // We expect the caller to securely zeroize the output key when they are done,
     // but the intermediate pbkdf2 implementation handles its own memory safely.
-    derived_key
+    Ok(derived_key)
 }
 
 /// Derives a key using HKDF-SHA256.
@@ -34,6 +43,9 @@ pub fn derive_hkdf(
     info: Option<&[u8]>,
     key_len: usize,
 ) -> Result<Vec<u8>, &'static str> {
+    if key_len > 8160 {
+        return Err("HKDF expansion failed (length too long)");
+    }
     let hk = Hkdf::<Sha256>::new(salt, ikm);
     let mut okm = vec![0u8; key_len];
 
@@ -101,13 +113,13 @@ mod tests {
         let pw = b"my_secure_password";
         let salt = b"some_random_salt";
 
-        let key1 = derive_pbkdf2(pw, salt, 10_000, 32);
-        let key2 = derive_pbkdf2(pw, salt, 10_000, 32);
+        let key1 = derive_pbkdf2(pw, salt, 10_000, 32).unwrap();
+        let key2 = derive_pbkdf2(pw, salt, 10_000, 32).unwrap();
 
         assert_eq!(key1.len(), 32);
         assert_eq!(key1, key2);
 
-        let key_different_salt = derive_pbkdf2(pw, b"other_salt", 10_000, 32);
+        let key_different_salt = derive_pbkdf2(pw, b"other_salt", 10_000, 32).unwrap();
         assert_ne!(key1, key_different_salt);
     }
 

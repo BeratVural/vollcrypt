@@ -2,11 +2,13 @@ use diesel::backend::Backend;
 use diesel::deserialize::{self, FromSql, FromSqlRow};
 use diesel::expression::AsExpression;
 #[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
-use diesel::serialize::{self, ToSql, Output};
+use diesel::serialize::{self, Output, ToSql};
 use diesel::sql_types::Text;
 use std::fmt;
 #[cfg(any(feature = "postgres", feature = "mysql"))]
 use std::io::Write;
+
+use zeroize::Zeroize;
 
 /// A wrapper type for `String` that automatically encrypts values stored in the database
 /// and decrypts them when read.
@@ -16,6 +18,12 @@ use std::io::Write;
 #[derive(Clone, PartialEq, Eq, AsExpression, FromSqlRow)]
 #[diesel(sql_type = Text)]
 pub struct EncryptedString(pub String);
+
+impl Drop for EncryptedString {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
 
 impl fmt::Debug for EncryptedString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

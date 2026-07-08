@@ -198,3 +198,36 @@ fn test_hybrid_kem_binding() {
     let result = unwrap_key_with_recipient_key(&tampered_wrap, &sk);
     assert!(matches!(result, Err(FileFormatError::WrongRecipientKey)));
 }
+
+#[test]
+fn wrap_key_fails_on_low_order_recipient_key() {
+    let dek = generate_dek();
+    let recipient_id = [0x99; 16];
+    let gk_version = 0;
+
+    let (mut pk, _sk) = generate_recipient_keypair();
+    // Zero out the recipient X25519 public key to simulate a low-order point
+    pk.x25519 = [0u8; 32];
+
+    let result = wrap_key_to_recipient(&dek, recipient_id, gk_version, &pk);
+    assert!(matches!(result, Err(FileFormatError::WrongRecipientKey)));
+}
+
+#[test]
+fn unwrap_key_fails_on_low_order_ephemeral_key() {
+    let dek = generate_dek();
+    let recipient_id = [0x99; 16];
+    let gk_version = 0;
+
+    let (pk, sk) = generate_recipient_keypair();
+    let mut wrap = wrap_key_to_recipient(&dek, recipient_id, gk_version, &pk).unwrap();
+
+    // Zero out the ephemeral public key inside the wrap to simulate a low-order point
+    if let WrapEntry::HybridKem { x25519_ephemeral, .. } = &mut wrap {
+        *x25519_ephemeral = [0u8; 32];
+    }
+
+    let result = unwrap_key_with_recipient_key(&wrap, &sk);
+    assert!(matches!(result, Err(FileFormatError::WrongRecipientKey)));
+}
+

@@ -151,17 +151,8 @@ fn x25519_low_order_point() {
     let low_order_pk = [0u8; 32];
     let result = ecdh_shared_secret(&sk, &low_order_pk);
 
-    // Depending on dalek version, it might return Ok but with an all-zero shared secret,
-    // or return an Err. The library currently might just perform standard ECDH.
-    // If it returns Ok, the shared secret should not be used, but dalek 2.0+ mitigates this.
-    // Here we just ensure it doesn't panic.
-    if let Ok(shared) = result {
-        assert_eq!(shared.len(), 32);
-        // It's possible the shared secret is all zeros, which indicates a low-order point.
-        // A robust API should probably err, but dalek's `diffie_hellman` returns an output.
-    } else {
-        assert!(result.is_err());
-    }
+    // We now enforce that X25519 ECDH fails on non-contributory keys
+    assert!(result.is_err(), "Low-order point public key must result in an error");
 }
 
 #[test]

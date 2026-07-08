@@ -46,11 +46,11 @@ export declare function activateBreakGlass(signatures: {
     signature: string;
     timestamp: number;
 }[], emergencyBackupKey: Buffer): void;
-export declare function registerKeysForZeroization(keys: Record<string, Buffer>): void;
-export declare function triggerFailClosed(onFailClosedCallback?: () => void): void;
+export declare function registerKeysForZeroization(keys: Record<string, Buffer>, tenantId?: string): void;
+export declare function triggerFailClosed(onFailClosedCallback?: () => void, tenantId?: string): void;
 export declare function checkRateLimit(options?: RateLimiterOptions): void;
 export declare function checkPageSize(count: number, options?: RateLimiterOptions): 'ok' | 'warn' | 'bypass' | 'error';
-export declare function getFailClosedStatus(): boolean;
+export declare function getFailClosedStatus(tenantId?: string): boolean;
 export declare function resetFailClosedStatusForTesting(): void;
 export interface AuditLogEntry {
     timestamp: string;

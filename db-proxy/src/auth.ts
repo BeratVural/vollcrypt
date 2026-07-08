@@ -15,8 +15,11 @@ export interface FirewallConfig {
     allowlistPath?: string;
   };
   jitApprovalRequired?: boolean;
+  jitWebhookUrl?: string;
+  jitSecret?: string;
   anomalyEngine?: {
     enabled: boolean;
+    baselineQueries?: string[];
   };
 }
 

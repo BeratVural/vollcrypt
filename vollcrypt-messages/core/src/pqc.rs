@@ -6,6 +6,7 @@ use crate::kdf::derive_hkdf;
 use ml_kem::kem::{Decapsulate, Encapsulate};
 use ml_kem::{EncodedSizeUser, KemCore, MlKem768};
 use rand::rngs::OsRng;
+use zeroize::Zeroize;
 
 // ==================== ML-KEM Primitives ====================
 
@@ -86,10 +87,10 @@ pub fn hybrid_kem_encapsulate(
     log::debug!("hybrid_kem_encapsulate: Starting hybrid encapsulation");
 
     // Step 1: X25519 ECDH shared secret
-    let x25519_shared = crate::ecdh_shared_secret(x25519_our_secret, x25519_their_public)?;
+    let mut x25519_shared = crate::ecdh_shared_secret(x25519_our_secret, x25519_their_public)?;
 
     // Step 2: ML-KEM encapsulation
-    let (ml_kem_ct, ml_kem_shared) = ml_kem_encapsulate(ml_kem_ek_bytes)?;
+    let (ml_kem_ct, mut ml_kem_shared) = ml_kem_encapsulate(ml_kem_ek_bytes)?;
 
     // Step 3: Combine both shared secrets via HKDF
     let mut combined_ikm = Vec::with_capacity(x25519_shared.len() + ml_kem_shared.len());
@@ -97,6 +98,11 @@ pub fn hybrid_kem_encapsulate(
     combined_ikm.extend_from_slice(&ml_kem_shared);
 
     let hybrid_key = derive_hkdf(&combined_ikm, None, Some(b"vollchat-hybrid-kem-v1"), 32)?;
+
+    // Zeroize intermediate secrets
+    x25519_shared.zeroize();
+    ml_kem_shared.zeroize();
+    combined_ikm.zeroize();
 
     Ok((hybrid_key, ml_kem_ct))
 }
@@ -113,10 +119,10 @@ pub fn hybrid_kem_decapsulate(
     log::debug!("hybrid_kem_decapsulate: Starting hybrid decapsulation");
 
     // Step 1: X25519 ECDH shared secret
-    let x25519_shared = crate::ecdh_shared_secret(x25519_our_secret, x25519_their_public)?;
+    let mut x25519_shared = crate::ecdh_shared_secret(x25519_our_secret, x25519_their_public)?;
 
     // Step 2: ML-KEM decapsulation
-    let ml_kem_shared = ml_kem_decapsulate(ml_kem_dk_bytes, ml_kem_ct_bytes)?;
+    let mut ml_kem_shared = ml_kem_decapsulate(ml_kem_dk_bytes, ml_kem_ct_bytes)?;
 
     // Step 3: Combine both shared secrets via HKDF
     let mut combined_ikm = Vec::with_capacity(x25519_shared.len() + ml_kem_shared.len());
@@ -124,6 +130,11 @@ pub fn hybrid_kem_decapsulate(
     combined_ikm.extend_from_slice(&ml_kem_shared);
 
     let hybrid_key = derive_hkdf(&combined_ikm, None, Some(b"vollchat-hybrid-kem-v1"), 32)?;
+
+    // Zeroize intermediate secrets
+    x25519_shared.zeroize();
+    ml_kem_shared.zeroize();
+    combined_ikm.zeroize();
 
     Ok(hybrid_key)
 }

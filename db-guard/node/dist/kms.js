@@ -106,7 +106,14 @@ class Pkcs11KmsProvider {
             const pkcs11js = require('pkcs11js');
             const pkcs11 = new pkcs11js.PKCS11();
             pkcs11.load(this.config.libraryPath);
-            pkcs11.C_Initialize();
+            try {
+                pkcs11.C_Initialize();
+            }
+            catch (e) {
+                if (!e.message?.includes('CRYPTOKI_ALREADY_INITIALIZED') && e.code !== 0x00000191 && e.code !== 401) {
+                    throw e;
+                }
+            }
             const slots = pkcs11.C_GetSlotList(true);
             const slotIndex = this.config.slotId !== undefined ? this.config.slotId : 0;
             if (!slots || slots.length <= slotIndex) {
@@ -143,7 +150,6 @@ class Pkcs11KmsProvider {
             finally {
                 pkcs11.C_Logout(session);
                 pkcs11.C_CloseSession(session);
-                pkcs11.C_Finalize();
             }
         }
         catch (err) {

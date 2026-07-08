@@ -22,6 +22,14 @@ use vollcrypt_core::{
     wrap_key as core_wrap_key,
 };
 use wasm_bindgen::prelude::*;
+use zeroize::Zeroize;
+
+fn zeroize_and_copy(mut data: Vec<u8>) -> js_sys::Uint8Array {
+    let js_array = unsafe { js_sys::Uint8Array::view(&data) };
+    let result = js_array.slice(0, js_array.length());
+    data.zeroize();
+    result
+}
 
 #[wasm_bindgen]
 pub fn generate_mnemonic() -> String {
@@ -178,8 +186,8 @@ pub fn verify_fingerprints_match(
 }
 
 #[wasm_bindgen]
-pub fn ecdh_shared_secret(our_secret: &[u8], their_public: &[u8]) -> Result<Vec<u8>, JsValue> {
-    core_ecdh_shared_secret(our_secret, their_public).map_err(JsValue::from_str)
+pub fn ecdh_shared_secret(our_secret: &[u8], their_public: &[u8]) -> Result<js_sys::Uint8Array, JsValue> {
+    core_ecdh_shared_secret(our_secret, their_public).map(zeroize_and_copy).map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -206,8 +214,8 @@ pub fn decrypt_aes_gcm(
     key: &[u8],
     ciphertext: &[u8],
     aad: Option<Vec<u8>>,
-) -> Result<Vec<u8>, JsValue> {
-    core_decrypt_aes256gcm(key, ciphertext, aad.as_deref()).map_err(JsValue::from_str)
+) -> Result<js_sys::Uint8Array, JsValue> {
+    core_decrypt_aes256gcm(key, ciphertext, aad.as_deref()).map(zeroize_and_copy).map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -224,8 +232,8 @@ pub fn decrypt_aes_gcm_padded(
     key: &[u8],
     ciphertext: &[u8],
     aad: Option<Vec<u8>>,
-) -> Result<Vec<u8>, JsValue> {
-    core_decrypt_aes256gcm_padded(key, ciphertext, aad.as_deref()).map_err(JsValue::from_str)
+) -> Result<js_sys::Uint8Array, JsValue> {
+    core_decrypt_aes256gcm_padded(key, ciphertext, aad.as_deref()).map(zeroize_and_copy).map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -244,8 +252,8 @@ pub fn decrypt_aes_gcm_chunked(
     key: &[u8],
     ciphertext: &[u8],
     aad: Option<Vec<u8>>,
-) -> Result<Vec<u8>, JsValue> {
-    core_decrypt_aes256gcm_chunked(key, ciphertext, aad.as_deref()).map_err(JsValue::from_str)
+) -> Result<js_sys::Uint8Array, JsValue> {
+    core_decrypt_aes256gcm_chunked(key, ciphertext, aad.as_deref()).map(zeroize_and_copy).map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -264,14 +272,17 @@ pub fn decrypt_aes_gcm_chunked_padded(
     key: &[u8],
     ciphertext: &[u8],
     aad: Option<Vec<u8>>,
-) -> Result<Vec<u8>, JsValue> {
+) -> Result<js_sys::Uint8Array, JsValue> {
     core_decrypt_aes256gcm_chunked_padded(key, ciphertext, aad.as_deref())
+        .map(zeroize_and_copy)
         .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
-pub fn derive_pbkdf2(password: &[u8], salt: &[u8], iterations: u32, key_len: u32) -> Vec<u8> {
+pub fn derive_pbkdf2(password: &[u8], salt: &[u8], iterations: u32, key_len: u32) -> Result<js_sys::Uint8Array, JsValue> {
     core_derive_pbkdf2(password, salt, iterations, key_len as usize)
+        .map(zeroize_and_copy)
+        .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -280,19 +291,20 @@ pub fn derive_hkdf(
     salt: Option<Vec<u8>>,
     info: Option<Vec<u8>>,
     key_len: u32,
-) -> Result<Vec<u8>, JsValue> {
+) -> Result<js_sys::Uint8Array, JsValue> {
     core_derive_hkdf(ikm, salt.as_deref(), info.as_deref(), key_len as usize)
+        .map(zeroize_and_copy)
         .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
-pub fn derive_srk(dek: &[u8], chat_id: &[u8]) -> Result<Vec<u8>, JsValue> {
-    core_derive_srk(dek, chat_id).map_err(JsValue::from_str)
+pub fn derive_srk(dek: &[u8], chat_id: &[u8]) -> Result<js_sys::Uint8Array, JsValue> {
+    core_derive_srk(dek, chat_id).map(zeroize_and_copy).map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
-pub fn derive_window_key(srk: &[u8], window_index: u32) -> Result<Vec<u8>, JsValue> {
-    core_derive_window_key(srk, window_index as u64).map_err(JsValue::from_str)
+pub fn derive_window_key(srk: &[u8], window_index: u32) -> Result<js_sys::Uint8Array, JsValue> {
+    core_derive_window_key(srk, window_index as u64).map(zeroize_and_copy).map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -301,8 +313,8 @@ pub fn wrap_key(kek: &[u8], key_to_wrap: &[u8]) -> Result<Vec<u8>, JsValue> {
 }
 
 #[wasm_bindgen]
-pub fn unwrap_key(kek: &[u8], wrapped_key: &[u8]) -> Result<Vec<u8>, JsValue> {
-    core_unwrap_key(kek, wrapped_key).map_err(JsValue::from_str)
+pub fn unwrap_key(kek: &[u8], wrapped_key: &[u8]) -> Result<js_sys::Uint8Array, JsValue> {
+    core_unwrap_key(kek, wrapped_key).map(zeroize_and_copy).map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -525,8 +537,8 @@ pub fn ml_kem_encapsulate(encapsulation_key: &[u8]) -> Result<MlKemEncapsulation
 }
 
 #[wasm_bindgen]
-pub fn ml_kem_decapsulate(decapsulation_key: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, JsValue> {
-    core_ml_kem_decapsulate(decapsulation_key, ciphertext).map_err(JsValue::from_str)
+pub fn ml_kem_decapsulate(decapsulation_key: &[u8], ciphertext: &[u8]) -> Result<js_sys::Uint8Array, JsValue> {
+    core_ml_kem_decapsulate(decapsulation_key, ciphertext).map(zeroize_and_copy).map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -568,8 +580,9 @@ pub fn hybrid_kem_decapsulate(
     x25519_their_public: &[u8],
     ml_kem_dk: &[u8],
     ml_kem_ct: &[u8],
-) -> Result<Vec<u8>, JsValue> {
+) -> Result<js_sys::Uint8Array, JsValue> {
     core_hybrid_kem_decapsulate(x25519_our_secret, x25519_their_public, ml_kem_dk, ml_kem_ct)
+        .map(zeroize_and_copy)
         .map_err(JsValue::from_str)
 }
 
@@ -626,7 +639,7 @@ pub fn authenticated_kem_decapsulate(
     our_mlkem_dk: &[u8],
     authenticated_ciphertext: &[u8],
     sender_identity_pk: &[u8],
-) -> Result<Vec<u8>, JsValue> {
+) -> Result<js_sys::Uint8Array, JsValue> {
     vollcrypt_core::pqc::authenticated_kem_decapsulate(
         our_x25519_sk,
         sender_x25519_pub,
@@ -634,6 +647,7 @@ pub fn authenticated_kem_decapsulate(
         authenticated_ciphertext,
         sender_identity_pk,
     )
+    .map(zeroize_and_copy)
     .map_err(JsValue::from_str)
 }
 
@@ -866,4 +880,53 @@ pub fn key_log_compute_entry_hash(entry_json: &str) -> Result<Vec<u8>, JsValue> 
 
     let hash = entry.compute_hash();
     Ok(hash.to_vec())
+}
+
+impl Drop for Ed25519KeyPairObj {
+    fn drop(&mut self) {
+        self.secret_key.zeroize();
+    }
+}
+
+impl Drop for X25519KeyPairObj {
+    fn drop(&mut self) {
+        self.secret.zeroize();
+    }
+}
+
+impl Drop for MlKemKeyPairObj {
+    fn drop(&mut self) {
+        self.decapsulation_key.zeroize();
+    }
+}
+
+impl Drop for MlKemEncapsulationResult {
+    fn drop(&mut self) {
+        self.shared_secret.zeroize();
+    }
+}
+
+impl Drop for HybridKemResult {
+    fn drop(&mut self) {
+        self.shared_key.zeroize();
+    }
+}
+
+impl Drop for AuthenticatedKemResult {
+    fn drop(&mut self) {
+        self.shared_secret.zeroize();
+    }
+}
+
+impl Drop for RatchetKeyPairObj {
+    fn drop(&mut self) {
+        self.secret_key.zeroize();
+    }
+}
+
+impl Drop for UnsealResult {
+    fn drop(&mut self) {
+        self.sender_id.zeroize();
+        self.content.zeroize();
+    }
 }

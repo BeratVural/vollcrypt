@@ -5,7 +5,7 @@ import { computeBlindIndex } from './blind-index';
 
 import { unwrapDekLocal } from './kms';
 
-import { registerKeysForZeroization, decryptWithSecurity, RateLimiterOptions, checkPageSize, dbGuardContextStore, parseCiphertext, CRYPTO_ALGORITHMS, isBreakGlassActive, getBreakGlassKey, getCachedKey, setCachedKey } from './security';
+import { registerKeysForZeroization, decryptWithSecurity, RateLimiterOptions, checkPageSize, dbGuardContextStore, parseCiphertext, CRYPTO_ALGORITHMS, isBreakGlassActive, getBreakGlassKey, getCachedKey, setCachedKey, getFailClosedStatus } from './security';
 
 export interface PrismaDbGuardOptions {
   key?: Buffer | Record<string, Buffer>;
@@ -83,6 +83,11 @@ export async function resolveKeys(options: PrismaDbGuardOptions): Promise<Record
 
 export function encryptValue(val: any, key: Buffer, version: string): string {
   if (val === null || val === undefined) return val;
+  const context = dbGuardContextStore.getStore();
+  const tId = context?.tenantId || 'global';
+  if (key.every(b => b === 0) || getFailClosedStatus(tId)) {
+    throw new Error(`Vollcrypt Security: Fail-Closed mode is active for tenant "${tId}". Encryption blocked.`);
+  }
   const plaintext = typeof val === 'string' ? val : JSON.stringify(val);
   const plaintextBuf = Buffer.from(plaintext, 'utf8');
   
@@ -109,6 +114,10 @@ export function decryptValue(stored: any, keys: Record<string, Buffer>): any {
   const key = keys[version];
   if (!key) {
     throw new Error(`Decryption key version "${version}" not found in registered keys`);
+  }
+
+  if (key.every(b => b === 0)) {
+    throw new Error(`Vollcrypt Security: Decryption blocked. Key version "${version}" is zeroized due to a Fail-Closed event.`);
   }
 
   try {
@@ -199,9 +208,12 @@ export const prismaDbGuard = (options: PrismaDbGuardOptions, resolvedKeys?: Reco
   if (!keys) {
     if (options.key) {
       if (Buffer.isBuffer(options.key)) {
-        keys = { '1': options.key };
+        keys = { '1': Buffer.from(options.key) };
       } else {
-        keys = { ...options.key };
+        keys = {};
+        for (const [v, k] of Object.entries(options.key)) {
+          keys[v] = Buffer.from(k);
+        }
       }
     } else if (options.kms || options.multiTenant) {
       // Keys might be resolved dynamically per tenant, or resolved later
@@ -211,6 +223,11 @@ export const prismaDbGuard = (options: PrismaDbGuardOptions, resolvedKeys?: Reco
   }
 
   if (keys) {
+    const clonedKeys: Record<string, Buffer> = {};
+    for (const [v, k] of Object.entries(keys)) {
+      clonedKeys[v] = Buffer.from(k);
+    }
+    keys = clonedKeys;
     registerKeysForZeroization(keys);
   }
 
@@ -225,15 +242,21 @@ export const prismaDbGuard = (options: PrismaDbGuardOptions, resolvedKeys?: Reco
       }
     }
 
-    if (!tenantId || !options.multiTenant) {
+    if (options.multiTenant && !tenantId) {
+      throw new Error("Vollcrypt Security: tenantId must be provided in multi-tenant mode.");
+    }
+
+    if (!options.multiTenant) {
       if (!keys || !activeKey) {
         throw new Error("Vollcrypt Security: Global keys are not resolved.");
       }
       return { keys, activeKey, activeVersion };
     }
 
+    const tId = tenantId!;
+
     // Check Secure TTL Cache
-    const cachedActiveKey = getCachedKey(tenantId, activeVersion);
+    const cachedActiveKey = getCachedKey(tId, activeVersion);
     if (cachedActiveKey) {
       return { keys: { [activeVersion]: cachedActiveKey }, activeKey: cachedActiveKey, activeVersion };
     }
@@ -241,31 +264,36 @@ export const prismaDbGuard = (options: PrismaDbGuardOptions, resolvedKeys?: Reco
     // Cache miss: resolve configuration
     let tenantConfig: { key?: Buffer | Record<string, Buffer>; kms?: any } | undefined;
     if (options.multiTenant.tenants) {
-      tenantConfig = options.multiTenant.tenants[tenantId];
+      tenantConfig = options.multiTenant.tenants[tId];
     } else if (options.multiTenant.getTenantConfig) {
-      tenantConfig = await options.multiTenant.getTenantConfig(tenantId);
+      tenantConfig = await options.multiTenant.getTenantConfig(tId);
     }
 
     if (!tenantConfig) {
-      throw new Error(`Vollcrypt Security: Configuration not found for tenantId "${tenantId}".`);
+      throw new Error(`Vollcrypt Security: Configuration not found for tenantId "${tId}".`);
     }
 
-    const resolvedTenantKeys = await resolveKeys({
+    const resolvedTenantKeysRaw = await resolveKeys({
       ...options,
       key: tenantConfig.key,
       kms: tenantConfig.kms
     } as any);
 
-    registerKeysForZeroization(resolvedTenantKeys);
+    const resolvedTenantKeys: Record<string, Buffer> = {};
+    for (const [v, k] of Object.entries(resolvedTenantKeysRaw)) {
+      resolvedTenantKeys[v] = Buffer.from(k);
+    }
+
+    registerKeysForZeroization(resolvedTenantKeys, tId);
 
     const tActiveVersion = tenantConfig.kms?.activeKeyVersion || '1';
     const tActiveKey = resolvedTenantKeys[tActiveVersion];
     if (!tActiveKey) {
-      throw new Error(`Vollcrypt Security: Active key version "${tActiveVersion}" not found for tenantId "${tenantId}".`);
+      throw new Error(`Vollcrypt Security: Active key version "${tActiveVersion}" not found for tenantId "${tId}".`);
     }
 
     for (const [ver, keyBuf] of Object.entries(resolvedTenantKeys)) {
-      setCachedKey(tenantId, ver, keyBuf);
+      setCachedKey(tId, ver, keyBuf);
     }
 
     return { keys: resolvedTenantKeys, activeKey: tActiveKey, activeVersion: tActiveVersion };

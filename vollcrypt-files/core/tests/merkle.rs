@@ -155,7 +155,7 @@ fn large_tree_1000_leaves() {
 }
 
 #[test]
-fn leaf_hash_ignores_ciphertext() {
+fn leaf_hash_binds_ciphertext() {
     let env1 = ChunkEnvelope {
         chunk_index: 42,
         iv: [0xAA; 12],
@@ -168,7 +168,7 @@ fn leaf_hash_ignores_ciphertext() {
         ciphertext: vec![0x99, 0x88, 0x77, 0x66],
         tag: [0xBB; 16],
     };
-    assert_eq!(chunk_leaf_hash(&env1), chunk_leaf_hash(&env2));
+    assert_ne!(chunk_leaf_hash(&env1), chunk_leaf_hash(&env2));
 }
 
 #[test]

@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::{Read, Write, Seek};
 use std::path::{Path, PathBuf};
 use crate::error::FileFormatError;
 use crate::aead::{aes256_gcm_encrypt, aes256_gcm_decrypt};
@@ -164,6 +164,21 @@ pub fn unpack_directory(
             .map_err(|e| FileFormatError::IoError(format!("Failed to read is_dir: {}", e)))?;
         let is_dir = is_dir_byte[0] == 1;
         
+        let path_obj = std::path::Path::new(&rel_path);
+        if path_obj.is_absolute() {
+            return Err(FileFormatError::IoError(format!("Absolute path not allowed in archive: {}", rel_path)));
+        }
+        for component in path_obj.components() {
+            match component {
+                std::path::Component::ParentDir => {
+                    return Err(FileFormatError::IoError(format!("Path traversal attempt detected: {}", rel_path)));
+                }
+                std::path::Component::Prefix(_) | std::path::Component::RootDir => {
+                    return Err(FileFormatError::IoError(format!("Invalid path component in archive: {}", rel_path)));
+                }
+                _ => {}
+            }
+        }
         let target_path = dest_dir.join(&rel_path);
         
         if is_dir {
@@ -187,6 +202,12 @@ pub fn unpack_directory(
                 .map_err(|e| FileFormatError::IoError(format!("Failed to read tag: {}", e)))?;
                 
             // Read ciphertext
+            let file_len = archive_file.metadata().map(|m| m.len()).unwrap_or(0);
+            let current_pos = archive_file.stream_position().map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            let remaining_bytes = file_len.saturating_sub(current_pos);
+            if size as u64 > remaining_bytes {
+                return Err(FileFormatError::IoError("Archive file is truncated or has invalid size".to_string()));
+            }
             let mut ciphertext = vec![0u8; size];
             archive_file.read_exact(&mut ciphertext)
                 .map_err(|e| FileFormatError::IoError(format!("Failed to read ciphertext: {}", e)))?;

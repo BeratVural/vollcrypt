@@ -65,6 +65,11 @@ async function resolveKeys(options) {
 function encryptValue(val, key, version) {
     if (val === null || val === undefined)
         return val;
+    const context = security_1.dbGuardContextStore.getStore();
+    const tId = context?.tenantId || 'global';
+    if (key.every(b => b === 0) || (0, security_1.getFailClosedStatus)(tId)) {
+        throw new Error(`Vollcrypt Security: Fail-Closed mode is active for tenant "${tId}". Encryption blocked.`);
+    }
     const plaintext = typeof val === 'string' ? val : JSON.stringify(val);
     const plaintextBuf = Buffer.from(plaintext, 'utf8');
     const encrypted = security_1.CRYPTO_ALGORITHMS['1'].encrypt(plaintextBuf, key);
@@ -84,6 +89,9 @@ function decryptValue(stored, keys) {
     const key = keys[version];
     if (!key) {
         throw new Error(`Decryption key version "${version}" not found in registered keys`);
+    }
+    if (key.every(b => b === 0)) {
+        throw new Error(`Vollcrypt Security: Decryption blocked. Key version "${version}" is zeroized due to a Fail-Closed event.`);
     }
     try {
         const encryptedBuf = Buffer.from(base64Data, 'base64');
@@ -169,10 +177,13 @@ const prismaDbGuard = (options, resolvedKeys) => {
     if (!keys) {
         if (options.key) {
             if (Buffer.isBuffer(options.key)) {
-                keys = { '1': options.key };
+                keys = { '1': Buffer.from(options.key) };
             }
             else {
-                keys = { ...options.key };
+                keys = {};
+                for (const [v, k] of Object.entries(options.key)) {
+                    keys[v] = Buffer.from(k);
+                }
             }
         }
         else if (options.kms || options.multiTenant) {
@@ -183,6 +194,11 @@ const prismaDbGuard = (options, resolvedKeys) => {
         }
     }
     if (keys) {
+        const clonedKeys = {};
+        for (const [v, k] of Object.entries(keys)) {
+            clonedKeys[v] = Buffer.from(k);
+        }
+        keys = clonedKeys;
         (0, security_1.registerKeysForZeroization)(keys);
     }
     const activeVersion = options.kms?.activeKeyVersion || '1';
@@ -194,41 +210,49 @@ const prismaDbGuard = (options, resolvedKeys) => {
                 return { keys: { '1': bgKey }, activeKey: bgKey, activeVersion: '1' };
             }
         }
-        if (!tenantId || !options.multiTenant) {
+        if (options.multiTenant && !tenantId) {
+            throw new Error("Vollcrypt Security: tenantId must be provided in multi-tenant mode.");
+        }
+        if (!options.multiTenant) {
             if (!keys || !activeKey) {
                 throw new Error("Vollcrypt Security: Global keys are not resolved.");
             }
             return { keys, activeKey, activeVersion };
         }
+        const tId = tenantId;
         // Check Secure TTL Cache
-        const cachedActiveKey = (0, security_1.getCachedKey)(tenantId, activeVersion);
+        const cachedActiveKey = (0, security_1.getCachedKey)(tId, activeVersion);
         if (cachedActiveKey) {
             return { keys: { [activeVersion]: cachedActiveKey }, activeKey: cachedActiveKey, activeVersion };
         }
         // Cache miss: resolve configuration
         let tenantConfig;
         if (options.multiTenant.tenants) {
-            tenantConfig = options.multiTenant.tenants[tenantId];
+            tenantConfig = options.multiTenant.tenants[tId];
         }
         else if (options.multiTenant.getTenantConfig) {
-            tenantConfig = await options.multiTenant.getTenantConfig(tenantId);
+            tenantConfig = await options.multiTenant.getTenantConfig(tId);
         }
         if (!tenantConfig) {
-            throw new Error(`Vollcrypt Security: Configuration not found for tenantId "${tenantId}".`);
+            throw new Error(`Vollcrypt Security: Configuration not found for tenantId "${tId}".`);
         }
-        const resolvedTenantKeys = await resolveKeys({
+        const resolvedTenantKeysRaw = await resolveKeys({
             ...options,
             key: tenantConfig.key,
             kms: tenantConfig.kms
         });
-        (0, security_1.registerKeysForZeroization)(resolvedTenantKeys);
+        const resolvedTenantKeys = {};
+        for (const [v, k] of Object.entries(resolvedTenantKeysRaw)) {
+            resolvedTenantKeys[v] = Buffer.from(k);
+        }
+        (0, security_1.registerKeysForZeroization)(resolvedTenantKeys, tId);
         const tActiveVersion = tenantConfig.kms?.activeKeyVersion || '1';
         const tActiveKey = resolvedTenantKeys[tActiveVersion];
         if (!tActiveKey) {
-            throw new Error(`Vollcrypt Security: Active key version "${tActiveVersion}" not found for tenantId "${tenantId}".`);
+            throw new Error(`Vollcrypt Security: Active key version "${tActiveVersion}" not found for tenantId "${tId}".`);
         }
         for (const [ver, keyBuf] of Object.entries(resolvedTenantKeys)) {
-            (0, security_1.setCachedKey)(tenantId, ver, keyBuf);
+            (0, security_1.setCachedKey)(tId, ver, keyBuf);
         }
         return { keys: resolvedTenantKeys, activeKey: tActiveKey, activeVersion: tActiveVersion };
     };

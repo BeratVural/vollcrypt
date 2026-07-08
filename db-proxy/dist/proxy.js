@@ -32,6 +32,9 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DbProxyServer = exports.ClusterManager = void 0;
 exports.serializeErrorResponse = serializeErrorResponse;
@@ -39,6 +42,9 @@ exports.buildRowDescription = buildRowDescription;
 const net = __importStar(require("net"));
 const buffer_1 = require("buffer");
 const fs = __importStar(require("fs"));
+const crypto = __importStar(require("crypto"));
+const tls = __importStar(require("tls"));
+const selfsigned_1 = __importDefault(require("selfsigned"));
 const pg_protocol_js_1 = require("./pg-protocol.js");
 const auth_js_1 = require("./auth.js");
 const db_guard_1 = require("@vollcrypt/db-guard");
@@ -112,14 +118,50 @@ class ClusterManager {
     nodeId;
     gossipPort;
     peers;
+    gossipSecret;
     onMessage;
     server = null;
     peerSockets = new Map();
-    constructor(nodeId, gossipPort, peers, onMessage) {
+    constructor(nodeId, gossipPort, peers, gossipSecret, onMessage) {
         this.nodeId = nodeId;
         this.gossipPort = gossipPort;
         this.peers = peers;
+        this.gossipSecret = gossipSecret;
         this.onMessage = onMessage;
+    }
+    signMessage(msg) {
+        const payload = JSON.stringify({
+            type: msg.type,
+            senderId: msg.senderId,
+            data: msg.data,
+            timestamp: msg.timestamp
+        });
+        return crypto.createHmac('sha256', this.gossipSecret).update(payload).digest('hex');
+    }
+    verifyMessage(msg) {
+        if (!msg.signature || !msg.timestamp)
+            return false;
+        // Replay protection: check if timestamp is within 5 seconds
+        const age = Math.abs(Date.now() - msg.timestamp);
+        if (age > 5000)
+            return false;
+        const unsignedMsg = {
+            type: msg.type,
+            senderId: msg.senderId,
+            data: msg.data,
+            timestamp: msg.timestamp
+        };
+        const expectedSignature = this.signMessage(unsignedMsg);
+        try {
+            const expectedBuf = buffer_1.Buffer.from(expectedSignature, 'hex');
+            const actualBuf = buffer_1.Buffer.from(msg.signature, 'hex');
+            if (expectedBuf.length !== actualBuf.length)
+                return false;
+            return crypto.timingSafeEqual(expectedBuf, actualBuf);
+        }
+        catch (err) {
+            return false;
+        }
     }
     async start() {
         if (!this.gossipPort)
@@ -136,10 +178,12 @@ class ClusterManager {
                     buffer = buffer.subarray(newlineIdx + 1);
                     try {
                         const msg = JSON.parse(line);
-                        this.onMessage(msg);
+                        if (this.verifyMessage(msg)) {
+                            this.onMessage(msg);
+                        }
                     }
                     catch (err) {
-                        // ignore malformed messages
+                        // ignore malformed or unauthenticated messages
                     }
                 }
             });
@@ -167,6 +211,12 @@ class ClusterManager {
         }, 1000);
     }
     broadcast(msg) {
+        if (!msg.timestamp) {
+            msg.timestamp = Date.now();
+        }
+        if (!msg.signature) {
+            msg.signature = this.signMessage(msg);
+        }
         const payload = JSON.stringify(msg) + '\n';
         for (const peer of this.peers) {
             const [host, portStr] = peer.split(':');
@@ -202,6 +252,9 @@ class ClusterManager {
     }
 }
 exports.ClusterManager = ClusterManager;
+function sanitizeCef(str) {
+    return str.replace(/[\r\n]/g, ' ').replace(/\|/g, '\\|').replace(/\\/g, '\\\\');
+}
 class DbProxyServer {
     options;
     server = null;
@@ -212,6 +265,8 @@ class DbProxyServer {
     bannedIps = new Set();
     clusterManager = null;
     nodeId = Math.random().toString(36).substring(7);
+    gossipSecret = '';
+    jitSecret = '';
     registerSsoSession(username, passcode, roles, ttlMs = 900000) {
         this.activeSsoSessions.set(passcode, {
             username,
@@ -227,7 +282,11 @@ class DbProxyServer {
     }
     logSiemEvent(event, severity, username, clientIp, message) {
         const timestamp = new Date().toISOString();
-        const cefStr = `CEF:0|Vollcrypt|DB-Proxy|1.0|${event}|${event}|${severity}|src=${clientIp} usrName=${username} msg=${message}\n`;
+        const cleanIp = sanitizeCef(clientIp);
+        const cleanUser = sanitizeCef(username);
+        const cleanMsg = sanitizeCef(message);
+        const cleanEvent = sanitizeCef(event);
+        const cefStr = `CEF:0|Vollcrypt|DB-Proxy|1.0|${cleanEvent}|${cleanEvent}|${severity}|src=${cleanIp} usrName=${cleanUser} msg=${cleanMsg}\n`;
         try {
             if (!fs.existsSync('logs')) {
                 fs.mkdirSync('logs');
@@ -238,9 +297,29 @@ class DbProxyServer {
             console.error('Failed to write SIEM CEF log:', err);
         }
     }
+    triggerFailClosed() {
+        this.logSiemEvent('FAIL_CLOSED_TRIGGERED', 10, 'system', '127.0.0.1', 'Decryption rate limit or security violation threshold crossed. Zeroizing keys and shutting down all active connections.');
+        for (const key of Object.values(this.options.resolvedKeys)) {
+            key.fill(0);
+        }
+        for (const socket of this.activeConnections) {
+            socket.destroy();
+        }
+        this.activeConnections.clear();
+    }
+    sslKey = '';
+    sslCert = '';
     constructor(options) {
         this.options = options;
         this.loadAllowlist();
+        // Clone resolvedKeys to prevent mutating/zeroizing references shared by the caller (e.g. tests)
+        const clonedKeys = {};
+        if (options.resolvedKeys) {
+            for (const [k, v] of Object.entries(options.resolvedKeys)) {
+                clonedKeys[k] = buffer_1.Buffer.from(v);
+            }
+        }
+        this.options.resolvedKeys = clonedKeys;
     }
     loadAllowlist() {
         const config = this.options.config?.firewall?.fingerprinting;
@@ -293,8 +372,22 @@ class DbProxyServer {
         }
     }
     async start() {
+        try {
+            const attrs = [{ name: 'commonName', value: 'localhost' }];
+            const pems = await selfsigned_1.default.generate(attrs);
+            this.sslKey = pems.private;
+            this.sslCert = pems.cert;
+        }
+        catch (err) {
+            console.error('Failed to generate self-signed SSL/TLS certificate:', err);
+        }
+        this.gossipSecret = this.options.config?.firewall?.gossipSecret ||
+            this.options.config?.firewall?.jitSecret ||
+            crypto.randomBytes(32).toString('hex');
+        this.jitSecret = this.options.config?.firewall?.jitSecret ||
+            crypto.randomBytes(32).toString('hex');
         if (this.options.gossipPort && this.options.peers) {
-            this.clusterManager = new ClusterManager(this.nodeId, this.options.gossipPort, this.options.peers, (msg) => this.handleClusterMessage(msg));
+            this.clusterManager = new ClusterManager(this.nodeId, this.options.gossipPort, this.options.peers, this.gossipSecret, (msg) => this.handleClusterMessage(msg));
             await this.clusterManager.start();
         }
         if (this.options.fipsMode) {
@@ -328,9 +421,10 @@ class DbProxyServer {
                             dbHost: this.options.dbHost,
                             dbPort: this.options.dbPort,
                             noWaf: this.options.noWaf,
-                            role: 'GUEST',
+                            role: this.options.config ? 'GUEST' : 'OWNER',
                             clientIp: clientIp || '127.0.0.1',
                             resolvedKeys: this.options.resolvedKeys,
+                            config: this.options.config,
                             logSiem: (evt, sev, msg) => this.logSiemEvent(evt, sev, 'mysql_user', clientIp || '127.0.0.1', msg),
                         });
                     });
@@ -342,9 +436,10 @@ class DbProxyServer {
                             dbHost: this.options.dbHost,
                             dbPort: this.options.dbPort,
                             noWaf: this.options.noWaf,
-                            role: 'GUEST',
+                            role: this.options.config ? 'GUEST' : 'OWNER',
                             clientIp: clientIp || '127.0.0.1',
                             resolvedKeys: this.options.resolvedKeys,
+                            config: this.options.config,
                             logSiem: (evt, sev, msg) => this.logSiemEvent(evt, sev, 'mongo_user', clientIp || '127.0.0.1', msg),
                         });
                     });
@@ -356,9 +451,10 @@ class DbProxyServer {
                             dbHost: this.options.dbHost,
                             dbPort: this.options.dbPort,
                             noWaf: this.options.noWaf,
-                            role: 'GUEST',
+                            role: this.options.config ? 'GUEST' : 'OWNER',
                             clientIp: clientIp || '127.0.0.1',
                             resolvedKeys: this.options.resolvedKeys,
+                            config: this.options.config,
                             logSiem: (evt, sev, msg) => this.logSiemEvent(evt, sev, 'mssql_user', clientIp || '127.0.0.1', msg),
                         });
                     });
@@ -370,9 +466,10 @@ class DbProxyServer {
                             dbHost: this.options.dbHost,
                             dbPort: this.options.dbPort,
                             noWaf: this.options.noWaf,
-                            role: 'GUEST',
+                            role: this.options.config ? 'GUEST' : 'OWNER',
                             clientIp: clientIp || '127.0.0.1',
                             resolvedKeys: this.options.resolvedKeys,
+                            config: this.options.config,
                             logSiem: (evt, sev, msg) => this.logSiemEvent(evt, sev, 'oracle_user', clientIp || '127.0.0.1', msg),
                         });
                     });
@@ -426,6 +523,7 @@ class DbProxyServer {
             rateLimiterMode: this.options.config?.rateLimiter?.mode,
         };
         let currentColumns = [];
+        let currentAggregates = [];
         let isSslNegotiated = false;
         let rowCount = 0;
         let bypassScanning = false;
@@ -436,291 +534,366 @@ class DbProxyServer {
         const statements = new Map();
         const portals = new Map();
         let lastDescribeRequest = null;
-        // Handle client to backend stream
-        clientSocket.on('data', async (data) => {
-            try {
-                const messages = clientParser.append(data);
-                for (const msg of messages) {
-                    let forwardedMsg = msg;
-                    if (!userContext) {
-                        // Check if it is an SSLRequest (8 bytes, second 4 bytes code: 80877103)
-                        if (forwardedMsg.length === 8 && forwardedMsg.readInt32BE(4) === 80877103) {
-                            isSslNegotiated = true;
-                            // Respond with 'N' to refuse SSL, forcing client to fallback to plaintext
-                            clientSocket.write(buffer_1.Buffer.from('N', 'ascii'));
-                            continue;
+        let activeClientSocket = clientSocket;
+        const setupClientSocketListeners = (socket) => {
+            socket.on('data', async (data) => {
+                try {
+                    const messages = clientParser.append(data);
+                    for (const msg of messages) {
+                        let forwardedMsg = msg;
+                        if (!userContext) {
+                            // Check if it is an SSLRequest (8 bytes, second 4 bytes code: 80877103)
+                            if (forwardedMsg.length === 8 && forwardedMsg.readInt32BE(4) === 80877103) {
+                                isSslNegotiated = true;
+                                // Respond with 'S' to accept SSL
+                                socket.write(buffer_1.Buffer.from('S', 'ascii'));
+                                // Upgrade socket to TLS
+                                const secureContext = tls.createSecureContext({
+                                    key: this.sslKey,
+                                    cert: this.sslCert,
+                                });
+                                const tlsSocket = new tls.TLSSocket(clientSocket, {
+                                    isServer: true,
+                                    secureContext: secureContext,
+                                });
+                                // Remove plain listeners
+                                socket.removeAllListeners('data');
+                                socket.removeAllListeners('end');
+                                socket.removeAllListeners('close');
+                                socket.removeAllListeners('error');
+                                activeClientSocket = tlsSocket;
+                                this.activeConnections.add(tlsSocket);
+                                this.activeConnections.delete(clientSocket);
+                                setupClientSocketListeners(tlsSocket);
+                                return;
+                            }
+                            // Otherwise, it must be the StartupMessage
+                            const params = (0, pg_protocol_js_1.parseStartupMessage)(forwardedMsg);
+                            const username = params.user || 'guest';
+                            originalUsername = username;
+                            userContext = (0, auth_js_1.resolveUserContext)(username, this.options.config);
+                            dbGuardContext.role = userContext.role;
+                            dbGuardContext.userId = userContext.userId;
+                            backendSocket.write(forwardedMsg);
                         }
-                        // Otherwise, it must be the StartupMessage
-                        const params = (0, pg_protocol_js_1.parseStartupMessage)(forwardedMsg);
-                        const username = params.user || 'guest';
-                        originalUsername = username;
-                        userContext = (0, auth_js_1.resolveUserContext)(username, this.options.config);
-                        dbGuardContext.role = userContext.role;
-                        dbGuardContext.userId = userContext.userId;
-                        backendSocket.write(forwardedMsg);
-                    }
-                    else {
-                        // WAF Validation and Prepared Statement tracking
-                        const type = forwardedMsg[0];
-                        let queryStr = null;
-                        if (type === 112) { // 'p' (PasswordMessage)
-                            const password = forwardedMsg.toString('utf8', 5, forwardedMsg.length - 1);
-                            const ssoSession = this.activeSsoSessions.get(password);
-                            if (ssoSession && ssoSession.expiresAt > Date.now()) {
-                                userContext = {
-                                    userId: `usr-sso-${ssoSession.username}`,
-                                    role: ssoSession.roles[0] || 'GUEST',
-                                };
-                                dbGuardContext.role = userContext.role;
-                                dbGuardContext.userId = userContext.userId;
-                                const realDbPassword = this.options.dbPassword || 'postgres';
-                                const newMsg = (0, pg_protocol_js_1.serializePasswordMessage)(realDbPassword);
-                                backendSocket.write(newMsg);
-                                continue;
-                            }
-                            else {
-                                backendSocket.write(forwardedMsg);
-                                continue;
-                            }
-                        }
-                        if (type === 81) { // 'Q' (Simple Query)
-                            queryStartTime = Date.now();
-                            queryStr = forwardedMsg.subarray(5, forwardedMsg.length - 1).toString('utf8');
-                            // Intercept Remote Attestation query
-                            const normalizedQuery = queryStr.trim().toUpperCase().replace(/;/g, '');
-                            if (normalizedQuery === 'SELECT VOLLCRYPT_ATTESTATION_REPORT()' && !this.options.noAttestation) {
-                                const report = (0, waf_js_1.getMockAttestationReport)();
-                                const jsonStr = JSON.stringify(report);
-                                const rowDesc = buildRowDescription(['attestation_report']);
-                                const dataRow = (0, pg_protocol_js_1.serializeDataRow)([buffer_1.Buffer.from(jsonStr, 'utf8')]);
-                                const cmdComplete = buffer_1.Buffer.alloc(18);
-                                cmdComplete.write('C', 0, 'ascii');
-                                cmdComplete.writeInt32BE(17, 1);
-                                cmdComplete.write('SELECT 1\0', 5, 'ascii');
-                                const readyForQuery = buffer_1.Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
-                                const minTime = this.options.minResponseTimeMs ?? 15;
-                                const elapsed = Date.now() - queryStartTime;
-                                if (elapsed < minTime) {
-                                    await new Promise(resolve => setTimeout(resolve, minTime - elapsed));
-                                }
-                                clientSocket.write(buffer_1.Buffer.concat([rowDesc, dataRow, cmdComplete, readyForQuery]));
-                                continue;
-                            }
-                            currentColumns = []; // Reset simple query schema state
-                            rowCount = 0;
-                            bypassScanning = false;
-                        }
-                        else if (type === 80) { // 'P' (Parse prepared statement)
-                            queryStartTime = Date.now();
-                            const destNameNull = forwardedMsg.indexOf(0, 5);
-                            if (destNameNull !== -1) {
-                                const statementName = forwardedMsg.toString('utf8', 5, destNameNull);
-                                const queryStart = destNameNull + 1;
-                                const queryNull = forwardedMsg.indexOf(0, queryStart);
-                                if (queryNull !== -1) {
-                                    queryStr = forwardedMsg.toString('utf8', queryStart, queryNull);
-                                    statements.set(statementName, { query: queryStr });
+                        else {
+                            // WAF Validation and Prepared Statement tracking
+                            const type = forwardedMsg[0];
+                            let queryStr = null;
+                            if (type === 67) { // 'C' (Close)
+                                const closeMsg = (0, pg_protocol_js_1.parseCloseMessage)(forwardedMsg);
+                                if (closeMsg) {
+                                    if (closeMsg.type === 'S') {
+                                        statements.delete(closeMsg.name);
+                                    }
+                                    else if (closeMsg.type === 'P') {
+                                        portals.delete(closeMsg.name);
+                                    }
                                 }
                             }
-                        }
-                        else if (type === 66) { // 'B' (Bind portal)
-                            const portalNull = forwardedMsg.indexOf(0, 5);
-                            if (portalNull !== -1) {
-                                const portalName = forwardedMsg.toString('utf8', 5, portalNull);
-                                const stmtStart = portalNull + 1;
-                                const stmtNull = forwardedMsg.indexOf(0, stmtStart);
-                                if (stmtNull !== -1) {
-                                    const statementName = forwardedMsg.toString('utf8', stmtStart, stmtNull);
-                                    const stmt = statements.get(statementName);
-                                    portals.set(portalName, {
-                                        statementName,
-                                        columns: stmt?.columns,
-                                    });
+                            if (type === 112) { // 'p' (PasswordMessage)
+                                const password = forwardedMsg.toString('utf8', 5, forwardedMsg.length - 1);
+                                const ssoSession = this.activeSsoSessions.get(password);
+                                if (ssoSession && ssoSession.expiresAt > Date.now()) {
+                                    userContext = {
+                                        userId: `usr-sso-${ssoSession.username}`,
+                                        role: ssoSession.roles[0] || 'GUEST',
+                                    };
+                                    dbGuardContext.role = userContext.role;
+                                    dbGuardContext.userId = userContext.userId;
+                                    const realDbPassword = this.options.dbPassword || 'postgres';
+                                    const newMsg = (0, pg_protocol_js_1.serializePasswordMessage)(realDbPassword);
+                                    backendSocket.write(newMsg);
+                                    continue;
+                                }
+                                else {
+                                    backendSocket.write(forwardedMsg);
+                                    continue;
                                 }
                             }
-                        }
-                        else if (type === 68) { // 'D' (Describe)
-                            if (forwardedMsg.length >= 7) {
-                                const descType = String.fromCharCode(forwardedMsg[5]);
-                                const nameNull = forwardedMsg.indexOf(0, 6);
-                                if (nameNull !== -1) {
-                                    const name = forwardedMsg.toString('utf8', 6, nameNull);
-                                    lastDescribeRequest = { type: descType, name };
-                                }
+                            if (type === 81) { // 'Q' (Simple Query)
+                                queryStartTime = Date.now();
+                                queryStr = forwardedMsg.subarray(5, forwardedMsg.length - 1).toString('utf8');
+                                currentColumns = []; // Reset simple query schema state
+                                currentAggregates = (0, waf_js_1.identifyAggregates)(queryStr);
+                                rowCount = 0;
+                                bypassScanning = false;
                             }
-                        }
-                        else if (type === 69) { // 'E' (Execute)
-                            rowCount = 0;
-                            bypassScanning = false;
-                            const portalNull = forwardedMsg.indexOf(0, 5);
-                            if (portalNull !== -1) {
-                                const portalName = forwardedMsg.toString('utf8', 5, portalNull);
-                                const portal = portals.get(portalName);
-                                if (portal && portal.columns) {
-                                    currentColumns = portal.columns;
-                                }
-                            }
-                        }
-                        if (queryStr) {
-                            try {
-                                // 0. Dynamic JIT evaluation
-                                const activeJit = this.activeJitGrants.get(dbGuardContext.userId);
-                                if (activeJit) {
-                                    if (activeJit.expiresAt > Date.now()) {
-                                        dbGuardContext.role = activeJit.role;
-                                    }
-                                    else {
-                                        const originalContext = (0, auth_js_1.resolveUserContext)(originalUsername, this.options.config);
-                                        dbGuardContext.role = originalContext.role;
-                                    }
-                                }
-                                // JIT Temporary Access Approval Webhook Simulation
-                                if (this.options.config?.firewall?.jitApprovalRequired && dbGuardContext.role !== 'OWNER') {
-                                    const hasActiveGrant = activeJit && activeJit.expiresAt > Date.now();
-                                    if (!hasActiveGrant) {
-                                        this.logSiemEvent('JIT_REQUESTED', 6, dbGuardContext.userId, clientIp || '127.0.0.1', `JIT request triggered for query: ${queryStr}`);
-                                        // Trigger simulated background approval webhook after 50ms
-                                        setTimeout(() => {
-                                            this.registerJitGrant(dbGuardContext.userId, 'OWNER', 3600000);
-                                            this.logSiemEvent('JIT_APPROVED', 6, 'system', '127.0.0.1', `JIT request automatically approved for user ${dbGuardContext.userId}`);
-                                        }, 50);
-                                        // Halt execution asynchronously to await the approval callback
-                                        await new Promise((r) => setTimeout(r, 100));
-                                        const updatedJit = this.activeJitGrants.get(dbGuardContext.userId);
-                                        if (updatedJit && updatedJit.expiresAt > Date.now()) {
-                                            dbGuardContext.role = updatedJit.role;
-                                        }
-                                        else {
-                                            throw new Error('JIT approval request timed out or was denied');
-                                        }
-                                    }
-                                }
-                                // AI-Driven Anomaly Threat Scoring
-                                if (this.options.config?.firewall?.anomalyEngine?.enabled) {
-                                    const { QueryAnomalyScorer } = await import('./anomaly.js');
-                                    const scorer = new QueryAnomalyScorer();
-                                    // Pre-learn normal baseline profiles
-                                    scorer.learnBaseline(dbGuardContext.userId, [
-                                        'SELECT * FROM users WHERE id = 1',
-                                        'SELECT id, username FROM users',
-                                        'SELECT email FROM users WHERE role = ?',
-                                    ]);
-                                    const score = scorer.getAnomalyScore(dbGuardContext.userId, queryStr);
-                                    if (score > 0.7) {
-                                        this.logSiemEvent('ANOMALY_THREAT_DETECTION', 8, dbGuardContext.userId, clientIp || '127.0.0.1', `Semantic anomaly detected with threat score ${score.toFixed(2)}: ${queryStr}`);
-                                        throw new Error(`Query blocked by AI Anomaly Threat Detection (Score: ${score.toFixed(2)})`);
-                                    }
-                                }
-                                // 1. Rate limiting per connection
-                                const nowMs = Date.now();
-                                while (queryTimestamps.length > 0 && nowMs - queryTimestamps[0] > 1000) {
-                                    queryTimestamps.shift();
-                                }
-                                const maxQps = this.options.config?.firewall?.rateLimits?.maxQueriesPerSecond;
-                                if (maxQps && queryTimestamps.length >= maxQps) {
-                                    throw new Error(`Connection query rate limit exceeded (Limit: ${maxQps}/sec)`);
-                                }
-                                queryTimestamps.push(nowMs);
-                                // 2. Temporal constraints per role
-                                const constraints = this.options.config?.firewall?.temporalConstraints?.[dbGuardContext.role];
-                                if (constraints) {
-                                    const now = new Date();
-                                    const currentHour = now.getHours();
-                                    const currentDay = now.getDay();
-                                    if (!constraints.allowedDays.includes(currentDay) || currentHour < constraints.startHour || currentHour >= constraints.endHour) {
-                                        throw new Error(`Temporal access restriction. Role "${dbGuardContext.role}" is not permitted to query database at this time.`);
-                                    }
-                                }
-                                // 3. WAF signature & DDL checks
-                                if (!this.options.noWaf) {
-                                    (0, waf_js_1.validateQuery)(queryStr, dbGuardContext.role);
-                                    // 4. Semantic threat score analysis
-                                    const threatScore = (0, waf_js_1.evaluateThreatScore)(queryStr);
-                                    const scoreLimit = 8; // threshold of 8 triggers block
-                                    if (threatScore >= scoreLimit) {
-                                        throw new Error(`Semantic SQLi threat detected: query score is ${threatScore} (Limit: ${scoreLimit})`);
-                                    }
-                                }
-                                // 5. Query Fingerprinting & Allowlisting
-                                const fpConfig = this.options.config?.firewall?.fingerprinting;
-                                if (fpConfig?.enabled) {
-                                    const fingerprint = (0, waf_js_1.generateFingerprint)(queryStr);
-                                    if (fpConfig.mode === 'learning') {
-                                        if (!this.allowlistedFingerprints.has(fingerprint)) {
-                                            this.allowlistedFingerprints.add(fingerprint);
-                                            this.saveAllowlist();
-                                            if (this.clusterManager) {
-                                                this.clusterManager.broadcast({
-                                                    type: 'ALLOWLIST_FP',
-                                                    senderId: this.nodeId,
-                                                    data: { fingerprint }
-                                                });
-                                            }
-                                        }
-                                    }
-                                    else if (fpConfig.mode === 'blocking') {
-                                        if (!this.allowlistedFingerprints.has(fingerprint)) {
-                                            throw new Error(`Blocked by allowlist: query shape "${fingerprint}" is not recognized`);
-                                        }
-                                    }
-                                }
-                                // 6. Dynamic SQL Query Rewriting (Masking & RLS Tenant Isolation)
-                                const rewritten = (0, waf_js_1.rewriteQuery)(queryStr, dbGuardContext.role, userContext?.tenantId, this.options.config);
-                                if (rewritten !== queryStr) {
-                                    if (type === 81) { // Simple Query 'Q'
-                                        forwardedMsg = (0, pg_protocol_js_1.serializeQueryMessage)(rewritten);
-                                    }
-                                    else if (type === 80) { // Parse 'P'
-                                        const destNameNull = forwardedMsg.indexOf(0, 5);
-                                        const statementName = destNameNull !== -1 ? forwardedMsg.toString('utf8', 5, destNameNull) : '';
-                                        const queryNull = destNameNull !== -1 ? forwardedMsg.indexOf(0, destNameNull + 1) : -1;
-                                        if (queryNull !== -1) {
-                                            forwardedMsg = (0, pg_protocol_js_1.serializeParseMessage)(statementName, rewritten, forwardedMsg, queryNull);
-                                        }
-                                    }
-                                    queryStr = rewritten;
-                                }
-                            }
-                            catch (err) {
-                                const violationMsg = err.message;
-                                this.logSiemEvent('WAF_BLOCK', 8, originalUsername || 'guest', clientSocket.remoteAddress || '127.0.0.1', violationMsg);
-                                // Add to local ban list and broadcast to cluster if enabled
-                                const ipBanEnabled = this.options.config?.firewall?.ipBanning?.enabled;
-                                if (ipBanEnabled) {
-                                    const clientIp = clientSocket.remoteAddress || '127.0.0.1';
-                                    this.bannedIps.add(clientIp);
-                                    if (this.clusterManager) {
-                                        this.clusterManager.broadcast({
-                                            type: 'BAN_IP',
-                                            senderId: this.nodeId,
-                                            data: { ip: clientIp }
+                            else if (type === 80) { // 'P' (Parse prepared statement)
+                                queryStartTime = Date.now();
+                                const destNameNull = forwardedMsg.indexOf(0, 5);
+                                if (destNameNull !== -1) {
+                                    const statementName = forwardedMsg.toString('utf8', 5, destNameNull);
+                                    const queryStart = destNameNull + 1;
+                                    const queryNull = forwardedMsg.indexOf(0, queryStart);
+                                    if (queryNull !== -1) {
+                                        queryStr = forwardedMsg.toString('utf8', queryStart, queryNull);
+                                        statements.set(statementName, {
+                                            query: queryStr,
+                                            aggregates: (0, waf_js_1.identifyAggregates)(queryStr)
                                         });
                                     }
                                 }
-                                // Timing Attack Mitigation
-                                const minTime = this.options.minResponseTimeMs ?? 15;
-                                const elapsed = Date.now() - queryStartTime;
-                                if (elapsed < minTime) {
-                                    await new Promise(resolve => setTimeout(resolve, minTime - elapsed));
-                                }
-                                // Write standard PostgreSQL protocol error frame back to the client
-                                clientSocket.write(serializeErrorResponse(`Vollcrypt WAF Blocked: ${violationMsg}`));
-                                // Send ReadyForQuery ('Z') so client CLI / DBeaver doesn't hang
-                                const readyForQuery = buffer_1.Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
-                                clientSocket.write(readyForQuery);
-                                continue;
                             }
+                            else if (type === 66) { // 'B' (Bind portal)
+                                const portalNull = forwardedMsg.indexOf(0, 5);
+                                if (portalNull !== -1) {
+                                    const portalName = forwardedMsg.toString('utf8', 5, portalNull);
+                                    const stmtStart = portalNull + 1;
+                                    const stmtNull = forwardedMsg.indexOf(0, stmtStart);
+                                    if (stmtNull !== -1) {
+                                        const statementName = forwardedMsg.toString('utf8', stmtStart, stmtNull);
+                                        const stmt = statements.get(statementName);
+                                        portals.set(portalName, {
+                                            statementName,
+                                            columns: stmt?.columns,
+                                            aggregates: stmt?.aggregates,
+                                        });
+                                    }
+                                }
+                            }
+                            else if (type === 68) { // 'D' (Describe)
+                                if (forwardedMsg.length >= 7) {
+                                    const descType = String.fromCharCode(forwardedMsg[5]);
+                                    const nameNull = forwardedMsg.indexOf(0, 6);
+                                    if (nameNull !== -1) {
+                                        const name = forwardedMsg.toString('utf8', 6, nameNull);
+                                        lastDescribeRequest = { type: descType, name };
+                                        if (descType === 'p') {
+                                            const portal = portals.get(name);
+                                            if (portal) {
+                                                currentColumns = portal.columns || [];
+                                                currentAggregates = portal.aggregates || [];
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            else if (type === 69) { // 'E' (Execute)
+                                rowCount = 0;
+                                bypassScanning = false;
+                                const portalNull = forwardedMsg.indexOf(0, 5);
+                                if (portalNull !== -1) {
+                                    const portalName = forwardedMsg.toString('utf8', 5, portalNull);
+                                    const portal = portals.get(portalName);
+                                    if (portal) {
+                                        if (portal.columns)
+                                            currentColumns = portal.columns;
+                                        if (portal.aggregates)
+                                            currentAggregates = portal.aggregates;
+                                    }
+                                }
+                            }
+                            if (queryStr) {
+                                try {
+                                    // 0. Dynamic JIT evaluation
+                                    const activeJit = this.activeJitGrants.get(dbGuardContext.userId);
+                                    if (activeJit) {
+                                        if (activeJit.expiresAt > Date.now()) {
+                                            dbGuardContext.role = activeJit.role;
+                                        }
+                                        else {
+                                            const originalContext = (0, auth_js_1.resolveUserContext)(originalUsername, this.options.config);
+                                            dbGuardContext.role = originalContext.role;
+                                        }
+                                    }
+                                    // JIT Temporary Access Approval Webhook Simulation
+                                    if (this.options.config?.firewall?.jitApprovalRequired && dbGuardContext.role !== 'OWNER') {
+                                        const hasActiveGrant = activeJit && activeJit.expiresAt > Date.now();
+                                        if (!hasActiveGrant) {
+                                            this.logSiemEvent('JIT_REQUESTED', 6, dbGuardContext.userId, clientIp || '127.0.0.1', `JIT request triggered for query: ${queryStr}`);
+                                            let approved = false;
+                                            // 1. Signed JIT Token flow
+                                            const tokenMatch = queryStr.match(/--\s*JIT_TOKEN:\s*([^\s;]+)/i);
+                                            if (tokenMatch) {
+                                                const token = tokenMatch[1];
+                                                const parts = token.split(':');
+                                                if (parts.length === 3) {
+                                                    const [tUserId, tExpiresAtStr, tSig] = parts;
+                                                    const tExpiresAt = parseInt(tExpiresAtStr, 10);
+                                                    if (tUserId === dbGuardContext.userId && tExpiresAt > Date.now()) {
+                                                        const secret = this.jitSecret;
+                                                        const expectedSig = crypto
+                                                            .createHmac('sha256', secret)
+                                                            .update(`${tUserId}:${tExpiresAt}`)
+                                                            .digest('hex');
+                                                        if (tSig === expectedSig) {
+                                                            approved = true;
+                                                            this.registerJitGrant(dbGuardContext.userId, 'OWNER', 3600000);
+                                                            this.logSiemEvent('JIT_APPROVED', 6, 'system', '127.0.0.1', `JIT request approved for user ${dbGuardContext.userId} via cryptographically signed token`);
+                                                            dbGuardContext.role = 'OWNER';
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            // 2. Webhook JIT Approval flow
+                                            if (!approved && this.options.config?.firewall?.jitWebhookUrl) {
+                                                const webhookUrl = this.options.config.firewall.jitWebhookUrl;
+                                                try {
+                                                    const response = await fetch(webhookUrl, {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({ userId: dbGuardContext.userId, role: 'OWNER', query: queryStr }),
+                                                    });
+                                                    if (response.ok) {
+                                                        const body = await response.json();
+                                                        if (body.approved) {
+                                                            approved = true;
+                                                            this.registerJitGrant(dbGuardContext.userId, 'OWNER', 3600000);
+                                                            this.logSiemEvent('JIT_APPROVED', 6, 'system', '127.0.0.1', `JIT request approved for user ${dbGuardContext.userId} via webhook simulation`);
+                                                            dbGuardContext.role = 'OWNER';
+                                                        }
+                                                    }
+                                                }
+                                                catch (err) {
+                                                    console.error('JIT webhook connection error:', err);
+                                                }
+                                            }
+                                            if (!approved) {
+                                                this.logSiemEvent('JIT_DENIED', 8, dbGuardContext.userId, clientIp || '127.0.0.1', `JIT request denied for query: ${queryStr}`);
+                                                throw new Error('JIT approval request denied: user is not in the approved JIT registry or webhook/token approval failed');
+                                            }
+                                        }
+                                    }
+                                    // AI-Driven Anomaly Threat Scoring
+                                    if (this.options.config?.firewall?.anomalyEngine?.enabled) {
+                                        const baselineQueries = this.options.config?.firewall?.anomalyEngine?.baselineQueries || [
+                                            'SELECT * FROM users WHERE id = 1',
+                                            'SELECT id, username FROM users',
+                                            'SELECT email FROM users WHERE role = ?',
+                                        ];
+                                        const { QueryAnomalyScorer } = await import('./anomaly.js');
+                                        const scorer = new QueryAnomalyScorer();
+                                        scorer.learnBaseline(dbGuardContext.userId, baselineQueries);
+                                        const score = scorer.getAnomalyScore(dbGuardContext.userId, queryStr);
+                                        if (score > 0.7) {
+                                            this.logSiemEvent('ANOMALY_THREAT_DETECTION', 8, dbGuardContext.userId, socket.remoteAddress || '127.0.0.1', `Semantic anomaly detected with threat score ${score.toFixed(2)}: ${queryStr}`);
+                                            throw new Error(`Query blocked by AI Anomaly Threat Detection (Score: ${score.toFixed(2)})`);
+                                        }
+                                    }
+                                    // 1. Rate limiting per connection
+                                    const nowMs = Date.now();
+                                    while (queryTimestamps.length > 0 && nowMs - queryTimestamps[0] > 1000) {
+                                        queryTimestamps.shift();
+                                    }
+                                    const maxQps = this.options.config?.firewall?.rateLimits?.maxQueriesPerSecond;
+                                    if (maxQps && queryTimestamps.length >= maxQps) {
+                                        throw new Error(`Connection query rate limit exceeded (Limit: ${maxQps}/sec)`);
+                                    }
+                                    queryTimestamps.push(nowMs);
+                                    // 2. Temporal constraints per role
+                                    const constraints = this.options.config?.firewall?.temporalConstraints?.[dbGuardContext.role];
+                                    if (constraints) {
+                                        const now = new Date();
+                                        const currentHour = now.getHours();
+                                        const currentDay = now.getDay();
+                                        if (!constraints.allowedDays.includes(currentDay) || currentHour < constraints.startHour || currentHour >= constraints.endHour) {
+                                            throw new Error(`Temporal access restriction. Role "${dbGuardContext.role}" is not permitted to query database at this time.`);
+                                        }
+                                    }
+                                    // 3. WAF signature & DDL checks
+                                    if (!this.options.noWaf) {
+                                        (0, waf_js_1.validateQuery)(queryStr, dbGuardContext.role);
+                                        // 4. Semantic threat score analysis
+                                        const threatScore = (0, waf_js_1.evaluateThreatScore)(queryStr);
+                                        const scoreLimit = 8; // threshold of 8 triggers block
+                                        if (threatScore >= scoreLimit) {
+                                            throw new Error(`Semantic SQLi threat detected: query score is ${threatScore} (Limit: ${scoreLimit})`);
+                                        }
+                                    }
+                                    // 5. Query Fingerprinting & Allowlisting
+                                    const fpConfig = this.options.config?.firewall?.fingerprinting;
+                                    if (fpConfig?.enabled) {
+                                        const fingerprint = (0, waf_js_1.generateFingerprint)(queryStr);
+                                        if (fpConfig.mode === 'learning') {
+                                            if (!this.allowlistedFingerprints.has(fingerprint)) {
+                                                this.allowlistedFingerprints.add(fingerprint);
+                                                this.saveAllowlist();
+                                                if (this.clusterManager) {
+                                                    this.clusterManager.broadcast({
+                                                        type: 'ALLOWLIST_FP',
+                                                        senderId: this.nodeId,
+                                                        data: { fingerprint }
+                                                    });
+                                                }
+                                            }
+                                        }
+                                        else if (fpConfig.mode === 'blocking') {
+                                            if (!this.allowlistedFingerprints.has(fingerprint)) {
+                                                throw new Error(`Blocked by allowlist: query shape "${fingerprint}" is not recognized`);
+                                            }
+                                        }
+                                    }
+                                    // 6. Dynamic SQL Query Rewriting (Masking & RLS Tenant Isolation)
+                                    const rewritten = (0, waf_js_1.rewriteQuery)(queryStr, dbGuardContext.role, userContext?.tenantId, this.options.config);
+                                    if (rewritten !== queryStr) {
+                                        if (type === 81) { // Simple Query 'Q'
+                                            forwardedMsg = (0, pg_protocol_js_1.serializeQueryMessage)(rewritten);
+                                        }
+                                        else if (type === 80) { // Parse 'P'
+                                            const destNameNull = forwardedMsg.indexOf(0, 5);
+                                            const statementName = destNameNull !== -1 ? forwardedMsg.toString('utf8', 5, destNameNull) : '';
+                                            const queryNull = destNameNull !== -1 ? forwardedMsg.indexOf(0, destNameNull + 1) : -1;
+                                            if (queryNull !== -1) {
+                                                forwardedMsg = (0, pg_protocol_js_1.serializeParseMessage)(statementName, rewritten, forwardedMsg, queryNull);
+                                            }
+                                        }
+                                        queryStr = rewritten;
+                                    }
+                                }
+                                catch (err) {
+                                    const violationMsg = err.message;
+                                    this.logSiemEvent('WAF_BLOCK', 8, originalUsername || 'guest', socket.remoteAddress || '127.0.0.1', violationMsg);
+                                    // Add to local ban list and broadcast to cluster if enabled
+                                    const ipBanEnabled = this.options.config?.firewall?.ipBanning?.enabled;
+                                    if (ipBanEnabled) {
+                                        const clientIp = socket.remoteAddress || '127.0.0.1';
+                                        this.bannedIps.add(clientIp);
+                                        if (this.clusterManager) {
+                                            this.clusterManager.broadcast({
+                                                type: 'BAN_IP',
+                                                senderId: this.nodeId,
+                                                data: { ip: clientIp }
+                                            });
+                                        }
+                                    }
+                                    // Timing Attack Mitigation
+                                    const minTime = this.options.minResponseTimeMs ?? 15;
+                                    const elapsed = Date.now() - queryStartTime;
+                                    if (elapsed < minTime) {
+                                        await new Promise(resolve => setTimeout(resolve, minTime - elapsed));
+                                    }
+                                    // Write standard PostgreSQL protocol error frame back to the client
+                                    socket.write(serializeErrorResponse(`Vollcrypt WAF Blocked: ${violationMsg}`));
+                                    // Send ReadyForQuery ('Z') so client CLI / DBeaver doesn't hang
+                                    const readyForQuery = buffer_1.Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
+                                    socket.write(readyForQuery);
+                                    continue;
+                                }
+                            }
+                            backendSocket.write(forwardedMsg);
                         }
-                        backendSocket.write(forwardedMsg);
                     }
                 }
-            }
-            catch (err) {
-                const errMsg = err.message;
-                clientSocket.write(serializeErrorResponse(`Vollcrypt Proxy: ${errMsg}`));
-                clientSocket.destroy();
-            }
-        });
+                catch (err) {
+                    const errMsg = err.message;
+                    socket.write(serializeErrorResponse(`Vollcrypt Proxy: ${errMsg}`));
+                    socket.destroy();
+                }
+            });
+            socket.on('close', () => {
+                this.activeConnections.delete(socket);
+                if (socket !== clientSocket) {
+                    this.activeConnections.delete(clientSocket);
+                    clientSocket.destroy();
+                }
+                backendSocket.destroy();
+            });
+            socket.on('error', () => {
+                backendSocket.destroy();
+            });
+        };
+        setupClientSocketListeners(clientSocket);
         // Handle backend to client stream
         backendSocket.on('data', async (data) => {
             try {
@@ -731,10 +904,11 @@ class DbProxyServer {
                         currentColumns = (0, pg_protocol_js_1.parseRowDescription)(msg);
                         const sensitiveKeywords = ['credit_card', 'email', 'tc_no', 'phone', 'iban', 'cc', 'ssn', 'salary', 'password', 'secret'];
                         const hasSensitive = currentColumns.some(col => {
-                            const colLower = col.toLowerCase();
+                            const colLower = col.name.toLowerCase();
                             return sensitiveKeywords.some(kw => colLower.includes(kw));
                         });
-                        bypassScanning = !hasSensitive;
+                        const hasAggregate = currentAggregates.some(agg => agg === true);
+                        bypassScanning = !hasSensitive && !hasAggregate;
                         // Map the parsed description to the active prepared statement or portal
                         if (lastDescribeRequest) {
                             if (lastDescribeRequest.type === 'S') {
@@ -750,14 +924,14 @@ class DbProxyServer {
                                 }
                             }
                         }
-                        clientSocket.write(msg);
+                        activeClientSocket.write(msg);
                     }
                     else if (type === 68) { // 'D' -> DataRow
                         rowCount++;
                         const maxRows = this.options.config?.firewall?.maxRowsPerQuery || 5000;
                         if (rowCount > maxRows) {
-                            clientSocket.write(serializeErrorResponse(`Vollcrypt WAF Blocked: Mass exfiltration limit exceeded (Limit: ${maxRows})`));
-                            clientSocket.destroy();
+                            activeClientSocket.write(serializeErrorResponse(`Vollcrypt WAF Blocked: Mass exfiltration limit exceeded (Limit: ${maxRows})`));
+                            activeClientSocket.destroy();
                             backendSocket.destroy();
                             break;
                         }
@@ -768,13 +942,13 @@ class DbProxyServer {
                         }
                         const totalEgress = egressHistory.reduce((sum, h) => sum + h.count, 0) + rowCount;
                         if (totalEgress > 100) {
-                            this.logSiemEvent('ANOMALY_DETECTED', 7, originalUsername || 'guest', clientSocket.remoteAddress || '127.0.0.1', `High row egress volume anomaly detected (Total: ${totalEgress} rows in last 10s)`);
+                            this.logSiemEvent('ANOMALY_DETECTED', 7, originalUsername || 'guest', activeClientSocket.remoteAddress || '127.0.0.1', `High row egress volume anomaly detected (Total: ${totalEgress} rows in last 10s)`);
                             // Throttling: introduce delay
                             await new Promise(resolve => setTimeout(resolve, 50));
                         }
                         if (bypassScanning) {
                             if (!msg.includes('VOLLVALT:')) {
-                                clientSocket.write(msg);
+                                activeClientSocket.write(msg);
                                 continue;
                             }
                         }
@@ -789,7 +963,7 @@ class DbProxyServer {
                             }
                             const strVal = val.toString('utf8');
                             if (strVal.startsWith('VOLLVALT:')) {
-                                const columnName = currentColumns[i] || `col_${i}`;
+                                const columnName = currentColumns[i] ? currentColumns[i].name : `col_${i}`;
                                 try {
                                     // Decrypt using security controls inside user context store
                                     const decrypted = db_guard_1.dbGuardContextStore.run(dbGuardContext, () => {
@@ -814,14 +988,84 @@ class DbProxyServer {
                                 }
                             }
                             else {
-                                const columnName = currentColumns[i] || `col_${i}`;
-                                const isAggregate = columnName.toLowerCase().startsWith('avg') || columnName.toLowerCase().startsWith('sum') || columnName.toLowerCase().startsWith('count');
+                                const columnName = currentColumns[i] ? currentColumns[i].name : `col_${i}`;
+                                const rbacConfig = (0, auth_js_1.getRbacConfig)(this.options.config);
+                                const roleConfig = dbGuardContext.role ? rbacConfig?.roles?.[dbGuardContext.role] : undefined;
+                                let modelName = 'users';
+                                let fieldName = columnName;
+                                if (columnName.includes('.')) {
+                                    const parts = columnName.split('.');
+                                    modelName = parts[0];
+                                    fieldName = parts[1];
+                                }
+                                const fieldKey = `${modelName}.${fieldName}`;
+                                const maskRule = roleConfig?.mask?.[fieldKey];
+                                if (maskRule !== undefined) {
+                                    const maskedVal = (0, db_guard_1.maskValue)(strVal, maskRule);
+                                    modifiedValues.push(buffer_1.Buffer.from(maskedVal, 'utf8'));
+                                    continue;
+                                }
+                                const isAggregate = currentAggregates[i] === true || (currentAggregates[i] === undefined && (columnName.toLowerCase().startsWith('avg') || columnName.toLowerCase().startsWith('sum') || columnName.toLowerCase().startsWith('count')));
                                 if (isAggregate) {
-                                    const floatVal = parseFloat(strVal);
+                                    const colMeta = currentColumns[i];
+                                    const isBinary = colMeta && colMeta.formatCode === 1;
+                                    const oid = colMeta ? colMeta.dataTypeOid : 0;
+                                    let floatVal = NaN;
+                                    if (isBinary) {
+                                        try {
+                                            if (oid === 23) {
+                                                floatVal = val.readInt32BE(0);
+                                            }
+                                            else if (oid === 21) {
+                                                floatVal = val.readInt16BE(0);
+                                            }
+                                            else if (oid === 20) {
+                                                floatVal = Number(val.readBigInt64BE(0));
+                                            }
+                                            else if (oid === 700) {
+                                                floatVal = val.readFloatBE(0);
+                                            }
+                                            else if (oid === 701) {
+                                                floatVal = val.readDoubleBE(0);
+                                            }
+                                        }
+                                        catch (e) {
+                                            floatVal = NaN;
+                                        }
+                                    }
+                                    else {
+                                        floatVal = parseFloat(strVal);
+                                    }
                                     if (!isNaN(floatVal)) {
                                         const noise = (0, waf_js_1.generateLaplaceNoise)(0.5);
-                                        const noisyVal = (floatVal + noise).toFixed(2);
-                                        modifiedValues.push(buffer_1.Buffer.from(noisyVal, 'utf8'));
+                                        const noisyVal = floatVal + noise;
+                                        if (isBinary) {
+                                            let noisyBuf;
+                                            if (oid === 20) {
+                                                noisyBuf = buffer_1.Buffer.alloc(8);
+                                                noisyBuf.writeBigInt64BE(BigInt(Math.round(noisyVal)), 0);
+                                            }
+                                            else if (oid === 21) {
+                                                noisyBuf = buffer_1.Buffer.alloc(2);
+                                                noisyBuf.writeInt16BE(Math.round(noisyVal), 0);
+                                            }
+                                            else if (oid === 700) {
+                                                noisyBuf = buffer_1.Buffer.alloc(4);
+                                                noisyBuf.writeFloatBE(noisyVal, 0);
+                                            }
+                                            else if (oid === 701) {
+                                                noisyBuf = buffer_1.Buffer.alloc(8);
+                                                noisyBuf.writeDoubleBE(noisyVal, 0);
+                                            }
+                                            else {
+                                                noisyBuf = buffer_1.Buffer.alloc(4);
+                                                noisyBuf.writeInt32BE(Math.round(noisyVal), 0);
+                                            }
+                                            modifiedValues.push(noisyBuf);
+                                        }
+                                        else {
+                                            modifiedValues.push(buffer_1.Buffer.from(noisyVal.toFixed(2), 'utf8'));
+                                        }
                                         continue;
                                     }
                                 }
@@ -841,13 +1085,20 @@ class DbProxyServer {
                             }
                         }
                         if (encryptionError) {
-                            clientSocket.write(serializeErrorResponse(`Vollcrypt Cryptographic Access Violation: ${encryptionError.message}`));
+                            activeClientSocket.write(serializeErrorResponse(`Vollcrypt Cryptographic Access Violation: ${encryptionError.message}`));
+                            const isRateLimit = encryptionError.message.includes('rate limit') || encryptionError.message.includes('Fail-Closed');
+                            if (isRateLimit) {
+                                const rateLimiterMode = this.options.config?.rateLimiter?.mode || 'fail_closed';
+                                if (rateLimiterMode === 'fail_closed') {
+                                    this.triggerFailClosed();
+                                }
+                            }
                             // End the packet flow for this stream
                             break;
                         }
                         else {
                             const newMsg = (0, pg_protocol_js_1.serializeDataRow)(modifiedValues);
-                            clientSocket.write(newMsg);
+                            activeClientSocket.write(newMsg);
                         }
                     }
                     else if (type === 67 || type === 90) { // 'C' -> CommandComplete or 'Z' -> ReadyForQuery
@@ -862,42 +1113,35 @@ class DbProxyServer {
                             }
                             queryStartTime = 0; // reset
                         }
-                        clientSocket.write(msg);
+                        activeClientSocket.write(msg);
                     }
                     else if (type === 83) { // 'S' -> ParameterStatus
                         const status = (0, pg_protocol_js_1.parseParameterStatus)(msg);
                         if (status && status.name === 'server_version') {
                             const maskedVersion = this.options.config?.firewall?.versionMask || '16.0';
                             const newMsg = (0, pg_protocol_js_1.serializeParameterStatus)('server_version', maskedVersion);
-                            clientSocket.write(newMsg);
+                            activeClientSocket.write(newMsg);
                         }
                         else {
-                            clientSocket.write(msg);
+                            activeClientSocket.write(msg);
                         }
                     }
                     else {
-                        clientSocket.write(msg);
+                        activeClientSocket.write(msg);
                     }
                 }
             }
             catch (err) {
                 const errMsg = err.message;
-                clientSocket.write(serializeErrorResponse(`Vollcrypt Proxy: ${errMsg}`));
-                clientSocket.destroy();
+                activeClientSocket.write(serializeErrorResponse(`Vollcrypt Proxy: ${errMsg}`));
+                activeClientSocket.destroy();
             }
         });
-        clientSocket.on('close', () => {
-            this.activeConnections.delete(clientSocket);
-            backendSocket.destroy();
-        });
         backendSocket.on('close', () => {
-            clientSocket.destroy();
-        });
-        clientSocket.on('error', () => {
-            backendSocket.destroy();
+            activeClientSocket.destroy();
         });
         backendSocket.on('error', () => {
-            clientSocket.destroy();
+            activeClientSocket.destroy();
         });
     }
 }

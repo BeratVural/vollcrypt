@@ -37,10 +37,16 @@ export function parseStartupMessage(buf: Buffer): StartupParams {
   return params;
 }
 
+export interface PgColumn {
+  name: string;
+  dataTypeOid: number;
+  formatCode: number;
+}
+
 /**
- * Parses a PostgreSQL RowDescription ('T') packet to extract column names.
+ * Parses a PostgreSQL RowDescription ('T') packet to extract column metadata.
  */
-export function parseRowDescription(buf: Buffer): string[] {
+export function parseRowDescription(buf: Buffer): PgColumn[] {
   // RowDescription structure:
   // 1 byte: 'T'
   // 4 bytes: length
@@ -56,22 +62,25 @@ export function parseRowDescription(buf: Buffer): string[] {
   if (buf.length < 7) return [];
   const fieldCount = buf.readInt16BE(5);
   let offset = 7;
-  const columnNames: string[] = [];
+  const columns: PgColumn[] = [];
 
   for (let i = 0; i < fieldCount; i++) {
     const nullIdx = buf.indexOf(0, offset);
     if (nullIdx === -1) break;
     const name = buf.toString('utf8', offset, nullIdx);
-    columnNames.push(name);
     offset = nullIdx + 1; // skip null byte
     offset += 4; // table OID
     offset += 2; // column attribute number
+    const dataTypeOid = buf.readInt32BE(offset);
     offset += 4; // data type OID
     offset += 2; // data type size
     offset += 4; // type modifier
+    const formatCode = buf.readInt16BE(offset);
     offset += 2; // format code
+
+    columns.push({ name, dataTypeOid, formatCode });
   }
-  return columnNames;
+  return columns;
 }
 
 /**
@@ -279,6 +288,27 @@ export function serializeParseMessage(
   buf.writeUInt8(0, 5 + stmtBuf.length + 1 + queryBuf.length);
   trailingBytes.copy(buf, 5 + stmtBuf.length + 1 + queryBuf.length + 1);
   return buf;
+}
+
+export interface PgCloseMessage {
+  type: 'S' | 'P'; // 'S' for prepared statement, 'P' for portal
+  name: string;
+}
+
+/**
+ * Parses a PostgreSQL Close ('C') frontend message.
+ */
+export function parseCloseMessage(buf: Buffer): PgCloseMessage | null {
+  if (buf[0] !== 0x43) return null; // 'C'
+  if (buf.length < 6) return null;
+  const typeByte = buf[5];
+  const type = String.fromCharCode(typeByte) as 'S' | 'P';
+  if (type !== 'S' && type !== 'P') return null;
+
+  const nameNull = buf.indexOf(0, 6);
+  if (nameNull === -1) return null;
+  const name = buf.toString('utf8', 6, nameNull);
+  return { type, name };
 }
 
 

@@ -77,6 +77,17 @@ fn transcript_message_hash_collision_attempt() {
 }
 
 #[test]
+fn transcript_message_hash_collision_sliding_fields() {
+    let hash1 = TranscriptState::compute_message_hash(b"msg", b"alice", 1000, b"data");
+    let hash2 = TranscriptState::compute_message_hash(b"msga", b"lice", 1000, b"data");
+
+    assert_ne!(
+        hash1, hash2,
+        "Prefixing with lengths must prevent sliding-field concatenation collisions"
+    );
+}
+
+#[test]
 fn transcript_from_bytes_invalid_length() {
     // TranscriptState::from_bytes expects a [u8; 32] directly.
     // In Rust, providing a 31-byte array to a function expecting [u8; 32] is a compile-time error.

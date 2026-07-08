@@ -5,37 +5,50 @@ exports.wrapOracleConnection = wrapOracleConnection;
 const prisma_js_1 = require("./prisma.js");
 const security_js_1 = require("./security.js");
 function getKeys(options) {
-    let keys;
+    let keys = {};
     let activeVersion;
     if (Buffer.isBuffer(options.key)) {
-        keys = { '1': options.key };
+        keys = { '1': Buffer.from(options.key) };
         activeVersion = '1';
     }
     else {
-        keys = options.key;
+        for (const [v, k] of Object.entries(options.key)) {
+            keys[v] = Buffer.from(k);
+        }
         activeVersion = options.activeKeyVersion || Object.keys(keys)[0];
     }
     return { keys, activeVersion };
 }
+function cleanIdentifier(identifier) {
+    if (!identifier)
+        return identifier;
+    let cleaned = identifier.trim();
+    if ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+        (cleaned.startsWith('`') && cleaned.endsWith('`')) ||
+        (cleaned.startsWith('[') && cleaned.endsWith(']'))) {
+        cleaned = cleaned.slice(1, -1);
+    }
+    return cleaned.trim();
+}
 function getParamColumns(sql) {
     const sqlClean = sql.replace(/\s+/g, ' ').trim();
     // Match INSERT INTO table (col1, col2) ...
-    const insertMatch = sqlClean.match(/INSERT\s+INTO\s+(\w+)\s*\(([^)]+)\)/i);
+    const insertMatch = sqlClean.match(/INSERT\s+INTO\s+([a-zA-Z0-9_"`[\]]+)\s*\(([^)]+)\)/i);
     if (insertMatch) {
-        const table = insertMatch[1];
-        const columns = insertMatch[2].split(',').map(c => c.trim());
+        const table = cleanIdentifier(insertMatch[1]);
+        const columns = insertMatch[2].split(',').map(c => cleanIdentifier(c));
         return { table, columns };
     }
     // Match UPDATE table SET col1 = ?, col2 = ? ...
-    const updateMatch = sqlClean.match(/UPDATE\s+(\w+)\s+SET\s+([\s\S]+?)(?:\s+WHERE|$)/i);
+    const updateMatch = sqlClean.match(/UPDATE\s+([a-zA-Z0-9_"`[\]]+)\s+SET\s+([\s\S]+?)(?:\s+WHERE|$)/i);
     if (updateMatch) {
-        const table = updateMatch[1];
+        const table = cleanIdentifier(updateMatch[1]);
         const setParts = updateMatch[2].split(',');
         const columns = [];
         for (const part of setParts) {
-            const match = part.match(/(\w+)\s*=/);
+            const match = part.match(/([a-zA-Z0-9_"`[\]]+)\s*=/);
             if (match) {
-                columns.push(match[1]);
+                columns.push(cleanIdentifier(match[1]));
             }
         }
         return { table, columns };
@@ -96,6 +109,30 @@ function wrapSqliteDatabase(db, options) {
             const fieldsToEncrypt = options.entities[table] || [];
             if (fieldsToEncrypt.length === 0)
                 return params;
+            // Case 1: single array parameter, e.g., stmt.run([val1, val2])
+            if (params.length === 1 && Array.isArray(params[0])) {
+                const arrayParams = params[0].map((param, index) => {
+                    const colName = columns[index];
+                    if (colName && fieldsToEncrypt.includes(colName)) {
+                        return (0, prisma_js_1.encryptValue)(param, activeKey, activeVersion);
+                    }
+                    return param;
+                });
+                return [arrayParams];
+            }
+            // Case 2: single object parameter for named binds, e.g., stmt.run({ col1: val1 })
+            if (params.length === 1 && params[0] && typeof params[0] === 'object' && !Buffer.isBuffer(params[0])) {
+                const obj = { ...params[0] };
+                for (const [key, val] of Object.entries(obj)) {
+                    // Strip prefix character (@, :, $) if present
+                    const cleanKey = key.replace(/^[@:$]/, '');
+                    if (fieldsToEncrypt.includes(cleanKey)) {
+                        obj[key] = (0, prisma_js_1.encryptValue)(val, activeKey, activeVersion);
+                    }
+                }
+                return [obj];
+            }
+            // Case 3: multiple positional parameters, e.g., stmt.run(val1, val2)
             return params.map((param, index) => {
                 const colName = columns[index];
                 if (colName && fieldsToEncrypt.includes(colName)) {

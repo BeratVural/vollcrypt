@@ -10,6 +10,7 @@ exports.serializeParameterStatus = serializeParameterStatus;
 exports.serializePasswordMessage = serializePasswordMessage;
 exports.serializeQueryMessage = serializeQueryMessage;
 exports.serializeParseMessage = serializeParseMessage;
+exports.parseCloseMessage = parseCloseMessage;
 const buffer_1 = require("buffer");
 /**
  * Parses a PostgreSQL StartupMessage and extracts parameters like username and database name.
@@ -42,7 +43,7 @@ function parseStartupMessage(buf) {
     return params;
 }
 /**
- * Parses a PostgreSQL RowDescription ('T') packet to extract column names.
+ * Parses a PostgreSQL RowDescription ('T') packet to extract column metadata.
  */
 function parseRowDescription(buf) {
     // RowDescription structure:
@@ -61,22 +62,24 @@ function parseRowDescription(buf) {
         return [];
     const fieldCount = buf.readInt16BE(5);
     let offset = 7;
-    const columnNames = [];
+    const columns = [];
     for (let i = 0; i < fieldCount; i++) {
         const nullIdx = buf.indexOf(0, offset);
         if (nullIdx === -1)
             break;
         const name = buf.toString('utf8', offset, nullIdx);
-        columnNames.push(name);
         offset = nullIdx + 1; // skip null byte
         offset += 4; // table OID
         offset += 2; // column attribute number
+        const dataTypeOid = buf.readInt32BE(offset);
         offset += 4; // data type OID
         offset += 2; // data type size
         offset += 4; // type modifier
+        const formatCode = buf.readInt16BE(offset);
         offset += 2; // format code
+        columns.push({ name, dataTypeOid, formatCode });
     }
-    return columnNames;
+    return columns;
 }
 /**
  * Parses a PostgreSQL DataRow ('D') packet into an array of Buffer values (or null).
@@ -269,4 +272,22 @@ function serializeParseMessage(statementName, query, originalMsg, queryNull) {
     buf.writeUInt8(0, 5 + stmtBuf.length + 1 + queryBuf.length);
     trailingBytes.copy(buf, 5 + stmtBuf.length + 1 + queryBuf.length + 1);
     return buf;
+}
+/**
+ * Parses a PostgreSQL Close ('C') frontend message.
+ */
+function parseCloseMessage(buf) {
+    if (buf[0] !== 0x43)
+        return null; // 'C'
+    if (buf.length < 6)
+        return null;
+    const typeByte = buf[5];
+    const type = String.fromCharCode(typeByte);
+    if (type !== 'S' && type !== 'P')
+        return null;
+    const nameNull = buf.indexOf(0, 6);
+    if (nameNull === -1)
+        return null;
+    const name = buf.toString('utf8', 6, nameNull);
+    return { type, name };
 }

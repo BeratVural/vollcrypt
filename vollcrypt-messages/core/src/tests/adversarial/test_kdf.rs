@@ -82,7 +82,7 @@ fn hkdf_context_collision_attempt() {
 fn pbkdf2_empty_password() {
     let pw = b"";
     let salt = b"salt";
-    let key = derive_pbkdf2(pw, salt, 1000, 32);
+    let key = derive_pbkdf2(pw, salt, 1000, 32).unwrap();
     // It's weak, but valid algorithmically
     assert_eq!(key.len(), 32);
 }
@@ -91,34 +91,32 @@ fn pbkdf2_empty_password() {
 fn pbkdf2_empty_salt() {
     let pw = b"password";
     let salt = b"";
-    let key = derive_pbkdf2(pw, salt, 1000, 32);
+    let key = derive_pbkdf2(pw, salt, 1000, 32).unwrap();
     // Valid algorithmically, though insecure
     assert_eq!(key.len(), 32);
 }
 
 #[test]
 fn pbkdf2_zero_iterations() {
-    // The underlying pbkdf2 library might not panic on 0 iterations but clamps it.
     let pw = b"password";
     let salt = b"salt";
-    let key = derive_pbkdf2(pw, salt, 0, 32);
-    // As long as it doesn't crash, we consider it safe (though insecure to use 0)
-    assert_eq!(key.len(), 32);
+    let res = derive_pbkdf2(pw, salt, 0, 32);
+    assert!(res.is_err());
 }
 
 #[test]
 fn pbkdf2_one_iteration() {
     let pw = b"password";
     let salt = b"salt";
-    let key = derive_pbkdf2(pw, salt, 1, 32);
-    assert_eq!(key.len(), 32);
+    let res = derive_pbkdf2(pw, salt, 1, 32);
+    assert!(res.is_err());
 }
 
 #[test]
 fn pbkdf2_same_password_different_salt_different_output() {
     let pw = b"password";
-    let key1 = derive_pbkdf2(pw, b"salt1", 1000, 32);
-    let key2 = derive_pbkdf2(pw, b"salt2", 1000, 32);
+    let key1 = derive_pbkdf2(pw, b"salt1", 1000, 32).unwrap();
+    let key2 = derive_pbkdf2(pw, b"salt2", 1000, 32).unwrap();
     assert_ne!(key1, key2);
 }
 
@@ -131,7 +129,7 @@ fn pbkdf2_timing_consistency() {
     for i in 0..10 {
         let pw = format!("password{}", i);
         let start = Instant::now();
-        let _ = derive_pbkdf2(pw.as_bytes(), salt, 600_000, 32);
+        let _ = derive_pbkdf2(pw.as_bytes(), salt, 600_000, 32).unwrap();
         timings.push(start.elapsed().as_micros() as f64);
     }
 
@@ -173,4 +171,19 @@ fn window_key_sequential_uniqueness() {
     }
 
     assert_eq!(keys.len(), 1000);
+}
+
+#[test]
+fn pbkdf2_large_key_len_clamped() {
+    let pw = b"password";
+    let salt = b"salt";
+    let key = derive_pbkdf2(pw, salt, 10_000, 999_999).unwrap();
+    assert_eq!(key.len(), 8160);
+}
+
+#[test]
+fn hkdf_large_key_len_rejected() {
+    let ikm = b"shared_secret";
+    let res = derive_hkdf(ikm, None, None, 999_999);
+    assert!(res.is_err());
 }

@@ -108,3 +108,40 @@ test('wrapOracleConnection bind parameter encryption and result decryption', asy
   assert.strictEqual(res.rows[0].ssn, '999-99-9999');
   assert.strictEqual(res.rows[0].name, 'Bob');
 });
+
+test('wrapSqliteDatabase support for quoted SQL identifiers', async (t) => {
+  const options = {
+    key: KEY,
+    entities: {
+      users: ['email', 'ssn']
+    }
+  };
+
+  let lastParams: any[] = [];
+  const mockStatement = {
+    run(...params: any[]) {
+      lastParams = params;
+      return { changes: 1 };
+    }
+  };
+
+  const mockDb = {
+    prepare(sql: string) {
+      return mockStatement;
+    }
+  };
+
+  const wrappedDb = wrapSqliteDatabase(mockDb, options);
+
+  // 1. Quoted table and column identifiers in INSERT
+  const insertStmt1 = wrappedDb.prepare('INSERT INTO "users" ("email", `ssn`) VALUES (?, ?)');
+  insertStmt1.run('alice@example.com', '123-45-678');
+  assert.ok(lastParams[0].startsWith('VOLLVALT:'));
+  assert.ok(lastParams[1].startsWith('VOLLVALT:'));
+
+  // 2. Bracketed identifiers in UPDATE
+  const updateStmt = wrappedDb.prepare('UPDATE [users] SET [email] = ?, `ssn` = ? WHERE id = ?');
+  updateStmt.run('bob@example.com', '987-65-432', 1);
+  assert.ok(lastParams[0].startsWith('VOLLVALT:'));
+  assert.ok(lastParams[1].startsWith('VOLLVALT:'));
+});

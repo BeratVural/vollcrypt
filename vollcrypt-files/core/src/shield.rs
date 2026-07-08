@@ -119,21 +119,32 @@ pub fn verify_container<R: Read + Seek>(
     let plaintext_size = header.plaintext_size;
     let hash_algo = header.hash_algorithm;
 
+    let current_pos = reader.stream_position().unwrap_or(0);
+    let total_len = reader.seek(std::io::SeekFrom::End(0)).unwrap_or(0);
+    let _ = reader.seek(std::io::SeekFrom::Start(current_pos));
+    let max_possible_chunks = if total_len > current_pos {
+        (total_len - current_pos) / 32
+    } else {
+        0
+    };
+
     let total_chunks_u64 = if plaintext_size == 0 {
         0
     } else {
         plaintext_size.div_ceil(chunk_size as u64)
     };
-    if total_chunks_u64 > u32::MAX as u64 {
+    if total_chunks_u64 > 10_000_000 || total_chunks_u64 > max_possible_chunks {
         return ShieldReport::HeaderField("too_many_chunks".to_string());
     }
     let total_chunks = total_chunks_u64 as u32;
 
-    let mut leaf_hashes = Vec::with_capacity(total_chunks as usize);
+    let mut leaf_hashes = Vec::new();
     let payload_start_pos = match reader.stream_position() {
         Ok(pos) => pos,
         Err(_) => return ShieldReport::HeaderField("stream_position_failed".to_string()),
     };
+
+    let mut ciphertext_buf = vec![0u8; chunk_size];
 
     for idx in 0..total_chunks {
         let is_last = idx == total_chunks - 1;
@@ -159,8 +170,9 @@ pub fn verify_container<R: Read + Seek>(
         }
         let iv: [u8; 12] = prefix[4..16].try_into().unwrap();
 
-        // Seek forward by chunk_plaintext_len (ciphertext size)
-        if let Err(_) = reader.seek(SeekFrom::Current(chunk_plaintext_len as i64)) {
+        // Read ciphertext instead of seeking forward
+        ciphertext_buf.resize(chunk_plaintext_len, 0);
+        if let Err(_) = reader.read_exact(&mut ciphertext_buf) {
             return ShieldReport::ChunkTag { index: idx };
         }
 
@@ -171,7 +183,7 @@ pub fn verify_container<R: Read + Seek>(
         }
 
         // Compute leaf hash
-        let leaf = crate::merkle::chunk_leaf_hash_raw_with_algo(idx, &iv, &tag, hash_algo);
+        let leaf = crate::merkle::chunk_leaf_hash_raw_with_algo(idx, &iv, &ciphertext_buf, &tag, hash_algo);
         leaf_hashes.push(leaf);
     }
 

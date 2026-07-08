@@ -41,6 +41,7 @@ exports.handleMysqlConnection = handleMysqlConnection;
 const net = __importStar(require("net"));
 const waf_js_1 = require("../waf.js");
 const db_guard_1 = require("@vollcrypt/db-guard");
+const auth_js_1 = require("../auth.js");
 function serializeMysqlError(message, code = 1142, sqlState = '42000') {
     const msgBuf = Buffer.from(message, 'utf8');
     const body = Buffer.alloc(9 + msgBuf.length);
@@ -112,7 +113,7 @@ function serializeLengthEncodedString(value) {
     }
     return Buffer.concat([lenBuf, strBuf]);
 }
-function decryptMysqlRow(packet, keys) {
+function decryptMysqlRow(packet, keys, role = 'GUEST', userId = 'guest-user', tenantId, config, modelName = 'default', columns = []) {
     if (packet.length < 5)
         return packet;
     const payloadLen = packet.readUIntLE(0, 3);
@@ -133,16 +134,36 @@ function decryptMysqlRow(packet, keys) {
         cursor = nextOffset;
     }
     let modified = false;
+    let idx = 0;
     const decryptedCells = cells.map((cell) => {
         if (cell && cell.startsWith('VOLLVALT:')) {
             modified = true;
             try {
-                return (0, db_guard_1.decryptValue)(cell, keys);
+                let fieldName = columns[idx] || `col_${idx}`;
+                let model = modelName;
+                if (fieldName.includes('.')) {
+                    const parts = fieldName.split('.');
+                    fieldName = parts[parts.length - 1];
+                    model = parts[0] === 'u' || parts[0] === 't' ? modelName : parts[0];
+                }
+                const val = db_guard_1.dbGuardContextStore.run({
+                    role,
+                    userId,
+                    tenantId,
+                    maxDecryptionsPerSecond: config?.rateLimiter?.maxDecryptionsPerSecond,
+                    rateLimiterMode: config?.rateLimiter?.mode,
+                }, () => (0, db_guard_1.decryptWithSecurity)(cell, (cipherText) => (0, db_guard_1.decryptValue)(cipherText, keys), model, fieldName, undefined, {
+                    cryptoRbac: (0, auth_js_1.getRbacConfig)(config),
+                    rateLimiter: config?.rateLimiter,
+                }));
+                idx++;
+                return val;
             }
-            catch {
-                return cell;
+            catch (err) {
+                throw err;
             }
         }
+        idx++;
         return cell;
     });
     if (!modified)
@@ -157,6 +178,11 @@ function decryptMysqlRow(packet, keys) {
 function handleMysqlConnection(clientSocket, options) {
     let connected = false;
     const queue = [];
+    let currentRole = options.role;
+    let currentUserId = options.role === 'OWNER' ? 'usr-admin' : 'guest-user';
+    let currentTenantId;
+    let currentTable = 'default';
+    let currentColumns = [];
     const backendSocket = net.connect({
         host: options.dbHost,
         port: options.dbPort,
@@ -173,10 +199,13 @@ function handleMysqlConnection(clientSocket, options) {
         // Attempt decryption on MySQL response rows
         let processedData = data;
         try {
-            processedData = decryptMysqlRow(data, options.resolvedKeys);
+            processedData = decryptMysqlRow(data, options.resolvedKeys, currentRole, currentUserId, currentTenantId, options.config, currentTable, currentColumns);
         }
-        catch {
-            // Fallback to raw on parse errors
+        catch (err) {
+            options.logSiem('MYSQL_DECRYPT_ERROR', 8, `MySQL decryption error: ${err.message}`);
+            const errPacket = serializeMysqlError(err.message, 1142, '42000');
+            clientSocket.write(errPacket);
+            return;
         }
         if (clientSocket.writable) {
             clientSocket.write(processedData);
@@ -185,17 +214,45 @@ function handleMysqlConnection(clientSocket, options) {
     clientSocket.on('data', (data) => {
         if (data.length > 5) {
             const packetLen = data.readUIntLE(0, 3);
+            const seqId = data[3];
             const command = data[4];
-            if (command === 0x03 && !options.noWaf) { // COM_QUERY
-                const query = data.toString('utf8', 5, 4 + packetLen);
-                try {
-                    (0, waf_js_1.validateQuery)(query, options.role);
+            // HandshakeResponse41 parsing (usually seqId === 1 or 2 depending on SSL status)
+            // Check for login response handshake packet
+            if (seqId === 1 && packetLen > 32) {
+                // HandshakeResponse41 format offset 4: client capabilities (4 bytes), max packet size (4 bytes), charset (1 byte), reserved (23 bytes)
+                // Username starts at offset 36 (4 header + 32 handshake offset)
+                // Null terminated string.
+                let usernameEnd = 36;
+                while (usernameEnd < data.length && data[usernameEnd] !== 0x00) {
+                    usernameEnd++;
                 }
-                catch (err) {
-                    options.logSiem('WAF_MYSQL_BLOCK', 9, `MySQL WAF violation blocked: ${err.message}`);
-                    const errPacket = serializeMysqlError(err.message, 1142, '42000');
-                    clientSocket.write(errPacket);
-                    return; // Halt and prevent forwarding to the backend DB
+                if (usernameEnd > 36 && usernameEnd < data.length) {
+                    const username = data.toString('utf8', 36, usernameEnd);
+                    const userContext = (0, auth_js_1.resolveUserContext)(username, options.config);
+                    currentUserId = userContext.userId;
+                    currentRole = userContext.role;
+                    currentTenantId = userContext.tenantId;
+                }
+            }
+            if (command === 0x03 || command === 0x16) { // COM_QUERY or COM_STMT_PREPARE
+                const query = data.toString('utf8', 5, 4 + packetLen);
+                if (!options.noWaf) {
+                    try {
+                        (0, waf_js_1.validateQuery)(query, currentRole);
+                    }
+                    catch (err) {
+                        options.logSiem('WAF_MYSQL_BLOCK', 9, `MySQL WAF violation blocked: ${err.message}`);
+                        const errPacket = serializeMysqlError(err.message, 1142, '42000');
+                        clientSocket.write(errPacket);
+                        return; // Halt and prevent forwarding to the backend DB
+                    }
+                }
+                try {
+                    currentTable = (0, waf_js_1.extractTableName)(query);
+                    currentColumns = (0, waf_js_1.extractProjectionColumns)(query);
+                }
+                catch (e) {
+                    // ignore parsing error, fallback to default
                 }
             }
         }

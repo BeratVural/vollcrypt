@@ -125,8 +125,13 @@ async fn test_async_pipelined_roundtrip() {
     }
     let enc_res: EncResult = serde_wasm_bindgen::from_value(enc_result_js).unwrap();
 
+    // Create a policy for decrypting unsigned legacy files
+    let policy_obj = js_sys::Object::new();
+    js_sys::Reflect::set(&policy_obj, &JsValue::from_str("releaseMode"), &JsValue::from_str("verified")).unwrap();
+    js_sys::Reflect::set(&policy_obj, &JsValue::from_str("signature"), &JsValue::from_str("optional")).unwrap();
+
     // Call async decrypt
-    let dec_result_js = decrypt_file_pipelined_async_wasm(&enc_res.ciphertext, &dek)
+    let dec_result_js = decrypt_file_pipelined_async_wasm(&enc_res.ciphertext, &dek, policy_obj.into())
         .await
         .unwrap();
 

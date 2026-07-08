@@ -53,7 +53,7 @@ fn run_competitor_comparison(_dek: &[u8; 32], raw_sc_elapsed: f64, is_aes_ni: bo
     let start_x25519 = Instant::now();
     for _ in 0..100 {
         let (x_pk, x_sk) = x25519_keypair_generate();
-        let _ss = x25519_diffie_hellman(&x_sk, &x_pk);
+        let _ss = x25519_diffie_hellman(&x_sk, &x_pk).unwrap();
     }
     let x25519_duration = start_x25519.elapsed().as_secs_f64() / 100.0;
 
@@ -966,7 +966,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         let mut runs = Vec::new();
         for _ in 0..3 {
             let start = Instant::now();
-            let _res = derive_kek_pbkdf2(b"Password", &[0u8; 16], iters);
+            let _res = derive_kek_pbkdf2(b"Password", &[0u8; 16], iters).unwrap();
             runs.push(start.elapsed().as_secs_f64() * 1000.0); // in ms
         }
         let (med, _, _) = stats(&runs);
@@ -1055,7 +1055,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     for _ in 0..3 {
         let start = Instant::now();
         let (_eph_pk, eph_sk) = x25519_keypair_generate();
-        let ss = x25519_diffie_hellman(&eph_sk, &x_pk);
+        let ss = x25519_diffie_hellman(&eph_sk, &x_pk).unwrap();
         let info = [0u8; 48];
         let hk = hkdf::Hkdf::<sha2::Sha256>::new(None, &ss);
         let mut kek = [0u8; 32];

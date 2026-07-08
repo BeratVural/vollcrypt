@@ -15,12 +15,13 @@ export function computeBlindIndex(value: any, rootSalt: Buffer, columnName: stri
   // 1. Derive column-specific key using HKDF-SHA256
   const derivedColumnKey = deriveHkdf(rootSalt, null, columnNameBuf, 32);
 
-  // 2. Compute the final blind index using the derived column key
-  const plaintextBuf = Buffer.from(plaintext, 'utf8');
-  const blindIndex = deriveHkdf(derivedColumnKey, null, plaintextBuf, 32);
-
-  // 3. RAM Security: Zeroize the derived key immediately (Anti-Core Dump)
-  derivedColumnKey.fill(0);
-
-  return blindIndex.toString('hex');
+  try {
+    // 2. Compute the final blind index using the derived column key
+    const plaintextBuf = Buffer.from(plaintext, 'utf8');
+    const blindIndex = deriveHkdf(derivedColumnKey, null, plaintextBuf, 32);
+    return blindIndex.toString('hex');
+  } finally {
+    // 3. RAM Security: Zeroize the derived key immediately (Anti-Core Dump)
+    derivedColumnKey.fill(0);
+  }
 }

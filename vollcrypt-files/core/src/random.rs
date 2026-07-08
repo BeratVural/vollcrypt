@@ -24,3 +24,11 @@ pub fn generate_salt() -> [u8; 16] {
     rng.fill_bytes(&mut salt);
     salt
 }
+
+/// Generates a cryptographically secure random 12-byte IV for a chunk.
+pub fn generate_iv() -> [u8; 12] {
+    let mut iv = [0u8; 12];
+    let mut rng = OsRng;
+    rng.fill_bytes(&mut iv);
+    iv
+}

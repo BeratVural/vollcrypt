@@ -38,13 +38,17 @@ pub fn pad_message(content: &[u8]) -> Vec<u8> {
 }
 
 pub fn pad_message_with_len(content: &[u8]) -> Result<Vec<u8>, &'static str> {
-    if content.len() > u32::MAX as usize {
-        return Err("Message too large to pad");
+    const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB maximum
+    if content.len() > MAX_PAYLOAD_SIZE {
+        return Err("Message exceeds maximum allowed payload size");
     }
     let len_bytes = (content.len() as u32).to_be_bytes();
     let base_len = 4 + content.len();
     let padding_bytes = calculate_padding(base_len);
-    let mut padded = Vec::with_capacity(base_len + padding_bytes.len());
+    let capacity = base_len
+        .checked_add(padding_bytes.len())
+        .ok_or("Padding calculations caused overflow")?;
+    let mut padded = Vec::with_capacity(capacity);
     padded.extend_from_slice(&len_bytes);
     padded.extend_from_slice(content);
     padded.extend_from_slice(&padding_bytes);
@@ -60,6 +64,16 @@ pub fn unpad_message_with_len(padded: &[u8]) -> Result<Vec<u8>, &'static str> {
         return Err("Invalid padded message length");
     }
     Ok(padded[4..4 + len].to_vec())
+}
+
+/// Checks if a length matches a valid padded block size.
+pub fn is_valid_padded_len(len: usize) -> bool {
+    let sizes = [64, 128, 256, 512, 1024, 2048];
+    if len <= 2048 {
+        sizes.contains(&len)
+    } else {
+        len % 1024 == 0
+    }
 }
 
 #[cfg(test)]

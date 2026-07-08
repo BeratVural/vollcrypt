@@ -12,6 +12,10 @@ pub fn pack_envelope(
     if encrypted_blob.len() < 12 + 16 {
         return Err("Encrypted blob too small, must contain at least IV and auth tag");
     }
+    let ciphertext_len = encrypted_blob.len() - 12 - 16;
+    if !crate::padding::is_valid_padded_len(ciphertext_len) {
+        return Err("Encrypted blob is not padded. Length hiding (padding) is mandatory for normal messages.");
+    }
     let mut out = Vec::with_capacity(4 + 12 + 32 + encrypted_blob.len() - 12);
     out.extend_from_slice(&window_index.to_be_bytes());
     out.extend_from_slice(&encrypted_blob[0..12]);
@@ -44,6 +48,11 @@ pub fn unpack_envelope(envelope: &[u8]) -> Result<(u32, [u8; 32], Vec<u8>), &'st
     encrypted_blob.extend_from_slice(iv);
     encrypted_blob.extend_from_slice(ciphertext_with_tag);
 
+    let ciphertext_len = encrypted_blob.len() - 12 - 16;
+    if !crate::padding::is_valid_padded_len(ciphertext_len) {
+        return Err("Envelope encrypted blob is not padded. Length hiding (padding) is mandatory.");
+    }
+
     Ok((window_index, aad_hash, encrypted_blob))
 }
 
@@ -56,10 +65,10 @@ mod tests {
         let window_index = 100u32;
         let aad_hash = [0x55u8; 32];
         let mut mock_encrypted_blob = vec![0x00u8; 12]; // IV
-        mock_encrypted_blob.extend_from_slice(b"ciphertext_body!"); // Cipher + Tag (16)
+        mock_encrypted_blob.extend_from_slice(&[0x00u8; 80]); // 64 (ciphertext) + 16 (tag) = 80
 
         let envelope = pack_envelope(window_index, &aad_hash, &mock_encrypted_blob).unwrap();
-        assert_eq!(envelope.len(), 4 + 12 + 32 + 16);
+        assert_eq!(envelope.len(), 4 + 12 + 32 + 80);
 
         let (unpacked_window, unpacked_aad, unpacked_blob) = unpack_envelope(&envelope).unwrap();
         assert_eq!(unpacked_window, window_index);

@@ -184,16 +184,16 @@ fn iv_differs_across_file_id() {
 }
 
 #[test]
-fn encrypt_chunk_no_osrng_determinism() {
+fn encrypt_chunk_uses_fresh_iv() {
     let dek = [0x19; 32];
     let file_id = [0xEF; 16];
     let idx = 4;
     let pt = b"Deterministic payload";
     let env1 = encrypt_chunk(&dek, &file_id, idx, pt, None).unwrap();
     let env2 = encrypt_chunk(&dek, &file_id, idx, pt, None).unwrap();
-    assert_eq!(env1.iv, env2.iv);
-    assert_eq!(env1.ciphertext, env2.ciphertext);
-    assert_eq!(env1.tag, env2.tag);
+    assert_ne!(env1.iv, env2.iv);
+    assert_ne!(env1.ciphertext, env2.ciphertext);
+    assert_ne!(env1.tag, env2.tag);
 }
 
 #[test]

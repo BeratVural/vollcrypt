@@ -27,7 +27,6 @@ function isMain(): boolean {
 
 export async function showInteractiveMenu(defaults: {
   minResponseTimeMs: number;
-  noAttestation: boolean;
   noDlp: boolean;
   noWaf: boolean;
   noIpBanning: boolean;
@@ -43,7 +42,6 @@ export async function showInteractiveMenu(defaults: {
 
     const features = [
       { key: 'timingMitigation', label: 'Timing Attack Mitigation', enabled: defaults.minResponseTimeMs > 0 },
-      { key: 'attestation', label: 'Enclave Remote Attestation', enabled: !defaults.noAttestation },
       { key: 'dlp', label: 'PII DLP Scanning', enabled: !defaults.noDlp },
       { key: 'waf', label: 'Database WAF Filters', enabled: !defaults.noWaf },
       { key: 'ipBanning', label: 'Gossip IP Banning', enabled: !defaults.noIpBanning },
@@ -95,13 +93,12 @@ export async function showInteractiveMenu(defaults: {
           cleanup();
           const result = {
             minResponseTimeMs: features[0].enabled ? (defaults.minResponseTimeMs || 15) : 0,
-            noAttestation: !features[1].enabled,
-            noDlp: !features[2].enabled,
-            noWaf: !features[3].enabled,
-            noIpBanning: !features[4].enabled,
-            fipsMode: features[5].enabled,
-            jitApprovalRequired: features[6].enabled,
-            anomalyEngine: features[7].enabled,
+            noDlp: !features[1].enabled,
+            noWaf: !features[2].enabled,
+            noIpBanning: !features[3].enabled,
+            fipsMode: features[4].enabled,
+            jitApprovalRequired: features[5].enabled,
+            anomalyEngine: features[6].enabled,
           };
           process.stdout.write('\x1B[2J\x1B[0f');
           resolve(result);
@@ -122,7 +119,6 @@ export async function showInteractiveMenu(defaults: {
 
 export async function handleHybridStartup(defaults: {
   minResponseTimeMs: number;
-  noAttestation: boolean;
   noDlp: boolean;
   noWaf: boolean;
   noIpBanning: boolean;
@@ -204,7 +200,6 @@ async function runCli() {
 
   // Feature toggles
   let minResponseTimeMs = 15;
-  let noAttestation = false;
   let noDlp = false;
   let noWaf = false;
   let noIpBanning = false;
@@ -237,8 +232,7 @@ async function runCli() {
       i++;
     } else if (args[i] === '--no-timing-mitigation') {
       minResponseTimeMs = 0;
-    } else if (args[i] === '--no-attestation') {
-      noAttestation = true;
+
     } else if (args[i] === '--no-dlp') {
       noDlp = true;
     } else if (args[i] === '--no-waf') {
@@ -277,7 +271,6 @@ async function runCli() {
   if (interactiveMode === true) {
     const selected = await showInteractiveMenu({
       minResponseTimeMs,
-      noAttestation,
       noDlp,
       noWaf,
       noIpBanning,
@@ -286,7 +279,6 @@ async function runCli() {
       anomalyEngine,
     });
     minResponseTimeMs = selected.minResponseTimeMs;
-    noAttestation = selected.noAttestation;
     noDlp = selected.noDlp;
     noWaf = selected.noWaf;
     noIpBanning = selected.noIpBanning;
@@ -296,7 +288,6 @@ async function runCli() {
   } else if (interactiveMode === null && process.stdin.isTTY) {
     const selected = await handleHybridStartup({
       minResponseTimeMs,
-      noAttestation,
       noDlp,
       noWaf,
       noIpBanning,
@@ -305,7 +296,6 @@ async function runCli() {
       anomalyEngine,
     });
     minResponseTimeMs = selected.minResponseTimeMs;
-    noAttestation = selected.noAttestation;
     noDlp = selected.noDlp;
     noWaf = selected.noWaf;
     noIpBanning = selected.noIpBanning;
@@ -367,7 +357,6 @@ async function runCli() {
     minResponseTimeMs,
     gossipPort,
     peers,
-    noAttestation,
     noDlp,
     noWaf,
     noIpBanning,
@@ -381,7 +370,6 @@ async function runCli() {
   console.log(`Forwarding to ${dbType.toUpperCase()} at ${dbHost}:${dbPort}`);
   console.log(`Active Features:`);
   console.log(`- Timing Attack Mitigation: ${minResponseTimeMs > 0 ? `Enabled (${minResponseTimeMs}ms)` : 'Disabled'}`);
-  console.log(`- Enclave Attestation Intercept: ${!noAttestation ? 'Enabled' : 'Disabled'}`);
   console.log(`- PII DLP Scanner: ${!noDlp ? 'Enabled' : 'Disabled'}`);
   console.log(`- WAF Security Engine: ${!noWaf ? 'Enabled' : 'Disabled'}`);
   console.log(`- Distributed Gossip IP Banning: ${!noIpBanning ? 'Enabled' : 'Disabled'}`);

@@ -261,7 +261,9 @@ impl Operation {
                 let num_wraps = u16::from_be_bytes(num_wraps_bytes) as usize;
 
                 let mut offset = 6;
-                let mut wraps = Vec::with_capacity(num_wraps);
+                let max_possible_wraps = (data.len() - offset) / 18;
+                let cap = std::cmp::min(num_wraps, max_possible_wraps);
+                let mut wraps = Vec::with_capacity(cap);
                 for _ in 0..num_wraps {
                     if data.len() < offset + 16 {
                         return Err(FileFormatError::InvalidWrapPayload);
@@ -1132,7 +1134,9 @@ impl GroupManifest {
         let op_count = u32::from_be_bytes(op_count_bytes) as usize;
 
         let mut offset = 32;
-        let mut operations = Vec::with_capacity(op_count);
+        let max_possible_ops = (input.len() - offset) / 64;
+        let cap = std::cmp::min(op_count, max_possible_ops);
+        let mut operations = Vec::with_capacity(cap);
 
         for _ in 0..op_count {
             let (op, read_bytes) = SignedOperation::parse(&input[offset..], version)?;

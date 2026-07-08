@@ -1,17 +1,12 @@
 import { maskValue } from '@vollcrypt/db-guard';
 
-// Global match regex patterns with word boundary anchors to prevent overlapping mismatches
-const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
-const CREDIT_CARD_REGEX = /\b(?:\d[ -]*?){13,19}\b/g;
-const TC_NO_REGEX = /\b[1-9]\d{10}\b/g;
-const IBAN_REGEX = /\b[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7,26}\b/g;
-
-/**
- * Scans a cell string value for sensitive PII anywhere in the string.
- * If PII is discovered, applies masking to the matching substring.
- * Otherwise, returns the original value.
- */
 export function scanAndMaskCell(val: string): string {
+  // Local match regex patterns to prevent overlapping mismatches and concurrency race conditions
+  const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+  const CREDIT_CARD_REGEX = /\b(?:\d[ -]*?){13,19}\b/g;
+  const TC_NO_REGEX = /\b[1-9]\d{10}\b/g;
+  const IBAN_REGEX = /\b[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7,26}\b/g;
+
   let masked = val;
 
   // Mask emails

@@ -1,6 +1,6 @@
 use crate::envelope::{pack_envelope, unpack_envelope};
 use crate::kdf::derive_window_key;
-use crate::symmetric::{decrypt_aes256gcm, encrypt_aes256gcm};
+use crate::symmetric::{decrypt_aes256gcm, encrypt_aes256gcm, decrypt_aes256gcm_padded, encrypt_aes256gcm_padded};
 use crate::transcript::TranscriptState;
 
 // ── Format Attacks ────────────────────────────────────────────────────────
@@ -18,17 +18,9 @@ fn envelope_exactly_minimum_size_no_ciphertext() {
     let envelope = [0u8; 64];
     let result = unpack_envelope(&envelope);
     assert!(
-        result.is_ok(),
-        "Unpack might succeed, but the ciphertext is empty (0 bytes before tag)"
+        result.is_err(),
+        "Unpack must fail because ciphertext length is 0 (which is not a valid padded length)"
     );
-
-    // But AES-GCM needs the ciphertext part to be processed
-    if let Ok((_, aad, blob)) = result {
-        let key = [0u8; 32];
-        let dec = decrypt_aes256gcm(&key, &blob, Some(&aad));
-        // Decryption will fail because auth tag is all zeros and won't match
-        assert!(dec.is_err());
-    }
 }
 
 #[test]
@@ -36,7 +28,7 @@ fn envelope_window_index_overflow() {
     let window_index = u32::MAX;
     let aad_hash = [0x55u8; 32];
     let mut encrypted_blob = vec![0x00u8; 12]; // IV
-    encrypted_blob.extend_from_slice(b"ciphertext_body!"); // Cipher + Tag (16)
+    encrypted_blob.extend_from_slice(&[0x00u8; 80]); // 64 (ciphertext) + 16 (tag) = 80
 
     let envelope = pack_envelope(window_index, &aad_hash, &encrypted_blob).expect("Pack failed");
 
@@ -52,8 +44,8 @@ fn envelope_corrupted_aad_hash() {
     let key = [0u8; 32];
     let aad_hash = [0xAAu8; 32];
 
-    // Encrypt with correct AAD
-    let encrypted_blob = encrypt_aes256gcm(&key, b"message", Some(&aad_hash)).unwrap();
+    // Encrypt with correct AAD and padding
+    let encrypted_blob = encrypt_aes256gcm_padded(&key, b"message", Some(&aad_hash)).unwrap();
 
     // Pack
     let mut envelope = pack_envelope(1, &aad_hash, &encrypted_blob).unwrap();
@@ -64,7 +56,7 @@ fn envelope_corrupted_aad_hash() {
     let (_, broken_aad, broken_blob) = unpack_envelope(&envelope).unwrap();
 
     // Attempt to decrypt with the corrupted AAD
-    let result = decrypt_aes256gcm(&key, &broken_blob, Some(&broken_aad));
+    let result = decrypt_aes256gcm_padded(&key, &broken_blob, Some(&broken_aad));
     assert!(
         result.is_err(),
         "Authentication must fail due to corrupted AAD hash"
@@ -81,7 +73,7 @@ fn envelope_wrong_window_index_on_decrypt() {
     let key_wrong = derive_window_key(&srk, window_index_wrong as u64).unwrap();
 
     let aad_hash = [0xAAu8; 32];
-    let encrypted_blob = encrypt_aes256gcm(&key_correct, b"message", Some(&aad_hash)).unwrap();
+    let encrypted_blob = encrypt_aes256gcm_padded(&key_correct, b"message", Some(&aad_hash)).unwrap();
 
     let envelope = pack_envelope(window_index_correct, &aad_hash, &encrypted_blob).unwrap();
 
@@ -89,7 +81,7 @@ fn envelope_wrong_window_index_on_decrypt() {
     assert_eq!(unpacked_window, window_index_correct);
 
     // Attempt decrypt with wrong key derived from wrong window
-    let result = decrypt_aes256gcm(&key_wrong, &unpacked_blob, Some(&unpacked_aad));
+    let result = decrypt_aes256gcm_padded(&key_wrong, &unpacked_blob, Some(&unpacked_aad));
     assert!(
         result.is_err(),
         "Decryption with wrong window key must fail"
@@ -98,15 +90,15 @@ fn envelope_wrong_window_index_on_decrypt() {
 
 #[test]
 fn envelope_all_zeros() {
-    let envelope = vec![0u8; 1024];
+    let envelope = vec![0u8; 1088]; // 4 + 12 + 32 + 1024 (valid multiple of 1024) + 16 = 1088
     let result = unpack_envelope(&envelope);
-    // Unpack succeeds because it's just stripping lengths
+    // Unpack succeeds because the length is validly padded
     assert!(result.is_ok());
 
     let (_, aad, blob) = result.unwrap();
 
     let key = [0u8; 32];
-    let dec = decrypt_aes256gcm(&key, &blob, Some(&aad));
+    let dec = decrypt_aes256gcm_padded(&key, &blob, Some(&aad));
     assert!(
         dec.is_err(),
         "Decrypting all-zeros must fail safely without panic"
@@ -115,15 +107,15 @@ fn envelope_all_zeros() {
 
 #[test]
 fn envelope_random_bytes_1mb() {
-    // Not actually random to avoid adding heavy dependencies, but filler bytes
-    let envelope = vec![0x42u8; 1024 * 1024];
+    // Envelope size: 4 + 12 + 32 + 1048576 (valid multiple of 1024) + 16 = 1048640
+    let envelope = vec![0x42u8; 1048640];
     let result = unpack_envelope(&envelope);
     assert!(result.is_ok());
 
     let (_, aad, blob) = result.unwrap();
 
     let key = [0u8; 32];
-    let dec = decrypt_aes256gcm(&key, &blob, Some(&aad));
+    let dec = decrypt_aes256gcm_padded(&key, &blob, Some(&aad));
     assert!(
         dec.is_err(),
         "Decrypting 1MB random payload must fail safely without crash"
@@ -173,15 +165,15 @@ fn envelope_message_swap() {
     let aad_a = [0xAAu8; 32];
     let aad_b = [0xBBu8; 32];
 
-    let _blob_a = encrypt_aes256gcm(&key, b"Message A", Some(&aad_a)).unwrap();
-    let blob_b = encrypt_aes256gcm(&key, b"Message B", Some(&aad_b)).unwrap();
+    let _blob_a = encrypt_aes256gcm_padded(&key, b"Message A", Some(&aad_a)).unwrap();
+    let blob_b = encrypt_aes256gcm_padded(&key, b"Message B", Some(&aad_b)).unwrap();
 
     // Mallory swaps the envelope of B into A's context
     let envelope_b = pack_envelope(1, &aad_b, &blob_b).unwrap();
     let (_, _unpacked_aad_b, unpacked_blob_b) = unpack_envelope(&envelope_b).unwrap();
 
     // Try to decrypt B's blob using A's AAD (simulate AAD check)
-    let dec = decrypt_aes256gcm(&key, &unpacked_blob_b, Some(&aad_a));
+    let dec = decrypt_aes256gcm_padded(&key, &unpacked_blob_b, Some(&aad_a));
 
     assert!(
         dec.is_err(),

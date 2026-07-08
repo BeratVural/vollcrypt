@@ -116,13 +116,15 @@ pub fn decrypt_aes256gcm(
             "Invalid nonce length"
         })?);
         let mut in_out = ciphertext.to_vec();
-        let plaintext = key
+        let plaintext_slice = key
             .open_in_place(nonce, Aad::from(aad), &mut in_out)
             .map_err(|_| {
                 log::error!("decrypt_aes256gcm: Decryption failed or MAC mismatch");
                 "Decryption failed or MAC mismatch"
             })?;
-        Ok(plaintext.to_vec())
+        let result = plaintext_slice.to_vec();
+        in_out.zeroize();
+        Ok(result)
     }
 
     #[cfg(not(feature = "fast-aes"))]
@@ -288,12 +290,19 @@ pub fn decrypt_aes256gcm_chunked(
             log::error!("decrypt_aes256gcm_chunked: Chunk index mismatch");
             return Err("Chunk index mismatch");
         }
-        if chunk_len == 0 || offset + chunk_len > encrypted_data.len() {
-            log::error!("decrypt_aes256gcm_chunked: Invalid chunk length");
+        let next_offset = match offset.checked_add(chunk_len) {
+            Some(sum) if sum <= encrypted_data.len() => sum,
+            _ => {
+                log::error!("decrypt_aes256gcm_chunked: Invalid chunk length or overflow");
+                return Err("Invalid chunk length");
+            }
+        };
+        if chunk_len == 0 {
+            log::error!("decrypt_aes256gcm_chunked: Empty chunk not allowed");
             return Err("Invalid chunk length");
         }
 
-        let chunk = &encrypted_data[offset..offset + chunk_len];
+        let chunk = &encrypted_data[offset..next_offset];
         let mut aad = build_chunk_aad(associated_data, chunk_index);
         let decrypted = decrypt_aes256gcm(key, chunk, Some(&aad))?;
         aad.zeroize();

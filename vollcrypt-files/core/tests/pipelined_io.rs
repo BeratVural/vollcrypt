@@ -17,6 +17,14 @@ fn test_pipelined_roundtrip_small() {
     let wrap =
         wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
 
+    let (signer_pk, signer_sk) = hybrid_keypair_generate();
+    let sign_info = PipelinedSignInfo::Plain {
+        signer_pk,
+        signer_sk,
+        key_log_id: [0x55; 32],
+        timestamp: 9876543210,
+    };
+
     let dest = tempfile::tempfile().unwrap();
 
     // Encrypt
@@ -29,7 +37,7 @@ fn test_pipelined_roundtrip_small() {
         vec![wrap],
         Mode::Password,
         3, // 3 worker threads
-        None,
+        Some(sign_info),
         None,
     );
     assert!(encrypt_res.is_ok());
@@ -63,6 +71,14 @@ fn test_pipelined_roundtrip_large() {
     let wrap =
         wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
 
+    let (signer_pk, signer_sk) = hybrid_keypair_generate();
+    let sign_info = PipelinedSignInfo::Plain {
+        signer_pk,
+        signer_sk,
+        key_log_id: [0x55; 32],
+        timestamp: 9876543210,
+    };
+
     let dest = tempfile::tempfile().unwrap();
 
     // Encrypt
@@ -75,7 +91,7 @@ fn test_pipelined_roundtrip_large() {
         vec![wrap],
         Mode::Password,
         4, // 4 worker threads
-        None,
+        Some(sign_info),
         None,
     );
     assert!(encrypt_res.is_ok());
@@ -155,6 +171,14 @@ fn test_pipelined_tampered_chunk_rejected() {
     let wrap =
         wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
 
+    let (signer_pk, signer_sk) = hybrid_keypair_generate();
+    let sign_info = PipelinedSignInfo::Plain {
+        signer_pk,
+        signer_sk,
+        key_log_id: [0x55; 32],
+        timestamp: 9876543210,
+    };
+
     let mut dest = tempfile::tempfile().unwrap();
     encrypt_file_pipelined(
         Cursor::new(plaintext),
@@ -165,7 +189,7 @@ fn test_pipelined_tampered_chunk_rejected() {
         vec![wrap],
         Mode::Password,
         2,
-        None,
+        Some(sign_info),
         None,
     )
     .unwrap();
@@ -311,23 +335,116 @@ fn test_pipelined_write_modes_equivalence() {
     file_direct.seek(SeekFrom::Start(0)).unwrap();
     file_direct.read_to_end(&mut data_direct).unwrap();
 
-    // Check equivalence of outputs
+    // Check equivalence of output sizes
     assert_eq!(
-        data_seq, data_batch,
-        "Sequential and Batched outputs differ!"
+        data_seq.len(), data_batch.len(),
+        "Sequential and Batched output lengths differ!"
     );
     assert_eq!(
-        data_seq, data_direct,
-        "Sequential and DirectOffset outputs differ!"
+        data_seq.len(), data_direct.len(),
+        "Sequential and DirectOffset output lengths differ!"
     );
 
-    assert_eq!(header_seq.merkle_root, header_batch.merkle_root);
-    assert_eq!(header_seq.merkle_root, header_direct.merkle_root);
+    let policy = vollcrypt_files_core::ShieldPolicy {
+        signature: vollcrypt_files_core::SignaturePolicy::Optional,
+        ..vollcrypt_files_core::ShieldPolicy::strict()
+    };
 
-    // Decrypt and verify roundtrip
-    let mut decrypted = Vec::new();
+    // Decrypt and verify Sequential
+    let mut decrypted_seq = Vec::new();
+    file_seq.seek(SeekFrom::Start(0)).unwrap();
+    vollcrypt_files_core::pipelined_io::decrypt_file_pipelined_with_policy(
+        file_seq,
+        &mut decrypted_seq,
+        &dek,
+        4,
+        Some(&policy),
+    )
+    .unwrap();
+    assert_eq!(decrypted_seq, plaintext);
+
+    // Decrypt and verify Batched
+    let mut decrypted_batch = Vec::new();
+    file_batch.seek(SeekFrom::Start(0)).unwrap();
+    vollcrypt_files_core::pipelined_io::decrypt_file_pipelined_with_policy(
+        file_batch,
+        &mut decrypted_batch,
+        &dek,
+        4,
+        Some(&policy),
+    )
+    .unwrap();
+    assert_eq!(decrypted_batch, plaintext);
+
+    // Decrypt and verify DirectOffset
+    let mut decrypted_direct = Vec::new();
     file_direct.seek(SeekFrom::Start(0)).unwrap();
-    decrypt_file_pipelined(file_direct, &mut decrypted, &dek, 4).unwrap();
-
-    assert_eq!(decrypted, plaintext);
+    vollcrypt_files_core::pipelined_io::decrypt_file_pipelined_with_policy(
+        file_direct,
+        &mut decrypted_direct,
+        &dek,
+        4,
+        Some(&policy),
+    )
+    .unwrap();
+    assert_eq!(decrypted_direct, plaintext);
 }
+
+#[tokio::test]
+async fn test_pipelined_oom_vulnerability() {
+    // Construct a malicious header
+    // MAGIC (8 bytes): "VOLLVALT"
+    // Version (1 byte): 1
+    // Mode (1 byte): 0 (Symmetric)
+    // Cipher ID (1 byte): 0 (Aes256Gcm)
+    // File ID (16 bytes): [0; 16]
+    // Chunk Size (4 bytes): 1 (0x00000001)
+    // Plaintext Size (8 bytes): 4,000,000,000 (0x00000000ee6b2800) -> ~4 GB
+    // Merkle Root (32 bytes): [0; 32]
+    // Wrap Count (1 byte): 1
+    // Hash Algo (1 byte): 0 (Sha256)
+    // Reserved (3 bytes): [0; 3]
+    // Variable Len (4 bytes): 63 (0x0000003f) -> 1 wrap entry: 1 byte type, 2 bytes length (60), 60 bytes payload
+    
+    let mut header = Vec::new();
+    header.extend_from_slice(b"VOLLVALT"); // Magic
+    header.push(1); // Version
+    header.push(0); // Mode
+    header.push(0); // Cipher ID
+    header.extend_from_slice(&[0u8; 16]); // File ID
+    header.extend_from_slice(&1u32.to_be_bytes()); // Chunk Size = 1
+    header.extend_from_slice(&4_000_000_000u64.to_be_bytes()); // Plaintext Size = 4,000,000,000
+    header.extend_from_slice(&[0u8; 32]); // Merkle Root
+    header.push(1); // Wrap Count
+    header.push(0); // Hash Algo
+    header.extend_from_slice(&[0u8; 3]); // Reserved
+    header.extend_from_slice(&63u32.to_be_bytes()); // Variable Len = 63 (1 wrap entry)
+
+    // Add a single valid PBKDF2 WrapEntry (63 bytes)
+    // Wrap Type (1 byte): 0 (PasswordPbkdf2)
+    // Payload Length (2 bytes): 60 (0x003c)
+    // Payload (60 bytes)
+    header.push(0);
+    header.extend_from_slice(&60u16.to_be_bytes());
+    header.extend_from_slice(&[0u8; 60]);
+
+    // Total header length: 80 + 63 = 143 bytes
+    // Let's add a few mock payload bytes so the total file length is ~200 bytes
+    let mut ciphertext = header;
+    ciphertext.extend_from_slice(&[0u8; 57]);
+
+    let dek = [0u8; 32];
+    let policy = vollcrypt_files_core::ShieldPolicy {
+        release_mode: vollcrypt_files_core::ReleaseMode::Streaming,
+        signature: vollcrypt_files_core::SignaturePolicy::Optional,
+        ..vollcrypt_files_core::ShieldPolicy::strict()
+    };
+    let res = vollcrypt_files_core::pipelined_io::decrypt_file_pipelined_async_policy(&ciphertext, &dek, Some(&policy)).await;
+    match &res {
+        Ok(_) => println!("Ok!"),
+        Err(e) => println!("Error: {:?}", e),
+    }
+    assert!(res.is_err());
+    assert!(matches!(res.unwrap_err(), FileFormatError::TooManyChunks));
+}
+

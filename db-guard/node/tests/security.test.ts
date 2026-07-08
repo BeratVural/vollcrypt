@@ -213,4 +213,132 @@ describe('Vollcrypt Central Security Modules (Phase 4)', () => {
     const statusBypass = checkPageSize(100, { maxPageSize: 50, onPageSizeExceeded: 'bypass' });
     assert.strictEqual(statusBypass, 'bypass');
   });
+
+  test('Prisma db-guard clones keys during registration to prevent zeroing caller keys', () => {
+    const { prismaDbGuard } = require('../src/prisma');
+    const { triggerFailClosed, resetFailClosedStatusForTesting } = require('../src/security');
+    
+    resetFailClosedStatusForTesting();
+    
+    const originalBuffer = Buffer.from('my-sensitive-key-data-32-bytes');
+    const resolvedKeys = { '1': originalBuffer };
+    
+    const options = {
+      models: { User: ['email'] }
+    };
+    
+    // Initialize prismaDbGuard with resolvedKeys
+    prismaDbGuard(options as any, resolvedKeys);
+    
+    // Trigger fail-closed (which zeroizes the registered keys)
+    assert.throws(() => {
+      triggerFailClosed(undefined, 'global');
+    }, /Fail-Closed mode triggered/);
+    
+    // Assert that the original buffer passed to prismaDbGuard was NOT zeroed
+    assert.notDeepStrictEqual(originalBuffer, Buffer.alloc(30, 0));
+    assert.strictEqual(originalBuffer.toString(), 'my-sensitive-key-data-32-bytes');
+  });
+
+  test('encryptValue throws an explicit error when key is zeroed or fail-closed is active', () => {
+    const { encryptValue } = require('../src/prisma');
+    const { triggerFailClosed, resetFailClosedStatusForTesting } = require('../src/security');
+    
+    resetFailClosedStatusForTesting();
+    
+    const zeroedKey = Buffer.alloc(32, 0);
+    const activeKey = Buffer.from('my-sensitive-key-data-32-bytes');
+    
+    // 1. Zeroed key throws error
+    assert.throws(() => {
+      encryptValue('secret', zeroedKey, '1');
+    }, /Fail-Closed mode is active for tenant "global"\. Encryption blocked/);
+    
+    // 2. Fail-closed active throws error even if key is not zeroed
+    assert.throws(() => {
+      triggerFailClosed(undefined, 'global');
+    }, /Fail-Closed mode triggered/);
+
+    assert.throws(() => {
+      encryptValue('secret', activeKey, '1');
+    }, /Fail-Closed mode is active/);
+  });
+
+  test('Rate limiter and fail-closed status are isolated per tenant', () => {
+    const { decryptWithSecurity, resetFailClosedStatusForTesting } = require('../src/security');
+    
+    resetFailClosedStatusForTesting();
+    
+    const options = {
+      rateLimiter: {
+        maxDecryptionsPerSecond: 3
+      }
+    };
+    
+    const mockDecryptRawFn = () => 'plaintext';
+    
+    // 1. Trigger rate limit for tenant-a
+    dbGuardContextStore.run({ tenantId: 'tenant-a' }, () => {
+      assert.strictEqual(decryptWithSecurity('VOLLVALT:v1:b64', mockDecryptRawFn, 'User', 'email', '1', options), 'plaintext');
+      assert.strictEqual(decryptWithSecurity('VOLLVALT:v1:b64', mockDecryptRawFn, 'User', 'email', '1', options), 'plaintext');
+      assert.strictEqual(decryptWithSecurity('VOLLVALT:v1:b64', mockDecryptRawFn, 'User', 'email', '1', options), 'plaintext');
+      
+      assert.throws(() => {
+        decryptWithSecurity('VOLLVALT:v1:b64', mockDecryptRawFn, 'User', 'email', '1', options);
+      }, /Decryption rate limit exceeded. Fail-Closed mode triggered for tenant "tenant-a"/);
+    });
+    
+    // 2. Tenant-b should NOT be fail-closed and should decrypt successfully
+    dbGuardContextStore.run({ tenantId: 'tenant-b' }, () => {
+      assert.strictEqual(decryptWithSecurity('VOLLVALT:v1:b64', mockDecryptRawFn, 'User', 'email', '1', options), 'plaintext');
+    });
+  });
+
+  test('parseCiphertext throws error on deprecated/unsupported/unversioned formats', () => {
+    const { parseCiphertext } = require('../src/security');
+
+    // 1. Valid version passes
+    const valid = parseCiphertext('VOLLVALT:v1:somebase64data');
+    assert.deepStrictEqual(valid, { algoId: '1', version: '1', base64Data: 'somebase64data' });
+
+    // 2. Unsupported version throws
+    assert.throws(() => {
+      parseCiphertext('VOLLVALT:v999:somebase64data');
+    }, /Deprecated or unsupported encryption version "v999"/);
+
+    // 3. Unversioned legacy ciphertext throws
+    assert.throws(() => {
+      parseCiphertext('VOLLVALT:legacybase64data');
+    }, /Legacy unversioned ciphertexts are deprecated and unsupported/);
+
+    // 4. Malformed version ciphertext (missing colon) throws
+    assert.throws(() => {
+      parseCiphertext('VOLLVALT:v1_nocolon');
+    }, /Malformed ciphertext format/);
+  });
+
+  test('getCachedKey and setCachedKey prevent delimiter-based cache key collisions', () => {
+    const { getCachedKey, setCachedKey, resetSecureKeyCacheForTesting } = require('../src/security');
+
+    resetSecureKeyCacheForTesting();
+
+    const key1 = Buffer.alloc(32, 0x07);
+    const key2 = Buffer.alloc(32, 0x08);
+
+    // If string concatenation was used, both would map to "tenant:1:2"
+    // Case A: tenantId = "tenant", version = "1:2"
+    setCachedKey('tenant', '1:2', key1);
+
+    // Case B: tenantId = "tenant:1", version = "2"
+    setCachedKey('tenant:1', '2', key2);
+
+    // Verify both keys are correctly isolated and do not collide
+    const retrieved1 = getCachedKey('tenant', '1:2');
+    const retrieved2 = getCachedKey('tenant:1', '2');
+
+    assert.ok(retrieved1);
+    assert.ok(retrieved2);
+    assert.deepStrictEqual(retrieved1, key1);
+    assert.deepStrictEqual(retrieved2, key2);
+  });
 });

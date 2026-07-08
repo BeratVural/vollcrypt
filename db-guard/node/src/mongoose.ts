@@ -28,14 +28,16 @@ export interface MongooseDbGuardOptions {
 export function mongooseDbGuard(schema: Schema, options: MongooseDbGuardOptions) {
   const { fields } = options;
 
-  let keys: Record<string, Buffer>;
+  let keys: Record<string, Buffer> = {};
   let activeVersion: string;
 
   if (Buffer.isBuffer(options.key)) {
-    keys = { '1': options.key };
+    keys = { '1': Buffer.from(options.key) };
     activeVersion = '1';
   } else {
-    keys = options.key;
+    for (const [v, k] of Object.entries(options.key)) {
+      keys[v] = Buffer.from(k as Buffer);
+    }
     activeVersion = options.activeKeyVersion || Object.keys(keys)[0];
   }
 
@@ -54,12 +56,18 @@ export function mongooseDbGuard(schema: Schema, options: MongooseDbGuardOptions)
       }
     }
 
-    if (!tenantId || !options.multiTenant) {
+    if (options.multiTenant && !tenantId) {
+      throw new Error("Vollcrypt Security: tenantId must be provided in multi-tenant mode.");
+    }
+
+    if (!options.multiTenant) {
       return { keys, activeKey, activeVersion };
     }
 
+    const tId = tenantId!;
+
     // Check Secure TTL Cache
-    const cachedActiveKey = getCachedKey(tenantId, activeVersion);
+    const cachedActiveKey = getCachedKey(tId, activeVersion);
     if (cachedActiveKey) {
       return { keys: { [activeVersion]: cachedActiveKey }, activeKey: cachedActiveKey, activeVersion };
     }
@@ -72,31 +80,36 @@ export function mongooseDbGuard(schema: Schema, options: MongooseDbGuardOptions)
       }
       let tenantConfig: { key?: Buffer | Record<string, Buffer>; kms?: any } | undefined;
       if (multiTenant.tenants) {
-        tenantConfig = multiTenant.tenants[tenantId];
+        tenantConfig = multiTenant.tenants[tId];
       } else if (multiTenant.getTenantConfig) {
-        tenantConfig = await multiTenant.getTenantConfig(tenantId);
+        tenantConfig = await multiTenant.getTenantConfig(tId);
       }
 
       if (!tenantConfig) {
-        throw new Error(`Vollcrypt Security: Configuration not found for tenantId "${tenantId}".`);
+        throw new Error(`Vollcrypt Security: Configuration not found for tenantId "${tId}".`);
       }
 
-      const resolvedTenantKeys = await resolveKeys({
+      const resolvedTenantKeysRaw = await resolveKeys({
         ...options,
         key: tenantConfig.key,
         kms: tenantConfig.kms
       } as any);
+      
+      const resolvedTenantKeys: Record<string, Buffer> = {};
+      for (const [v, k] of Object.entries(resolvedTenantKeysRaw)) {
+        resolvedTenantKeys[v] = Buffer.from(k);
+      }
 
-      registerKeysForZeroization(resolvedTenantKeys);
+      registerKeysForZeroization(resolvedTenantKeys, tId);
 
       const tActiveVersion = tenantConfig.kms?.activeKeyVersion || '1';
       const tActiveKey = resolvedTenantKeys[tActiveVersion];
       if (!tActiveKey) {
-        throw new Error(`Vollcrypt Security: Active key version "${tActiveVersion}" not found for tenantId "${tenantId}".`);
+        throw new Error(`Vollcrypt Security: Active key version "${tActiveVersion}" not found for tenantId "${tId}".`);
       }
 
       for (const [ver, keyBuf] of Object.entries(resolvedTenantKeys)) {
-        setCachedKey(tenantId, ver, keyBuf);
+        setCachedKey(tId, ver, keyBuf);
       }
 
       return { keys: resolvedTenantKeys, activeKey: tActiveKey, activeVersion: tActiveVersion };

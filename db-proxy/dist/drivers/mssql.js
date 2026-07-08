@@ -39,6 +39,7 @@ exports.handleMssqlConnection = handleMssqlConnection;
 const net = __importStar(require("net"));
 const waf_js_1 = require("../waf.js");
 const db_guard_1 = require("@vollcrypt/db-guard");
+const auth_js_1 = require("../auth.js");
 function serializeMssqlError(message, code = 50000) {
     const msgBuf = Buffer.from(message, 'utf16le');
     const srvName = Buffer.from('VOLLCRYPT\0', 'utf16le');
@@ -72,46 +73,78 @@ function serializeMssqlError(message, code = 50000) {
 /**
  * Intercepts and decrypts VOLLVALT: values inside TDS 7.4 response streams.
  */
-function decryptMssqlResponse(packet, keys) {
-    const payloadStr = packet.toString('utf16le');
-    const matchIndex = payloadStr.indexOf('VOLLVALT:');
-    if (matchIndex === -1)
+function decryptMssqlResponse(packet, keys, role = 'GUEST', userId = 'guest-user', tenantId, config, modelName = 'default', columns = []) {
+    if (packet.length < 8)
         return packet;
-    // Locate ciphertext boundaries
-    const ctextPart = payloadStr.substring(matchIndex);
-    const nullOrSpaceIndex = ctextPart.match(/[\s\0]/);
-    const ctext = nullOrSpaceIndex ? ctextPart.substring(0, nullOrSpaceIndex.index) : ctextPart;
-    try {
-        const ptext = (0, db_guard_1.decryptValue)(ctext, keys);
-        const ptextBuf = Buffer.from(ptext, 'utf16le');
-        const ctextBuf = Buffer.from(ctext, 'utf16le');
-        const indexInBytes = packet.indexOf(ctextBuf);
-        if (indexInBytes !== -1) {
-            const before = packet.subarray(0, indexInBytes);
-            const after = packet.subarray(indexInBytes + ctextBuf.length);
-            // Adjust column length prefix (which resides immediately before the string in TDS)
-            if (indexInBytes >= 2) {
-                const oldLen = packet.readUInt16LE(indexInBytes - 2);
-                if (oldLen === ctextBuf.length) {
-                    before.writeUInt16LE(ptextBuf.length, indexInBytes - 2);
+    const header = packet.subarray(0, 8);
+    const payload = packet.subarray(8);
+    const decryptPayload = (buf, cellIdx = 0) => {
+        const payloadStr = buf.toString('utf16le');
+        const matchIndex = payloadStr.indexOf('VOLLVALT:');
+        if (matchIndex === -1)
+            return buf;
+        // Locate ciphertext boundaries
+        const ctextPart = payloadStr.substring(matchIndex);
+        const boundaryMatch = ctextPart.match(/[^A-Za-z0-9+/=:]/);
+        const ctext = boundaryMatch ? ctextPart.substring(0, boundaryMatch.index) : ctextPart;
+        try {
+            let fieldName = columns[cellIdx] || 'column';
+            let model = modelName;
+            if (fieldName.includes('.')) {
+                const parts = fieldName.split('.');
+                fieldName = parts[parts.length - 1];
+                model = parts[0] === 'u' || parts[0] === 't' ? modelName : parts[0];
+            }
+            const ptext = db_guard_1.dbGuardContextStore.run({
+                role,
+                userId,
+                tenantId,
+                maxDecryptionsPerSecond: config?.rateLimiter?.maxDecryptionsPerSecond,
+                rateLimiterMode: config?.rateLimiter?.mode,
+            }, () => (0, db_guard_1.decryptWithSecurity)(ctext, (cipherText) => (0, db_guard_1.decryptValue)(cipherText, keys), model, fieldName, undefined, {
+                cryptoRbac: (0, auth_js_1.getRbacConfig)(config),
+                rateLimiter: config?.rateLimiter,
+            }));
+            const ptextBuf = Buffer.from(ptext, 'utf16le');
+            const ctextBuf = Buffer.from(ctext, 'utf16le');
+            const indexInBytes = buf.indexOf(ctextBuf);
+            if (indexInBytes !== -1) {
+                const before = buf.subarray(0, indexInBytes);
+                const after = buf.subarray(indexInBytes + ctextBuf.length);
+                // Adjust column length prefix (which resides immediately before the string in TDS)
+                if (indexInBytes >= 2) {
+                    const oldLen = buf.readUInt16LE(indexInBytes - 2);
+                    if (oldLen === ctextBuf.length) {
+                        before.writeUInt16LE(ptextBuf.length, indexInBytes - 2);
+                    }
                 }
+                const processedAfter = decryptPayload(after, cellIdx + 1);
+                return Buffer.concat([before, ptextBuf, processedAfter]);
             }
-            const newPayload = Buffer.concat([before, ptextBuf, after]);
-            // Update TDS header message length field
-            if (newPayload.length >= 8) {
-                newPayload.writeUInt16BE(newPayload.length, 2);
-            }
-            return newPayload;
         }
+        catch (err) {
+            throw err;
+        }
+        return buf;
+    };
+    const newPayload = decryptPayload(payload);
+    if (newPayload === payload)
+        return packet;
+    const newPacket = Buffer.concat([header, newPayload]);
+    // Update TDS header message length field (bytes 2 and 3)
+    if (newPacket.length >= 4) {
+        newPacket.writeUInt16BE(newPacket.length, 2);
     }
-    catch {
-        // Fallback on failure
-    }
-    return packet;
+    return newPacket;
 }
 function handleMssqlConnection(clientSocket, options) {
     let connected = false;
     const queue = [];
+    let currentRole = options.role;
+    let currentUserId = options.role === 'OWNER' ? 'usr-admin' : 'guest-user';
+    let currentTenantId;
+    let currentTable = 'default';
+    let currentColumns = [];
     const backendSocket = net.connect({
         host: options.dbHost,
         port: options.dbPort,
@@ -127,28 +160,63 @@ function handleMssqlConnection(clientSocket, options) {
     backendSocket.on('data', (data) => {
         let processedData = data;
         try {
-            processedData = decryptMssqlResponse(data, options.resolvedKeys);
+            processedData = decryptMssqlResponse(data, options.resolvedKeys, currentRole, currentUserId, currentTenantId, options.config, currentTable, currentColumns);
         }
-        catch {
-            // Fallback
+        catch (err) {
+            options.logSiem('MSSQL_DECRYPT_ERROR', 8, `MSSQL decryption error: ${err.message}`);
+            const errPacket = serializeMssqlError(err.message);
+            clientSocket.write(errPacket);
+            return;
         }
         if (clientSocket.writable) {
             clientSocket.write(processedData);
         }
     });
     clientSocket.on('data', (data) => {
-        if (data.length > 8 && !options.noWaf) {
+        if (data.length > 8) {
             const type = data[0];
+            // Parse Login7 packet (type 0x10) to find username offset and length
+            if (type === 0x10 && data.length >= 50) {
+                try {
+                    // Offsets for Login7 fields relative to the start of the payload (TDS header is 8 bytes)
+                    // Username length and offset are specified in bytes 36-39 of Login7 body (offset 44-47 of packet)
+                    const userNameOffset = data.readUInt16LE(44);
+                    const userNameLen = data.readUInt16LE(46); // number of characters
+                    let start = 8 + userNameOffset;
+                    if (start + userNameLen * 2 > data.length) {
+                        start = userNameOffset;
+                    }
+                    if (userNameLen > 0 && start + userNameLen * 2 <= data.length) {
+                        const username = data.toString('utf16le', start, start + userNameLen * 2);
+                        const userContext = (0, auth_js_1.resolveUserContext)(username, options.config);
+                        currentUserId = userContext.userId;
+                        currentRole = userContext.role;
+                        currentTenantId = userContext.tenantId;
+                    }
+                }
+                catch (e) {
+                    // Ignore parser errors
+                }
+            }
             if (type === 0x01 || type === 0x03) { // SQL Batch or RPC
                 const query = data.toString('utf16le', 8);
-                try {
-                    (0, waf_js_1.validateQuery)(query, options.role);
+                if (!options.noWaf) {
+                    try {
+                        (0, waf_js_1.validateQuery)(query, currentRole);
+                    }
+                    catch (err) {
+                        options.logSiem('WAF_MSSQL_BLOCK', 9, `MSSQL WAF violation blocked: ${err.message}`);
+                        const errPacket = serializeMssqlError(err.message, 50000);
+                        clientSocket.write(errPacket);
+                        return;
+                    }
                 }
-                catch (err) {
-                    options.logSiem('WAF_MSSQL_BLOCK', 9, `MSSQL WAF violation blocked: ${err.message}`);
-                    const errPacket = serializeMssqlError(err.message, 50000);
-                    clientSocket.write(errPacket);
-                    return;
+                try {
+                    currentTable = (0, waf_js_1.extractTableName)(query);
+                    currentColumns = (0, waf_js_1.extractProjectionColumns)(query);
+                }
+                catch (e) {
+                    // ignore parsing error
                 }
             }
         }
