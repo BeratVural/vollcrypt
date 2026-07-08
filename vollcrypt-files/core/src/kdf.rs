@@ -44,16 +44,19 @@ pub fn derive_chunk_subkey(
 /// * `iterations`: The number of PBKDF2 iterations.
 ///
 /// If iterations is 0, it debug_asserts in debug mode and is forced to 1 in production mode.
-pub fn derive_kek_pbkdf2(password: &[u8], salt: &[u8; 16], iterations: u32) -> [u8; 32] {
-    debug_assert!(iterations > 0, "iterations must be greater than 0");
-    let iter = if iterations == 0 { 1 } else { iterations };
+pub fn derive_kek_pbkdf2(password: &[u8], salt: &[u8; 16], iterations: u32) -> Result<[u8; 32], FileFormatError> {
+    if iterations < 1_000 || iterations > 5_000_000 {
+        return Err(FileFormatError::KdfParameterOutOfRange(format!(
+            "PBKDF2 iterations out of safety bounds: {}",
+            iterations
+        )));
+    }
 
     let mut kek = [0u8; 32];
     use pbkdf2::hmac::Hmac;
-    // pbkdf2 is infallible under normal parameters and does not return a result.
-    let _ = pbkdf2::pbkdf2::<Hmac<Sha256>>(password, salt, iter, &mut kek);
+    let _ = pbkdf2::pbkdf2::<Hmac<Sha256>>(password, salt, iterations, &mut kek);
 
-    kek
+    Ok(kek)
 }
 
 /// Derives a Key Encrypting Key (KEK) using Argon2id.
@@ -72,7 +75,7 @@ pub fn derive_kek_argon2id(
 ) -> Result<[u8; 32], crate::error::FileFormatError> {
     use argon2::{Algorithm, Argon2, Params, Version};
 
-    if m_cost > 262144 || t_cost > 5 || p_cost > 8 {
+    if m_cost < 8 || m_cost > 262144 || t_cost < 1 || t_cost > 5 || p_cost < 1 || p_cost > 8 {
         return Err(crate::error::FileFormatError::KdfParameterOutOfRange(
             format!(
                 "Argon2 parameters exceed safety limits: m_cost={}, t_cost={}, p_cost={}",

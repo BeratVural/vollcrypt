@@ -456,7 +456,7 @@ fn bench_kdf(iterations: usize) {
 
     let start_pbkdf2 = Instant::now();
     for _ in 0..iterations {
-        let _ = derive_pbkdf2(pw, &salt, 600_000, 32);
+        let _ = derive_pbkdf2(pw, &salt, 600_000, 32).unwrap();
     }
     let pbkdf2_elapsed = start_pbkdf2.elapsed();
     let pbkdf2_ops = iterations as f64 / pbkdf2_elapsed.as_secs_f64();

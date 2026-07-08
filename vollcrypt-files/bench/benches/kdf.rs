@@ -12,7 +12,7 @@ fn bench_pbkdf2(c: &mut Criterion) {
     for &iters in &pbkdf2_iterations {
         g.bench_with_input(BenchmarkId::new("iterations", iters), &iters, |b, &i| {
             b.iter(|| {
-                let res = derive_kek_pbkdf2(black_box(password), black_box(&salt), black_box(i));
+                let res = derive_kek_pbkdf2(black_box(password), black_box(&salt), black_box(i)).unwrap();
                 let _ = black_box(res);
             });
         });

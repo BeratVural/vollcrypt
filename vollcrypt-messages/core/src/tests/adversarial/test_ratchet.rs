@@ -112,12 +112,10 @@ fn ratchet_isolation_between_conversations() {
     )
     .unwrap();
 
-    // Note: In the VollChat implementation of `ratchet_srk_sender`, `chat_id` was historically
-    // not included in the HKDF context string directly (it passes `_chat_id`).
-    // If they change it to include chat_id, these will differ.
-    // We will just do a standard equality/inequality to document behavior.
-    // If the struct ignores chat_id, they will be equal. If not, they will be different.
-    let _ = (srk_a, srk_b);
+    assert_ne!(
+        srk_a, srk_b,
+        "Conversations with different chat IDs must derive distinct SRK values"
+    );
 }
 
 #[test]

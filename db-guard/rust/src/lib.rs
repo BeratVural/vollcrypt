@@ -43,7 +43,10 @@ pub fn check_rust_rate_limit() -> Result<(), &'static str> {
     }
 
     let limit = MAX_DECRYPT_RATE.load(Ordering::SeqCst);
-    let mut start = WINDOW_START.lock().map_err(|_| "Failed to lock time window")?;
+    let mut start = match WINDOW_START.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
     let elapsed = start.elapsed().as_millis();
 
     if elapsed > 1000 {
@@ -55,14 +58,14 @@ pub fn check_rust_rate_limit() -> Result<(), &'static str> {
     if current > limit {
         IS_FAIL_CLOSED.store(true, Ordering::SeqCst);
         // Zeroize all registered keys
-        if let Ok(mut reg) = REGISTRY.write() {
-            for (_, mut key) in reg.keys.drain() {
-                key.zeroize();
-            }
-            reg.active_version = None;
-        } else {
-            std::process::exit(1);
+        let mut reg = match REGISTRY.write() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        for (_, mut key) in reg.keys.drain() {
+            key.zeroize();
         }
+        reg.active_version = None;
         return Err("Vollcrypt Security: Decryption rate limit exceeded. Fail-Closed mode triggered. Keys zeroized.");
     }
 
@@ -72,9 +75,11 @@ pub fn check_rust_rate_limit() -> Result<(), &'static str> {
 pub fn reset_rust_fail_closed_for_testing() {
     IS_FAIL_CLOSED.store(false, Ordering::SeqCst);
     DECRYPT_COUNT.store(0, Ordering::SeqCst);
-    if let Ok(mut start) = WINDOW_START.lock() {
-        *start = Instant::now();
-    }
+    let mut start = match WINDOW_START.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    *start = Instant::now();
 }
 
 pub mod diesel_impl;
@@ -103,17 +108,22 @@ static REGISTRY: Lazy<RwLock<KeyRegistry>> = Lazy::new(|| RwLock::new(KeyRegistr
 
 /// Sets an encryption/decryption key for a given version.
 pub fn set_key(version: &str, key: &[u8]) {
-    if let Ok(mut reg) = REGISTRY.write() {
-        reg.keys.insert(version.to_string(), key.to_vec());
-        if reg.active_version.is_none() {
-            reg.active_version = Some(version.to_string());
-        }
+    let mut reg = match REGISTRY.write() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    reg.keys.insert(version.to_string(), key.to_vec());
+    if reg.active_version.is_none() {
+        reg.active_version = Some(version.to_string());
     }
 }
 
 /// Sets the active key version to be used for new encryptions.
 pub fn set_active_version(version: &str) -> Result<(), &'static str> {
-    let mut reg = REGISTRY.write().map_err(|_| "Failed to lock registry")?;
+    let mut reg = match REGISTRY.write() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
     if reg.keys.contains_key(version) {
         reg.active_version = Some(version.to_string());
         Ok(())
@@ -124,13 +134,19 @@ pub fn set_active_version(version: &str) -> Result<(), &'static str> {
 
 /// Retrieves the key for a specific version.
 pub fn get_key(version: &str) -> Option<Vec<u8>> {
-    let reg = REGISTRY.read().ok()?;
+    let reg = match REGISTRY.read() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
     reg.keys.get(version).cloned()
 }
 
 /// Retrieves the active key and its version.
 pub fn get_active_key() -> Option<(String, Vec<u8>)> {
-    let reg = REGISTRY.read().ok()?;
+    let reg = match REGISTRY.read() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
     let version = reg.active_version.as_ref()?;
     let key = reg.keys.get(version)?;
     Some((version.clone(), key.clone()))
@@ -138,22 +154,22 @@ pub fn get_active_key() -> Option<(String, Vec<u8>)> {
 
 /// Clears all keys from the registry.
 pub fn clear_registry() {
-    if let Ok(mut reg) = REGISTRY.write() {
-        for (_, mut key) in reg.keys.drain() {
-            key.zeroize();
-        }
-        reg.active_version = None;
-    } else {
-        std::process::exit(1);
+    let mut reg = match REGISTRY.write() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    for (_, mut key) in reg.keys.drain() {
+        key.zeroize();
     }
+    reg.active_version = None;
 }
 
 /// Helper to encrypt data with the active key.
 /// Prefixes ciphertext with "VOLLVALT:v{version}:base64_ciphertext"
 pub fn encrypt_field(plaintext: &[u8]) -> Result<String, &'static str> {
-    let (version, mut key) = get_active_key().ok_or("Active key not set in registry")?;
+    let (version, key) = get_active_key().ok_or("Active key not set in registry")?;
+    let key = zeroize::Zeroizing::new(key);
     let ciphertext = encrypt_aes256gcm(&key, plaintext)?;
-    key.zeroize();
     
     use base64::Engine;
     let b64 = base64::engine::general_purpose::STANDARD.encode(ciphertext);
@@ -179,7 +195,8 @@ pub fn decrypt_field(stored_val: &str) -> Result<Vec<u8>, &'static str> {
     let version = &payload[1..colon_pos];
     let b64_ciphertext = &payload[colon_pos + 1..];
 
-    let mut key = get_key(version).ok_or("Decryption key version not found in registry")?;
+    let key = get_key(version).ok_or("Decryption key version not found in registry")?;
+    let key = zeroize::Zeroizing::new(key);
     
     use base64::Engine;
     let ciphertext = base64::engine::general_purpose::STANDARD
@@ -187,7 +204,6 @@ pub fn decrypt_field(stored_val: &str) -> Result<Vec<u8>, &'static str> {
         .map_err(|_| "Failed to decode base64 ciphertext")?;
 
     let plaintext = decrypt_aes256gcm(&key, &ciphertext)?;
-    key.zeroize();
     Ok(plaintext)
 }
 

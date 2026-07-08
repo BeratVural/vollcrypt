@@ -6,13 +6,19 @@ use cryptoki::mechanism::Mechanism;
 use secrecy::SecretString;
 
 fn decode_hex(s: &str) -> Result<Vec<u8>, String> {
+    if !s.is_ascii() {
+        return Err("Hex string contains non-ASCII characters".to_string());
+    }
     if s.len() % 2 != 0 {
         return Err("Hex string has odd length".to_string());
     }
-    (0..s.len())
+    let bytes = s.as_bytes();
+    (0..bytes.len())
         .step_by(2)
         .map(|i| {
-            u8::from_str_radix(&s[i..i + 2], 16)
+            let chunk = std::str::from_utf8(&bytes[i..i + 2])
+                .map_err(|e| format!("Invalid UTF-8: {}", e))?;
+            u8::from_str_radix(chunk, 16)
                 .map_err(|e| format!("Invalid hex digit: {}", e))
         })
         .collect()

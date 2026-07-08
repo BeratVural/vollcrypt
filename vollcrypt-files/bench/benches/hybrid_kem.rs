@@ -18,7 +18,7 @@ fn bench_hybrid_kem_breakdown(c: &mut Criterion) {
     let (x_pk2, _x_sk2) = x25519_keypair_generate();
     g.bench_function("x25519_dh_only", |b| {
         b.iter(|| {
-            let ss = x25519_diffie_hellman(black_box(&x_sk1), black_box(&x_pk2));
+            let ss = x25519_diffie_hellman(black_box(&x_sk1), black_box(&x_pk2)).unwrap();
             let _ = black_box(ss);
         });
     });
@@ -27,16 +27,16 @@ fn bench_hybrid_kem_breakdown(c: &mut Criterion) {
     let (m_pk, m_sk) = mlkem768_keypair_generate();
     g.bench_function("mlkem768_encapsulate_only", |b| {
         b.iter(|| {
-            let res = mlkem768_encapsulate(black_box(&m_pk));
+            let res = mlkem768_encapsulate(black_box(&m_pk)).unwrap();
             let _ = black_box(res);
         });
     });
 
     // 4. Post-Quantum Decapsulate alone
-    let (_, ct) = mlkem768_encapsulate(&m_pk);
+    let (_, ct) = mlkem768_encapsulate(&m_pk).unwrap();
     g.bench_function("mlkem768_decapsulate_only", |b| {
         b.iter(|| {
-            let res = mlkem768_decapsulate(black_box(&m_sk), black_box(&ct));
+            let res = mlkem768_decapsulate(black_box(&m_sk), black_box(&ct)).unwrap();
             let _ = black_box(res);
         });
     });
@@ -81,7 +81,7 @@ fn bench_pure_vs_hybrid(c: &mut Criterion) {
     g.bench_function("pure_x25519_wrap_sim", |b| {
         b.iter(|| {
             let (_eph_pk, eph_sk) = x25519_keypair_generate();
-            let ss = x25519_diffie_hellman(&eph_sk, &x_pk);
+            let ss = x25519_diffie_hellman(&eph_sk, &x_pk).unwrap();
             let mut info = [0u8; 48];
             info[0..28].copy_from_slice(b"vollcrypt-file-hybrid-kem-v1");
             let hk = hkdf::Hkdf::<sha2::Sha256>::new(None, &ss);

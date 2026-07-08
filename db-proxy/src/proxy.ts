@@ -352,9 +352,10 @@ export class DbProxyServer {
               dbHost: this.options.dbHost,
               dbPort: this.options.dbPort,
               noWaf: this.options.noWaf,
-              role: 'GUEST',
+              role: this.options.config ? 'GUEST' : 'OWNER',
               clientIp: clientIp || '127.0.0.1',
               resolvedKeys: this.options.resolvedKeys,
+              config: this.options.config,
               logSiem: (evt, sev, msg) => this.logSiemEvent(evt, sev, 'mysql_user', clientIp || '127.0.0.1', msg),
             });
           });
@@ -367,9 +368,10 @@ export class DbProxyServer {
               dbHost: this.options.dbHost,
               dbPort: this.options.dbPort,
               noWaf: this.options.noWaf,
-              role: 'GUEST',
+              role: this.options.config ? 'GUEST' : 'OWNER',
               clientIp: clientIp || '127.0.0.1',
               resolvedKeys: this.options.resolvedKeys,
+              config: this.options.config,
               logSiem: (evt, sev, msg) => this.logSiemEvent(evt, sev, 'mongo_user', clientIp || '127.0.0.1', msg),
             });
           });
@@ -382,9 +384,10 @@ export class DbProxyServer {
               dbHost: this.options.dbHost,
               dbPort: this.options.dbPort,
               noWaf: this.options.noWaf,
-              role: 'GUEST',
+              role: this.options.config ? 'GUEST' : 'OWNER',
               clientIp: clientIp || '127.0.0.1',
               resolvedKeys: this.options.resolvedKeys,
+              config: this.options.config,
               logSiem: (evt, sev, msg) => this.logSiemEvent(evt, sev, 'mssql_user', clientIp || '127.0.0.1', msg),
             });
           });
@@ -397,9 +400,10 @@ export class DbProxyServer {
               dbHost: this.options.dbHost,
               dbPort: this.options.dbPort,
               noWaf: this.options.noWaf,
-              role: 'GUEST',
+              role: this.options.config ? 'GUEST' : 'OWNER',
               clientIp: clientIp || '127.0.0.1',
               resolvedKeys: this.options.resolvedKeys,
+              config: this.options.config,
               logSiem: (evt, sev, msg) => this.logSiemEvent(evt, sev, 'oracle_user', clientIp || '127.0.0.1', msg),
             });
           });
@@ -532,6 +536,7 @@ export class DbProxyServer {
               // Intercept Remote Attestation query
               const normalizedQuery = queryStr.trim().toUpperCase().replace(/;/g, '');
               if (normalizedQuery === 'SELECT VOLLCRYPT_ATTESTATION_REPORT()' && !this.options.noAttestation) {
+                this.logSiemEvent('MOCK_ATTESTATION_WARNING', 8, dbGuardContext.userId, clientIp || '127.0.0.1', 'WARNING: Mock Remote Attestation report requested. Real enclave signatures are disabled or unsupported on this platform.');
                 const report = getMockAttestationReport();
                 const jsonStr = JSON.stringify(report);
                 const rowDesc = buildRowDescription(['attestation_report']);
@@ -622,21 +627,14 @@ export class DbProxyServer {
                   const hasActiveGrant = activeJit && activeJit.expiresAt > Date.now();
                   if (!hasActiveGrant) {
                     this.logSiemEvent('JIT_REQUESTED', 6, dbGuardContext.userId, clientIp || '127.0.0.1', `JIT request triggered for query: ${queryStr}`);
-                    
-                    // Trigger simulated background approval webhook after 50ms
-                    setTimeout(() => {
+                    const approvedList = (this.options.config?.firewall as any)?.approvedJitUsers;
+                    if (approvedList?.includes(dbGuardContext.userId)) {
                       this.registerJitGrant(dbGuardContext.userId, 'OWNER', 3600000);
-                      this.logSiemEvent('JIT_APPROVED', 6, 'system', '127.0.0.1', `JIT request automatically approved for user ${dbGuardContext.userId}`);
-                    }, 50);
-
-                    // Halt execution asynchronously to await the approval callback
-                    await new Promise((r) => setTimeout(r, 100));
-
-                    const updatedJit = this.activeJitGrants.get(dbGuardContext.userId);
-                    if (updatedJit && updatedJit.expiresAt > Date.now()) {
-                      dbGuardContext.role = updatedJit.role;
+                      this.logSiemEvent('JIT_APPROVED', 6, 'system', '127.0.0.1', `JIT request approved for user ${dbGuardContext.userId} based on administrative approved list`);
+                      dbGuardContext.role = 'OWNER';
                     } else {
-                      throw new Error('JIT approval request timed out or was denied');
+                      this.logSiemEvent('JIT_DENIED', 8, dbGuardContext.userId, clientIp || '127.0.0.1', `JIT request denied for query: ${queryStr}`);
+                      throw new Error('JIT approval request denied: user is not in the approved JIT registry');
                     }
                   }
                 }

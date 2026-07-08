@@ -97,6 +97,10 @@ pub fn ecdh_shared_secret(
     let public = X25519PublicKey::from(public_arr);
 
     let shared_secret = secret.diffie_hellman(&public);
+    if !shared_secret.was_contributory() {
+        secret_arr.zeroize();
+        return Err("Non-contributory key exchange");
+    }
 
     secret_arr.zeroize();
 

@@ -43,11 +43,14 @@ function getKeys(options) {
     let keys;
     let activeVersion;
     if (Buffer.isBuffer(options.key)) {
-        keys = { '1': options.key };
+        keys = { '1': Buffer.from(options.key) };
         activeVersion = '1';
     }
     else {
-        keys = options.key;
+        keys = {};
+        for (const [v, k] of Object.entries(options.key)) {
+            keys[v] = Buffer.from(k);
+        }
         activeVersion = options.activeKeyVersion || Object.keys(keys)[0];
     }
     return { keys, activeVersion };

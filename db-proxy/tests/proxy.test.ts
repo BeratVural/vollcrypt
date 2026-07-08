@@ -1455,7 +1455,8 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       config: {
         users: { postgres: { role: 'LAWYER', userId: 'usr-lawyer' } },
         firewall: {
-          jitApprovalRequired: true
+          jitApprovalRequired: true,
+          approvedJitUsers: ['usr-lawyer']
         }
       },
       minResponseTimeMs: 0,

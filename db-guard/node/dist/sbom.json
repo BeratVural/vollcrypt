@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:45a7c8f7-12f3-4e25-ab52-81be917b4646",
+  "serialNumber": "urn:uuid:f8171b27-25be-49f2-913f-927f0ae02be8",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-06-11T16:17:36.609Z",
+    "timestamp": "2026-07-08T02:15:03.143Z",
     "tools": [
       {
         "vendor": "Vollcrypt",
@@ -25,7 +25,7 @@
         },
         {
           "alg": "SHA-256",
-          "content": "fb28a7038cc818346aeb212ece2e5d4f1db4b72fd3ed9dda78a1a7f5744d7455"
+          "content": "83364c9d2a86d43f775f15537ee10bdfb8e06c852adceb5b3c7358bcfc412907"
         },
         {
           "alg": "SHA-256",
@@ -49,7 +49,7 @@
         },
         {
           "alg": "SHA-256",
-          "content": "44623a5cf632c22a41b8196b809a3c00d50276bde28c2fbde13d6f4bef3177ce"
+          "content": "4b418fae086ee440bd1c9fe99328c86923ab83467ecfb70fd9bb4ebee324e7f6"
         },
         {
           "alg": "SHA-256",
@@ -57,7 +57,7 @@
         },
         {
           "alg": "SHA-256",
-          "content": "aad49d4c9dd41f2e44175465da6ae7f4a7ae35337ce12f7b3a87113ec0f25424"
+          "content": "c7b3210b0cca48f2b45c5b789cea13f55f14fc2c620e155d15987b9b8e434f4a"
         },
         {
           "alg": "SHA-256",
@@ -73,7 +73,7 @@
         },
         {
           "alg": "SHA-256",
-          "content": "4b1a32b35545e2e7944ebba3f84272b7421ffedd1cc3c7eb569e1a6b2fcc4a02"
+          "content": "5c748722412b465c01cebd70e2242836f8f0c10f4303189548061f88d67eb4e4"
         },
         {
           "alg": "SHA-256",
@@ -81,7 +81,7 @@
         },
         {
           "alg": "SHA-256",
-          "content": "42b2177825713fa1c618b80af6cf7a5d9f4055399c8e95b67018a0410add2a3f"
+          "content": "a2ff33065a1c52707bdc3b7b1b49e79c5878e7edc547e219779426d3376a8f5b"
         },
         {
           "alg": "SHA-256",
@@ -89,15 +89,15 @@
         },
         {
           "alg": "SHA-256",
-          "content": "e2b7a8fa24c120f59ab48ebb508a18c01e3e24245e04c197b08ad0e327a2d9a8"
+          "content": "dc5d221dfc6e2f790fd13abc1408e98e4d8a3a1f61ee876cc691963d5517395a"
         },
         {
           "alg": "SHA-256",
-          "content": "554d9ba00f800470666ab66127079df889b8d717a9cf7b28ab252f0adad64304"
+          "content": "6fed9ab5d0e7d940fd8e0e65f3e0a6be6581fbeddb82a6ad9706397efa4ec2b2"
         },
         {
           "alg": "SHA-256",
-          "content": "5e907c9f5ec9fb93ef07f6360d7f8572aa5a1ea1c0a32d0b10496477d0b8fd33"
+          "content": "a7323f84eaa90838dcaba18f82cba8c48d6fdb708715786cae1c60bdaeb0050d"
         },
         {
           "alg": "SHA-256",
@@ -105,7 +105,7 @@
         },
         {
           "alg": "SHA-256",
-          "content": "154827069a5496e043a9f69b3249bd5dddd62690783dfa8675d06d0f574ac76b"
+          "content": "d88d0aa0eff62675e732c5fd2f7c7885d601d5234729687aecbd5b1282e6a7bd"
         }
       ]
     },
@@ -140,6 +140,30 @@
       "name": "typeorm",
       "version": ">=0.3.0",
       "purl": "pkg:npm/typeorm@0.3.0"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/client-kms",
+      "version": ">=3.0.0",
+      "purl": "pkg:npm/@aws-sdk/client-kms@3.0.0"
+    },
+    {
+      "type": "library",
+      "name": "@google-cloud/kms",
+      "version": ">=3.0.0",
+      "purl": "pkg:npm/@google-cloud/kms@3.0.0"
+    },
+    {
+      "type": "library",
+      "name": "node-vault",
+      "version": ">=0.9.0",
+      "purl": "pkg:npm/node-vault@0.9.0"
+    },
+    {
+      "type": "library",
+      "name": "pkcs11js",
+      "version": ">=1.0.0",
+      "purl": "pkg:npm/pkcs11js@1.0.0"
     },
     {
       "type": "library",

@@ -1,6 +1,7 @@
 import * as net from 'net';
 import { validateQuery } from '../waf.js';
-import { decryptValue } from '@vollcrypt/db-guard';
+import { decryptValue, decryptWithSecurity, dbGuardContextStore } from '@vollcrypt/db-guard';
+import { getRbacConfig } from '../auth.js';
 
 export function serializeMysqlError(message: string, code: number = 1142, sqlState: string = '42000'): Buffer {
   const msgBuf = Buffer.from(message, 'utf8');
@@ -78,7 +79,9 @@ export function serializeLengthEncodedString(value: string | null): Buffer {
 
 export function decryptMysqlRow(
   packet: Buffer,
-  keys: Record<string, Buffer>
+  keys: Record<string, Buffer>,
+  role: string = 'GUEST',
+  config?: any
 ): Buffer {
   if (packet.length < 5) return packet;
   const payloadLen = packet.readUIntLE(0, 3);
@@ -102,15 +105,33 @@ export function decryptMysqlRow(
   }
 
   let modified = false;
+  let idx = 0;
   const decryptedCells = cells.map((cell) => {
     if (cell && cell.startsWith('VOLLVALT:')) {
       modified = true;
       try {
-        return decryptValue(cell, keys);
-      } catch {
-        return cell;
+        const fieldName = `col_${idx}`;
+        const val = dbGuardContextStore.run(
+          { role, userId: 'guest-user' },
+          () => decryptWithSecurity(
+            cell,
+            (cipherText) => decryptValue(cipherText, keys),
+            'default',
+            fieldName,
+            undefined,
+            {
+              cryptoRbac: getRbacConfig(config),
+              rateLimiter: config?.rateLimiter,
+            }
+          )
+        );
+        idx++;
+        return val;
+      } catch (err: any) {
+        throw err;
       }
     }
+    idx++;
     return cell;
   });
 
@@ -158,9 +179,12 @@ export function handleMysqlConnection(
     // Attempt decryption on MySQL response rows
     let processedData: any = data;
     try {
-      processedData = decryptMysqlRow(data, options.resolvedKeys);
-    } catch {
-      // Fallback to raw on parse errors
+      processedData = decryptMysqlRow(data, options.resolvedKeys, options.role, options.config);
+    } catch (err: any) {
+      options.logSiem('MYSQL_DECRYPT_ERROR', 8, `MySQL decryption error: ${err.message}`);
+      const errPacket = serializeMysqlError(err.message, 1142, '42000');
+      clientSocket.write(errPacket);
+      return;
     }
 
     if (clientSocket.writable) {

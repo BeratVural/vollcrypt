@@ -11,9 +11,20 @@ fn make_helper_entry(
     action: KeyAction,
     timestamp: u64,
 ) -> KeyLogEntry {
+    make_helper_entry_with_sig(user_id, keypair, prev_hash, action, timestamp, &keypair.0)
+}
+
+fn make_helper_entry_with_sig(
+    user_id: &[u8],
+    keypair: &(Vec<u8>, Vec<u8>),
+    prev_hash: &[u8; 32],
+    action: KeyAction,
+    timestamp: u64,
+    sig_sec: &[u8],
+) -> KeyLogEntry {
     let mut sk = [0u8; 32];
     let mut pk = [0u8; 32];
-    sk.copy_from_slice(&keypair.0);
+    sk.copy_from_slice(sig_sec);
     pk.copy_from_slice(&keypair.1);
     create_entry(user_id, &pk, timestamp, prev_hash, action, &sk).unwrap()
 }
@@ -69,7 +80,7 @@ fn key_log_modify_prev_hash_breaks_chain() {
     let kp2 = generate_ed25519_keypair();
 
     let e0 = make_helper_entry(b"alice", &kp1, &GENESIS_HASH, KeyAction::Add, 1000);
-    let mut e1 = make_helper_entry(b"alice", &kp2, &e0.compute_hash(), KeyAction::Update, 2000);
+    let mut e1 = make_helper_entry_with_sig(b"alice", &kp2, &e0.compute_hash(), KeyAction::Update, 2000, &kp1.0);
 
     e1.prev_entry_hash[0] ^= 0xFF; // Modify prev hash (breaks chain link AND invalidates e1's signature)
 
@@ -83,6 +94,25 @@ fn key_log_modify_prev_hash_breaks_chain() {
         CryptoError::KeyLogChainBroken { at_index: 1 } => {}
         err => panic!("Expected KeyLogChainBroken, got {:?}", err),
     }
+}
+
+#[test]
+fn key_log_update_signed_with_new_key_fails() {
+    let kp1 = generate_ed25519_keypair();
+    let kp2 = generate_ed25519_keypair();
+
+    let e0 = make_helper_entry(b"alice", &kp1, &GENESIS_HASH, KeyAction::Add, 1000);
+    let e1 = make_helper_entry(b"alice", &kp2, &e0.compute_hash(), KeyAction::Update, 2000);
+
+    let mut log = KeyLog::new();
+    log.entries.push(e0);
+    log.entries.push(e1);
+
+    let result = log.verify_chain();
+    assert!(
+        result.is_err(),
+        "Update signed with the new key instead of the old key must fail validation"
+    );
 }
 
 #[test]
@@ -235,7 +265,8 @@ fn key_log_1000_entries_performance() {
     let mut prev_hash = GENESIS_HASH;
 
     for i in 0..1000 {
-        let e = make_helper_entry(b"alice", &kp, &prev_hash, KeyAction::Update, 1000 + i);
+        let action = if i == 0 { KeyAction::Add } else { KeyAction::Update };
+        let e = make_helper_entry(b"alice", &kp, &prev_hash, action, 1000 + i);
         prev_hash = e.compute_hash();
         log.append(e).unwrap();
     }

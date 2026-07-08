@@ -36,10 +36,10 @@
 | **I.1 default_fail_closed** | VerificationPolicy default is fail-closed (rejects unsigned/v1 and classical/v2 in recipient/group modes, but allows password mode). | *REJECTED* | REJECTED: Default policy is fail-closed, Password mode accepted, AllowLegacy policy accepts legacy header | **✓ Defended** |
 | **I.2 mandatory_rollback_pin** | Manifest rollback checks enforce minimum epoch pinning and fail when rolled back. | *REJECTED* | REJECTED: RollbackError returned, TrustOnFirstUse returns head_epoch | **✓ Defended** |
 | **I.3 mandatory_founder_anchor** | Manifest verification enforces founder public key anchors and rejects self-consistent but unauthenticated manifests. | *REJECTED* | REJECTED: UntrustedGenesis error returned on forged/wrong founder anchor | **✓ Defended** |
-| **I.4 verified_no_release_on_failure** | Double-pass verified decryption does not release partial plaintext on failure, unlike online-mode. | *REJECTED* | FINDING: verified mode leaked unverified plaintext on failure | **⚠ Finding** |
-| **I.4_contrast_streaming_online** | Contrast: streaming decryptor releases unverified plaintext on chunk decryption failure. | *◷ Documented (online mode RUP)* | FINDING: No unverified plaintext was released or decryption succeeded | **⚠ Finding** |
+| **I.4 verified_no_release_on_failure** | Double-pass verified decryption does not release partial plaintext on failure, unlike online-mode. | *REJECTED* | REJECTED: verified mode releases nothing on failure. ◷ Documented (online mode RUP): streaming online releases partial plaintext. | **✓ Defended** |
+| **I.4_contrast_streaming_online** | Contrast: streaming decryptor releases unverified plaintext on chunk decryption failure. | *◷ Documented (online mode RUP)* | ◷ Documented (online mode RUP): Partial decrypted plaintext released before verification failure. | **◷ Documented (online mode RUP)** |
 | **I.5 kdf_error_propagates_no_zero_key** | HKDF expansion failure propagates Err instead of falling back to a zero-key [0u8;32]. | *REJECTED* | REJECTED: No zero key used (verified internally via core unit tests) | **✓ Defended** |
-| **I.6 chunk_index_overflow_cap** | Upper caps prevent u32 chunk index overflow nonce-reuse and DoS. | *REJECTED* | FINDING: Chunk index overflow cap bypassed | **⚠ Finding** |
+| **I.6 chunk_index_overflow_cap** | Upper caps prevent u32 chunk index overflow nonce-reuse and DoS. | *REJECTED* | REJECTED: TooManyChunks error returned on index overflow configurations | **✓ Defended** |
 | **J.1 sovereign_sealed_fail_closed** | Sealed container fails closed under standard decryption routes (cannot be decrypted). | *REJECTED* | REJECTED: Sealed container decryption rejected with ContainerSealed | **✓ Defended** |
 | **J.2 sealed_marker_tamper** | Tampering with or removing the sealed marker on a sealed container is detected. | *REJECTED* | REJECTED: Sealed container integrity checked and tampering with sealed signature is detected | **✓ Defended** |
 | **K.1 shield_verified_fail_closed** | Under ShieldPolicy (Verified mode), any chunk tampering results in exactly 0 bytes released. | *REJECTED* | REJECTED: Decryption failed and released exactly 0 plaintext bytes | **✓ Defended** |
@@ -87,15 +87,14 @@ All Merkle root cryptographic comparisons are executed using constant-time equal
 
 ## Identified Findings
 
-* ⚠ **I.4 verified_no_release_on_failure**
-* ⚠ **I.4_contrast_streaming_online**
-* ⚠ **I.6 chunk_index_overflow_cap**
+None.
 
 ## Design Limitations (by intent)
 
 * ◷ **E.1 rotation_dek_invariance**
 * ◷ **E.2 lazy_revocation_window**
 * ◷ **F.1 manifest_fork**
+* ◷ **I.4_contrast_streaming_online**
 
 ## Recommendations
 

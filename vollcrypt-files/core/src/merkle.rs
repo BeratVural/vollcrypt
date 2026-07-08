@@ -40,16 +40,22 @@ pub fn chunk_leaf_hash(envelope: &ChunkEnvelope) -> [u8; 32] {
     chunk_leaf_hash_with_algo(envelope, HashAlgorithm::Sha256)
 }
 
-/// Computes the SHA-256 hash of a chunk's metadata (index, iv, tag) without allocating.
-pub fn chunk_leaf_hash_raw(chunk_index: u32, iv: &[u8; 12], tag: &[u8; 16]) -> [u8; 32] {
-    chunk_leaf_hash_raw_with_algo(chunk_index, iv, tag, HashAlgorithm::Sha256)
+/// Computes the SHA-256 hash of a chunk's metadata (index, iv, tag) and ciphertext without allocating.
+pub fn chunk_leaf_hash_raw(
+    chunk_index: u32,
+    iv: &[u8; 12],
+    ciphertext: &[u8],
+    tag: &[u8; 16],
+) -> [u8; 32] {
+    chunk_leaf_hash_raw_with_algo(chunk_index, iv, ciphertext, tag, HashAlgorithm::Sha256)
 }
 
-/// Computes the hash of a chunk's metadata (index, iv, tag) without allocating using the specified hash algorithm.
+/// Computes the hash of a chunk's metadata (index, iv, tag) and ciphertext without allocating using the specified hash algorithm.
 /// Prepend 0x00 domain separator for leaves.
 pub fn chunk_leaf_hash_raw_with_algo(
     chunk_index: u32,
     iv: &[u8; 12],
+    ciphertext: &[u8],
     tag: &[u8; 16],
     algo: HashAlgorithm,
 ) -> [u8; 32] {
@@ -59,6 +65,7 @@ pub fn chunk_leaf_hash_raw_with_algo(
             hasher.update(&[0x00]); // leaf prefix
             hasher.update(chunk_index.to_be_bytes());
             hasher.update(iv);
+            hasher.update(ciphertext);
             hasher.update(tag);
             hasher.finalize().into()
         }
@@ -67,6 +74,7 @@ pub fn chunk_leaf_hash_raw_with_algo(
             hasher.update(&[0x00]); // leaf prefix
             hasher.update(&chunk_index.to_be_bytes());
             hasher.update(iv);
+            hasher.update(ciphertext);
             hasher.update(tag);
             *hasher.finalize().as_bytes()
         }
@@ -76,7 +84,13 @@ pub fn chunk_leaf_hash_raw_with_algo(
 /// Computes the hash of a chunk envelope using the specified hash algorithm.
 /// Prepend 0x00 domain separator for leaves.
 pub fn chunk_leaf_hash_with_algo(envelope: &ChunkEnvelope, algo: HashAlgorithm) -> [u8; 32] {
-    chunk_leaf_hash_raw_with_algo(envelope.chunk_index, &envelope.iv, &envelope.tag, algo)
+    chunk_leaf_hash_raw_with_algo(
+        envelope.chunk_index,
+        &envelope.iv,
+        &envelope.ciphertext,
+        &envelope.tag,
+        algo,
+    )
 }
 
 /// Helper to bind Merkle tree root with leaf count (prevents duplicate-node collisions)

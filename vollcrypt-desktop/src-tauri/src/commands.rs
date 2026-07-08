@@ -247,14 +247,19 @@ fn secure_shred_file(path: &std::path::Path) -> std::io::Result<()> {
 }
 
 fn secure_shred_dir(path: &std::path::Path) -> std::io::Result<()> {
-    if !path.exists() {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if metadata.is_symlink() {
+        std::fs::remove_file(path)?;
         return Ok(());
     }
-    if path.is_dir() {
+    if metadata.is_dir() {
         for entry in std::fs::read_dir(path)? {
             let entry = entry?;
             let entry_path = entry.path();
-            if entry_path.is_dir() {
+            let entry_meta = std::fs::symlink_metadata(&entry_path)?;
+            if entry_meta.is_symlink() {
+                std::fs::remove_file(&entry_path)?;
+            } else if entry_meta.is_dir() {
                 secure_shred_dir(&entry_path)?;
             } else {
                 secure_shred_file(&entry_path)?;
@@ -297,8 +302,8 @@ pub fn send_desktop_notification(title: String, message: String) {
     {
         let script = format!(
             "display notification \"{}\" with title \"{}\"",
-            message.replace("\"", "\\\""),
-            title.replace("\"", "\\\"")
+            message.replace("\\", "\\\\").replace("\"", "\\\""),
+            title.replace("\\", "\\\\").replace("\"", "\\\"")
         );
         let _ = std::process::Command::new("osascript")
             .args(&["-e", &script])

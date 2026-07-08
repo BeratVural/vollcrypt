@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use vollcrypt_files_core::{
     decrypt_file_pipelined, decrypt_verified, decrypt_streaming_online, encrypt_file_pipelined, generate_dek,
+    decrypt_file_pipelined_with_policy,
     generate_file_id, generate_gk, generate_recipient_keypair, rewrap_dek_in_header,
     sign_header_plain, sign_header_sealed, unwrap_dek_with_group_key, unwrap_dek_with_password,
     unwrap_key_with_recipient_key, verify_header_signature_plain,
@@ -95,10 +96,12 @@ fn run_adversarial_suite() {
             use sha2::{Digest, Sha256};
             let chunk_index = 0u32;
             let iv = [0u8; 12];
+            let ciphertext = b"mock-ciphertext-for-domain-separation";
             let tag = [0u8; 16];
             let leaf_hash = vollcrypt_files_core::chunk_leaf_hash_raw_with_algo(
                 chunk_index,
                 &iv,
+                ciphertext,
                 &tag,
                 vollcrypt_files_core::HashAlgorithm::Sha256,
             );
@@ -107,6 +110,7 @@ fn run_adversarial_suite() {
             let mut hasher = Sha256::new();
             hasher.update(chunk_index.to_be_bytes());
             hasher.update(&iv);
+            hasher.update(ciphertext);
             hasher.update(&tag);
             let no_prefix_hash: [u8; 32] = hasher.finalize().into();
 
@@ -115,6 +119,7 @@ fn run_adversarial_suite() {
             hasher.update(&[0x00]);
             hasher.update(chunk_index.to_be_bytes());
             hasher.update(&iv);
+            hasher.update(ciphertext);
             hasher.update(&tag);
             let leaf_prefix_hash: [u8; 32] = hasher.finalize().into();
 
@@ -1307,13 +1312,19 @@ fn run_adversarial_suite() {
                 .open(temp_path)
                 .unwrap();
 
+            let dummy_wrap = WrapEntry::PasswordPbkdf2 {
+                iterations: 1000,
+                salt: [0u8; 16],
+                wrapped_dek: [0u8; 40],
+            };
+
             let header = encrypt_file_pipelined(
                 std::io::Cursor::new(plaintext.clone()),
                 dest_file.try_clone().unwrap(),
                 &dek,
                 &file_id,
                 chunk_size,
-                vec![],
+                vec![dummy_wrap],
                 Mode::Password,
                 1,
                 None,
@@ -1347,29 +1358,37 @@ fn run_adversarial_suite() {
             let tag_offset = header_len + 4128 + 4128 - 8;
             tampered_bytes[tag_offset] ^= 1;
 
+            let mut policy_verified = vollcrypt_files_core::shield::ShieldPolicy::strict();
+            policy_verified.signature = vollcrypt_files_core::shield::SignaturePolicy::Optional;
+            policy_verified.release_mode = vollcrypt_files_core::shield::ReleaseMode::Verified;
+
+            let mut policy_streaming = vollcrypt_files_core::shield::ShieldPolicy::strict();
+            policy_streaming.signature = vollcrypt_files_core::shield::SignaturePolicy::Optional;
+            policy_streaming.release_mode = vollcrypt_files_core::shield::ReleaseMode::Streaming;
+
             // 1. decrypt_verified on truncated file -> Err and 0 bytes written
             let mut dest_trunc = Vec::new();
-            let res_trunc = decrypt_verified(std::io::Cursor::new(truncated_bytes.clone()), &mut dest_trunc, &dek, 1);
+            let res_trunc = decrypt_file_pipelined_with_policy(std::io::Cursor::new(truncated_bytes.clone()), &mut dest_trunc, &dek, 1, Some(&policy_verified));
             let assert_trunc_zero = res_trunc.is_err() && dest_trunc.is_empty();
 
             // 2. decrypt_verified on reordered file -> Err and 0 bytes written
             let mut dest_reorder = Vec::new();
-            let res_reorder = decrypt_verified(std::io::Cursor::new(reordered_bytes), &mut dest_reorder, &dek, 1);
+            let res_reorder = decrypt_file_pipelined_with_policy(std::io::Cursor::new(reordered_bytes), &mut dest_reorder, &dek, 1, Some(&policy_verified));
             let assert_reorder_zero = res_reorder.is_err() && dest_reorder.is_empty();
 
             // 3. decrypt_verified on tampered chunk -> Err and 0 bytes written
             let mut dest_tamper = Vec::new();
-            let res_tamper = decrypt_verified(std::io::Cursor::new(tampered_bytes.clone()), &mut dest_tamper, &dek, 1);
+            let res_tamper = decrypt_file_pipelined_with_policy(std::io::Cursor::new(tampered_bytes.clone()), &mut dest_tamper, &dek, 1, Some(&policy_verified));
             let assert_tamper_zero = res_tamper.is_err() && dest_tamper.is_empty();
 
             // 4. decrypt_verified on valid file -> Success and correct plaintext
             let mut dest_valid = Vec::new();
-            let res_valid = decrypt_verified(std::io::Cursor::new(valid_bytes.clone()), &mut dest_valid, &dek, 1);
+            let res_valid = decrypt_file_pipelined_with_policy(std::io::Cursor::new(valid_bytes.clone()), &mut dest_valid, &dek, 1, Some(&policy_verified));
             let assert_valid_correct = res_valid.is_ok() && dest_valid == plaintext;
 
             // 5. Contrast: decrypt_streaming_online on truncated/tampered file -> Err but partial release (more than 0 bytes)
             let mut dest_stream = Vec::new();
-            let res_stream = decrypt_streaming_online(std::io::Cursor::new(tampered_bytes), &mut dest_stream, &dek, 1);
+            let res_stream = decrypt_file_pipelined_with_policy(std::io::Cursor::new(tampered_bytes), &mut dest_stream, &dek, 1, Some(&policy_streaming));
             let assert_streaming_rup = res_stream.is_err() && !dest_stream.is_empty();
 
             // 6. Verify default is decrypt_verified
@@ -1408,13 +1427,19 @@ fn run_adversarial_suite() {
                 .open(temp_path)
                 .unwrap();
 
+            let dummy_wrap = WrapEntry::PasswordPbkdf2 {
+                iterations: 1000,
+                salt: [0u8; 16],
+                wrapped_dek: [0u8; 40],
+            };
+
             let header = encrypt_file_pipelined(
                 std::io::Cursor::new(plaintext.clone()),
                 dest_file.try_clone().unwrap(),
                 &dek,
                 &file_id,
                 chunk_size,
-                vec![],
+                vec![dummy_wrap],
                 Mode::Password,
                 1,
                 None,
@@ -1430,9 +1455,15 @@ fn run_adversarial_suite() {
             let mut tampered_bytes = encrypted_dest.clone();
             tampered_bytes[header_len + 4128 + 20] ^= 1;
 
+            let mut policy_streaming = vollcrypt_files_core::shield::ShieldPolicy::strict();
+            policy_streaming.signature = vollcrypt_files_core::shield::SignaturePolicy::Optional;
+            policy_streaming.release_mode = vollcrypt_files_core::shield::ReleaseMode::Streaming;
+
             let mut dest_stream = Vec::new();
-            let res_stream = decrypt_streaming_online(std::io::Cursor::new(tampered_bytes), &mut dest_stream, &dek, 1);
+            let res_stream = decrypt_file_pipelined_with_policy(std::io::Cursor::new(tampered_bytes), &mut dest_stream, &dek, 1, Some(&policy_streaming));
             
+
+
             // Decrypting should return an error, but dest_stream should NOT be empty (contains unverified release)
             if res_stream.is_err() && !dest_stream.is_empty() {
                 ("◷ Documented (online mode RUP): Partial decrypted plaintext released before verification failure.".to_string(), true)
@@ -1512,6 +1543,8 @@ fn run_adversarial_suite() {
             let _ = std::fs::remove_file(temp_source_path);
             let _ = std::fs::remove_file(temp_dest_path);
 
+
+
             let assert_enc_cap = matches!(res_enc, Err(FileFormatError::TooManyChunks));
 
             // 2. Decryption path cap test
@@ -1524,18 +1557,27 @@ fn run_adversarial_suite() {
                 plaintext_size: u64::MAX,
                 merkle_root: [0u8; 32],
                 hash_algorithm: HashAlgorithm::Sha256,
-                wraps: vec![],
+                wraps: vec![WrapEntry::PasswordPbkdf2 {
+                    iterations: 1000,
+                    salt: [0u8; 16],
+                    wrapped_dek: [0u8; 40],
+                }],
                 signed_metadata: None,
                 signature: None,
             };
             let serialized = header.write();
             let mut dest = Vec::new();
-            let res_dec = decrypt_file_pipelined(
+            let mut policy_legacy = vollcrypt_files_core::shield::ShieldPolicy::strict();
+            policy_legacy.signature = vollcrypt_files_core::shield::SignaturePolicy::Optional;
+
+            let res_dec = decrypt_file_pipelined_with_policy(
                 std::io::Cursor::new(serialized),
                 &mut dest,
                 &[0u8; 32],
                 1,
+                Some(&policy_legacy),
             );
+
             let assert_dec_cap = matches!(res_dec, Err(FileFormatError::TooManyChunks));
 
             if assert_enc_cap && assert_dec_cap {
@@ -1577,12 +1619,22 @@ fn run_adversarial_suite() {
 
             let ciphertext = read_all(dest_encrypt);
 
+            let (signer_pk, signer_sk) = hybrid_keypair_generate();
+            let key_log_id = generate_dek();
+            let timestamp = 987654321;
+            let sign_info = PipelinedSignInfo::Plain {
+                signer_pk,
+                signer_sk,
+                key_log_id,
+                timestamp,
+            };
+
             // Seal the container
             let mut dest_sealed = Vec::new();
             let opts = vollcrypt_files_core::sovereign::SealOptions {
                 mode: vollcrypt_files_core::sovereign::SealMode::Seal,
                 reason: Some("Adversarial Seal".to_string()),
-                sign_info: None,
+                sign_info: Some(sign_info),
             };
             vollcrypt_files_core::seal_container(std::io::Cursor::new(&ciphertext), std::io::Cursor::new(&mut dest_sealed), opts).unwrap();
 

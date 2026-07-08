@@ -411,8 +411,10 @@ impl KeyLog {
         entry_count_bytes.copy_from_slice(&input[1996..2000]);
         let entry_count = u32::from_be_bytes(entry_count_bytes) as usize;
 
-        let mut entries = Vec::with_capacity(entry_count);
         let mut offset = 2000;
+        let max_possible_entries = (input.len() - offset) / 64;
+        let cap = std::cmp::min(entry_count, max_possible_entries);
+        let mut entries = Vec::with_capacity(cap);
 
         for _ in 0..entry_count {
             if offset >= input.len() {

@@ -230,7 +230,7 @@ impl KeyLog {
                 return Err(CryptoError::KeyLogChainBroken { at_index: i });
             }
 
-            let verifying_key = if entry.action == KeyAction::Revoke {
+            let verifying_key = if entry.action == KeyAction::Revoke || entry.action == KeyAction::Update {
                 // Find previous valid key for the same user
                 let mut prev_key = None;
                 for prev_entry in self.entries[..i].iter().rev() {
@@ -242,9 +242,16 @@ impl KeyLog {
                 }
                 match prev_key {
                     Some(key) => key,
-                    None => return Err(CryptoError::KeyLogInvalidSignature { at_index: i }), // Cannot verify revoke without previous key
+                    None => return Err(CryptoError::KeyLogInvalidSignature { at_index: i }), // Cannot verify update/revoke without previous key
                 }
             } else {
+                // Ensure no prior entry of any kind exists for this user_id in the log history
+                let has_prior = self.entries[..i]
+                    .iter()
+                    .any(|prev_entry| prev_entry.user_id == entry.user_id);
+                if has_prior {
+                    return Err(CryptoError::KeyLogChainBroken { at_index: i });
+                }
                 &entry.public_key
             };
 
@@ -312,9 +319,20 @@ mod tests {
         action: KeyAction,
         timestamp: u64,
     ) -> KeyLogEntry {
+        make_entry_with_sig(user_id, keypair, prev_hash, action, timestamp, &keypair.0)
+    }
+
+    fn make_entry_with_sig(
+        user_id: &[u8],
+        keypair: &(Vec<u8>, Vec<u8>),
+        prev_hash: &[u8; 32],
+        action: KeyAction,
+        timestamp: u64,
+        sig_sec: &[u8],
+    ) -> KeyLogEntry {
         let mut sk = [0u8; 32];
         let mut pk = [0u8; 32];
-        sk.copy_from_slice(&keypair.0);
+        sk.copy_from_slice(sig_sec);
         pk.copy_from_slice(&keypair.1);
         create_entry(user_id, &pk, timestamp, prev_hash, action, &sk).unwrap()
     }
@@ -335,7 +353,7 @@ mod tests {
 
         let e0 = make_entry(b"alice", &kp1, &GENESIS_HASH, KeyAction::Add, 1000);
         let e0_hash = e0.compute_hash();
-        let e1 = make_entry(b"alice", &kp2, &e0_hash, KeyAction::Update, 2000);
+        let e1 = make_entry_with_sig(b"alice", &kp2, &e0_hash, KeyAction::Update, 2000, &kp1.0);
 
         let mut log = KeyLog::new();
         log.append(e0).unwrap();
@@ -383,7 +401,7 @@ mod tests {
 
         let e0 = make_entry(b"alice", &kp1, &GENESIS_HASH, KeyAction::Add, 1000);
         let e0_hash = e0.compute_hash();
-        let e1 = make_entry(b"alice", &kp2, &e0_hash, KeyAction::Update, 2000);
+        let e1 = make_entry_with_sig(b"alice", &kp2, &e0_hash, KeyAction::Update, 2000, &kp1.0);
 
         let mut log = KeyLog::new();
         log.append(e0).unwrap();
@@ -422,7 +440,7 @@ mod tests {
 
         let e0 = make_entry(b"alice", &kp1, &GENESIS_HASH, KeyAction::Add, 1000);
         let e0_hash = e0.compute_hash();
-        let e1 = make_entry(b"alice", &kp2, &e0_hash, KeyAction::Update, 3000);
+        let e1 = make_entry_with_sig(b"alice", &kp2, &e0_hash, KeyAction::Update, 3000, &kp1.0);
 
         let mut log = KeyLog::new();
         log.append(e0).unwrap();
@@ -477,7 +495,7 @@ mod tests {
 
         let e0 = make_entry(b"alice", &kp1, &GENESIS_HASH, KeyAction::Add, 1000);
         let e0h = e0.compute_hash();
-        let e1 = make_entry(b"alice", &kp2, &e0h, KeyAction::Update, 2000);
+        let e1 = make_entry_with_sig(b"alice", &kp2, &e0h, KeyAction::Update, 2000, &kp1.0);
         let e1h = e1.compute_hash();
         let e2 = make_entry(b"alice", &kp2, &e1h, KeyAction::Revoke, 3000);
 
@@ -502,5 +520,28 @@ mod tests {
             e.compute_hash(),
             "Entry hash deterministik olmalı"
         );
+    }
+
+    #[test]
+    fn test_duplicate_add_rejected() {
+        let kp1 = generate_ed25519_keypair();
+        let kp2 = generate_ed25519_keypair();
+
+        let e0 = make_entry(b"alice", &kp1, &GENESIS_HASH, KeyAction::Add, 1000);
+        let e0_hash = e0.compute_hash();
+        // A duplicate Add action for the same user (alice) but self-signed by kp2
+        let e1 = make_entry(b"alice", &kp2, &e0_hash, KeyAction::Add, 2000);
+
+        let mut log = KeyLog::new();
+        log.append(e0).unwrap();
+        log.append(e1).unwrap();
+
+        // Verification must fail because of duplicate Add action
+        let result = log.verify_chain();
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CryptoError::KeyLogChainBroken { at_index: 1 } => {}
+            e => panic!("Unexpected error: {:?}", e),
+        }
     }
 }

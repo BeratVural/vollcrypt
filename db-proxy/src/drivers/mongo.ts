@@ -1,6 +1,7 @@
 import * as net from 'net';
 import { validateQuery } from '../waf.js';
-import { decryptValue } from '@vollcrypt/db-guard';
+import { decryptValue, decryptWithSecurity, dbGuardContextStore } from '@vollcrypt/db-guard';
+import { getRbacConfig } from '../auth.js';
 
 export function parseBson(buf: Buffer, offset: number = 0): { value: any; nextOffset: number } {
   const size = buf.readInt32LE(offset);
@@ -115,13 +116,15 @@ export function serializeBson(obj: any): Buffer {
 export function decryptBsonObject(
   obj: any,
   keys: Record<string, Buffer>,
+  role: string = 'GUEST',
+  config?: any,
   depth: number = 0
 ): any {
   if (depth > 5) return obj; // Prevent stack overflows
   if (obj === null || obj === undefined) return obj;
 
   if (Array.isArray(obj)) {
-    return obj.map((item) => decryptBsonObject(item, keys, depth + 1));
+    return obj.map((item) => decryptBsonObject(item, keys, role, config, depth + 1));
   }
 
   if (typeof obj === 'object' && !Buffer.isBuffer(obj)) {
@@ -129,12 +132,25 @@ export function decryptBsonObject(
     for (const [k, v] of Object.entries(obj)) {
       if (typeof v === 'string' && v.startsWith('VOLLVALT:')) {
         try {
-          copy[k] = decryptValue(v, keys);
-        } catch {
-          copy[k] = v;
+          copy[k] = dbGuardContextStore.run(
+            { role, userId: 'guest-user' },
+            () => decryptWithSecurity(
+              v,
+              (cipherText) => decryptValue(cipherText, keys),
+              'default',
+              k,
+              undefined,
+              {
+                cryptoRbac: getRbacConfig(config),
+                rateLimiter: config?.rateLimiter,
+              }
+            )
+          );
+        } catch (err: any) {
+          throw err;
         }
       } else {
-        copy[k] = decryptBsonObject(v, keys, depth + 1);
+        copy[k] = decryptBsonObject(v, keys, role, config, depth + 1);
       }
     }
     return copy;
@@ -218,7 +234,7 @@ export function handleMongoConnection(
           if (sectionType === 0x00) {
             const bsonOffset = 21;
             const { value: parsedDoc } = parseBson(data, bsonOffset);
-            const decryptedDoc = decryptBsonObject(parsedDoc, options.resolvedKeys);
+            const decryptedDoc = decryptBsonObject(parsedDoc, options.resolvedKeys, options.role, options.config);
             const newBson = serializeBson(decryptedDoc);
 
             const newMsg = Buffer.alloc(21 + newBson.length);
@@ -233,8 +249,11 @@ export function handleMongoConnection(
             }
             return;
           }
-        } catch {
-          // Fallback to direct forward on parse failure
+        } catch (err: any) {
+          options.logSiem('MONGO_DECRYPT_ERROR', 8, `MongoDB decryption error: ${err.message}`);
+          const errPacket = serializeMongoError(err.message, 13);
+          clientSocket.write(errPacket);
+          return;
         }
       }
     }

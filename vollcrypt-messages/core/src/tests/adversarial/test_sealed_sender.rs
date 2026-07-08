@@ -240,3 +240,42 @@ fn sealed_sender_sender_id_length_overflow_attempt() {
         e => panic!("Expected InvalidSealedPacketFormat error, got {:?}", e),
     }
 }
+
+#[test]
+fn sealed_sender_seal_fails_on_low_order_recipient_key() {
+    let low_order_pk = [0u8; 32];
+    let result = seal(&low_order_pk, b"alice", b"payload");
+    assert!(
+        result.is_err(),
+        "Sealing with a low-order recipient key must fail"
+    );
+}
+
+#[test]
+fn sealed_sender_unseal_fails_on_low_order_ephemeral_key() {
+    let (bob_sk, _) = generate_x25519_keypair();
+    let sk_array: [u8; 32] = bob_sk.try_into().unwrap();
+
+    // Construct a packet where ephemeral public key is all zeros (low order point)
+    let mut sealed_packet = vec![0u8; 32]; // 32 bytes of zeros
+    sealed_packet.extend(vec![0x42; 12 + 16 + 10]); // padding for IV, tag and some ciphertext
+
+    let result = unseal(&sealed_packet, &sk_array);
+    assert!(
+        result.is_err(),
+        "Unsealing a packet with a low-order ephemeral key must fail"
+    );
+}
+
+#[test]
+fn sealed_sender_seal_fails_on_huge_sender_id() {
+    let (_, bob_pk) = generate_x25519_keypair();
+    let bob_pk_array: [u8; 32] = bob_pk.try_into().unwrap();
+    let huge_sender_id = vec![0u8; 65536];
+    let result = seal(&bob_pk_array, &huge_sender_id, b"payload");
+    assert!(
+        result.is_err(),
+        "Sealing with a huge sender_id must fail due to u16 overflow prevention"
+    );
+}
+

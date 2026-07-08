@@ -1,6 +1,7 @@
 import * as net from 'net';
 import { validateQuery } from '../waf.js';
-import { decryptValue } from '@vollcrypt/db-guard';
+import { decryptValue, decryptWithSecurity, dbGuardContextStore } from '@vollcrypt/db-guard';
+import { getRbacConfig } from '../auth.js';
 
 export function serializeMssqlError(message: string, code: number = 50000): Buffer {
   const msgBuf = Buffer.from(message, 'utf16le');
@@ -42,7 +43,12 @@ export function serializeMssqlError(message: string, code: number = 50000): Buff
 /**
  * Intercepts and decrypts VOLLVALT: values inside TDS 7.4 response streams.
  */
-export function decryptMssqlResponse(packet: Buffer, keys: Record<string, Buffer>): Buffer {
+export function decryptMssqlResponse(
+  packet: Buffer,
+  keys: Record<string, Buffer>,
+  role: string = 'GUEST',
+  config?: any
+): Buffer {
   const payloadStr = packet.toString('utf16le');
   const matchIndex = payloadStr.indexOf('VOLLVALT:');
   if (matchIndex === -1) return packet;
@@ -53,7 +59,20 @@ export function decryptMssqlResponse(packet: Buffer, keys: Record<string, Buffer
   const ctext = nullOrSpaceIndex ? ctextPart.substring(0, nullOrSpaceIndex.index) : ctextPart;
 
   try {
-    const ptext = decryptValue(ctext, keys);
+    const ptext = dbGuardContextStore.run(
+      { role, userId: 'guest-user' },
+      () => decryptWithSecurity(
+        ctext,
+        (cipherText) => decryptValue(cipherText, keys),
+        'default',
+        'column',
+        undefined,
+        {
+          cryptoRbac: getRbacConfig(config),
+          rateLimiter: config?.rateLimiter,
+        }
+      )
+    );
     const ptextBuf = Buffer.from(ptext, 'utf16le');
     const ctextBuf = Buffer.from(ctext, 'utf16le');
 
@@ -78,8 +97,8 @@ export function decryptMssqlResponse(packet: Buffer, keys: Record<string, Buffer
       }
       return newPayload;
     }
-  } catch {
-    // Fallback on failure
+  } catch (err: any) {
+    throw err;
   }
   return packet;
 }
@@ -115,9 +134,12 @@ export function handleMssqlConnection(
   backendSocket.on('data', (data) => {
     let processedData: any = data;
     try {
-      processedData = decryptMssqlResponse(data, options.resolvedKeys);
-    } catch {
-      // Fallback
+      processedData = decryptMssqlResponse(data, options.resolvedKeys, options.role, options.config);
+    } catch (err: any) {
+      options.logSiem('MSSQL_DECRYPT_ERROR', 8, `MSSQL decryption error: ${err.message}`);
+      const errPacket = serializeMssqlError(err.message);
+      clientSocket.write(errPacket);
+      return;
     }
 
     if (clientSocket.writable) {

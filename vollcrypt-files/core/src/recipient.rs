@@ -85,8 +85,8 @@ pub fn wrap_key_to_recipient(
     recipient_pk: &RecipientPublicKey,
 ) -> Result<WrapEntry, FileFormatError> {
     let (eph_pk, mut eph_sk) = x25519_keypair_generate();
-    let mut ss_classical = x25519_diffie_hellman(&eph_sk, &recipient_pk.x25519);
-    let (mut ss_pq, mlkem_ct) = mlkem768_encapsulate(&recipient_pk.ml_kem);
+    let mut ss_classical = x25519_diffie_hellman(&eph_sk, &recipient_pk.x25519)?;
+    let (mut ss_pq, mlkem_ct) = mlkem768_encapsulate(&recipient_pk.ml_kem)?;
 
     let mut kek = hybrid_kek_derive(
         &ss_classical,
@@ -130,11 +130,11 @@ pub fn unwrap_key_with_recipient_key(
                 return Err(FileFormatError::InvalidWrapPayload);
             }
 
-            let mut ss_classical = x25519_diffie_hellman(&recipient_sk.x25519, x25519_ephemeral);
+            let mut ss_classical = x25519_diffie_hellman(&recipient_sk.x25519, x25519_ephemeral)?;
 
             let mut ct = [0u8; 1088];
             ct.copy_from_slice(mlkem_ciphertext);
-            let mut ss_pq = mlkem768_decapsulate(&recipient_sk.ml_kem, &ct);
+            let mut ss_pq = mlkem768_decapsulate(&recipient_sk.ml_kem, &ct)?;
 
             // Derive recipient static public key from secret key
             let secret = StaticSecret::from(recipient_sk.x25519);

@@ -10,7 +10,7 @@
     {
       "name": "dist/blind-index.js",
       "digest": {
-        "sha256": "fb28a7038cc818346aeb212ece2e5d4f1db4b72fd3ed9dda78a1a7f5744d7455"
+        "sha256": "83364c9d2a86d43f775f15537ee10bdfb8e06c852adceb5b3c7358bcfc412907"
       }
     },
     {
@@ -46,7 +46,7 @@
     {
       "name": "dist/drivers.js",
       "digest": {
-        "sha256": "44623a5cf632c22a41b8196b809a3c00d50276bde28c2fbde13d6f4bef3177ce"
+        "sha256": "4b418fae086ee440bd1c9fe99328c86923ab83467ecfb70fd9bb4ebee324e7f6"
       }
     },
     {
@@ -58,7 +58,7 @@
     {
       "name": "dist/drizzle.js",
       "digest": {
-        "sha256": "aad49d4c9dd41f2e44175465da6ae7f4a7ae35337ce12f7b3a87113ec0f25424"
+        "sha256": "c7b3210b0cca48f2b45c5b789cea13f55f14fc2c620e155d15987b9b8e434f4a"
       }
     },
     {
@@ -82,7 +82,7 @@
     {
       "name": "dist/kms.js",
       "digest": {
-        "sha256": "4b1a32b35545e2e7944ebba3f84272b7421ffedd1cc3c7eb569e1a6b2fcc4a02"
+        "sha256": "5c748722412b465c01cebd70e2242836f8f0c10f4303189548061f88d67eb4e4"
       }
     },
     {
@@ -94,7 +94,7 @@
     {
       "name": "dist/mongoose.js",
       "digest": {
-        "sha256": "42b2177825713fa1c618b80af6cf7a5d9f4055399c8e95b67018a0410add2a3f"
+        "sha256": "a2ff33065a1c52707bdc3b7b1b49e79c5878e7edc547e219779426d3376a8f5b"
       }
     },
     {
@@ -106,19 +106,19 @@
     {
       "name": "dist/prisma.js",
       "digest": {
-        "sha256": "e2b7a8fa24c120f59ab48ebb508a18c01e3e24245e04c197b08ad0e327a2d9a8"
+        "sha256": "dc5d221dfc6e2f790fd13abc1408e98e4d8a3a1f61ee876cc691963d5517395a"
       }
     },
     {
       "name": "dist/security.d.ts",
       "digest": {
-        "sha256": "554d9ba00f800470666ab66127079df889b8d717a9cf7b28ab252f0adad64304"
+        "sha256": "6fed9ab5d0e7d940fd8e0e65f3e0a6be6581fbeddb82a6ad9706397efa4ec2b2"
       }
     },
     {
       "name": "dist/security.js",
       "digest": {
-        "sha256": "5e907c9f5ec9fb93ef07f6360d7f8572aa5a1ea1c0a32d0b10496477d0b8fd33"
+        "sha256": "a7323f84eaa90838dcaba18f82cba8c48d6fdb708715786cae1c60bdaeb0050d"
       }
     },
     {
@@ -130,7 +130,7 @@
     {
       "name": "dist/typeorm.js",
       "digest": {
-        "sha256": "154827069a5496e043a9f69b3249bd5dddd62690783dfa8675d06d0f574ac76b"
+        "sha256": "d88d0aa0eff62675e732c5fd2f7c7885d601d5234729687aecbd5b1282e6a7bd"
       }
     }
   ],
@@ -168,6 +168,22 @@
         },
         {
           "uri": "pkg:npm/typeorm@0.3.0",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:npm/@aws-sdk/client-kms@3.0.0",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:npm/@google-cloud/kms@3.0.0",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:npm/node-vault@0.9.0",
+          "digest": {}
+        },
+        {
+          "uri": "pkg:npm/pkcs11js@1.0.0",
           "digest": {}
         },
         {
@@ -225,9 +241,9 @@
         "id": "https://vollcrypt.dev/builders/local-hermetic-env"
       },
       "metadata": {
-        "invocationId": "19095e456ee2a685d43df5cc56999080",
-        "startedOn": "2026-06-11T16:17:36.609Z",
-        "finishedOn": "2026-06-11T16:17:36.610Z"
+        "invocationId": "13b5a2cc3a37f7904538479cf9db81ee",
+        "startedOn": "2026-07-08T02:15:03.143Z",
+        "finishedOn": "2026-07-08T02:15:03.144Z"
       }
     }
   }

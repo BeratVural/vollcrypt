@@ -1,6 +1,7 @@
 import * as net from 'net';
 import { validateQuery } from '../waf.js';
-import { decryptValue } from '@vollcrypt/db-guard';
+import { decryptValue, decryptWithSecurity, dbGuardContextStore } from '@vollcrypt/db-guard';
+import { getRbacConfig } from '../auth.js';
 
 export function serializeOracleError(message: string): Buffer {
   const msgBuf = Buffer.from(message, 'ascii');
@@ -16,7 +17,12 @@ export function serializeOracleError(message: string): Buffer {
   return Buffer.concat([header, payload]);
 }
 
-export function decryptOracleResponse(packet: Buffer, keys: Record<string, Buffer>): Buffer {
+export function decryptOracleResponse(
+  packet: Buffer,
+  keys: Record<string, Buffer>,
+  role: string = 'GUEST',
+  config?: any
+): Buffer {
   if (packet.length < 8) return packet;
   const tnsType = packet[4];
   if (tnsType !== 0x06) return packet; // Only data packets contain rows
@@ -31,7 +37,20 @@ export function decryptOracleResponse(packet: Buffer, keys: Record<string, Buffe
   const ctext = boundaryMatch ? ctextPart.substring(0, boundaryMatch.index) : ctextPart;
 
   try {
-    const ptext = decryptValue(ctext, keys);
+    const ptext = dbGuardContextStore.run(
+      { role, userId: 'guest-user' },
+      () => decryptWithSecurity(
+        ctext,
+        (cipherText) => decryptValue(cipherText, keys),
+        'default',
+        'column',
+        undefined,
+        {
+          cryptoRbac: getRbacConfig(config),
+          rateLimiter: config?.rateLimiter,
+        }
+      )
+    );
     const ptextBuf = Buffer.from(ptext, 'ascii');
     const ctextBuf = Buffer.from(ctext, 'ascii');
 
@@ -66,8 +85,8 @@ export function decryptOracleResponse(packet: Buffer, keys: Record<string, Buffe
       }
       return newPayload;
     }
-  } catch {
-    // Fallback
+  } catch (err: any) {
+    throw err;
   }
   return packet;
 }
@@ -103,9 +122,12 @@ export function handleOracleConnection(
   backendSocket.on('data', (data) => {
     let processedData: any = data;
     try {
-      processedData = decryptOracleResponse(data, options.resolvedKeys);
-    } catch {
-      // Fallback
+      processedData = decryptOracleResponse(data, options.resolvedKeys, options.role, options.config);
+    } catch (err: any) {
+      options.logSiem('ORACLE_DECRYPT_ERROR', 8, `Oracle decryption error: ${err.message}`);
+      const errPacket = serializeOracleError(err.message);
+      clientSocket.write(errPacket);
+      return;
     }
 
     if (clientSocket.writable) {

@@ -10,7 +10,7 @@ use crate::crypt::{
 use crate::error::FileFormatError;
 use crate::header::{CipherId, Header, Mode, SignedMetadata};
 use crate::hybrid_sig::{HybridPublicKey, HybridSecretKey, HybridSignature};
-use crate::merkle::{chunk_leaf_hash_raw_with_algo, chunk_leaf_hash_with_algo, MerkleTree, StreamingMerkle};
+use crate::merkle::{chunk_leaf_hash_raw_with_algo, chunk_leaf_hash_with_algo, StreamingMerkle};
 use crate::signature::{sign_header_plain, sign_header_sealed, verify_header_signature_plain_policy, VerificationPolicy};
 use crate::wrap::WrapEntry;
 use crate::writer::IoWriteMode;
@@ -345,6 +345,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
                                 let leaf = chunk_leaf_hash_raw_with_algo(
                                     idx,
                                     t.buffer.get_iv(),
+                                    t.buffer.as_ciphertext(t.plaintext_len),
                                     t.buffer.as_tag_slice(t.plaintext_len),
                                     hash_algo,
                                 );
@@ -358,6 +359,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
                                 let leaf = chunk_leaf_hash_raw_with_algo(
                                     idx,
                                     t.buffer.get_iv(),
+                                    t.buffer.as_ciphertext(t.plaintext_len),
                                     t.buffer.as_tag_slice(t.plaintext_len),
                                     hash_algo,
                                 );
@@ -555,21 +557,27 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
             return Err(e);
         }
 
-        // Wait for read thread
-        plaintext_size = read_thread
-            .join()
-            .unwrap()
-            .map_err(|e| {
-                if e.to_string().contains("TooManyChunks") {
-                    FileFormatError::TooManyChunks
-                } else {
-                    FileFormatError::IoError(e.to_string())
-                }
-            })?;
+        // Wait for read thread safely
+        let read_res = read_thread.join().map_err(|_| {
+            FileFormatError::IoError("Read thread panicked".to_string())
+        })?;
+        plaintext_size = read_res.map_err(|e| {
+            if e.to_string().contains("TooManyChunks") {
+                FileFormatError::TooManyChunks
+            } else {
+                FileFormatError::IoError(e.to_string())
+            }
+        })?;
 
-        // Wait for workers
+        // Wait for workers safely
+        let mut worker_panicked = false;
         for w in workers {
-            let _ = w.join();
+            if w.join().is_err() {
+                worker_panicked = true;
+            }
+        }
+        if worker_panicked {
+            return Err(FileFormatError::IoError("Worker thread panicked".to_string()));
         }
     }
 
@@ -790,6 +798,7 @@ fn decrypt_file_pipelined_internal<R: Read + Send + 'static, W: Write>(
                     let leaf = chunk_leaf_hash_raw_with_algo(
                         idx,
                         t.buffer.get_iv(),
+                        t.buffer.as_ciphertext(t.plaintext_len),
                         t.buffer.as_tag_slice(t.plaintext_len),
                         hash_algo,
                     );
@@ -837,7 +846,7 @@ fn decrypt_file_pipelined_internal<R: Read + Send + 'static, W: Write>(
     } else {
         plaintext_size.div_ceil(chunk_size as u64)
     };
-    if total_chunks_u64 > u32::MAX as u64 {
+    if total_chunks_u64 > 10_000_000 {
         return Err(FileFormatError::TooManyChunks);
     }
     let total_chunks = total_chunks_u64 as u32;
@@ -890,7 +899,7 @@ fn decrypt_file_pipelined_internal<R: Read + Send + 'static, W: Write>(
     let mut next_expected = 0u32;
     let mut decrypt_err = None;
 
-    let mut leaf_hashes = vec![[0u8; 32]; total_chunks as usize];
+    let mut leaf_hashes = Vec::new();
     let mut total_decrypted_bytes = 0u64;
     while let Ok(batch_results) = write_rx.recv() {
         if decrypt_err.is_none() {
@@ -914,7 +923,7 @@ fn decrypt_file_pipelined_internal<R: Read + Send + 'static, W: Write>(
                 dest.write_all(buf.as_plaintext(len))
                     .map_err(|e| FileFormatError::IoError(e.to_string()))?;
                 total_decrypted_bytes += len as u64;
-                leaf_hashes[next_expected as usize] = leaf;
+                leaf_hashes.push(leaf);
                 pool.return_buffer(buf);
                 next_expected += 1;
             } else {
@@ -934,12 +943,21 @@ fn decrypt_file_pipelined_internal<R: Read + Send + 'static, W: Write>(
         return Err(e);
     }
 
-    // Wait for read thread
-    read_thread.join().unwrap()?;
+    // Wait for read thread safely
+    let read_res = read_thread.join().map_err(|_| {
+        FileFormatError::IoError("Read thread panicked".to_string())
+    })?;
+    read_res?;
 
-    // Wait for workers
+    // Wait for workers safely
+    let mut worker_panicked = false;
     for w in workers {
-        let _ = w.join();
+        if w.join().is_err() {
+            worker_panicked = true;
+        }
+    }
+    if worker_panicked {
+        return Err(FileFormatError::IoError("Worker thread panicked".to_string()));
     }
 
     // Verify integrity checks:
@@ -991,7 +1009,13 @@ pub fn map_shield_report_to_error(report: crate::shield::ShieldReport) -> FileFo
     match report {
         crate::shield::ShieldReport::Magic => FileFormatError::InvalidMagic,
         crate::shield::ShieldReport::Version(v) => FileFormatError::UnsupportedVersion(v),
-        crate::shield::ShieldReport::HeaderField(f) => FileFormatError::IntegrityError(f),
+        crate::shield::ShieldReport::HeaderField(f) => {
+            if f == "too_many_chunks" {
+                FileFormatError::TooManyChunks
+            } else {
+                FileFormatError::IntegrityError(f)
+            }
+        }
         crate::shield::ShieldReport::WrapTable => FileFormatError::IntegrityError("Wrap table integrity error".to_string()),
         crate::shield::ShieldReport::Signature => FileFormatError::SignatureInvalid,
         crate::shield::ShieldReport::ChunkIndexMismatch { expected, got } => FileFormatError::ChunkIndexOutOfOrder { expected, got },
@@ -1083,10 +1107,7 @@ pub fn decrypt_file_pipelined_with_policy<R: Read + Seek + Send + 'static, W: Wr
     num_workers: usize,
     policy: Option<&crate::shield::ShieldPolicy>,
 ) -> Result<Header, FileFormatError> {
-    let default_policy = crate::shield::ShieldPolicy {
-        signature: crate::shield::SignaturePolicy::Optional,
-        ..crate::shield::ShieldPolicy::strict()
-    };
+    let default_policy = crate::shield::ShieldPolicy::strict();
     let pol = policy.unwrap_or(&default_policy);
     match pol.release_mode {
         crate::shield::ReleaseMode::Verified => decrypt_verified_policy(source, dest, dek, num_workers, pol),
@@ -1269,10 +1290,7 @@ pub async fn decrypt_file_pipelined_async_policy(
     dek: &[u8; 32],
     policy: Option<&crate::shield::ShieldPolicy>,
 ) -> Result<(Header, Vec<u8>), FileFormatError> {
-    let default_policy = crate::shield::ShieldPolicy {
-        signature: crate::shield::SignaturePolicy::Optional,
-        ..crate::shield::ShieldPolicy::strict()
-    };
+    let default_policy = crate::shield::ShieldPolicy::strict();
     let pol = policy.unwrap_or(&default_policy);
 
     let (header, header_len) = Header::parse(ciphertext_bytes)?;
@@ -1305,14 +1323,24 @@ pub async fn decrypt_file_pipelined_async_policy(
     let plaintext_size = header.plaintext_size;
     let file_id = header.file_id;
 
-    let total_chunks = if plaintext_size == 0 {
+    let total_chunks_u64 = if plaintext_size == 0 {
         0
     } else {
-        plaintext_size.div_ceil(chunk_size as u64) as u32
+        plaintext_size.div_ceil(chunk_size as u64)
     };
 
+    let max_possible_chunks = if ciphertext_bytes.len() > header_len {
+        (ciphertext_bytes.len() - header_len) / 32
+    } else {
+        0
+    };
+    if total_chunks_u64 > 10_000_000 || total_chunks_u64 > max_possible_chunks as u64 {
+        return Err(FileFormatError::TooManyChunks);
+    }
+    let total_chunks = total_chunks_u64 as u32;
+
     let mut decrypted_chunks = vec![Vec::new(); total_chunks as usize];
-    let mut leaf_hashes = Vec::with_capacity(total_chunks as usize);
+    let mut leaf_hashes = Vec::with_capacity(std::cmp::min(total_chunks as usize, max_possible_chunks));
     let mut offset = header_len;
 
     // Process batches of 16 chunks concurrently
@@ -1380,7 +1408,7 @@ pub async fn decrypt_file_pipelined_async_policy(
         return Err(FileFormatError::AesGcmDecryptFailed);
     }
 
-    let mut plaintext = Vec::with_capacity(plaintext_size as usize);
+    let mut plaintext = Vec::with_capacity(std::cmp::min(plaintext_size as usize, ciphertext_bytes.len()));
     for chunk in decrypted_chunks {
         plaintext.extend_from_slice(&chunk);
     }

@@ -182,5 +182,10 @@ describe('Vollcrypt Phase 5 Enterprise Security Modules', () => {
       await findHook.call({}, docsB, () => {});
     });
     assert.strictEqual(docsB[0].secret, 'data-for-b');
+
+    // 4. Verify that running without tenant context throws an error
+    await assert.rejects(async () => {
+      await saveHook.call(docA);
+    }, /tenantId must be provided in multi-tenant mode/);
   });
 });

@@ -185,13 +185,19 @@ export interface RateLimiterOptions {
   onPageSizeExceeded?: 'warn' | 'error' | 'bypass';
 }
 
-let decryptCount = 0;
-let windowStart = Date.now();
-let isFailClosed = false;
-const globalKeysToZeroize: Record<string, Buffer>[] = [];
+
 
 // Ephemeral Master Key generated randomly on startup
 let ephemeralMasterKey = crypto.randomBytes(32);
+
+const tenantFailClosed = new Map<string, boolean>();
+const tenantKeys = new Map<string, Record<string, Buffer>[]>();
+
+interface RateLimitState {
+  decryptCount: number;
+  windowStart: number;
+}
+const tenantRateLimitStates = new Map<string, RateLimitState>();
 
 // Cache store mapping `${tenantId || 'global'}:${version}` to wrapped DEK and expiration
 interface CacheEntry {
@@ -201,7 +207,7 @@ interface CacheEntry {
 const secureKeyCache = new Map<string, CacheEntry>();
 
 export function getCachedKey(tenantId: string | undefined, version: string): Buffer | undefined {
-  const cacheKey = `${tenantId || 'global'}:${version}`;
+  const cacheKey = JSON.stringify([tenantId || 'global', version]);
   const entry = secureKeyCache.get(cacheKey);
   if (!entry) return undefined;
   if (Date.now() > entry.expiresAt) {
@@ -217,7 +223,7 @@ export function getCachedKey(tenantId: string | undefined, version: string): Buf
 }
 
 export function setCachedKey(tenantId: string | undefined, version: string, plaintextKey: Buffer, ttlMs: number = 120000) {
-  const cacheKey = `${tenantId || 'global'}:${version}`;
+  const cacheKey = JSON.stringify([tenantId || 'global', version]);
   const existing = secureKeyCache.get(cacheKey);
   if (existing) {
     existing.wrappedKey.fill(0);
@@ -332,29 +338,62 @@ export function activateBreakGlass(
   logDecryption('SYSTEM', 'BREAK_GLASS_ACTIVATED', undefined);
 }
 
-export function registerKeysForZeroization(keys: Record<string, Buffer>) {
-  if (!globalKeysToZeroize.includes(keys)) {
-    globalKeysToZeroize.push(keys);
+export function registerKeysForZeroization(keys: Record<string, Buffer>, tenantId?: string) {
+  const tId = tenantId || 'global';
+  let list = tenantKeys.get(tId);
+  if (!list) {
+    list = [];
+    tenantKeys.set(tId, list);
+  }
+  if (!list.includes(keys)) {
+    list.push(keys);
   }
 }
 
-export function triggerFailClosed(onFailClosedCallback?: () => void) {
-  isFailClosed = true;
-  // Zeroize all registered keys immediately in memory
-  for (const keyMap of globalKeysToZeroize) {
-    for (const key of Object.values(keyMap)) {
-      key.fill(0);
+export function triggerFailClosed(onFailClosedCallback?: () => void, tenantId?: string) {
+  const tId = tenantId || dbGuardContextStore.getStore()?.tenantId || 'global';
+  tenantFailClosed.set(tId, true);
+  
+  // Zeroize all registered keys immediately in memory for this tenant
+  const list = tenantKeys.get(tId);
+  if (list && list.length > 0) {
+    for (const keyMap of list) {
+      for (const key of Object.values(keyMap)) {
+        key.fill(0);
+      }
+    }
+  } else {
+    // Fallback to global keys if no tenant-specific keys are registered
+    const globalList = tenantKeys.get('global');
+    if (globalList) {
+      for (const keyMap of globalList) {
+        for (const key of Object.values(keyMap)) {
+          key.fill(0);
+        }
+      }
     }
   }
+  
   // Zeroize cache and ephemeral master key
-  for (const entry of secureKeyCache.values()) {
-    entry.wrappedKey.fill(0);
+  for (const [cacheKey, entry] of secureKeyCache.entries()) {
+    try {
+      const parsed = JSON.parse(cacheKey);
+      if (Array.isArray(parsed) && parsed[0] === tId) {
+        entry.wrappedKey.fill(0);
+        secureKeyCache.delete(cacheKey);
+      }
+    } catch {
+      // fallback
+    }
   }
-  secureKeyCache.clear();
-  ephemeralMasterKey.fill(0);
-  if (breakGlassEmergencyKey) {
-    breakGlassEmergencyKey.fill(0);
+  
+  if (tId === 'global') {
+    ephemeralMasterKey.fill(0);
+    if (breakGlassEmergencyKey) {
+      breakGlassEmergencyKey.fill(0);
+    }
   }
+  
   if (onFailClosedCallback) {
     try {
       onFailClosedCallback();
@@ -362,15 +401,17 @@ export function triggerFailClosed(onFailClosedCallback?: () => void) {
       // prevent user callback crash from blocking zeroization
     }
   }
-  throw new Error('Vollcrypt Security: Decryption rate limit exceeded. Fail-Closed mode triggered. Keys zeroized.');
+  throw new Error(`Vollcrypt Security: Decryption rate limit exceeded. Fail-Closed mode triggered for tenant "${tId}". Keys zeroized.`);
 }
 
 export function checkRateLimit(options?: RateLimiterOptions) {
-  if (isFailClosed) {
-    throw new Error('Vollcrypt Security: Fail-Closed mode is active. Decryption blocked.');
+  const context = dbGuardContextStore.getStore();
+  const tId = context?.tenantId || 'global';
+
+  if (tenantFailClosed.get(tId)) {
+    throw new Error(`Vollcrypt Security: Fail-Closed mode is active for tenant "${tId}". Decryption blocked.`);
   }
 
-  const context = dbGuardContextStore.getStore();
   if (context?.bypassRateLimit) {
     return; // Rate limit check bypassed for this request context
   }
@@ -379,38 +420,23 @@ export function checkRateLimit(options?: RateLimiterOptions) {
   const mode = context?.rateLimiterMode || options?.mode || 'fail_closed';
   const now = Date.now();
 
-  if (context) {
-    if (context.windowStart === undefined || context.decryptCount === undefined) {
-      context.windowStart = now;
-      context.decryptCount = 0;
-    }
+  let state = tenantRateLimitStates.get(tId);
+  if (!state) {
+    state = { decryptCount: 0, windowStart: now };
+    tenantRateLimitStates.set(tId, state);
+  }
 
-    if (now - context.windowStart > 1000) {
-      context.decryptCount = 0;
-      context.windowStart = now;
-    }
+  if (now - state.windowStart > 1000) {
+    state.decryptCount = 0;
+    state.windowStart = now;
+  }
 
-    context.decryptCount++;
-    if (context.decryptCount > limit) {
-      if (mode === 'fail_closed') {
-        triggerFailClosed(options?.onFailClosed);
-      } else if (mode === 'warn') {
-        console.warn(`Vollcrypt Warning: Decryption rate limit exceeded. ${context.decryptCount} decryptions in the current window (limit: ${limit}).`);
-      }
-    }
-  } else {
-    if (now - windowStart > 1000) {
-      decryptCount = 0;
-      windowStart = now;
-    }
-
-    decryptCount++;
-    if (decryptCount > limit) {
-      if (mode === 'fail_closed') {
-        triggerFailClosed(options?.onFailClosed);
-      } else if (mode === 'warn') {
-        console.warn(`Vollcrypt Warning: Decryption rate limit exceeded. ${decryptCount} decryptions in the current window (limit: ${limit}).`);
-      }
+  state.decryptCount++;
+  if (state.decryptCount > limit) {
+    if (mode === 'fail_closed') {
+      triggerFailClosed(options?.onFailClosed, tId);
+    } else if (mode === 'warn') {
+      console.warn(`Vollcrypt Warning: Decryption rate limit exceeded for tenant "${tId}". ${state.decryptCount} decryptions in the current window (limit: ${limit}).`);
     }
   }
 }
@@ -419,11 +445,13 @@ export function checkPageSize(
   count: number,
   options?: RateLimiterOptions
 ): 'ok' | 'warn' | 'bypass' | 'error' {
-  if (isFailClosed) {
-    throw new Error('Vollcrypt Security: Fail-Closed mode is active. Decryption blocked.');
+  const context = dbGuardContextStore.getStore();
+  const tId = context?.tenantId || 'global';
+
+  if (tenantFailClosed.get(tId)) {
+    throw new Error(`Vollcrypt Security: Fail-Closed mode is active for tenant "${tId}". Decryption blocked.`);
   }
 
-  const context = dbGuardContextStore.getStore();
   const maxPageSize = context?.maxPageSize !== undefined 
     ? context.maxPageSize 
     : (options?.maxPageSize !== undefined ? options.maxPageSize : 250);
@@ -446,14 +474,15 @@ export function checkPageSize(
   return 'ok';
 }
 
-export function getFailClosedStatus(): boolean {
-  return isFailClosed;
+export function getFailClosedStatus(tenantId?: string): boolean {
+  const tId = tenantId || dbGuardContextStore.getStore()?.tenantId || 'global';
+  return tenantFailClosed.get(tId) || false;
 }
 
 export function resetFailClosedStatusForTesting() {
-  isFailClosed = false;
-  decryptCount = 0;
-  windowStart = Date.now();
+  tenantFailClosed.clear();
+  tenantRateLimitStates.clear();
+  tenantKeys.clear();
 }
 
 // 4. Cryptographic Audit Logging
@@ -472,6 +501,7 @@ export interface AuditLogEntry {
 let lastLogHash = '0'.repeat(64);
 let auditLogPath: string | undefined;
 let onAuditLogCallback: ((entry: AuditLogEntry) => void) | undefined;
+let auditWriteQueue = Promise.resolve();
 
 export function configureAuditLogger(options?: {
   path?: string;
@@ -504,6 +534,7 @@ export function resetAuditLoggerForTesting() {
   lastLogHash = '0'.repeat(64);
   auditLogPath = undefined;
   onAuditLogCallback = undefined;
+  auditWriteQueue = Promise.resolve();
 }
 
 export function logDecryption(model: string, field: string, recordId?: string) {
@@ -536,11 +567,11 @@ export function logDecryption(model: string, field: string, recordId?: string) {
   }
 
   if (auditLogPath) {
-    try {
-      fs.appendFileSync(auditLogPath, JSON.stringify(fullEntry) + '\n', 'utf8');
-    } catch {
-      // prevent filesystem errors from throwing
-    }
+    const line = JSON.stringify(fullEntry) + '\n';
+    const currentPath = auditLogPath;
+    auditWriteQueue = auditWriteQueue.then(() => {
+      return fs.promises.appendFile(currentPath, line, 'utf8').catch(() => {});
+    });
   }
 }
 
@@ -605,7 +636,8 @@ export function decryptWithSecurity(
 }
 
 export const VERSION_ALGORITHMS: Record<string, string> = {
-  '1': '1'
+  '1': '1',
+  '2': '1'
 };
 
 export const CRYPTO_ALGORITHMS: Record<string, {
@@ -624,12 +656,17 @@ export function parseCiphertext(stored: string): { algoId: string; version: stri
 
   if (content.startsWith('v')) {
     const colon = content.indexOf(':');
-    if (colon === -1) return null;
+    if (colon === -1) {
+      throw new Error("Vollcrypt Security: Malformed ciphertext format.");
+    }
     const versionPart = content.slice(1, colon);
     const base64Part = content.slice(colon + 1);
-    const algoId = VERSION_ALGORITHMS[versionPart] || '1';
+    const algoId = VERSION_ALGORITHMS[versionPart];
+    if (!algoId) {
+      throw new Error(`Vollcrypt Security: Deprecated or unsupported encryption version "v${versionPart}".`);
+    }
     return { algoId, version: versionPart, base64Data: base64Part };
   }
 
-  return null;
+  throw new Error("Vollcrypt Security: Legacy unversioned ciphertexts are deprecated and unsupported.");
 }

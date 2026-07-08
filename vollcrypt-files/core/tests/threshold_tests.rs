@@ -115,10 +115,10 @@ fn test_share_tampering() {
     // Case 1: Corrupted share string (typo/bit flip in base64url string)
     let share_str = encode_share(&shares[0]);
     let mut chars: Vec<char> = share_str.chars().collect();
-    // Swap a character to simulate corruption (checksum fails)
-    let last_idx = chars.len() - 1;
-    let original_char = chars[last_idx];
-    chars[last_idx] = if original_char == 'A' { 'B' } else { 'A' };
+    // Swap a character in the middle to simulate corruption (guarantees base64/checksum failure)
+    let corrupt_idx = 10.min(chars.len() - 1);
+    let original_char = chars[corrupt_idx];
+    chars[corrupt_idx] = if original_char == 'A' { 'B' } else { 'A' };
     let corrupted_str: String = chars.into_iter().collect();
 
     let decode_res = decode_share(&corrupted_str);

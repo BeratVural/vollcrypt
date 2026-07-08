@@ -63,10 +63,21 @@ impl TranscriptState {
         ciphertext: &[u8],
     ) -> [u8; 32] {
         let mut hasher = Sha256::new();
+        
+        let message_id_len = message_id.len() as u32;
+        hasher.update(&message_id_len.to_be_bytes());
         hasher.update(message_id);
+
+        let sender_id_len = sender_id.len() as u32;
+        hasher.update(&sender_id_len.to_be_bytes());
         hasher.update(sender_id);
+
         hasher.update(timestamp.to_be_bytes()); // Keep as u64 BE bytes for standard
+
+        let ciphertext_len = ciphertext.len() as u32;
+        hasher.update(&ciphertext_len.to_be_bytes());
         hasher.update(ciphertext);
+
         hasher.finalize().into()
     }
 

@@ -1,6 +1,7 @@
 use sea_orm::{TryGetable, DbErr, Value, TryGetError, QueryResult};
 use sea_orm::sea_query::{ValueType, Nullable};
 use std::fmt;
+use zeroize::Zeroize;
 
 /// A wrapper type for `String` that automatically encrypts values stored in the database
 /// and decrypts them when read.
@@ -8,6 +9,12 @@ use std::fmt;
 /// Designed to work transparently within SeaORM Model entities.
 #[derive(Clone, PartialEq, Eq)]
 pub struct EncryptedString(pub String);
+
+impl Drop for EncryptedString {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
 
 impl fmt::Debug for EncryptedString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -18,7 +25,8 @@ impl fmt::Debug for EncryptedString {
 
 impl From<EncryptedString> for Value {
     fn from(val: EncryptedString) -> Self {
-        let encrypted = crate::encrypt_field(val.0.as_bytes()).unwrap_or_default();
+        let encrypted = crate::encrypt_field(val.0.as_bytes())
+            .expect("Vollcrypt Security: Field encryption failed inside SeaORM From conversion. Aborting transaction.");
         Value::String(Some(Box::new(encrypted)))
     }
 }

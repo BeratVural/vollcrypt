@@ -32,10 +32,10 @@ fn panic_safety_hkdf() {
 #[test]
 fn panic_safety_pbkdf2() {
     let _ = panic::catch_unwind(|| {
-        let _ = derive_pbkdf2(b"", b"", 1000, 32);
+        let _ = derive_pbkdf2(b"", b"", 1000, 32).unwrap();
         // We know pbkdf2 panics on 0 iterations but we annotated that separately in test_kdf with #[should_panic].
         // So we skip calling it with 0 here to keep the test suite green.
-        let _ = derive_pbkdf2(b"pass", b"salt", 1000, 32);
+        let _ = derive_pbkdf2(b"pass", b"salt", 1000, 32).unwrap();
     });
 }
 

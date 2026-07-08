@@ -86,35 +86,34 @@ pub fn seal_container<R: Read + Seek, W: Write + Seek>(
     // 3. Clear wraps
     header.wraps.clear();
 
-    // 4. Handle signing for v2/v3
-    if header.version == 2 || header.version == 3 {
-        let sign_info = options.sign_info.as_ref().ok_or_else(|| {
-            FileFormatError::IntegrityError("Signature keys required to seal signed container".to_string())
-        })?;
+    // 4. Handle signing (required for all versions, upgrades version 1 to 3)
+    let sign_info = options.sign_info.as_ref().ok_or_else(|| {
+        FileFormatError::IntegrityError("Signature keys required to seal container".to_string())
+    })?;
 
-        let (signer_pk, signer_sk, timestamp) = match sign_info {
-            PipelinedSignInfo::Plain { signer_pk, signer_sk, timestamp, .. } => (signer_pk, signer_sk, *timestamp),
-            PipelinedSignInfo::Sealed { signer_pk, signer_sk, timestamp, .. } => (signer_pk, signer_sk, *timestamp),
-        };
-
-        let reason = options.reason.clone().unwrap_or_default();
-        let mode_u8 = match options.mode {
-            SealMode::Seal => 1,
-            SealMode::Purge => 2,
-        };
-
-        crate::signature::sign_header_sovereign_sealed(
-            &mut header,
-            signer_pk,
-            signer_sk,
-            mode_u8,
-            reason,
-            timestamp,
-        )?;
-    } else {
-        header.signed_metadata = None;
-        header.signature = None;
+    if header.version == 1 {
+        header.version = 3;
     }
+
+    let (signer_pk, signer_sk, timestamp) = match sign_info {
+        PipelinedSignInfo::Plain { signer_pk, signer_sk, timestamp, .. } => (signer_pk, signer_sk, *timestamp),
+        PipelinedSignInfo::Sealed { signer_pk, signer_sk, timestamp, .. } => (signer_pk, signer_sk, *timestamp),
+    };
+
+    let reason = options.reason.clone().unwrap_or_default();
+    let mode_u8 = match options.mode {
+        SealMode::Seal => 1,
+        SealMode::Purge => 2,
+    };
+
+    crate::signature::sign_header_sovereign_sealed(
+        &mut header,
+        signer_pk,
+        signer_sk,
+        mode_u8,
+        reason,
+        timestamp,
+    )?;
 
     // 5. Write rewritten header
     let serialized_header = header.write();

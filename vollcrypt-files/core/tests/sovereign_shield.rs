@@ -50,22 +50,34 @@ fn test_sovereign_seal_v1_v2_v3() {
         None,
     ).unwrap();
 
+    let (signer_pk, signer_sk) = hybrid_keypair_generate();
+    let key_log_id = generate_dek();
+    let timestamp = 987654321;
+    let sign_info = PipelinedSignInfo::Plain {
+        signer_pk,
+        signer_sk,
+        key_log_id,
+        timestamp,
+    };
+
     let ciphertext = read_all(dest_encrypt);
 
     let mut dest_v1 = Vec::new();
     let opts = SealOptions {
         mode: SealMode::Seal,
         reason: Some("Testing V1 Seal".to_string()),
-        sign_info: None,
+        sign_info: Some(sign_info),
     };
     seal_container(Cursor::new(&ciphertext), Cursor::new(&mut dest_v1), opts).unwrap();
 
     let (hdr_v1, _) = Header::parse(&dest_v1).unwrap();
     assert!(is_sealed(&hdr_v1));
+    assert_eq!(hdr_v1.version, 3); // Upgraded from 1 to 3!
 
     let inspect_v1 = inspect_sealed(Cursor::new(&dest_v1)).unwrap();
-    assert!(inspect_v1.sealed_mode.is_none());
-    assert!(inspect_v1.reason.is_none());
+    assert_eq!(inspect_v1.sealed_mode, Some(1));
+    assert_eq!(inspect_v1.reason.as_deref(), Some("Testing V1 Seal"));
+    assert_eq!(inspect_v1.timestamp, Some(timestamp));
 
     // --- V2/V3 Container ---
     let (signer_pk, signer_sk) = hybrid_keypair_generate();
@@ -137,11 +149,21 @@ fn test_sovereign_purge() {
 
     let ciphertext = read_all(dest_encrypt);
 
+    let (signer_pk, signer_sk) = hybrid_keypair_generate();
+    let key_log_id = generate_dek();
+    let timestamp = 987654321;
+    let sign_info = PipelinedSignInfo::Plain {
+        signer_pk,
+        signer_sk,
+        key_log_id,
+        timestamp,
+    };
+
     let mut dest_purged = Vec::new();
     let opts = SealOptions {
         mode: SealMode::Purge,
         reason: Some("Purging".to_string()),
-        sign_info: None,
+        sign_info: Some(sign_info),
     };
     seal_container(Cursor::new(&ciphertext), Cursor::new(&mut dest_purged), opts).unwrap();
 
@@ -150,11 +172,16 @@ fn test_sovereign_purge() {
 
     // Normal decryption should fail
     let mut decrypted = Vec::new();
-    let decrypt_res = decrypt_file_pipelined(
+    let policy = ShieldPolicy {
+        signature: SignaturePolicy::Optional,
+        ..ShieldPolicy::strict()
+    };
+    let decrypt_res = decrypt_file_pipelined_with_policy(
         write_all(&dest_purged),
         &mut decrypted,
         &dek,
         2,
+        Some(&policy),
     );
     assert!(matches!(decrypt_res.unwrap_err(), FileFormatError::ContainerSealed));
 }
@@ -184,11 +211,21 @@ fn test_idempotency_double_sealing() {
 
     let ciphertext = read_all(dest_encrypt);
 
+    let (signer_pk, signer_sk) = hybrid_keypair_generate();
+    let key_log_id = generate_dek();
+    let timestamp = 987654321;
+    let sign_info = PipelinedSignInfo::Plain {
+        signer_pk,
+        signer_sk,
+        key_log_id,
+        timestamp,
+    };
+
     let mut dest_first = Vec::new();
     let opts = SealOptions {
         mode: SealMode::Seal,
         reason: Some("First seal".to_string()),
-        sign_info: None,
+        sign_info: Some(sign_info),
     };
     seal_container(Cursor::new(&ciphertext), Cursor::new(&mut dest_first), opts.clone()).unwrap();
 
