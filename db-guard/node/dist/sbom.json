@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:7fb49562-d367-4359-981e-ee547581d68b",
+  "serialNumber": "urn:uuid:d69c6039-e97a-44d2-bfac-ce13bf49803c",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-07-09T18:36:22.304Z",
+    "timestamp": "2026-07-09T19:02:46.055Z",
     "tools": [
       {
         "vendor": "Vollcrypt",
@@ -13,10 +13,10 @@
       }
     ],
     "component": {
-      "bomRef": "pkg:npm/@vollcrypt/db-guard@0.9.0",
+      "bomRef": "pkg:npm/@vollcrypt/db-guard@0.9.1",
       "type": "library",
       "name": "@vollcrypt/db-guard",
-      "version": "0.9.0",
+      "version": "0.9.1",
       "description": "Database field-level encryption integrations for Vollcrypt (Prisma, Mongoose, Drizzle, TypeORM)",
       "hashes": [
         {
