@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:d69c6039-e97a-44d2-bfac-ce13bf49803c",
+  "serialNumber": "urn:uuid:54f5fdbd-84b0-47fe-95c1-e86fe565dcf8",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-07-09T19:02:46.055Z",
+    "timestamp": "2026-07-09T19:07:03.950Z",
     "tools": [
       {
         "vendor": "Vollcrypt",
