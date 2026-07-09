@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const prisma_1 = require("./prisma");
+const security_1 = require("./security");
 function printProgressBar(current, total) {
     const percentage = Math.min(100, Math.floor((current / total) * 100));
     const barLength = 40;
@@ -138,7 +138,7 @@ async function migratePostgres(url, table, column, idCol, key, version, chunkSiz
             // 3. Encrypt and update each row
             for (const row of batchRes.rows) {
                 const rawVal = row[column];
-                const encryptedVal = (0, prisma_1.encryptValue)(rawVal, key, version);
+                const encryptedVal = (0, security_1.encryptValue)(rawVal, key, version);
                 await client.query(`UPDATE "${table}" SET "${column}" = $1 WHERE "${idCol}" = $2`, [encryptedVal, row[idCol]]);
                 processed++;
                 printProgressBar(processed, total);
@@ -190,7 +190,7 @@ async function migrateMongo(url, collectionName, field, idCol, key, version, chu
             }
             for (const doc of batch) {
                 const rawVal = doc[field];
-                const encryptedVal = (0, prisma_1.encryptValue)(rawVal, key, version);
+                const encryptedVal = (0, security_1.encryptValue)(rawVal, key, version);
                 await collection.updateOne({ [idCol]: doc[idCol] }, { $set: { [field]: encryptedVal } });
                 processed++;
                 printProgressBar(processed, total);

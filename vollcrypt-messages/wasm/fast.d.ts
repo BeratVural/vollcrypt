@@ -1,5 +1,5 @@
-export { default } from "./pkg/wasm"
-export * from "./pkg/wasm"
+export { default } from "./pkg/wasm.js"
+export * from "./pkg/wasm.js"
 
 export declare function encryptAesGcmWeb(
   key: CryptoKey | Uint8Array,

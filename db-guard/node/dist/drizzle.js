@@ -1,11 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createDrizzleGuard = void 0;
-const pg_core_1 = require("drizzle-orm/pg-core");
-const mysql_core_1 = require("drizzle-orm/mysql-core");
-const sqlite_core_1 = require("drizzle-orm/sqlite-core");
-const prisma_1 = require("./prisma");
-const blind_index_1 = require("./blind-index");
 const security_1 = require("./security");
 function getKeys(options) {
     let keys;
@@ -24,6 +19,9 @@ function getKeys(options) {
     return { keys, activeVersion };
 }
 const createDrizzleGuard = (options) => {
+    const pgCustomType = require('drizzle-orm/pg-core').customType;
+    const mysqlCustomType = require('drizzle-orm/mysql-core').customType;
+    const sqliteCustomType = require('drizzle-orm/sqlite-core').customType;
     const { keys, activeVersion } = getKeys(options);
     const activeKey = keys[activeVersion];
     if (!activeKey) {
@@ -32,49 +30,49 @@ const createDrizzleGuard = (options) => {
     (0, security_1.registerKeysForZeroization)(keys);
     const rootSalt = options.blindIndexes?.rootSalt;
     return {
-        pgText: (name, columnPath) => (0, pg_core_1.customType)({
+        pgText: (name, columnPath) => pgCustomType({
             dataType() {
                 return 'text';
             },
             toDriver(value) {
-                return (0, prisma_1.encryptValue)(value, activeKey, activeVersion);
+                return (0, security_1.encryptValue)(value, activeKey, activeVersion);
             },
             fromDriver(value) {
                 const parts = columnPath?.split('.') || [name];
                 const mName = parts[0] || 'Model';
                 const fName = parts[1] || name;
-                return (0, security_1.decryptWithSecurity)(value, (val) => (0, prisma_1.decryptValue)(val, keys), mName, fName, undefined, options);
+                return (0, security_1.decryptWithSecurity)(value, (val) => (0, security_1.decryptValue)(val, keys), mName, fName, undefined, options);
             }
         })(name),
-        mysqlText: (name, columnPath) => (0, mysql_core_1.customType)({
+        mysqlText: (name, columnPath) => mysqlCustomType({
             dataType() {
                 return 'text';
             },
             toDriver(value) {
-                return (0, prisma_1.encryptValue)(value, activeKey, activeVersion);
+                return (0, security_1.encryptValue)(value, activeKey, activeVersion);
             },
             fromDriver(value) {
                 const parts = columnPath?.split('.') || [name];
                 const mName = parts[0] || 'Model';
                 const fName = parts[1] || name;
-                return (0, security_1.decryptWithSecurity)(value, (val) => (0, prisma_1.decryptValue)(val, keys), mName, fName, undefined, options);
+                return (0, security_1.decryptWithSecurity)(value, (val) => (0, security_1.decryptValue)(val, keys), mName, fName, undefined, options);
             }
         })(name),
-        sqliteText: (name, columnPath) => (0, sqlite_core_1.customType)({
+        sqliteText: (name, columnPath) => sqliteCustomType({
             dataType() {
                 return 'text';
             },
             toDriver(value) {
-                return (0, prisma_1.encryptValue)(value, activeKey, activeVersion);
+                return (0, security_1.encryptValue)(value, activeKey, activeVersion);
             },
             fromDriver(value) {
                 const parts = columnPath?.split('.') || [name];
                 const mName = parts[0] || 'Model';
                 const fName = parts[1] || name;
-                return (0, security_1.decryptWithSecurity)(value, (val) => (0, prisma_1.decryptValue)(val, keys), mName, fName, undefined, options);
+                return (0, security_1.decryptWithSecurity)(value, (val) => (0, security_1.decryptValue)(val, keys), mName, fName, undefined, options);
             }
         })(name),
-        pgBlindIndex: (name, columnName) => (0, pg_core_1.customType)({
+        pgBlindIndex: (name, columnName) => pgCustomType({
             dataType() {
                 return 'text';
             },
@@ -82,13 +80,13 @@ const createDrizzleGuard = (options) => {
                 if (!rootSalt) {
                     throw new Error('Blind index root salt is not configured in Drizzle guard options.');
                 }
-                return (0, blind_index_1.computeBlindIndex)(value, rootSalt, columnName);
+                return (0, security_1.computeBlindIndex)(value, rootSalt, columnName);
             },
             fromDriver(value) {
                 return value;
             }
         })(name),
-        mysqlBlindIndex: (name, columnName) => (0, mysql_core_1.customType)({
+        mysqlBlindIndex: (name, columnName) => mysqlCustomType({
             dataType() {
                 return 'text';
             },
@@ -96,13 +94,13 @@ const createDrizzleGuard = (options) => {
                 if (!rootSalt) {
                     throw new Error('Blind index root salt is not configured in Drizzle guard options.');
                 }
-                return (0, blind_index_1.computeBlindIndex)(value, rootSalt, columnName);
+                return (0, security_1.computeBlindIndex)(value, rootSalt, columnName);
             },
             fromDriver(value) {
                 return value;
             }
         })(name),
-        sqliteBlindIndex: (name, columnName) => (0, sqlite_core_1.customType)({
+        sqliteBlindIndex: (name, columnName) => sqliteCustomType({
             dataType() {
                 return 'text';
             },
@@ -110,7 +108,7 @@ const createDrizzleGuard = (options) => {
                 if (!rootSalt) {
                     throw new Error('Blind index root salt is not configured in Drizzle guard options.');
                 }
-                return (0, blind_index_1.computeBlindIndex)(value, rootSalt, columnName);
+                return (0, security_1.computeBlindIndex)(value, rootSalt, columnName);
             },
             fromDriver(value) {
                 return value;

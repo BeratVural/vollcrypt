@@ -6,7 +6,9 @@
   "files": [
     "vollcrypt_files_wasm_bg.wasm",
     "vollcrypt_files_wasm.js",
-    "vollcrypt_files_wasm.d.ts"
+    "vollcrypt_files_wasm.d.ts",
+    "LICENSE-COMMERCIAL.md",
+    "LICENSE-GPL"
   ],
   "main": "vollcrypt_files_wasm.js",
   "types": "vollcrypt_files_wasm.d.ts",

@@ -44,3 +44,13 @@ export declare class Pkcs11KmsProvider implements KmsProvider {
     });
     decrypt(ciphertext: Buffer): Promise<Buffer>;
 }
+export interface DbGuardKeysOptions {
+    key?: Buffer | Record<string, Buffer>;
+    kms?: {
+        provider: KmsProvider;
+        wrappedKey: Buffer | Record<string, Buffer>;
+        wrappedKek?: Buffer | Record<string, Buffer>;
+        activeKeyVersion?: string;
+    };
+}
+export declare function resolveKeys(options: DbGuardKeysOptions): Promise<Record<string, Buffer>>;

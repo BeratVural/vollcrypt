@@ -1047,7 +1047,7 @@ pub fn decrypt_streaming_online_policy<R: Read + Send + 'static, W: Write>(
     policy: &crate::shield::ShieldPolicy,
 ) -> Result<Header, FileFormatError> {
     let (header, _) = read_header_from_stream(&mut source)?;
-    if crate::sovereign::is_sealed(&header) {
+    if policy.verify_sealed_marker && crate::sovereign::is_sealed(&header) {
         return Err(FileFormatError::ContainerSealed);
     }
 
@@ -1304,7 +1304,7 @@ pub async fn decrypt_file_pipelined_async_policy(
     let pol = policy.unwrap_or(&default_policy);
 
     let (header, header_len) = Header::parse(ciphertext_bytes)?;
-    if crate::sovereign::is_sealed(&header) {
+    if pol.verify_sealed_marker && crate::sovereign::is_sealed(&header) {
         return Err(FileFormatError::ContainerSealed);
     }
 

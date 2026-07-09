@@ -1,6 +1,5 @@
 use crate::error::FileFormatError;
-use crate::header::{Header, SignedMetadata, Mode};
-use crate::merkle::HashAlgorithm;
+use crate::header::SignedMetadata;
 use crate::signature::{verify_header_signature_plain_policy, VerificationPolicy};
 use crate::pipelined_io::read_header_from_stream;
 use std::io::{Read, Seek, SeekFrom};
@@ -81,7 +80,7 @@ pub fn verify_container<R: Read + Seek>(
     policy: &ShieldPolicy,
 ) -> ShieldReport {
     // 1. Read header
-    let (header, header_len) = match read_header_from_stream(&mut reader) {
+    let (header, _header_len) = match read_header_from_stream(&mut reader) {
         Ok(res) => res,
         Err(e) => return map_format_error_to_report(e),
     };
@@ -110,7 +109,7 @@ pub fn verify_container<R: Read + Seek>(
         }
     }
 
-    if crate::sovereign::is_sealed(&header) {
+    if policy.verify_sealed_marker && crate::sovereign::is_sealed(&header) {
         return ShieldReport::ContainerSealed;
     }
 
@@ -139,7 +138,7 @@ pub fn verify_container<R: Read + Seek>(
     let total_chunks = total_chunks_u64 as u32;
 
     let mut leaf_hashes = Vec::new();
-    let payload_start_pos = match reader.stream_position() {
+    let _payload_start_pos = match reader.stream_position() {
         Ok(pos) => pos,
         Err(_) => return ShieldReport::HeaderField("stream_position_failed".to_string()),
     };

@@ -35,9 +35,6 @@ var __runInitializers = (this && this.__runInitializers) || function (thisArg, i
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createTypeOrmSubscriber = createTypeOrmSubscriber;
-const typeorm_1 = require("typeorm");
-const prisma_1 = require("./prisma");
-const blind_index_1 = require("./blind-index");
 const security_1 = require("./security");
 function getKeys(options) {
     let keys;
@@ -56,6 +53,7 @@ function getKeys(options) {
     return { keys, activeVersion };
 }
 function createTypeOrmSubscriber(options) {
+    const { EventSubscriber } = require('typeorm');
     const { keys, activeVersion } = getKeys(options);
     const activeKey = keys[activeVersion];
     if (!activeKey) {
@@ -63,7 +61,7 @@ function createTypeOrmSubscriber(options) {
     }
     (0, security_1.registerKeysForZeroization)(keys);
     let VollcryptDbGuardSubscriber = (() => {
-        let _classDecorators = [(0, typeorm_1.EventSubscriber)()];
+        let _classDecorators = [EventSubscriber()];
         let _classDescriptor;
         let _classExtraInitializers = [];
         let _classThis;
@@ -90,7 +88,7 @@ function createTypeOrmSubscriber(options) {
                             for (const field of bidxFields) {
                                 if (event.entity[field] !== undefined && event.entity[field] !== null) {
                                     const bidxField = `${field}_bidx`;
-                                    event.entity[bidxField] = (0, blind_index_1.computeBlindIndex)(event.entity[field], options.blindIndexes.rootSalt, `${entityName}.${field}`);
+                                    event.entity[bidxField] = (0, security_1.computeBlindIndex)(event.entity[field], options.blindIndexes.rootSalt, `${entityName}.${field}`);
                                 }
                             }
                         }
@@ -98,7 +96,7 @@ function createTypeOrmSubscriber(options) {
                     // Encrypt fields
                     for (const field of fields) {
                         if (event.entity[field] !== undefined && event.entity[field] !== null) {
-                            event.entity[field] = (0, prisma_1.encryptValue)(event.entity[field], activeKey, activeVersion);
+                            event.entity[field] = (0, security_1.encryptValue)(event.entity[field], activeKey, activeVersion);
                         }
                     }
                 }
@@ -114,7 +112,7 @@ function createTypeOrmSubscriber(options) {
                             for (const field of bidxFields) {
                                 if (event.entity[field] !== undefined && event.entity[field] !== null) {
                                     const bidxField = `${field}_bidx`;
-                                    event.entity[bidxField] = (0, blind_index_1.computeBlindIndex)(event.entity[field], options.blindIndexes.rootSalt, `${entityName}.${field}`);
+                                    event.entity[bidxField] = (0, security_1.computeBlindIndex)(event.entity[field], options.blindIndexes.rootSalt, `${entityName}.${field}`);
                                 }
                             }
                         }
@@ -122,7 +120,7 @@ function createTypeOrmSubscriber(options) {
                     // Encrypt fields
                     for (const field of fields) {
                         if (event.entity[field] !== undefined && event.entity[field] !== null) {
-                            event.entity[field] = (0, prisma_1.encryptValue)(event.entity[field], activeKey, activeVersion);
+                            event.entity[field] = (0, security_1.encryptValue)(event.entity[field], activeKey, activeVersion);
                         }
                     }
                 }
@@ -136,7 +134,7 @@ function createTypeOrmSubscriber(options) {
                     for (const field of fields) {
                         if (entity[field] !== undefined && entity[field] !== null) {
                             try {
-                                entity[field] = (0, security_1.decryptWithSecurity)(entity[field], (val) => (0, prisma_1.decryptValue)(val, keys), entityName, field, entity.id || entity._id, options);
+                                entity[field] = (0, security_1.decryptWithSecurity)(entity[field], (val) => (0, security_1.decryptValue)(val, keys), entityName, field, entity.id || entity._id, options);
                             }
                             catch (err) {
                                 throw new Error(`TypeORM db-guard failed to decrypt field "${field}": ${err.message}`);

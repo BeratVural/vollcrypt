@@ -1,5 +1,8 @@
 # Override root .gitignore to include compiled WASM files
-!pkg/
+!pkg/vollcrypt_files_wasm.js
+!pkg/vollcrypt_files_wasm_bg.wasm
+!pkg/vollcrypt_files_wasm.d.ts
+!pkg/vollcrypt_files_wasm_bg.wasm.d.ts
 
 # Ignore source code and test files
 src/

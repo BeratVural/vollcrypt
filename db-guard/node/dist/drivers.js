@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.wrapSqliteDatabase = wrapSqliteDatabase;
 exports.wrapOracleConnection = wrapOracleConnection;
-const prisma_js_1 = require("./prisma.js");
 const security_js_1 = require("./security.js");
 function getKeys(options) {
     let keys = {};
@@ -66,7 +65,7 @@ function decryptRow(row, table, keys, options) {
                 const val = row[i];
                 if (typeof val === 'string' && val.startsWith('VOLLVALT:')) {
                     try {
-                        cloned[i] = (0, security_js_1.decryptWithSecurity)(val, (v) => (0, prisma_js_1.decryptValue)(v, keys), table, `column_${i}`, undefined, options);
+                        cloned[i] = (0, security_js_1.decryptWithSecurity)(val, (v) => (0, security_js_1.decryptValue)(v, keys), table, `column_${i}`, undefined, options);
                     }
                     catch {
                         // Keep original on failure
@@ -80,7 +79,7 @@ function decryptRow(row, table, keys, options) {
             for (const [key, val] of Object.entries(row)) {
                 if (typeof val === 'string' && val.startsWith('VOLLVALT:')) {
                     try {
-                        cloned[key] = (0, security_js_1.decryptWithSecurity)(val, (v) => (0, prisma_js_1.decryptValue)(v, keys), table, key, row.id || row._id, options);
+                        cloned[key] = (0, security_js_1.decryptWithSecurity)(val, (v) => (0, security_js_1.decryptValue)(v, keys), table, key, row.id || row._id, options);
                     }
                     catch {
                         // Keep original on failure
@@ -114,7 +113,7 @@ function wrapSqliteDatabase(db, options) {
                 const arrayParams = params[0].map((param, index) => {
                     const colName = columns[index];
                     if (colName && fieldsToEncrypt.includes(colName)) {
-                        return (0, prisma_js_1.encryptValue)(param, activeKey, activeVersion);
+                        return (0, security_js_1.encryptValue)(param, activeKey, activeVersion);
                     }
                     return param;
                 });
@@ -127,7 +126,7 @@ function wrapSqliteDatabase(db, options) {
                     // Strip prefix character (@, :, $) if present
                     const cleanKey = key.replace(/^[@:$]/, '');
                     if (fieldsToEncrypt.includes(cleanKey)) {
-                        obj[key] = (0, prisma_js_1.encryptValue)(val, activeKey, activeVersion);
+                        obj[key] = (0, security_js_1.encryptValue)(val, activeKey, activeVersion);
                     }
                 }
                 return [obj];
@@ -136,7 +135,7 @@ function wrapSqliteDatabase(db, options) {
             return params.map((param, index) => {
                 const colName = columns[index];
                 if (colName && fieldsToEncrypt.includes(colName)) {
-                    return (0, prisma_js_1.encryptValue)(param, activeKey, activeVersion);
+                    return (0, security_js_1.encryptValue)(param, activeKey, activeVersion);
                 }
                 return param;
             });
@@ -192,7 +191,7 @@ function wrapOracleConnection(connection, options) {
                     processedBinds = bindParams.map((param, index) => {
                         const colName = columns[index];
                         if (colName && fieldsToEncrypt.includes(colName)) {
-                            return (0, prisma_js_1.encryptValue)(param, activeKey, activeVersion);
+                            return (0, security_js_1.encryptValue)(param, activeKey, activeVersion);
                         }
                         return param;
                     });
@@ -201,7 +200,7 @@ function wrapOracleConnection(connection, options) {
                     processedBinds = { ...bindParams };
                     for (const field of fieldsToEncrypt) {
                         if (processedBinds[field] !== undefined && processedBinds[field] !== null) {
-                            processedBinds[field] = (0, prisma_js_1.encryptValue)(processedBinds[field], activeKey, activeVersion);
+                            processedBinds[field] = (0, security_js_1.encryptValue)(processedBinds[field], activeKey, activeVersion);
                         }
                     }
                 }

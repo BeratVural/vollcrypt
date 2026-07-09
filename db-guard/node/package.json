@@ -7,10 +7,35 @@
   "bin": {
     "vollcrypt-db-guard": "dist/cli.js"
   },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./prisma": {
+      "types": "./dist/prisma.d.ts",
+      "default": "./dist/prisma.js"
+    },
+    "./mongoose": {
+      "types": "./dist/mongoose.d.ts",
+      "default": "./dist/mongoose.js"
+    },
+    "./drizzle": {
+      "types": "./dist/drizzle.d.ts",
+      "default": "./dist/drizzle.js"
+    },
+    "./typeorm": {
+      "types": "./dist/typeorm.d.ts",
+      "default": "./dist/typeorm.js"
+    }
+  },
   "files": [
     "dist",
     "README.md",
-    "compliance-config.json"
+    "compliance-config.json",
+    "LICENSE",
+    "LICENSE-COMMERCIAL.md",
+    "LICENSE-GPL"
   ],
   "publishConfig": {
     "access": "public"

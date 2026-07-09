@@ -1,8 +1,5 @@
-import { EntitySubscriberInterface, EventSubscriber, InsertEvent, UpdateEvent } from 'typeorm';
-import { encryptValue, decryptValue } from './prisma';
-import { computeBlindIndex } from './blind-index';
-
-import { decryptWithSecurity, registerKeysForZeroization, RateLimiterOptions } from './security';
+import type { EntitySubscriberInterface, InsertEvent, UpdateEvent } from 'typeorm';
+import { encryptValue, decryptValue, computeBlindIndex, decryptWithSecurity, registerKeysForZeroization, RateLimiterOptions } from './security';
 
 export interface TypeOrmDbGuardOptions {
   key: Buffer | Record<string, Buffer>;
@@ -40,6 +37,7 @@ function getKeys(options: TypeOrmDbGuardOptions) {
 }
 
 export function createTypeOrmSubscriber(options: TypeOrmDbGuardOptions) {
+  const { EventSubscriber } = require('typeorm');
   const { keys, activeVersion } = getKeys(options);
   const activeKey = keys[activeVersion];
 

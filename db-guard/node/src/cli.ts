@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { encryptValue } from './prisma';
+import { encryptValue } from './security';
 
 function printProgressBar(current: number, total: number) {
   const percentage = Math.min(100, Math.floor((current / total) * 100));

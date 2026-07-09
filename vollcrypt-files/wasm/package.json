@@ -5,6 +5,12 @@
   "type": "module",
   "main": "pkg/vollcrypt_files_wasm.js",
   "types": "pkg/vollcrypt_files_wasm.d.ts",
+  "exports": {
+    ".": {
+      "types": "./pkg/vollcrypt_files_wasm.d.ts",
+      "import": "./pkg/vollcrypt_files_wasm.js"
+    }
+  },
   "scripts": {
     "build": "wasm-pack build --target web --out-dir pkg",
     "postbuild": "node -e \"const fs = require('fs'); try { fs.unlinkSync('pkg/.gitignore'); } catch (e) {}\"",
@@ -24,9 +30,14 @@
     "url": "https://github.com/BeratVural/vollcrypt/issues"
   },
   "files": [
-    "pkg/",
+    "pkg/vollcrypt_files_wasm.js",
+    "pkg/vollcrypt_files_wasm.d.ts",
+    "pkg/vollcrypt_files_wasm_bg.wasm",
+    "pkg/vollcrypt_files_wasm_bg.wasm.d.ts",
     "README.md",
     "LICENSE",
+    "LICENSE-COMMERCIAL.md",
+    "LICENSE-GPL",
     "CHANGELOG.md"
   ],
   "keywords": [

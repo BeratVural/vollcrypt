@@ -44,9 +44,10 @@ pub fn generate_x25519_keypair() -> Vec<Buffer> {
 }
 
 #[napi]
-pub fn ecdh_shared_secret(mut our_secret: Uint8Array, their_public: Uint8Array) -> Result<Buffer> {
-    let res = vollcrypt_core::ecdh_shared_secret(our_secret.as_ref(), their_public.as_ref());
-    our_secret.as_mut().zeroize();
+pub fn ecdh_shared_secret(our_secret: Uint8Array, their_public: Uint8Array) -> Result<Buffer> {
+    let mut secret_copy = our_secret.as_ref().to_vec();
+    let res = vollcrypt_core::ecdh_shared_secret(&secret_copy, their_public.as_ref());
+    secret_copy.zeroize();
     match res {
         Ok(v) => Ok(Buffer::from(v)),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -54,9 +55,10 @@ pub fn ecdh_shared_secret(mut our_secret: Uint8Array, their_public: Uint8Array) 
 }
 
 #[napi]
-pub fn sign_message(mut secret_key: Uint8Array, message: Uint8Array) -> Result<Buffer> {
-    let res = vollcrypt_core::sign_message(secret_key.as_ref(), message.as_ref());
-    secret_key.as_mut().zeroize();
+pub fn sign_message(secret_key: Uint8Array, message: Uint8Array) -> Result<Buffer> {
+    let mut sk_copy = secret_key.as_ref().to_vec();
+    let res = vollcrypt_core::sign_message(&sk_copy, message.as_ref());
+    sk_copy.zeroize();
     match res {
         Ok(v) => Ok(Buffer::from(v)),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -74,13 +76,14 @@ pub fn verify_signature(
 
 #[napi]
 pub fn encrypt_aes_gcm(
-    mut key: Uint8Array,
+    key: Uint8Array,
     plaintext: Uint8Array,
     aad: Option<Uint8Array>,
 ) -> Result<Buffer> {
+    let mut key_copy = key.as_ref().to_vec();
     let aad_ref = aad.as_ref().map(|x| x.as_ref());
-    let res = vollcrypt_core::encrypt_aes256gcm(key.as_ref(), plaintext.as_ref(), aad_ref);
-    key.as_mut().zeroize();
+    let res = vollcrypt_core::encrypt_aes256gcm(&key_copy, plaintext.as_ref(), aad_ref);
+    key_copy.zeroize();
     match res {
         Ok(v) => Ok(Buffer::from(v)),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -89,13 +92,14 @@ pub fn encrypt_aes_gcm(
 
 #[napi]
 pub fn decrypt_aes_gcm(
-    mut key: Uint8Array,
+    key: Uint8Array,
     ciphertext: Uint8Array,
     aad: Option<Uint8Array>,
 ) -> Result<Buffer> {
+    let mut key_copy = key.as_ref().to_vec();
     let aad_ref = aad.as_ref().map(|x| x.as_ref());
-    let res = vollcrypt_core::decrypt_aes256gcm(key.as_ref(), ciphertext.as_ref(), aad_ref);
-    key.as_mut().zeroize();
+    let res = vollcrypt_core::decrypt_aes256gcm(&key_copy, ciphertext.as_ref(), aad_ref);
+    key_copy.zeroize();
     match res {
         Ok(v) => Ok(Buffer::from(v)),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -104,13 +108,14 @@ pub fn decrypt_aes_gcm(
 
 #[napi]
 pub fn encrypt_aes_gcm_padded(
-    mut key: Uint8Array,
+    key: Uint8Array,
     plaintext: Uint8Array,
     aad: Option<Uint8Array>,
 ) -> Result<Buffer> {
+    let mut key_copy = key.as_ref().to_vec();
     let aad_ref = aad.as_ref().map(|x| x.as_ref());
-    let res = vollcrypt_core::encrypt_aes256gcm_padded(key.as_ref(), plaintext.as_ref(), aad_ref);
-    key.as_mut().zeroize();
+    let res = vollcrypt_core::encrypt_aes256gcm_padded(&key_copy, plaintext.as_ref(), aad_ref);
+    key_copy.zeroize();
     match res {
         Ok(v) => Ok(Buffer::from(v)),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -119,13 +124,14 @@ pub fn encrypt_aes_gcm_padded(
 
 #[napi]
 pub fn decrypt_aes_gcm_padded(
-    mut key: Uint8Array,
+    key: Uint8Array,
     ciphertext: Uint8Array,
     aad: Option<Uint8Array>,
 ) -> Result<Buffer> {
+    let mut key_copy = key.as_ref().to_vec();
     let aad_ref = aad.as_ref().map(|x| x.as_ref());
-    let res = vollcrypt_core::decrypt_aes256gcm_padded(key.as_ref(), ciphertext.as_ref(), aad_ref);
-    key.as_mut().zeroize();
+    let res = vollcrypt_core::decrypt_aes256gcm_padded(&key_copy, ciphertext.as_ref(), aad_ref);
+    key_copy.zeroize();
     match res {
         Ok(v) => Ok(Buffer::from(v)),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -134,19 +140,20 @@ pub fn decrypt_aes_gcm_padded(
 
 #[napi]
 pub fn encrypt_aes_gcm_chunked(
-    mut key: Uint8Array,
+    key: Uint8Array,
     plaintext: Uint8Array,
     aad: Option<Uint8Array>,
     chunk_size: u32,
 ) -> Result<Buffer> {
+    let mut key_copy = key.as_ref().to_vec();
     let aad_ref = aad.as_ref().map(|x| x.as_ref());
     let res = vollcrypt_core::encrypt_aes256gcm_chunked(
-        key.as_ref(),
+        &key_copy,
         plaintext.as_ref(),
         aad_ref,
         chunk_size as usize,
     );
-    key.as_mut().zeroize();
+    key_copy.zeroize();
     match res {
         Ok(v) => Ok(Buffer::from(v)),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -155,13 +162,14 @@ pub fn encrypt_aes_gcm_chunked(
 
 #[napi]
 pub fn decrypt_aes_gcm_chunked(
-    mut key: Uint8Array,
+    key: Uint8Array,
     ciphertext: Uint8Array,
     aad: Option<Uint8Array>,
 ) -> Result<Buffer> {
+    let mut key_copy = key.as_ref().to_vec();
     let aad_ref = aad.as_ref().map(|x| x.as_ref());
-    let res = vollcrypt_core::decrypt_aes256gcm_chunked(key.as_ref(), ciphertext.as_ref(), aad_ref);
-    key.as_mut().zeroize();
+    let res = vollcrypt_core::decrypt_aes256gcm_chunked(&key_copy, ciphertext.as_ref(), aad_ref);
+    key_copy.zeroize();
     match res {
         Ok(v) => Ok(Buffer::from(v)),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -170,19 +178,20 @@ pub fn decrypt_aes_gcm_chunked(
 
 #[napi]
 pub fn encrypt_aes_gcm_chunked_padded(
-    mut key: Uint8Array,
+    key: Uint8Array,
     plaintext: Uint8Array,
     aad: Option<Uint8Array>,
     chunk_size: u32,
 ) -> Result<Buffer> {
+    let mut key_copy = key.as_ref().to_vec();
     let aad_ref = aad.as_ref().map(|x| x.as_ref());
     let res = vollcrypt_core::encrypt_aes256gcm_chunked_padded(
-        key.as_ref(),
+        &key_copy,
         plaintext.as_ref(),
         aad_ref,
         chunk_size as usize,
     );
-    key.as_mut().zeroize();
+    key_copy.zeroize();
     match res {
         Ok(v) => Ok(Buffer::from(v)),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -191,17 +200,18 @@ pub fn encrypt_aes_gcm_chunked_padded(
 
 #[napi]
 pub fn decrypt_aes_gcm_chunked_padded(
-    mut key: Uint8Array,
+    key: Uint8Array,
     ciphertext: Uint8Array,
     aad: Option<Uint8Array>,
 ) -> Result<Buffer> {
+    let mut key_copy = key.as_ref().to_vec();
     let aad_ref = aad.as_ref().map(|x| x.as_ref());
     let res = vollcrypt_core::decrypt_aes256gcm_chunked_padded(
-        key.as_ref(),
+        &key_copy,
         ciphertext.as_ref(),
         aad_ref,
     );
-    key.as_mut().zeroize();
+    key_copy.zeroize();
     match res {
         Ok(v) => Ok(Buffer::from(v)),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -210,33 +220,35 @@ pub fn decrypt_aes_gcm_chunked_padded(
 
 #[napi]
 pub fn derive_pbkdf2(
-    mut password: Uint8Array,
+    password: Uint8Array,
     salt: Uint8Array,
     iterations: u32,
     key_len: u32,
 ) -> napi::Result<Buffer> {
+    let mut password_copy = password.as_ref().to_vec();
     let res = vollcrypt_core::derive_pbkdf2(
-        password.as_ref(),
+        &password_copy,
         salt.as_ref(),
         iterations,
         key_len as usize,
     );
-    password.as_mut().zeroize();
+    password_copy.zeroize();
     let key = res.map_err(|e| napi::Error::from_reason(e))?;
     Ok(Buffer::from(key))
 }
 
 #[napi]
 pub fn derive_hkdf(
-    mut ikm: Uint8Array,
+    ikm: Uint8Array,
     salt: Option<Uint8Array>,
     info: Option<Uint8Array>,
     key_len: u32,
 ) -> Result<Buffer> {
+    let mut ikm_copy = ikm.as_ref().to_vec();
     let salt_ref = salt.as_ref().map(|x| x.as_ref());
     let info_ref = info.as_ref().map(|x| x.as_ref());
-    let res = vollcrypt_core::derive_hkdf(ikm.as_ref(), salt_ref, info_ref, key_len as usize);
-    ikm.as_mut().zeroize();
+    let res = vollcrypt_core::derive_hkdf(ikm_copy.as_ref(), salt_ref, info_ref, key_len as usize);
+    ikm_copy.zeroize();
     match res {
         Ok(v) => Ok(Buffer::from(v)),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -244,9 +256,10 @@ pub fn derive_hkdf(
 }
 
 #[napi]
-pub fn derive_srk(mut dek: Uint8Array, chat_id: Uint8Array) -> Result<Buffer> {
-    let res = vollcrypt_core::derive_srk(dek.as_ref(), chat_id.as_ref());
-    dek.as_mut().zeroize();
+pub fn derive_srk(dek: Uint8Array, chat_id: Uint8Array) -> Result<Buffer> {
+    let mut dek_copy = dek.as_ref().to_vec();
+    let res = vollcrypt_core::derive_srk(dek_copy.as_ref(), chat_id.as_ref());
+    dek_copy.zeroize();
     match res {
         Ok(v) => Ok(Buffer::from(v)),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -254,9 +267,10 @@ pub fn derive_srk(mut dek: Uint8Array, chat_id: Uint8Array) -> Result<Buffer> {
 }
 
 #[napi]
-pub fn derive_window_key(mut srk: Uint8Array, window_index: u32) -> Result<Buffer> {
-    let res = vollcrypt_core::derive_window_key(srk.as_ref(), window_index as u64);
-    srk.as_mut().zeroize();
+pub fn derive_window_key(srk: Uint8Array, window_index: u32) -> Result<Buffer> {
+    let mut srk_copy = srk.as_ref().to_vec();
+    let res = vollcrypt_core::derive_window_key(srk_copy.as_ref(), window_index as u64);
+    srk_copy.zeroize();
     match res {
         Ok(v) => Ok(Buffer::from(v)),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -265,8 +279,8 @@ pub fn derive_window_key(mut srk: Uint8Array, window_index: u32) -> Result<Buffe
 
 #[napi]
 pub fn generate_verification_code(
-    mut key_a: Uint8Array,
-    mut key_b: Uint8Array,
+    key_a: Uint8Array,
+    key_b: Uint8Array,
     conversation_id: Uint8Array,
 ) -> Result<String> {
     let key_a_slice = key_a.as_ref();
@@ -293,8 +307,6 @@ pub fn generate_verification_code(
 
     ka.zeroize();
     kb.zeroize();
-    key_a.as_mut().zeroize();
-    key_b.as_mut().zeroize();
 
     serde_json::to_string(&code)
         .map_err(|e| Error::from_reason(format!("Serialization failed: {}", e)))
@@ -302,8 +314,8 @@ pub fn generate_verification_code(
 
 #[napi]
 pub fn compute_fingerprint(
-    mut key_a: Uint8Array,
-    mut key_b: Uint8Array,
+    key_a: Uint8Array,
+    key_b: Uint8Array,
     conversation_id: Uint8Array,
 ) -> Result<Buffer> {
     let key_a_slice = key_a.as_ref();
@@ -326,8 +338,6 @@ pub fn compute_fingerprint(
 
     ka.zeroize();
     kb.zeroize();
-    key_a.as_mut().zeroize();
-    key_b.as_mut().zeroize();
 
     Ok(Buffer::from(fp.to_vec()))
 }
@@ -442,9 +452,10 @@ pub fn ml_kem_encapsulate(encapsulation_key: Uint8Array) -> Result<MlKemEncapsul
 }
 
 #[napi]
-pub fn ml_kem_decapsulate(mut decapsulation_key: Uint8Array, ciphertext: Uint8Array) -> Result<Buffer> {
-    let res = vollcrypt_core::ml_kem_decapsulate(decapsulation_key.as_ref(), ciphertext.as_ref());
-    decapsulation_key.as_mut().zeroize();
+pub fn ml_kem_decapsulate(decapsulation_key: Uint8Array, ciphertext: Uint8Array) -> Result<Buffer> {
+    let mut dk_copy = decapsulation_key.as_ref().to_vec();
+    let res = vollcrypt_core::ml_kem_decapsulate(&dk_copy, ciphertext.as_ref());
+    dk_copy.zeroize();
     match res {
         Ok(ss) => Ok(Buffer::from(ss)),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -459,16 +470,17 @@ pub struct HybridKemResult {
 
 #[napi]
 pub fn hybrid_kem_encapsulate(
-    mut x25519_our_secret: Uint8Array,
+    x25519_our_secret: Uint8Array,
     x25519_their_public: Uint8Array,
     ml_kem_ek: Uint8Array,
 ) -> Result<HybridKemResult> {
+    let mut our_secret_copy = x25519_our_secret.as_ref().to_vec();
     let res = vollcrypt_core::hybrid_kem_encapsulate(
-        x25519_our_secret.as_ref(),
+        &our_secret_copy,
         x25519_their_public.as_ref(),
         ml_kem_ek.as_ref(),
     );
-    x25519_our_secret.as_mut().zeroize();
+    our_secret_copy.zeroize();
     match res {
         Ok((key, ct)) => Ok(HybridKemResult {
             shared_key: Buffer::from(key),
@@ -480,19 +492,21 @@ pub fn hybrid_kem_encapsulate(
 
 #[napi]
 pub fn hybrid_kem_decapsulate(
-    mut x25519_our_secret: Uint8Array,
+    x25519_our_secret: Uint8Array,
     x25519_their_public: Uint8Array,
-    mut ml_kem_dk: Uint8Array,
+    ml_kem_dk: Uint8Array,
     ml_kem_ct: Uint8Array,
 ) -> Result<Buffer> {
+    let mut our_secret_copy = x25519_our_secret.as_ref().to_vec();
+    let mut ml_kem_dk_copy = ml_kem_dk.as_ref().to_vec();
     let res = vollcrypt_core::hybrid_kem_decapsulate(
-        x25519_our_secret.as_ref(),
+        &our_secret_copy,
         x25519_their_public.as_ref(),
-        ml_kem_dk.as_ref(),
+        &ml_kem_dk_copy,
         ml_kem_ct.as_ref(),
     );
-    x25519_our_secret.as_mut().zeroize();
-    ml_kem_dk.as_mut().zeroize();
+    our_secret_copy.zeroize();
+    ml_kem_dk_copy.zeroize();
     match res {
         Ok(key) => Ok(Buffer::from(key)),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -501,19 +515,21 @@ pub fn hybrid_kem_decapsulate(
 
 #[napi]
 pub fn authenticated_kem_encapsulate(
-    mut our_x25519_sk: Uint8Array,
+    our_x25519_sk: Uint8Array,
     recipient_x25519_pub: Uint8Array,
     recipient_mlkem_ek: Uint8Array,
-    mut sender_identity_sk: Uint8Array,
+    sender_identity_sk: Uint8Array,
 ) -> Result<Vec<Buffer>> {
+    let mut our_x25519_sk_copy = our_x25519_sk.as_ref().to_vec();
+    let mut sender_identity_sk_copy = sender_identity_sk.as_ref().to_vec();
     let res = vollcrypt_core::pqc::authenticated_kem_encapsulate(
-        our_x25519_sk.as_ref(),
+        &our_x25519_sk_copy,
         recipient_x25519_pub.as_ref(),
         recipient_mlkem_ek.as_ref(),
-        sender_identity_sk.as_ref(),
+        &sender_identity_sk_copy,
     );
-    our_x25519_sk.as_mut().zeroize();
-    sender_identity_sk.as_mut().zeroize();
+    our_x25519_sk_copy.zeroize();
+    sender_identity_sk_copy.zeroize();
     match res {
         Ok((ct, ss)) => Ok(vec![Buffer::from(ct), Buffer::from(ss)]),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -522,21 +538,23 @@ pub fn authenticated_kem_encapsulate(
 
 #[napi]
 pub fn authenticated_kem_decapsulate(
-    mut our_x25519_sk: Uint8Array,
+    our_x25519_sk: Uint8Array,
     sender_x25519_pub: Uint8Array,
-    mut our_mlkem_dk: Uint8Array,
+    our_mlkem_dk: Uint8Array,
     authenticated_ciphertext: Uint8Array,
     sender_identity_pk: Uint8Array,
 ) -> Result<Buffer> {
+    let mut our_x25519_sk_copy = our_x25519_sk.as_ref().to_vec();
+    let mut our_mlkem_dk_copy = our_mlkem_dk.as_ref().to_vec();
     let res = vollcrypt_core::pqc::authenticated_kem_decapsulate(
-        our_x25519_sk.as_ref(),
+        &our_x25519_sk_copy,
         sender_x25519_pub.as_ref(),
-        our_mlkem_dk.as_ref(),
+        &our_mlkem_dk_copy,
         authenticated_ciphertext.as_ref(),
         sender_identity_pk.as_ref(),
     );
-    our_x25519_sk.as_mut().zeroize();
-    our_mlkem_dk.as_mut().zeroize();
+    our_x25519_sk_copy.zeroize();
+    our_mlkem_dk_copy.zeroize();
     match res {
         Ok(ss) => Ok(Buffer::from(ss)),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -756,7 +774,7 @@ pub fn seal_message(
 }
 
 #[napi]
-pub fn unseal_message(sealed_packet: Uint8Array, mut our_x25519_sk: Uint8Array) -> Result<Vec<Buffer>> {
+pub fn unseal_message(sealed_packet: Uint8Array, our_x25519_sk: Uint8Array) -> Result<Vec<Buffer>> {
     if our_x25519_sk.len() != 32 {
         return Err(Error::from_reason(
             "our_x25519_sk must be 32 bytes".to_string(),
@@ -768,7 +786,6 @@ pub fn unseal_message(sealed_packet: Uint8Array, mut our_x25519_sk: Uint8Array) 
 
     let res = vollcrypt_core::sealed_sender::unseal(sealed_packet.as_ref(), &sk_bytes);
     sk_bytes.zeroize();
-    our_x25519_sk.as_mut().zeroize();
     match res {
         Ok((sender_id, content)) => Ok(vec![Buffer::from(sender_id), Buffer::from(content)]),
         Err(e) => Err(Error::from_reason(format!("Unsealing failed: {:?}", e))),
@@ -784,7 +801,7 @@ pub fn key_log_create_entry(
     timestamp: u32,
     prev_entry_hash: Uint8Array,
     action: u8,
-    mut signing_key: Uint8Array,
+    signing_key: Uint8Array,
 ) -> Result<String> {
     if public_key.len() != 32 || prev_entry_hash.len() != 32 || signing_key.len() != 32 {
         return Err(Error::from_reason(
@@ -805,7 +822,6 @@ pub fn key_log_create_entry(
         3 => vollcrypt_core::key_log::KeyAction::Revoke,
         _ => {
             sign_key.zeroize();
-            signing_key.as_mut().zeroize();
             return Err(Error::from_reason("Invalid action type".to_string()));
         }
     };
@@ -820,7 +836,6 @@ pub fn key_log_create_entry(
     );
 
     sign_key.zeroize();
-    signing_key.as_mut().zeroize();
 
     match res {
         Ok(entry) => serde_json::to_string(&entry).map_err(|e| Error::from_reason(e.to_string())),

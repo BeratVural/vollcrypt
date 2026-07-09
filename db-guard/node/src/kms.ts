@@ -164,3 +164,58 @@ export class Pkcs11KmsProvider implements KmsProvider {
     }
   }
 }
+
+export interface DbGuardKeysOptions {
+  key?: Buffer | Record<string, Buffer>;
+  kms?: {
+    provider: KmsProvider;
+    wrappedKey: Buffer | Record<string, Buffer>;
+    wrappedKek?: Buffer | Record<string, Buffer>;
+    activeKeyVersion?: string;
+  };
+}
+
+export async function resolveKeys(options: DbGuardKeysOptions): Promise<Record<string, Buffer>> {
+  let rawKeys: Record<string, Buffer> = {};
+
+  if (options.key) {
+    if (Buffer.isBuffer(options.key)) {
+      rawKeys = { '1': options.key };
+    } else {
+      rawKeys = { ...options.key };
+    }
+  } else if (options.kms) {
+    const { provider, wrappedKey, wrappedKek } = options.kms;
+    if (Buffer.isBuffer(wrappedKey)) {
+      if (wrappedKek && Buffer.isBuffer(wrappedKek)) {
+        const unwrappedKek = await provider.decrypt(wrappedKek);
+        const dek = unwrapDekLocal(wrappedKey, unwrappedKek);
+        unwrappedKek.fill(0); // RAM Security: zeroize KEK immediately
+        rawKeys = { '1': dek };
+      } else {
+        const key = await provider.decrypt(wrappedKey);
+        rawKeys = { '1': key };
+      }
+    } else {
+      for (const [ver, wrapped] of Object.entries(wrappedKey)) {
+        if (wrappedKek) {
+          const wKek = Buffer.isBuffer(wrappedKek) ? wrappedKek : (wrappedKek as Record<string, Buffer>)[ver];
+          if (wKek) {
+            const unwrappedKek = await provider.decrypt(wKek);
+            const dek = unwrapDekLocal(wrapped, unwrappedKek);
+            unwrappedKek.fill(0); // RAM Security: zeroize KEK immediately
+            rawKeys[ver] = dek;
+          } else {
+            rawKeys[ver] = await provider.decrypt(wrapped);
+          }
+        } else {
+          rawKeys[ver] = await provider.decrypt(wrapped);
+        }
+      }
+    }
+  } else {
+    throw new Error("Either 'key' or 'kms' configuration must be provided.");
+  }
+
+  return rawKeys;
+}

@@ -1,172 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.prismaDbGuard = void 0;
-exports.resolveKeys = resolveKeys;
-exports.encryptValue = encryptValue;
-exports.decryptValue = decryptValue;
-exports.rewriteQueryWhere = rewriteQueryWhere;
-exports.addBlindIndexes = addBlindIndexes;
-const client_1 = require("@prisma/client");
-const blind_index_1 = require("./blind-index");
+exports.resolveKeys = exports.addBlindIndexes = exports.rewriteQueryWhere = exports.decryptValue = exports.encryptValue = exports.prismaDbGuard = void 0;
 const kms_1 = require("./kms");
 const security_1 = require("./security");
-/**
- * Resolves the plaintext keys asynchronously from local config or KMS provider.
- */
-async function resolveKeys(options) {
-    let rawKeys = {};
-    if (options.key) {
-        if (Buffer.isBuffer(options.key)) {
-            rawKeys = { '1': options.key };
-        }
-        else {
-            rawKeys = { ...options.key };
-        }
-    }
-    else if (options.kms) {
-        const { provider, wrappedKey, wrappedKek } = options.kms;
-        if (Buffer.isBuffer(wrappedKey)) {
-            if (wrappedKek && Buffer.isBuffer(wrappedKek)) {
-                const unwrappedKek = await provider.decrypt(wrappedKek);
-                const dek = (0, kms_1.unwrapDekLocal)(wrappedKey, unwrappedKek);
-                unwrappedKek.fill(0); // RAM Security: zeroize KEK immediately
-                rawKeys = { '1': dek };
-            }
-            else {
-                const key = await provider.decrypt(wrappedKey);
-                rawKeys = { '1': key };
-            }
-        }
-        else {
-            for (const [ver, wrapped] of Object.entries(wrappedKey)) {
-                if (wrappedKek) {
-                    const wKek = Buffer.isBuffer(wrappedKek) ? wrappedKek : wrappedKek[ver];
-                    if (wKek) {
-                        const unwrappedKek = await provider.decrypt(wKek);
-                        const dek = (0, kms_1.unwrapDekLocal)(wrapped, unwrappedKek);
-                        unwrappedKek.fill(0); // RAM Security: zeroize KEK immediately
-                        rawKeys[ver] = dek;
-                    }
-                    else {
-                        rawKeys[ver] = await provider.decrypt(wrapped);
-                    }
-                }
-                else {
-                    rawKeys[ver] = await provider.decrypt(wrapped);
-                }
-            }
-        }
-    }
-    else {
-        throw new Error("Either 'key' or 'kms' configuration must be provided.");
-    }
-    return rawKeys;
-}
-function encryptValue(val, key, version) {
-    if (val === null || val === undefined)
-        return val;
-    const context = security_1.dbGuardContextStore.getStore();
-    const tId = context?.tenantId || 'global';
-    if (key.every(b => b === 0) || (0, security_1.getFailClosedStatus)(tId)) {
-        throw new Error(`Vollcrypt Security: Fail-Closed mode is active for tenant "${tId}". Encryption blocked.`);
-    }
-    const plaintext = typeof val === 'string' ? val : JSON.stringify(val);
-    const plaintextBuf = Buffer.from(plaintext, 'utf8');
-    const encrypted = security_1.CRYPTO_ALGORITHMS['1'].encrypt(plaintextBuf, key);
-    // RAM Security: Zeroize the plaintext buffer immediately
-    plaintextBuf.fill(0);
-    return `VOLLVALT:v${version}:${encrypted.toString('base64')}`;
-}
-function decryptValue(stored, keys) {
-    if (typeof stored !== 'string') {
-        return stored;
-    }
-    const parsed = (0, security_1.parseCiphertext)(stored);
-    if (!parsed) {
-        return stored;
-    }
-    const { algoId, version, base64Data } = parsed;
-    const key = keys[version];
-    if (!key) {
-        throw new Error(`Decryption key version "${version}" not found in registered keys`);
-    }
-    if (key.every(b => b === 0)) {
-        throw new Error(`Vollcrypt Security: Decryption blocked. Key version "${version}" is zeroized due to a Fail-Closed event.`);
-    }
-    try {
-        const encryptedBuf = Buffer.from(base64Data, 'base64');
-        const decryptor = security_1.CRYPTO_ALGORITHMS[algoId];
-        if (!decryptor) {
-            throw new Error(`Unsupported decryption algorithm ID "${algoId}"`);
-        }
-        const decrypted = decryptor.decrypt(encryptedBuf, key);
-        const plaintext = decrypted.toString('utf8');
-        // RAM Security: Zeroize the decrypted buffer
-        decrypted.fill(0);
-        try {
-            return JSON.parse(plaintext);
-        }
-        catch {
-            return plaintext;
-        }
-    }
-    catch (err) {
-        throw new Error(`Failed to decrypt field value: ${err.message}`);
-    }
-}
-/**
- * Traverses query `where` arguments to rewrite exact match queries on encrypted fields
- * to target shadow `_bidx` columns using dynamic HKDF-SHA256 blind indexing.
- */
-function rewriteQueryWhere(where, fields, rootSalt, modelName) {
-    if (!where || typeof where !== 'object')
-        return;
-    for (const field of fields) {
-        if (where[field] !== undefined) {
-            const val = where[field];
-            const bidxField = `${field}_bidx`;
-            if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
-                where[bidxField] = (0, blind_index_1.computeBlindIndex)(val, rootSalt, `${modelName}.${field}`);
-                delete where[field];
-            }
-            else if (val && typeof val === 'object') {
-                if (val.equals !== undefined) {
-                    where[bidxField] = {
-                        equals: (0, blind_index_1.computeBlindIndex)(val.equals, rootSalt, `${modelName}.${field}`),
-                    };
-                    delete where[field];
-                }
-            }
-        }
-    }
-    // Recurse into compound logical operators
-    const operators = ['AND', 'OR', 'NOT'];
-    for (const op of operators) {
-        if (Array.isArray(where[op])) {
-            where[op].forEach((item) => rewriteQueryWhere(item, fields, rootSalt, modelName));
-        }
-        else if (where[op] && typeof where[op] === 'object') {
-            rewriteQueryWhere(where[op], fields, rootSalt, modelName);
-        }
-    }
-}
-/**
- * Appends calculated blind indexes to the write payload (create/update).
- */
-function addBlindIndexes(data, fields, rootSalt, modelName) {
-    if (!data || typeof data !== 'object')
-        return;
-    if (Array.isArray(data)) {
-        data.forEach((item) => addBlindIndexes(item, fields, rootSalt, modelName));
-        return;
-    }
-    for (const field of fields) {
-        if (data[field] !== undefined && data[field] !== null) {
-            const bidxField = `${field}_bidx`;
-            data[bidxField] = (0, blind_index_1.computeBlindIndex)(data[field], rootSalt, `${modelName}.${field}`);
-        }
-    }
-}
 /**
  * Prisma DbGuard Extension Factory
  *
@@ -236,7 +72,7 @@ const prismaDbGuard = (options, resolvedKeys) => {
         if (!tenantConfig) {
             throw new Error(`Vollcrypt Security: Configuration not found for tenantId "${tId}".`);
         }
-        const resolvedTenantKeysRaw = await resolveKeys({
+        const resolvedTenantKeysRaw = await (0, kms_1.resolveKeys)({
             ...options,
             key: tenantConfig.key,
             kms: tenantConfig.kms
@@ -263,7 +99,7 @@ const prismaDbGuard = (options, resolvedKeys) => {
         const cloned = { ...data };
         for (const field of fieldsToEncrypt) {
             if (cloned[field] !== undefined) {
-                cloned[field] = encryptValue(cloned[field], encKey, encVer);
+                cloned[field] = (0, security_1.encryptValue)(cloned[field], encKey, encVer);
             }
         }
         return cloned;
@@ -287,7 +123,7 @@ const prismaDbGuard = (options, resolvedKeys) => {
         const cloned = { ...result };
         for (const field of fieldsToEncrypt) {
             if (cloned[field] !== undefined) {
-                cloned[field] = (0, security_1.decryptWithSecurity)(cloned[field], (val) => decryptValue(val, decKeys), modelName, field, cloned.id || cloned._id, options);
+                cloned[field] = (0, security_1.decryptWithSecurity)(cloned[field], (val) => (0, security_1.decryptValue)(val, decKeys), modelName, field, cloned.id || cloned._id, options);
             }
         }
         return cloned;
@@ -309,13 +145,13 @@ const prismaDbGuard = (options, resolvedKeys) => {
         const bidxFields = options.blindIndexes?.models[modelName];
         if (bidxFields && options.blindIndexes?.rootSalt) {
             if (args.data) {
-                addBlindIndexes(args.data, bidxFields, options.blindIndexes.rootSalt, modelName);
+                (0, security_1.addBlindIndexes)(args.data, bidxFields, options.blindIndexes.rootSalt, modelName);
             }
             if (args.create) {
-                addBlindIndexes(args.create, bidxFields, options.blindIndexes.rootSalt, modelName);
+                (0, security_1.addBlindIndexes)(args.create, bidxFields, options.blindIndexes.rootSalt, modelName);
             }
             if (args.update) {
-                addBlindIndexes(args.update, bidxFields, options.blindIndexes.rootSalt, modelName);
+                (0, security_1.addBlindIndexes)(args.update, bidxFields, options.blindIndexes.rootSalt, modelName);
             }
         }
     };
@@ -325,10 +161,11 @@ const prismaDbGuard = (options, resolvedKeys) => {
         // Rewrite queries targeting encrypted columns to use the blind index column
         const bidxFields = options.blindIndexes?.models[modelName];
         if (bidxFields && options.blindIndexes?.rootSalt && args.where) {
-            rewriteQueryWhere(args.where, bidxFields, options.blindIndexes.rootSalt, modelName);
+            (0, security_1.rewriteQueryWhere)(args.where, bidxFields, options.blindIndexes.rootSalt, modelName);
         }
     };
-    return client_1.Prisma.defineExtension((client) => {
+    const { Prisma } = require('@prisma/client');
+    return Prisma.defineExtension((client) => {
         return client.$extends({
             name: 'vollcrypt-db-guard',
             query: {
@@ -349,7 +186,7 @@ const prismaDbGuard = (options, resolvedKeys) => {
                                     const encrypted = encryptPayload(model, item, resolved.activeKey, resolved.activeVersion);
                                     const bidxFields = options.blindIndexes?.models[model];
                                     if (bidxFields && options.blindIndexes?.rootSalt) {
-                                        addBlindIndexes(encrypted, bidxFields, options.blindIndexes.rootSalt, model);
+                                        (0, security_1.addBlindIndexes)(encrypted, bidxFields, options.blindIndexes.rootSalt, model);
                                     }
                                     return encrypted;
                                 });
@@ -412,3 +249,10 @@ const prismaDbGuard = (options, resolvedKeys) => {
     });
 };
 exports.prismaDbGuard = prismaDbGuard;
+var security_2 = require("./security");
+Object.defineProperty(exports, "encryptValue", { enumerable: true, get: function () { return security_2.encryptValue; } });
+Object.defineProperty(exports, "decryptValue", { enumerable: true, get: function () { return security_2.decryptValue; } });
+Object.defineProperty(exports, "rewriteQueryWhere", { enumerable: true, get: function () { return security_2.rewriteQueryWhere; } });
+Object.defineProperty(exports, "addBlindIndexes", { enumerable: true, get: function () { return security_2.addBlindIndexes; } });
+var kms_2 = require("./kms");
+Object.defineProperty(exports, "resolveKeys", { enumerable: true, get: function () { return kms_2.resolveKeys; } });

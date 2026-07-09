@@ -1,5 +1,8 @@
 # Override root .gitignore to include compiled WASM files
-!pkg/
+!pkg/wasm.js
+!pkg/wasm.d.ts
+!pkg/wasm_bg.wasm
+!pkg/wasm_bg.wasm.d.ts
 !fast.js
 !fast.d.ts
 

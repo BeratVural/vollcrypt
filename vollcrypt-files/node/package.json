@@ -41,6 +41,8 @@
     "vollcrypt-files-node.*.node",
     "README.md",
     "LICENSE",
+    "LICENSE-COMMERCIAL.md",
+    "LICENSE-GPL",
     "CHANGELOG.md"
   ],
   "keywords": [

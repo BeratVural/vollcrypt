@@ -1,5 +1,5 @@
 use crate::error::FileFormatError;
-use crate::header::{Header, SignedMetadata, Mode};
+use crate::header::{Header, SignedMetadata};
 use crate::merkle::HashAlgorithm;
 use crate::pipelined_io::{read_header_from_stream, PipelinedSignInfo};
 use std::io::{Read, Write, Seek, SeekFrom};
@@ -42,7 +42,7 @@ pub fn inspect_sealed<R: Read + Seek>(mut reader: R) -> Result<SealedInspection,
         return Err(FileFormatError::IntegrityError("Container is not sealed".to_string()));
     }
 
-    let current_pos = reader.stream_position().map_err(|e| FileFormatError::IoError(e.to_string()))?;
+    let _current_pos = reader.stream_position().map_err(|e| FileFormatError::IoError(e.to_string()))?;
     let end_pos = reader.seek(SeekFrom::End(0)).map_err(|e| FileFormatError::IoError(e.to_string()))?;
     let ciphertext_present = end_pos > header_len as u64;
 

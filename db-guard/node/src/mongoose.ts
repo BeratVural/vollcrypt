@@ -1,7 +1,20 @@
-import { Schema } from 'mongoose';
-import { encryptValue, decryptValue, rewriteQueryWhere, resolveKeys } from './prisma';
-import { computeBlindIndex } from './blind-index';
-import { decryptWithSecurity, registerKeysForZeroization, RateLimiterOptions, checkPageSize, dbGuardContextStore, isBreakGlassActive, getBreakGlassKey, getCachedKey, setCachedKey } from './security';
+import type { Schema } from 'mongoose';
+import { resolveKeys } from './kms';
+import {
+  encryptValue,
+  decryptValue,
+  rewriteQueryWhere,
+  computeBlindIndex,
+  decryptWithSecurity,
+  registerKeysForZeroization,
+  RateLimiterOptions,
+  checkPageSize,
+  dbGuardContextStore,
+  isBreakGlassActive,
+  getBreakGlassKey,
+  getCachedKey,
+  setCachedKey
+} from './security';
 
 export interface MongooseDbGuardOptions {
   key: Buffer | Record<string, Buffer>;

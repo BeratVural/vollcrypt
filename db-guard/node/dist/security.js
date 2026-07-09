@@ -65,6 +65,11 @@ exports.resetAuditLoggerForTesting = resetAuditLoggerForTesting;
 exports.logDecryption = logDecryption;
 exports.decryptWithSecurity = decryptWithSecurity;
 exports.parseCiphertext = parseCiphertext;
+exports.computeBlindIndex = computeBlindIndex;
+exports.encryptValue = encryptValue;
+exports.decryptValue = decryptValue;
+exports.rewriteQueryWhere = rewriteQueryWhere;
+exports.addBlindIndexes = addBlindIndexes;
 const async_hooks_1 = require("async_hooks");
 const crypto = __importStar(require("crypto"));
 const fs = __importStar(require("fs"));
@@ -588,4 +593,123 @@ function parseCiphertext(stored) {
         return { algoId, version: versionPart, base64Data: base64Part };
     }
     throw new Error("Vollcrypt Security: Legacy unversioned ciphertexts are deprecated and unsupported.");
+}
+/**
+ * Computes a hardened, frequency-resistant blind index for a database field.
+ */
+function computeBlindIndex(value, rootSalt, columnName) {
+    if (value === null || value === undefined)
+        return value;
+    const plaintext = typeof value === 'string' ? value : JSON.stringify(value);
+    const columnNameBuf = Buffer.from(columnName, 'utf8');
+    // 1. Derive column-specific key using HKDF-SHA256
+    const derivedColumnKey = deriveHkdf(rootSalt, null, columnNameBuf, 32);
+    try {
+        // 2. Compute the final blind index using the derived column key
+        const plaintextBuf = Buffer.from(plaintext, 'utf8');
+        const blindIndex = deriveHkdf(derivedColumnKey, null, plaintextBuf, 32);
+        return blindIndex.toString('hex');
+    }
+    finally {
+        // 3. RAM Security: Zeroize the derived key immediately (Anti-Core Dump)
+        derivedColumnKey.fill(0);
+    }
+}
+function encryptValue(val, key, version) {
+    if (val === null || val === undefined)
+        return val;
+    const context = exports.dbGuardContextStore.getStore();
+    const tId = context?.tenantId || 'global';
+    if (key.every(b => b === 0) || getFailClosedStatus(tId)) {
+        throw new Error(`Vollcrypt Security: Fail-Closed mode is active for tenant "${tId}". Encryption blocked.`);
+    }
+    const plaintext = typeof val === 'string' ? val : JSON.stringify(val);
+    const plaintextBuf = Buffer.from(plaintext, 'utf8');
+    const encrypted = exports.CRYPTO_ALGORITHMS['1'].encrypt(plaintextBuf, key);
+    // RAM Security: Zeroize the plaintext buffer immediately
+    plaintextBuf.fill(0);
+    return `VOLLVALT:v${version}:${encrypted.toString('base64')}`;
+}
+function decryptValue(stored, keys) {
+    if (typeof stored !== 'string') {
+        return stored;
+    }
+    const parsed = parseCiphertext(stored);
+    if (!parsed) {
+        return stored;
+    }
+    const { algoId, version, base64Data } = parsed;
+    const key = keys[version];
+    if (!key) {
+        throw new Error(`Decryption key version "${version}" not found in registered keys`);
+    }
+    if (key.every(b => b === 0)) {
+        throw new Error(`Vollcrypt Security: Decryption blocked. Key version "${version}" is zeroized due to a Fail-Closed event.`);
+    }
+    try {
+        const encryptedBuf = Buffer.from(base64Data, 'base64');
+        const decryptor = exports.CRYPTO_ALGORITHMS[algoId];
+        if (!decryptor) {
+            throw new Error(`Unsupported decryption algorithm ID "${algoId}"`);
+        }
+        const decrypted = decryptor.decrypt(encryptedBuf, key);
+        const plaintext = decrypted.toString('utf8');
+        // RAM Security: Zeroize the decrypted buffer
+        decrypted.fill(0);
+        try {
+            return JSON.parse(plaintext);
+        }
+        catch {
+            return plaintext;
+        }
+    }
+    catch (err) {
+        throw new Error(`Failed to decrypt field value: ${err.message}`);
+    }
+}
+function rewriteQueryWhere(where, fields, rootSalt, modelName) {
+    if (!where || typeof where !== 'object')
+        return;
+    for (const field of fields) {
+        if (where[field] !== undefined) {
+            const val = where[field];
+            const bidxField = `${field}_bidx`;
+            if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+                where[bidxField] = computeBlindIndex(val, rootSalt, `${modelName}.${field}`);
+                delete where[field];
+            }
+            else if (val && typeof val === 'object') {
+                if (val.equals !== undefined) {
+                    where[bidxField] = {
+                        equals: computeBlindIndex(val.equals, rootSalt, `${modelName}.${field}`),
+                    };
+                    delete where[field];
+                }
+            }
+        }
+    }
+    // Recurse into compound logical operators
+    const operators = ['AND', 'OR', 'NOT'];
+    for (const op of operators) {
+        if (Array.isArray(where[op])) {
+            where[op].forEach((item) => rewriteQueryWhere(item, fields, rootSalt, modelName));
+        }
+        else if (where[op] && typeof where[op] === 'object') {
+            rewriteQueryWhere(where[op], fields, rootSalt, modelName);
+        }
+    }
+}
+function addBlindIndexes(data, fields, rootSalt, modelName) {
+    if (!data || typeof data !== 'object')
+        return;
+    if (Array.isArray(data)) {
+        data.forEach((item) => addBlindIndexes(item, fields, rootSalt, modelName));
+        return;
+    }
+    for (const field of fields) {
+        if (data[field] !== undefined && data[field] !== null) {
+            const bidxField = `${field}_bidx`;
+            data[bidxField] = computeBlindIndex(data[field], rootSalt, `${modelName}.${field}`);
+        }
+    }
 }

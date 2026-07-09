@@ -1,4 +1,4 @@
-import { InsertEvent, UpdateEvent } from 'typeorm';
+import type { InsertEvent, UpdateEvent } from 'typeorm';
 import { RateLimiterOptions } from './security';
 export interface TypeOrmDbGuardOptions {
     key: Buffer | Record<string, Buffer>;

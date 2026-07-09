@@ -88,3 +88,11 @@ export declare function parseCiphertext(stored: string): {
     version: string;
     base64Data: string;
 } | null;
+/**
+ * Computes a hardened, frequency-resistant blind index for a database field.
+ */
+export declare function computeBlindIndex(value: any, rootSalt: Buffer, columnName: string): string;
+export declare function encryptValue(val: any, key: Buffer, version: string): string;
+export declare function decryptValue(stored: any, keys: Record<string, Buffer>): any;
+export declare function rewriteQueryWhere(where: any, fields: string[], rootSalt: Buffer, modelName: string): void;
+export declare function addBlindIndexes(data: any, fields: string[], rootSalt: Buffer, modelName: string): void;

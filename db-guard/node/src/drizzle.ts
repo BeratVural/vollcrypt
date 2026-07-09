@@ -1,9 +1,7 @@
-import { customType as pgCustomType } from 'drizzle-orm/pg-core';
-import { customType as mysqlCustomType } from 'drizzle-orm/mysql-core';
-import { customType as sqliteCustomType } from 'drizzle-orm/sqlite-core';
-import { encryptValue, decryptValue } from './prisma';
-import { computeBlindIndex } from './blind-index';
-import { registerKeysForZeroization, decryptWithSecurity, RateLimiterOptions } from './security';
+import type { customType as pgCustomTypeType } from 'drizzle-orm/pg-core';
+import type { customType as mysqlCustomTypeType } from 'drizzle-orm/mysql-core';
+import type { customType as sqliteCustomTypeType } from 'drizzle-orm/sqlite-core';
+import { encryptValue, decryptValue, computeBlindIndex, registerKeysForZeroization, decryptWithSecurity, RateLimiterOptions } from './security';
 
 export interface DrizzleDbGuardOptions {
   key: Buffer | Record<string, Buffer>;
@@ -39,6 +37,10 @@ function getKeys(options: DrizzleDbGuardOptions) {
 }
 
 export const createDrizzleGuard = (options: DrizzleDbGuardOptions) => {
+  const pgCustomType = require('drizzle-orm/pg-core').customType as typeof pgCustomTypeType;
+  const mysqlCustomType = require('drizzle-orm/mysql-core').customType as typeof mysqlCustomTypeType;
+  const sqliteCustomType = require('drizzle-orm/sqlite-core').customType as typeof sqliteCustomTypeType;
+
   const { keys, activeVersion } = getKeys(options);
   const activeKey = keys[activeVersion];
 

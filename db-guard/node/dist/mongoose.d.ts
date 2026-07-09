@@ -1,4 +1,4 @@
-import { Schema } from 'mongoose';
+import type { Schema } from 'mongoose';
 import { RateLimiterOptions } from './security';
 export interface MongooseDbGuardOptions {
     key: Buffer | Record<string, Buffer>;

@@ -1994,8 +1994,6 @@ impl Task for SealContainerTask {
                     .write(true)
                     .open(&self.path)
                     .map_err(|e| Error::from_reason(format!("Failed to open file for purge overwrite: {}", e)))?;
-                let mut written = new_len;
-                let zeros = vec![0u8; 4096];
                 file.set_len(new_len as u64)
                     .map_err(|e| Error::from_reason(format!("Failed to truncate file: {}", e)))?;
             }

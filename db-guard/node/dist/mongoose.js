@@ -1,8 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.mongooseDbGuard = mongooseDbGuard;
-const prisma_1 = require("./prisma");
-const blind_index_1 = require("./blind-index");
+const kms_1 = require("./kms");
 const security_1 = require("./security");
 function mongooseDbGuard(schema, options) {
     const { fields } = options;
@@ -58,7 +57,7 @@ function mongooseDbGuard(schema, options) {
             if (!tenantConfig) {
                 throw new Error(`Vollcrypt Security: Configuration not found for tenantId "${tId}".`);
             }
-            const resolvedTenantKeysRaw = await (0, prisma_1.resolveKeys)({
+            const resolvedTenantKeysRaw = await (0, kms_1.resolveKeys)({
                 ...options,
                 key: tenantConfig.key,
                 kms: tenantConfig.kms
@@ -89,7 +88,7 @@ function mongooseDbGuard(schema, options) {
             // 1. Encrypt fields
             for (const field of fields) {
                 if (doc.isModified(field) && doc[field] !== undefined && doc[field] !== null) {
-                    doc[field] = (0, prisma_1.encryptValue)(doc[field], resolved.activeKey, resolved.activeVersion);
+                    doc[field] = (0, security_1.encryptValue)(doc[field], resolved.activeKey, resolved.activeVersion);
                 }
             }
             // 2. Compute blind indexes
@@ -99,9 +98,9 @@ function mongooseDbGuard(schema, options) {
                         const bidxField = `${field}_bidx`;
                         // Decrypt temporary value if it was already encrypted in the previous step
                         const rawVal = doc.isModified(field) && doc[field].startsWith('VOLLVALT:')
-                            ? (0, prisma_1.decryptValue)(doc[field], keys)
+                            ? (0, security_1.decryptValue)(doc[field], keys)
                             : doc[field];
-                        doc[bidxField] = (0, blind_index_1.computeBlindIndex)(rawVal, options.blindIndexes.rootSalt, `${modelName}.${field}`);
+                        doc[bidxField] = (0, security_1.computeBlindIndex)(rawVal, options.blindIndexes.rootSalt, `${modelName}.${field}`);
                     }
                 }
             }
@@ -138,9 +137,9 @@ function mongooseDbGuard(schema, options) {
                 if (obj[currentPart] !== undefined && obj[currentPart] !== null) {
                     if (options.blindIndexes && options.blindIndexes.fields.includes(fullPath) && options.blindIndexes.rootSalt) {
                         const bidxField = `${currentPart}_bidx`;
-                        obj[bidxField] = (0, blind_index_1.computeBlindIndex)(obj[currentPart], options.blindIndexes.rootSalt, `${modelName}.${fullPath}`);
+                        obj[bidxField] = (0, security_1.computeBlindIndex)(obj[currentPart], options.blindIndexes.rootSalt, `${modelName}.${fullPath}`);
                     }
-                    obj[currentPart] = (0, prisma_1.encryptValue)(obj[currentPart], encKey, encVer);
+                    obj[currentPart] = (0, security_1.encryptValue)(obj[currentPart], encKey, encVer);
                 }
             }
             else {
@@ -151,9 +150,9 @@ function mongooseDbGuard(schema, options) {
                 if (obj[dotNotatedPath] !== undefined && obj[dotNotatedPath] !== null) {
                     if (options.blindIndexes && options.blindIndexes.fields.includes(fullPath) && options.blindIndexes.rootSalt) {
                         const bidxField = `${dotNotatedPath}_bidx`;
-                        obj[bidxField] = (0, blind_index_1.computeBlindIndex)(obj[dotNotatedPath], options.blindIndexes.rootSalt, `${modelName}.${fullPath}`);
+                        obj[bidxField] = (0, security_1.computeBlindIndex)(obj[dotNotatedPath], options.blindIndexes.rootSalt, `${modelName}.${fullPath}`);
                     }
-                    obj[dotNotatedPath] = (0, prisma_1.encryptValue)(obj[dotNotatedPath], encKey, encVer);
+                    obj[dotNotatedPath] = (0, security_1.encryptValue)(obj[dotNotatedPath], encKey, encVer);
                 }
             }
         };
@@ -188,7 +187,7 @@ function mongooseDbGuard(schema, options) {
                 // 2. Process query criteria (rewrite exact match search queries on conditions)
                 const conditions = typeof query.getQuery === 'function' ? query.getQuery() : null;
                 if (conditions && options.blindIndexes && options.blindIndexes.rootSalt) {
-                    (0, prisma_1.rewriteQueryWhere)(conditions, options.blindIndexes.fields, options.blindIndexes.rootSalt, modelName);
+                    (0, security_1.rewriteQueryWhere)(conditions, options.blindIndexes.fields, options.blindIndexes.rootSalt, modelName);
                 }
                 if (typeof next === 'function') {
                     next();
@@ -220,7 +219,7 @@ function mongooseDbGuard(schema, options) {
             const modelName = options.blindIndexes?.modelName || query.model?.modelName || 'Model';
             const conditions = typeof query.getQuery === 'function' ? query.getQuery() : null;
             if (conditions && options.blindIndexes && options.blindIndexes.rootSalt) {
-                (0, prisma_1.rewriteQueryWhere)(conditions, options.blindIndexes.fields, options.blindIndexes.rootSalt, modelName);
+                (0, security_1.rewriteQueryWhere)(conditions, options.blindIndexes.fields, options.blindIndexes.rootSalt, modelName);
             }
             next();
         });
@@ -232,7 +231,7 @@ function mongooseDbGuard(schema, options) {
         for (const field of fields) {
             if (doc[field] !== undefined && doc[field] !== null) {
                 try {
-                    doc[field] = (0, security_1.decryptWithSecurity)(doc[field], (val) => (0, prisma_1.decryptValue)(val, decKeys), modelName, field, doc.id || doc._id, options);
+                    doc[field] = (0, security_1.decryptWithSecurity)(doc[field], (val) => (0, security_1.decryptValue)(val, decKeys), modelName, field, doc.id || doc._id, options);
                 }
                 catch (err) {
                     throw new Error(`Mongoose db-guard failed to decrypt field "${field}": ${err.message}`);

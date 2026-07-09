@@ -1,6 +1,7 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { generateEd25519Keypair, signMessage } from '../src/security';
+import { mongooseDbGuard } from '../src/mongoose';
 import {
   dbGuardContextStore,
   getCachedKey,
@@ -13,8 +14,7 @@ import {
   getBreakGlassKey,
   parseCiphertext,
   encryptValue,
-  decryptValue,
-  mongooseDbGuard
+  decryptValue
 } from '../src/index';
 
 class MockSchema {

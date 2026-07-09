@@ -1,17 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.generateComplianceHtmlReport = exports.auditConfiguration = exports.maskValue = exports.VERSION_ALGORITHMS = exports.CRYPTO_ALGORITHMS = exports.parseCiphertext = exports.activateBreakGlass = exports.getBreakGlassKey = exports.isBreakGlassActive = exports.deactivateBreakGlass = exports.configureBreakGlass = exports.resetSecureKeyCacheForTesting = exports.setCachedKey = exports.getCachedKey = exports.resetAuditLoggerForTesting = exports.resetFailClosedStatusForTesting = exports.checkPageSize = exports.checkRateLimit = exports.decryptWithSecurity = exports.configureAuditLogger = exports.dbGuardContextStore = exports.computeBlindIndex = exports.Pkcs11KmsProvider = exports.unwrapDekLocal = exports.VaultKmsProvider = exports.GcpKmsProvider = exports.AwsKmsProvider = exports.wrapOracleConnection = exports.wrapSqliteDatabase = exports.createTypeOrmSubscriber = exports.createDrizzleGuard = exports.mongooseDbGuard = exports.resolveKeys = exports.decryptValue = exports.encryptValue = exports.prismaDbGuard = void 0;
-var prisma_1 = require("./prisma");
-Object.defineProperty(exports, "prismaDbGuard", { enumerable: true, get: function () { return prisma_1.prismaDbGuard; } });
-Object.defineProperty(exports, "encryptValue", { enumerable: true, get: function () { return prisma_1.encryptValue; } });
-Object.defineProperty(exports, "decryptValue", { enumerable: true, get: function () { return prisma_1.decryptValue; } });
-Object.defineProperty(exports, "resolveKeys", { enumerable: true, get: function () { return prisma_1.resolveKeys; } });
-var mongoose_1 = require("./mongoose");
-Object.defineProperty(exports, "mongooseDbGuard", { enumerable: true, get: function () { return mongoose_1.mongooseDbGuard; } });
-var drizzle_1 = require("./drizzle");
-Object.defineProperty(exports, "createDrizzleGuard", { enumerable: true, get: function () { return drizzle_1.createDrizzleGuard; } });
-var typeorm_1 = require("./typeorm");
-Object.defineProperty(exports, "createTypeOrmSubscriber", { enumerable: true, get: function () { return typeorm_1.createTypeOrmSubscriber; } });
+exports.generateComplianceHtmlReport = exports.auditConfiguration = exports.decryptValue = exports.encryptValue = exports.maskValue = exports.VERSION_ALGORITHMS = exports.CRYPTO_ALGORITHMS = exports.parseCiphertext = exports.activateBreakGlass = exports.getBreakGlassKey = exports.isBreakGlassActive = exports.deactivateBreakGlass = exports.configureBreakGlass = exports.resetSecureKeyCacheForTesting = exports.setCachedKey = exports.getCachedKey = exports.resetAuditLoggerForTesting = exports.resetFailClosedStatusForTesting = exports.checkPageSize = exports.checkRateLimit = exports.decryptWithSecurity = exports.configureAuditLogger = exports.dbGuardContextStore = exports.computeBlindIndex = exports.resolveKeys = exports.Pkcs11KmsProvider = exports.unwrapDekLocal = exports.VaultKmsProvider = exports.GcpKmsProvider = exports.AwsKmsProvider = exports.wrapOracleConnection = exports.wrapSqliteDatabase = void 0;
 var drivers_1 = require("./drivers");
 Object.defineProperty(exports, "wrapSqliteDatabase", { enumerable: true, get: function () { return drivers_1.wrapSqliteDatabase; } });
 Object.defineProperty(exports, "wrapOracleConnection", { enumerable: true, get: function () { return drivers_1.wrapOracleConnection; } });
@@ -21,6 +10,7 @@ Object.defineProperty(exports, "GcpKmsProvider", { enumerable: true, get: functi
 Object.defineProperty(exports, "VaultKmsProvider", { enumerable: true, get: function () { return kms_1.VaultKmsProvider; } });
 Object.defineProperty(exports, "unwrapDekLocal", { enumerable: true, get: function () { return kms_1.unwrapDekLocal; } });
 Object.defineProperty(exports, "Pkcs11KmsProvider", { enumerable: true, get: function () { return kms_1.Pkcs11KmsProvider; } });
+Object.defineProperty(exports, "resolveKeys", { enumerable: true, get: function () { return kms_1.resolveKeys; } });
 var blind_index_1 = require("./blind-index");
 Object.defineProperty(exports, "computeBlindIndex", { enumerable: true, get: function () { return blind_index_1.computeBlindIndex; } });
 var security_1 = require("./security");
@@ -43,6 +33,8 @@ Object.defineProperty(exports, "parseCiphertext", { enumerable: true, get: funct
 Object.defineProperty(exports, "CRYPTO_ALGORITHMS", { enumerable: true, get: function () { return security_1.CRYPTO_ALGORITHMS; } });
 Object.defineProperty(exports, "VERSION_ALGORITHMS", { enumerable: true, get: function () { return security_1.VERSION_ALGORITHMS; } });
 Object.defineProperty(exports, "maskValue", { enumerable: true, get: function () { return security_1.maskValue; } });
+Object.defineProperty(exports, "encryptValue", { enumerable: true, get: function () { return security_1.encryptValue; } });
+Object.defineProperty(exports, "decryptValue", { enumerable: true, get: function () { return security_1.decryptValue; } });
 var compliance_1 = require("./compliance");
 Object.defineProperty(exports, "auditConfiguration", { enumerable: true, get: function () { return compliance_1.auditConfiguration; } });
 Object.defineProperty(exports, "generateComplianceHtmlReport", { enumerable: true, get: function () { return compliance_1.generateComplianceHtmlReport; } });

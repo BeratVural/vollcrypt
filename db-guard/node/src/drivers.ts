@@ -1,5 +1,4 @@
-import { encryptValue, decryptValue } from './prisma.js';
-import { decryptWithSecurity, registerKeysForZeroization, RateLimiterOptions } from './security.js';
+import { decryptWithSecurity, registerKeysForZeroization, RateLimiterOptions, encryptValue, decryptValue } from './security.js';
 
 export interface DbGuardDriverOptions {
   key: Buffer | Record<string, Buffer>;

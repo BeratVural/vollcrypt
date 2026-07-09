@@ -5,6 +5,16 @@
   "type": "module",
   "main": "pkg/wasm.js",
   "types": "pkg/wasm.d.ts",
+  "exports": {
+    ".": {
+      "types": "./pkg/wasm.d.ts",
+      "import": "./pkg/wasm.js"
+    },
+    "./fast": {
+      "types": "./fast.d.ts",
+      "import": "./fast.js"
+    }
+  },
   "scripts": {
     "build": "wasm-pack build --target web --out-dir pkg",
     "postbuild": "node -e \"const fs = require('fs'); try { fs.unlinkSync('pkg/.gitignore'); } catch (e) {}\""
@@ -22,11 +32,16 @@
     "url": "https://github.com/BeratVural/vollcrypt/issues"
   },
   "files": [
-    "pkg/",
+    "pkg/wasm.js",
+    "pkg/wasm.d.ts",
+    "pkg/wasm_bg.wasm",
+    "pkg/wasm_bg.wasm.d.ts",
     "fast.js",
     "fast.d.ts",
     "README.md",
     "LICENSE",
+    "LICENSE-COMMERCIAL.md",
+    "LICENSE-GPL",
     "CHANGELOG.md"
   ],
   "keywords": [

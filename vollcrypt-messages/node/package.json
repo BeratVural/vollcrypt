@@ -28,7 +28,11 @@
   "files": [
     "index.d.ts",
     "index.js",
-    "vollcrypt.*.node"
+    "vollcrypt.*.node",
+    "README.md",
+    "LICENSE",
+    "LICENSE-COMMERCIAL.md",
+    "LICENSE-GPL"
   ],
   "keywords": [
     "vollcrypt",
