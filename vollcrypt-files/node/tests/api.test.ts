@@ -563,3 +563,59 @@ test('threshold SSS mode roundtrip', () => {
   });
 });
 
+test('pipelined file encryption and decryption roundtrip with empty wraps', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const os = await import('node:os');
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vollcrypt-test-empty-wraps-'));
+  const srcPath = path.join(tempDir, 'source.bin');
+  const encPath = path.join(tempDir, 'encrypted.bin');
+  const decPath = path.join(tempDir, 'decrypted.bin');
+
+  const originalData = Buffer.from('Testing pipelined encryption with empty wraps');
+  fs.writeFileSync(srcPath, originalData);
+
+  const dek = api.generateDek();
+  const fileId = api.generateFileId();
+  const chunkSize = 4096;
+
+  // Encrypt file with empty wraps
+  const header = await api.encryptFilePipelinedAsync(
+    srcPath,
+    encPath,
+    dek,
+    fileId,
+    chunkSize,
+    [], // empty wraps
+    0, // Mode::Password
+    4, // num_workers
+    null // sign_info
+  );
+
+  assert.strictEqual(header.version, 1);
+  assert.deepStrictEqual(header.fileId, fileId);
+  assert.strictEqual(header.chunkSize, chunkSize);
+
+  // Decrypt file
+  const decHeader = await api.decryptFilePipelinedAsync(
+    encPath,
+    decPath,
+    dek,
+    4, // num_workers
+    {
+      releaseMode: "verified",
+      signature: "optional"
+    }
+  );
+
+  assert.deepStrictEqual(decHeader.fileId, fileId);
+
+  // Compare original vs decrypted data
+  const decryptedData = fs.readFileSync(decPath);
+  assert.deepStrictEqual(decryptedData, originalData);
+
+  // Cleanup
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+

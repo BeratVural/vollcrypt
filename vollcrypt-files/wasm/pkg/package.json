@@ -1,0 +1,16 @@
+{
+  "name": "vollcrypt-files-wasm",
+  "type": "module",
+  "version": "0.1.2",
+  "license": "GPL-3.0-only OR LicenseRef-Commercial",
+  "files": [
+    "vollcrypt_files_wasm_bg.wasm",
+    "vollcrypt_files_wasm.js",
+    "vollcrypt_files_wasm.d.ts"
+  ],
+  "main": "vollcrypt_files_wasm.js",
+  "types": "vollcrypt_files_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

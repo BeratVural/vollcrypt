@@ -38,7 +38,10 @@
   "files": [
     "index.d.ts",
     "index.js",
-    "vollcrypt-files-node.*.node"
+    "vollcrypt-files-node.*.node",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "keywords": [
     "vollcrypt",
@@ -57,9 +60,9 @@
   "author": "Berat Vural <berat.vural.tr@gmail.com>",
   "license": "GPL-3.0-only OR LicenseRef-Commercial",
   "devDependencies": {
-    "@napi-rs/cli": "^2.18.4",
-    "@types/node": "^20.11.0",
-    "tsx": "^4.7.0",
-    "typescript": "^5.3.3"
+    "@napi-rs/cli": "2.18.4",
+    "@types/node": "20.11.0",
+    "tsx": "4.7.0",
+    "typescript": "5.3.3"
   }
 }

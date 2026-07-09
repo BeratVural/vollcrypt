@@ -33,12 +33,12 @@ pub struct SealedInspection {
 }
 
 pub fn is_sealed(header: &Header) -> bool {
-    header.wraps.is_empty()
+    header.wraps.is_empty() && matches!(header.signed_metadata, Some(SignedMetadata::SovereignSealed { .. }))
 }
 
 pub fn inspect_sealed<R: Read + Seek>(mut reader: R) -> Result<SealedInspection, FileFormatError> {
     let (header, header_len) = read_header_from_stream(&mut reader)?;
-    if !header.wraps.is_empty() {
+    if !is_sealed(&header) {
         return Err(FileFormatError::IntegrityError("Container is not sealed".to_string()));
     }
 
@@ -76,7 +76,7 @@ pub fn seal_container<R: Read + Seek, W: Write + Seek>(
     let (mut header, header_len) = read_header_from_stream(&mut source)?;
 
     // 2. Idempotency: if already sealed, return Ok(()) (no-op)
-    if header.wraps.is_empty() {
+    if is_sealed(&header) {
         source.seek(SeekFrom::Start(0)).map_err(|e| FileFormatError::IoError(e.to_string()))?;
         dest.seek(SeekFrom::Start(0)).map_err(|e| FileFormatError::IoError(e.to_string()))?;
         std::io::copy(&mut source, &mut dest).map_err(|e| FileFormatError::IoError(e.to_string()))?;

@@ -1821,6 +1821,9 @@ pub async fn encrypt_file_pipelined_async_wasm(
     sign_info_val: JsValue,
     write_mode_val: JsValue,
 ) -> Result<JsValue, JsValue> {
+    if plaintext.len() > 500 * 1024 * 1024 {
+        return Err(JsValue::from_str("Plaintext exceeds 500MB limit for WASM in-memory API to prevent browser OOM"));
+    }
     let dek_arr = to_arr32(dek, "dek")?;
     let file_id_arr = to_arr16(file_id, "file_id")?;
 
@@ -1923,6 +1926,9 @@ pub async fn decrypt_file_pipelined_async_wasm(
     dek: &[u8],
     policy: JsValue,
 ) -> Result<JsValue, JsValue> {
+    if ciphertext.len() > 501 * 1024 * 1024 {
+        return Err(JsValue::from_str("Ciphertext exceeds 501MB limit for WASM in-memory API to prevent browser OOM"));
+    }
     let dek_arr = to_arr32(dek, "dek")?;
 
     // Register WasmWebCryptoProvider

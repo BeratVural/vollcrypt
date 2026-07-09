@@ -448,3 +448,51 @@ async fn test_pipelined_oom_vulnerability() {
     assert!(matches!(res.unwrap_err(), FileFormatError::TooManyChunks));
 }
 
+#[test]
+fn test_pipelined_roundtrip_no_wraps() {
+    let plaintext = b"This is a message encrypted directly with the DEK and no wrap entries.".to_vec();
+    let dek = generate_dek();
+    let file_id = generate_file_id();
+    let chunk_size = 16;
+
+    let dest = tempfile::tempfile().unwrap();
+
+    // Encrypt with empty wraps list
+    let encrypt_res = encrypt_file_pipelined(
+        Cursor::new(plaintext.clone()),
+        dest.try_clone().unwrap(),
+        &dek,
+        &file_id,
+        chunk_size,
+        vec![], // empty wraps
+        Mode::Password,
+        2,
+        None,
+        None,
+    );
+    assert!(encrypt_res.is_ok());
+
+    // Decrypt
+    let mut decrypted = Vec::new();
+    let mut read_dest = dest;
+    read_dest.seek(SeekFrom::Start(0)).unwrap();
+
+    let policy = vollcrypt_files_core::ShieldPolicy {
+        signature: vollcrypt_files_core::SignaturePolicy::Optional,
+        ..vollcrypt_files_core::ShieldPolicy::strict()
+    };
+
+    let decrypt_res = vollcrypt_files_core::pipelined_io::decrypt_file_pipelined_with_policy(
+        read_dest,
+        &mut decrypted,
+        &dek,
+        2,
+        Some(&policy),
+    );
+    if let Err(ref e) = decrypt_res {
+        eprintln!("Decrypt error no wraps: {:?}", e);
+    }
+    assert!(decrypt_res.is_ok());
+    assert_eq!(decrypted, plaintext);
+}
+

@@ -101,16 +101,16 @@ pub fn verify_container<R: Read + Seek>(
     }
 
     // 3. Sealed marker integrity & Re-wrapping rejection
-    let is_sealed = header.wraps.is_empty();
+    let wraps_empty = header.wraps.is_empty();
     let has_sealed_marker = matches!(header.signed_metadata, Some(SignedMetadata::SovereignSealed { .. }));
     if has_sealed_marker {
-        if !is_sealed {
+        if !wraps_empty {
             // Re-adding a wrap to a sealed container is rejected
             return ShieldReport::WrapTable;
         }
     }
 
-    if is_sealed {
+    if crate::sovereign::is_sealed(&header) {
         return ShieldReport::ContainerSealed;
     }
 

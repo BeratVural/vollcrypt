@@ -141,7 +141,7 @@
       "externalParameters": {
         "packageJson": {
           "name": "@vollcrypt/db-guard",
-          "version": "0.1.2",
+          "version": "0.9.0",
           "scripts": {
             "build": "tsc && node scripts/generate-sbom.js",
             "test": "node --import tsx --test tests/*.test.ts"
@@ -241,9 +241,9 @@
         "id": "https://vollcrypt.dev/builders/local-hermetic-env"
       },
       "metadata": {
-        "invocationId": "83c93142225aea01d42d8846d60bc8a0",
-        "startedOn": "2026-07-08T13:38:17.349Z",
-        "finishedOn": "2026-07-08T13:38:17.351Z"
+        "invocationId": "394b345f273d241cc656eb0efdf34f57",
+        "startedOn": "2026-07-08T14:31:16.765Z",
+        "finishedOn": "2026-07-08T14:31:16.767Z"
       }
     }
   }

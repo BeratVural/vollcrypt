@@ -9,9 +9,9 @@
   ],
   "scripts": {
     "build:messages:node": "cd vollcrypt-messages/node && npm install && npm run build",
-    "build:messages:wasm": "wasm-pack build vollcrypt-messages/wasm --target web --out-dir pkg",
+    "build:messages:wasm": "wasm-pack build vollcrypt-messages/wasm --target web --out-dir pkg && node -e \"const fs = require('fs'); try { fs.unlinkSync('vollcrypt-messages/wasm/pkg/.gitignore'); } catch (e) {}\"",
     "build:files:node": "cd vollcrypt-files/node && npm install && npm run build",
-    "build:files:wasm": "wasm-pack build vollcrypt-files/wasm --target web --out-dir pkg",
+    "build:files:wasm": "wasm-pack build vollcrypt-files/wasm --target web --out-dir pkg && node -e \"const fs = require('fs'); try { fs.unlinkSync('vollcrypt-files/wasm/pkg/.gitignore'); } catch (e) {}\"",
     "build:messages": "npm run build:messages:node && npm run build:messages:wasm",
     "build:files": "npm run build:files:node && npm run build:files:wasm",
     "build:db-guard:node": "cd db-guard/node && npm install && npm run build",

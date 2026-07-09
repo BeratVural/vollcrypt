@@ -5,6 +5,10 @@
   "type": "module",
   "main": "pkg/wasm.js",
   "types": "pkg/wasm.d.ts",
+  "scripts": {
+    "build": "wasm-pack build --target web --out-dir pkg",
+    "postbuild": "node -e \"const fs = require('fs'); try { fs.unlinkSync('pkg/.gitignore'); } catch (e) {}\""
+  },
   "publishConfig": {
     "access": "public"
   },
@@ -20,7 +24,10 @@
   "files": [
     "pkg/",
     "fast.js",
-    "fast.d.ts"
+    "fast.d.ts",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "keywords": [
     "vollcrypt",

@@ -146,6 +146,11 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
             "num_workers must be greater than 0".to_string(),
         ));
     }
+    let max_workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .min(16);
+    let num_workers = num_workers.min(max_workers);
 
     let hash_algo = crate::merkle::default_hash_algorithm();
 
@@ -757,6 +762,11 @@ fn decrypt_file_pipelined_internal<R: Read + Send + 'static, W: Write>(
             "num_workers must be greater than 0".to_string(),
         ));
     }
+    let max_workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .min(16);
+    let num_workers = num_workers.min(max_workers);
 
     let chunk_size = header.chunk_size as usize;
     let plaintext_size = header.plaintext_size;
@@ -1037,7 +1047,7 @@ pub fn decrypt_streaming_online_policy<R: Read + Send + 'static, W: Write>(
     policy: &crate::shield::ShieldPolicy,
 ) -> Result<Header, FileFormatError> {
     let (header, _) = read_header_from_stream(&mut source)?;
-    if header.wraps.is_empty() {
+    if crate::sovereign::is_sealed(&header) {
         return Err(FileFormatError::ContainerSealed);
     }
 
@@ -1294,7 +1304,7 @@ pub async fn decrypt_file_pipelined_async_policy(
     let pol = policy.unwrap_or(&default_policy);
 
     let (header, header_len) = Header::parse(ciphertext_bytes)?;
-    if header.wraps.is_empty() {
+    if crate::sovereign::is_sealed(&header) {
         return Err(FileFormatError::ContainerSealed);
     }
 
