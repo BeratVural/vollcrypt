@@ -90,7 +90,7 @@ default-features = false
 version = "0.5.1"
 
 [dev-dependencies.crypto-common]
-version = "0.1.6"
+version = "0.2.2"
 features = ["rand_core"]
 
 [dev-dependencies.hex]
