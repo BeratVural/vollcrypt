@@ -1,3 +1,4 @@
 [submodule "vollcrypt-wave"]
 	path = vollcrypt-wave
 	url = https://github.com/BeratVural/vollcrypt-wave.git
+	update = none
