@@ -106,7 +106,7 @@ features = ["num-bigint"]
 default-features = false
 
 [dev-dependencies.rand]
-version = "0.8.5"
+version = "0.10.2"
 
 [dev-dependencies.serde]
 version = "1.0.208"
