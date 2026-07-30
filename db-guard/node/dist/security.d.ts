@@ -38,14 +38,14 @@ export declare function configureBreakGlass(options: {
     threshold: number;
     publicKeys: string[];
 }): void;
-export declare function deactivateBreakGlass(): void;
-export declare function isBreakGlassActive(): boolean;
-export declare function getBreakGlassKey(): Buffer | undefined;
+export declare function deactivateBreakGlass(tenantId?: string): void;
+export declare function isBreakGlassActive(tenantId?: string): boolean;
+export declare function getBreakGlassKey(tenantId?: string): Buffer | undefined;
 export declare function activateBreakGlass(signatures: {
     publicKey: string;
     signature: string;
     timestamp: number;
-}[], emergencyBackupKey: Buffer): void;
+}[], emergencyBackupKey: Buffer, tenantId?: string): void;
 export declare function registerKeysForZeroization(keys: Record<string, Buffer>, tenantId?: string): void;
 export declare function triggerFailClosed(onFailClosedCallback?: () => void, tenantId?: string): void;
 export declare function checkRateLimit(options?: RateLimiterOptions): void;
@@ -70,6 +70,7 @@ export declare function configureAuditLogger(options?: {
 export declare function resetAuditLoggerForTesting(): void;
 export declare function logDecryption(model: string, field: string, recordId?: string): void;
 export declare function decryptWithSecurity(stored: any, decryptRawFn: (val: string) => any, modelName: string, fieldName: string, recordId: string | undefined, options?: {
+    allowUnrestrictedDecrypt?: boolean;
     cryptoRbac?: {
         roles: Record<string, {
             decrypt: string[];

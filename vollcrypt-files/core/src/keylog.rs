@@ -1,8 +1,12 @@
 use crate::error::FileFormatError;
-use crate::hybrid_sig::{hybrid_sign, hybrid_verify, HybridPublicKey, HybridSecretKey, HybridSignature};
+use crate::hybrid_sig::{
+    hybrid_sign, hybrid_verify, HybridPublicKey, HybridSecretKey, HybridSignature,
+};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
+// Preserve the serialized public enum shape; boxing would be a breaking API change.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyLogEntryType {
     DeviceRegister {
@@ -234,7 +238,13 @@ impl KeyLog {
             },
         };
         let msg = temp_entry.sig_message();
-        let signature = hybrid_sign(authority_sk, &self.authority_pubkey, "vollf-keylog-entry", &[], &msg);
+        let signature = hybrid_sign(
+            authority_sk,
+            &self.authority_pubkey,
+            "vollf-keylog-entry",
+            &[],
+            &msg,
+        );
         temp_entry.signature = signature;
 
         let entry_hash = hash_of_entry(&temp_entry);
@@ -291,7 +301,13 @@ impl KeyLog {
             },
         };
         let msg = temp_entry.sig_message();
-        let signature = hybrid_sign(authority_sk, &self.authority_pubkey, "vollf-keylog-entry", &[], &msg);
+        let signature = hybrid_sign(
+            authority_sk,
+            &self.authority_pubkey,
+            "vollf-keylog-entry",
+            &[],
+            &msg,
+        );
         temp_entry.signature = signature;
 
         self.entries.push(temp_entry);
@@ -306,7 +322,13 @@ impl KeyLog {
             }
 
             let msg = entry.sig_message();
-            if !hybrid_verify(&self.authority_pubkey, "vollf-keylog-entry", &[], &msg, &entry.signature) {
+            if !hybrid_verify(
+                &self.authority_pubkey,
+                "vollf-keylog-entry",
+                &[],
+                &msg,
+                &entry.signature,
+            ) {
                 return Err(FileFormatError::SignatureInvalid);
             }
 

@@ -176,7 +176,7 @@ export function registry_get_active_devices(registry_json: string): string;
 
 export function registry_revoke_device(registry_json: string, device_id: string): string;
 
-export function seal_message(recipient_x25519_pub: Uint8Array, sender_id: Uint8Array, content: Uint8Array): Uint8Array;
+export function seal_message(recipient_x25519_pub: Uint8Array, sender_id: Uint8Array, content: Uint8Array, sender_signing_key: Uint8Array): Uint8Array;
 
 export function should_ratchet(message_count: number, window_changed: boolean, messages_per_ratchet: number, ratchet_on_new_window: boolean): boolean;
 
@@ -192,13 +192,13 @@ export function transcript_verify_sync(hash_a: Uint8Array, hash_b: Uint8Array): 
 
 export function unpack_envelope(envelope: Uint8Array): UnpackedEnvelope;
 
-export function unseal_message(sealed_packet: Uint8Array, our_x25519_sk: Uint8Array): UnsealResult;
+export function unseal_message(sealed_packet: Uint8Array, our_x25519_sk: Uint8Array, entries_json: string | null | undefined, trusted_sender_public_key: Uint8Array): UnsealResult;
 
 export function unwrap_key(kek: Uint8Array, wrapped_key: Uint8Array): Uint8Array;
 
 export function verify_fingerprints_match(fingerprint_a: Uint8Array, fingerprint_b: Uint8Array): boolean;
 
-export function verify_signature(public_key: Uint8Array, message: Uint8Array, signature: Uint8Array): boolean;
+export function verify_signature(public_key: Uint8Array, message: Uint8Array, signature: Uint8Array, entries_json?: string | null): boolean;
 
 export function wrap_key(kek: Uint8Array, key_to_wrap: Uint8Array): Uint8Array;
 
@@ -259,7 +259,7 @@ export interface InitOutput {
     readonly registry_empty: () => [number, number];
     readonly registry_get_active_devices: (a: number, b: number) => [number, number, number, number];
     readonly registry_revoke_device: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly seal_message: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly seal_message: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly should_ratchet: (a: number, b: number, c: number, d: number) => number;
     readonly sign_message: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly transcript_compute_message_hash: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
@@ -269,7 +269,7 @@ export interface InitOutput {
     readonly unpack_envelope: (a: number, b: number) => [number, number, number];
     readonly unpackedenvelope_aad_hash: (a: number) => [number, number];
     readonly unpackedenvelope_encrypted_blob: (a: number) => [number, number];
-    readonly unseal_message: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly unseal_message: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
     readonly unsealresult_content: (a: number) => [number, number];
     readonly unsealresult_free: (a: number) => void;
     readonly unsealresult_sender_id: (a: number) => [number, number];
@@ -279,7 +279,7 @@ export interface InitOutput {
     readonly verificationcoderesult_numeric_digits: (a: number) => [number, number];
     readonly verificationcoderesult_numeric_formatted: (a: number) => [number, number];
     readonly verify_fingerprints_match: (a: number, b: number, c: number, d: number) => [number, number, number];
-    readonly verify_signature: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly verify_signature: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
     readonly wrap_key: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly __wbg_mlkemencapsulationresult_free: (a: number, b: number) => void;
     readonly hybridkemresult_ml_kem_ciphertext: (a: number) => [number, number];

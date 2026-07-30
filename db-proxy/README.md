@@ -122,3 +122,24 @@ Multiplex client connections into a persistent backend pool to reduce database c
 - **Commercial:** Vollcrypt Commercial License ([LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md))
 
 For licensing details or commercial purchases, please contact [berat.vural.tr@gmail.com](mailto:berat.vural.tr@gmail.com).
+
+## Driver Security Capability Matrix
+
+`dbType=postgres` is the full-security driver. Alternative drivers expose only the controls that are implemented in their wire-protocol adapters. At startup, db-proxy fails closed if a non-Postgres driver is configured with a security control that it does not implement, so operators cannot accidentally believe a control is active when it is not.
+
+| Control | PostgreSQL | MySQL | MongoDB | MSSQL | Oracle |
+| --- | --- | --- | --- | --- | --- |
+| WAF query blocking | Yes | Yes | Yes | Yes | Yes |
+| Tenant isolation checks | Yes | Yes | Yes | Yes | Yes |
+| Crypto-RBAC decrypt authorization | Yes | Yes | Yes | Yes | Yes |
+| Decryption rate limiting/fail-closed | Yes | Yes | Yes | Yes | Yes |
+| Raw plaintext cell DLP masking | Yes | No | No | No | No |
+| JIT approval workflow | Yes | No | No | No | No |
+| Anomaly scoring | Yes | No | No | No | No |
+| Query QPS firewall rate limits | Yes | No | No | No | No |
+| `maxRowsPerQuery` exfiltration cap | Yes | No | No | No | No |
+| Query fingerprint allowlist | Yes | No | No | No | No |
+| Temporal constraints | Yes | No | No | No | No |
+| PostgreSQL `server_version` masking | Yes | No | No | No | No |
+
+For MySQL, MongoDB, MSSQL, and Oracle, enabling unsupported `firewall.*` controls such as `jitApprovalRequired`, `anomalyEngine.enabled`, `fingerprinting.enabled`, `rateLimits.maxQueriesPerSecond`, `maxRowsPerQuery`, `temporalConstraints`, or `versionMask` causes startup to throw an error. Use PostgreSQL for the full gateway security pipeline or disable unsupported controls explicitly for alternative drivers.

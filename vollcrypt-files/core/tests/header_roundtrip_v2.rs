@@ -1,6 +1,6 @@
 use vollcrypt_files_core::{
-    hybrid_keypair_generate, generate_file_id, generate_gk, sign_header_plain, sign_header_sealed,
-    CipherId, HashAlgorithm, Header, Mode, SignedMetadata, HybridSignature, HybridPublicKey,
+    generate_file_id, generate_gk, hybrid_keypair_generate, sign_header_plain, sign_header_sealed,
+    CipherId, HashAlgorithm, Header, HybridPublicKey, HybridSignature, Mode, SignedMetadata,
 };
 
 fn create_test_header(version: u8) -> Header {
@@ -28,7 +28,7 @@ fn signed_v3_header_write_parse() {
 
     sign_header_plain(&mut header, &pk, &sk, key_log_id, timestamp).unwrap();
 
-    let bytes = header.write();
+    let bytes = header.write().expect("valid header should serialize");
     let (parsed, parsed_len) = Header::parse(&bytes).unwrap();
 
     assert_eq!(bytes.len(), parsed_len);
@@ -70,7 +70,7 @@ fn sealed_v3_header_write_parse() {
     )
     .unwrap();
 
-    let bytes = header.write();
+    let bytes = header.write().expect("valid header should serialize");
     let (parsed, parsed_len) = Header::parse(&bytes).unwrap();
 
     assert_eq!(bytes.len(), parsed_len);
@@ -91,7 +91,7 @@ fn sealed_v3_header_write_parse() {
         assert_eq!(parsed_ts, timestamp);
         assert_eq!(iv.len(), 12);
         // Under v3, sealed payload is exactly 32 bytes (only key_log_id)
-        assert_eq!(sealed_payload.len(), 32); 
+        assert_eq!(sealed_payload.len(), 32);
         assert_eq!(sealed_tag.len(), 16);
     } else {
         panic!("Expected Sealed metadata");
@@ -120,7 +120,7 @@ fn legacy_v2_header_write_parse() {
         mldsa: Vec::new(),
     });
 
-    let bytes = header.write();
+    let bytes = header.write().expect("valid header should serialize");
     let (parsed, parsed_len) = Header::parse(&bytes).unwrap();
 
     assert_eq!(bytes.len(), parsed_len);
@@ -135,7 +135,7 @@ fn legacy_v2_header_write_parse() {
     {
         assert_eq!(signer_pubkey.ed25519, ed25519_pk);
         // in v2, mldsa is parsed as all zeros because it's not present on-wire
-        assert_eq!(signer_pubkey.mldsa, [0u8; 1952]); 
+        assert_eq!(signer_pubkey.mldsa, [0u8; 1952]);
         assert_eq!(parsed_ts, timestamp);
         assert_eq!(parsed_kl, key_log_id);
     } else {
@@ -147,7 +147,7 @@ fn legacy_v2_header_write_parse() {
 fn unsigned_header_writes_version_1() {
     let header = create_test_header(2);
     // unsigned header should write version 1 (since it has no signed metadata)
-    let bytes = header.write();
+    let bytes = header.write().expect("valid header should serialize");
     assert_eq!(bytes[8], 1);
 }
 
@@ -157,7 +157,7 @@ fn signed_header_writes_version_3() {
     let (pk, sk) = hybrid_keypair_generate();
     sign_header_plain(&mut header, &pk, &sk, [0x00; 32], 100).unwrap();
 
-    let bytes = header.write();
+    let bytes = header.write().expect("valid header should serialize");
     assert_eq!(bytes[8], 3);
 }
 
@@ -184,4 +184,32 @@ fn parse_v1_still_works() {
     assert_eq!(parsed.file_id, file_id);
     assert!(parsed.signed_metadata.is_none());
     assert!(parsed.signature.is_none());
+}
+
+#[test]
+fn header_write_rejects_signed_metadata_without_signature() {
+    let mut header = create_test_header(3);
+    header.signed_metadata = Some(SignedMetadata::Plain {
+        signer_pubkey: HybridPublicKey {
+            ed25519: [0x11; 32],
+            mldsa: [0x22; 1952],
+        },
+        timestamp: 123,
+        key_log_id: [0x33; 32],
+    });
+    header.signature = None;
+
+    assert!(header.write().is_err());
+}
+
+#[test]
+fn header_write_rejects_signature_without_signed_metadata() {
+    let mut header = create_test_header(3);
+    header.signed_metadata = None;
+    header.signature = Some(HybridSignature {
+        ed25519: [0x44; 64],
+        mldsa: vec![0x55; 3309],
+    });
+
+    assert!(header.write().is_err());
 }

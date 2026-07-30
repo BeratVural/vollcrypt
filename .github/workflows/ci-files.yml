@@ -60,6 +60,9 @@ jobs:
       - name: Build Node Bindings
         run: cd vollcrypt-files/node && npm run build
 
+      - name: Test Node Bindings
+        run: cd vollcrypt-files/node && npm test
+
   build-wasm:
     name: Build WASM Bindings
     runs-on: ubuntu-latest
@@ -85,3 +88,6 @@ jobs:
 
       - name: Build WASM Bindings
         run: wasm-pack build vollcrypt-files/wasm --target web --out-dir pkg
+
+      - name: Test WASM Bindings
+        run: wasm-pack test --node vollcrypt-files/wasm

@@ -1,8 +1,8 @@
 use vollcrypt_files_core::{
-    aes256_gcm_decrypt, hybrid_keypair_generate, generate_file_id, generate_gk, sign_header_plain,
+    aes256_gcm_decrypt, generate_file_id, generate_gk, hybrid_keypair_generate, sign_header_plain,
     sign_header_sealed, verify_header_signature_plain, verify_header_signature_plain_policy,
     verify_header_signature_sealed, verify_header_signature_sealed_policy, CipherId,
-    FileFormatError, HashAlgorithm, Header, Mode, SignedMetadata, KeyLog, VerificationPolicy,
+    FileFormatError, HashAlgorithm, Header, KeyLog, Mode, SignedMetadata, VerificationPolicy,
 };
 
 fn create_test_header() -> Header {
@@ -30,7 +30,8 @@ fn sign_verify_plain_roundtrip() {
 
     sign_header_plain(&mut header, &pk, &sk, key_log_id, timestamp).unwrap();
 
-    let verified_pk = verify_header_signature_plain(&header, VerificationPolicy::RequireSigned).unwrap();
+    let verified_pk =
+        verify_header_signature_plain(&header, VerificationPolicy::RequireSigned).unwrap();
     assert_eq!(verified_pk, pk);
 }
 
@@ -44,9 +45,16 @@ fn sign_verify_sealed_roundtrip() {
     let timestamp = 987654321;
     let user_id = generate_file_id();
     let device_id = generate_file_id();
-    
+
     let key_log_id = key_log
-        .register_device(user_id, device_id, pk.clone(), "MacBook Pro", &auth_sk, timestamp)
+        .register_device(
+            user_id,
+            device_id,
+            pk.clone(),
+            "MacBook Pro",
+            &auth_sk,
+            timestamp,
+        )
         .unwrap();
 
     let group_id = generate_file_id();
@@ -64,7 +72,9 @@ fn sign_verify_sealed_roundtrip() {
     )
     .unwrap();
 
-    let verified_pk = verify_header_signature_sealed(&header, &gk, &key_log, VerificationPolicy::RequireSigned).unwrap();
+    let verified_pk =
+        verify_header_signature_sealed(&header, &gk, &key_log, VerificationPolicy::RequireSigned)
+            .unwrap();
     assert_eq!(verified_pk, pk);
 }
 
@@ -85,9 +95,16 @@ fn verify_sealed_with_plain_fails() {
     let timestamp = 987654321;
     let user_id = generate_file_id();
     let device_id = generate_file_id();
-    
+
     let key_log_id = key_log
-        .register_device(user_id, device_id, pk.clone(), "MacBook Pro", &auth_sk, timestamp)
+        .register_device(
+            user_id,
+            device_id,
+            pk.clone(),
+            "MacBook Pro",
+            &auth_sk,
+            timestamp,
+        )
         .unwrap();
 
     let group_id = generate_file_id();
@@ -121,7 +138,8 @@ fn verify_plain_with_sealed_fails() {
 
     sign_header_plain(&mut header, &pk, &sk, key_log_id, timestamp).unwrap();
 
-    let res = verify_header_signature_sealed(&header, &gk, &key_log, VerificationPolicy::RequireSigned);
+    let res =
+        verify_header_signature_sealed(&header, &gk, &key_log, VerificationPolicy::RequireSigned);
     assert!(matches!(res, Err(FileFormatError::HeaderNotSealed)));
 }
 
@@ -184,9 +202,16 @@ fn wrong_gk_fails_sealed_verify() {
     let timestamp = 987654321;
     let user_id = generate_file_id();
     let device_id = generate_file_id();
-    
+
     let key_log_id = key_log
-        .register_device(user_id, device_id, pk.clone(), "MacBook Pro", &auth_sk, timestamp)
+        .register_device(
+            user_id,
+            device_id,
+            pk.clone(),
+            "MacBook Pro",
+            &auth_sk,
+            timestamp,
+        )
         .unwrap();
 
     let group_id = generate_file_id();
@@ -205,7 +230,12 @@ fn wrong_gk_fails_sealed_verify() {
     )
     .unwrap();
 
-    let res = verify_header_signature_sealed(&header, &wrong_gk, &key_log, VerificationPolicy::RequireSigned);
+    let res = verify_header_signature_sealed(
+        &header,
+        &wrong_gk,
+        &key_log,
+        VerificationPolicy::RequireSigned,
+    );
     assert!(matches!(res, Err(FileFormatError::WrongGroupKey)));
 }
 
@@ -277,9 +307,11 @@ fn test_require_signed_policy_plain() {
     sign_header_plain(&mut header, &pk, &sk, key_log_id, timestamp).unwrap();
 
     // Verification should pass in both cases
-    let res_false = verify_header_signature_plain_policy(&header, VerificationPolicy::AllowLegacy).unwrap();
+    let res_false =
+        verify_header_signature_plain_policy(&header, VerificationPolicy::AllowLegacy).unwrap();
     assert_eq!(res_false, pk);
-    let res_true = verify_header_signature_plain_policy(&header, VerificationPolicy::RequireSigned).unwrap();
+    let res_true =
+        verify_header_signature_plain_policy(&header, VerificationPolicy::RequireSigned).unwrap();
     assert_eq!(res_true, pk);
 
     // Downgrade version to 1 and remove metadata
@@ -306,9 +338,16 @@ fn test_require_signed_policy_sealed() {
     let timestamp = 987654321;
     let user_id = generate_file_id();
     let device_id = generate_file_id();
-    
+
     let key_log_id = key_log
-        .register_device(user_id, device_id, pk.clone(), "MacBook Pro", &auth_sk, timestamp)
+        .register_device(
+            user_id,
+            device_id,
+            pk.clone(),
+            "MacBook Pro",
+            &auth_sk,
+            timestamp,
+        )
         .unwrap();
 
     let group_id = generate_file_id();
@@ -319,11 +358,21 @@ fn test_require_signed_policy_sealed() {
     header.signature = None;
 
     // With require_pq_signature = false, verify should fail with HeaderNotSigned
-    let res = verify_header_signature_sealed_policy(&header, &gk, &key_log, VerificationPolicy::AllowLegacy);
+    let res = verify_header_signature_sealed_policy(
+        &header,
+        &gk,
+        &key_log,
+        VerificationPolicy::AllowLegacy,
+    );
     assert!(matches!(res, Err(FileFormatError::HeaderNotSigned)));
 
     // With require_pq_signature = true, verify should fail with IntegrityError
-    let res = verify_header_signature_sealed_policy(&header, &gk, &key_log, VerificationPolicy::RequireSigned);
+    let res = verify_header_signature_sealed_policy(
+        &header,
+        &gk,
+        &key_log,
+        VerificationPolicy::RequireSigned,
+    );
     assert!(matches!(res, Err(FileFormatError::IntegrityError(_))));
 
     // Now sign it
@@ -340,9 +389,21 @@ fn test_require_signed_policy_sealed() {
     .unwrap();
 
     // Verification should pass in both cases
-    let res_false = verify_header_signature_sealed_policy(&header, &gk, &key_log, VerificationPolicy::AllowLegacy).unwrap();
+    let res_false = verify_header_signature_sealed_policy(
+        &header,
+        &gk,
+        &key_log,
+        VerificationPolicy::AllowLegacy,
+    )
+    .unwrap();
     assert_eq!(res_false, pk);
-    let res_true = verify_header_signature_sealed_policy(&header, &gk, &key_log, VerificationPolicy::RequireSigned).unwrap();
+    let res_true = verify_header_signature_sealed_policy(
+        &header,
+        &gk,
+        &key_log,
+        VerificationPolicy::RequireSigned,
+    )
+    .unwrap();
     assert_eq!(res_true, pk);
 
     // Downgrade version to 1 and remove metadata
@@ -351,10 +412,20 @@ fn test_require_signed_policy_sealed() {
     header.signature = None;
 
     // With require_pq_signature = false, verify should fail with HeaderNotSigned
-    let res = verify_header_signature_sealed_policy(&header, &gk, &key_log, VerificationPolicy::AllowLegacy);
+    let res = verify_header_signature_sealed_policy(
+        &header,
+        &gk,
+        &key_log,
+        VerificationPolicy::AllowLegacy,
+    );
     assert!(matches!(res, Err(FileFormatError::HeaderNotSigned)));
 
     // With require_pq_signature = true, verify should fail with IntegrityError (downgrade prevention)
-    let res = verify_header_signature_sealed_policy(&header, &gk, &key_log, VerificationPolicy::RequireSigned);
+    let res = verify_header_signature_sealed_policy(
+        &header,
+        &gk,
+        &key_log,
+        VerificationPolicy::RequireSigned,
+    );
     assert!(matches!(res, Err(FileFormatError::IntegrityError(_))));
 }

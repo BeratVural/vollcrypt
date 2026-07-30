@@ -98,7 +98,7 @@ fn test_massive_skipped_keys_dos_performance() {
     // Process the receiver ratchet step with the massive leap
     let result = ratchet_srk_receiver(
         &initial_srk,
-        &bob_kp.secret_key(),
+        bob_kp.secret_key(),
         &alice_kp.public_key,
         chat_id,
         massive_leap_step,

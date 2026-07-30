@@ -256,7 +256,8 @@ impl SignedMetadata {
                     signer_pubkey.ed25519.to_vec()
                 };
                 let reason_bytes = reason.as_bytes();
-                let mut out = Vec::with_capacity(1 + 8 + pk_bytes.len() + 1 + 4 + reason_bytes.len());
+                let mut out =
+                    Vec::with_capacity(1 + 8 + pk_bytes.len() + 1 + 4 + reason_bytes.len());
                 out.push(2); // signer_kind
                 out.extend_from_slice(&timestamp.to_be_bytes());
                 out.extend_from_slice(&pk_bytes);
@@ -417,7 +418,8 @@ impl Header {
 
             let metadata_start = total_header_len + 4;
             let metadata_end = metadata_start + metadata_len;
-            let parsed_metadata = SignedMetadata::parse(&input[metadata_start..metadata_end], version)?;
+            let parsed_metadata =
+                SignedMetadata::parse(&input[metadata_start..metadata_end], version)?;
             signed_metadata = Some(parsed_metadata);
 
             let signature_start = metadata_end;
@@ -478,7 +480,11 @@ impl Header {
         let variable_len = wraps_bytes.len() as u32;
         let wrap_count = self.wraps.len() as u8;
 
-        let version = if self.signed_metadata.is_some() { self.version } else { 1 };
+        let version = if self.signed_metadata.is_some() {
+            self.version
+        } else {
+            1
+        };
 
         let mut out = Vec::with_capacity(FIXED_HEADER_LEN + wraps_bytes.len());
         out.extend_from_slice(&MAGIC);
@@ -505,7 +511,7 @@ impl Header {
         out
     }
 
-    pub fn write(&self) -> Vec<u8> {
+    pub fn write(&self) -> Result<Vec<u8>, FileFormatError> {
         let mut out = self.signed_bytes();
         if self.signed_metadata.is_some() {
             match &self.signature {
@@ -517,18 +523,17 @@ impl Header {
                     }
                 }
                 None => {
-                    debug_assert!(
-                        false,
-                        "Signature must be present if signed_metadata is Some"
-                    );
-                    panic!("Signature must be present if signed_metadata is Some");
+                    return Err(FileFormatError::IntegrityError(
+                        "Signature must be present if signed_metadata is Some".to_string(),
+                    ));
                 }
             }
         } else if self.signature.is_some() {
-            debug_assert!(false, "Signature must be None if signed_metadata is None");
-            panic!("Signature must be None if signed_metadata is None");
+            return Err(FileFormatError::IntegrityError(
+                "Signature must be None if signed_metadata is None".to_string(),
+            ));
         }
-        out
+        Ok(out)
     }
 
     pub fn serialized_len(&self) -> usize {
@@ -536,7 +541,10 @@ impl Header {
         if let Some(ref metadata) = self.signed_metadata {
             let metadata_size = metadata.write(self.version).len();
             let sig_size = if self.version == 3 {
-                self.signature.as_ref().map(|s| s.write().len()).unwrap_or(0)
+                self.signature
+                    .as_ref()
+                    .map(|s| s.write().len())
+                    .unwrap_or(0)
             } else {
                 64
             };

@@ -62,7 +62,7 @@ pub fn chunk_leaf_hash_raw_with_algo(
     match algo {
         HashAlgorithm::Sha256 => {
             let mut hasher = Sha256::new();
-            hasher.update(&[0x00]); // leaf prefix
+            hasher.update([0x00]); // leaf prefix
             hasher.update(chunk_index.to_be_bytes());
             hasher.update(iv);
             hasher.update(ciphertext);
@@ -102,8 +102,8 @@ pub fn bind_root_with_length(
     match algo {
         HashAlgorithm::Sha256 => {
             let mut hasher = Sha256::new();
-            hasher.update(&[0x02]); // final binding prefix
-            hasher.update(&(leaf_count as u64).to_be_bytes());
+            hasher.update([0x02]); // final binding prefix
+            hasher.update((leaf_count as u64).to_be_bytes());
             hasher.update(tree_root);
             hasher.finalize().into()
         }
@@ -121,7 +121,7 @@ pub fn bind_root_with_length(
 pub fn expected_proof_len_for_leaf(mut leaf_index: usize, mut total_leaves: usize) -> usize {
     let mut len = 0;
     while total_leaves > 1 {
-        let is_odd = total_leaves % 2 != 0;
+        let is_odd = !total_leaves.is_multiple_of(2);
         let is_last = leaf_index == total_leaves - 1;
         if !(is_odd && is_last) {
             len += 1;
@@ -160,15 +160,15 @@ impl MerkleTree {
 
         while current_level.len() > 1 {
             let mut next_level = Vec::with_capacity(current_level.len().div_ceil(2));
-            let mut chunks = current_level.chunks(2);
-            while let Some(chunk) = chunks.next() {
+            let chunks = current_level.chunks(2);
+            for chunk in chunks {
                 if chunk.len() == 2 {
                     let left = chunk[0];
                     let right = chunk[1];
                     let parent = match algo {
                         HashAlgorithm::Sha256 => {
                             let mut hasher = Sha256::new();
-                            hasher.update(&[0x01]); // internal node prefix
+                            hasher.update([0x01]); // internal node prefix
                             hasher.update(left);
                             hasher.update(right);
                             let mut parent = [0u8; 32];
@@ -224,13 +224,13 @@ impl MerkleTree {
 
         for level_idx in 0..self.levels.len() - 1 {
             let level = &self.levels[level_idx];
-            let is_odd = current_total % 2 != 0;
+            let is_odd = !current_total.is_multiple_of(2);
             let is_last = current_idx == current_total - 1;
 
             if is_odd && is_last {
                 // Promoted node has no sibling at this level
             } else {
-                let sibling_index = if current_idx % 2 == 0 {
+                let sibling_index = if current_idx.is_multiple_of(2) {
                     current_idx + 1
                 } else {
                     current_idx - 1
@@ -319,7 +319,7 @@ pub fn verify_merkle_proof_with_algo(
     let mut proof_iter = proof.iter();
 
     while current_total > 1 {
-        let is_odd = current_total % 2 != 0;
+        let is_odd = !current_total.is_multiple_of(2);
         let is_last = current_idx == current_total - 1;
 
         if is_odd && is_last {
@@ -332,8 +332,8 @@ pub fn verify_merkle_proof_with_algo(
             current_hash = match algo {
                 HashAlgorithm::Sha256 => {
                     let mut hasher = Sha256::new();
-                    hasher.update(&[0x01]); // internal node prefix
-                    if current_idx % 2 == 0 {
+                    hasher.update([0x01]); // internal node prefix
+                    if current_idx.is_multiple_of(2) {
                         hasher.update(current_hash);
                         hasher.update(sibling);
                     } else {
@@ -347,7 +347,7 @@ pub fn verify_merkle_proof_with_algo(
                 HashAlgorithm::Blake3 => {
                     let mut hasher = blake3::Hasher::new();
                     hasher.update(&[0x01]); // internal node prefix
-                    if current_idx % 2 == 0 {
+                    if current_idx.is_multiple_of(2) {
                         hasher.update(&current_hash);
                         hasher.update(sibling);
                     } else {
@@ -376,6 +376,12 @@ pub struct StreamingMerkle {
     active_branches: Vec<Option<[u8; 32]>>,
     total_leaves: usize,
     algo: HashAlgorithm,
+}
+
+impl Default for StreamingMerkle {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StreamingMerkle {
@@ -457,7 +463,7 @@ impl StreamingMerkle {
         match self.algo {
             HashAlgorithm::Sha256 => {
                 let mut hasher = Sha256::new();
-                hasher.update(&[0x01]); // internal node prefix
+                hasher.update([0x01]); // internal node prefix
                 hasher.update(left);
                 hasher.update(right);
                 let mut parent = [0u8; 32];

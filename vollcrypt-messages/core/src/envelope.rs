@@ -14,7 +14,9 @@ pub fn pack_envelope(
     }
     let ciphertext_len = encrypted_blob.len() - 12 - 16;
     if !crate::padding::is_valid_padded_len(ciphertext_len) {
-        return Err("Encrypted blob is not padded. Length hiding (padding) is mandatory for normal messages.");
+        return Err(
+            "Encrypted blob is not padded. Length hiding (padding) is mandatory for normal messages.",
+        );
     }
     let mut out = Vec::with_capacity(4 + 12 + 32 + encrypted_blob.len() - 12);
     out.extend_from_slice(&window_index.to_be_bytes());

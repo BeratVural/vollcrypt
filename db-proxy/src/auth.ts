@@ -92,3 +92,118 @@ export function resolveUserContext(
 export function getRbacConfig(config: ProxyConfig = DEFAULT_CONFIG) {
   return config.cryptoRbac;
 }
+
+export type DbProxyDriverType = 'postgres' | 'mysql' | 'mongodb' | 'mssql' | 'oracle';
+
+export interface DriverSecurityCapability {
+  waf: boolean;
+  tenantIsolation: boolean;
+  cryptoRbac: boolean;
+  decryptRateLimit: boolean;
+  rawCellDlp: boolean;
+  jitApproval: boolean;
+  anomalyScoring: boolean;
+  queryRateLimit: boolean;
+  maxRowsPerQuery: boolean;
+  fingerprinting: boolean;
+  temporalConstraints: boolean;
+  versionMask: boolean;
+}
+
+export const DRIVER_SECURITY_CAPABILITIES: Record<DbProxyDriverType, DriverSecurityCapability> = {
+  postgres: {
+    waf: true,
+    tenantIsolation: true,
+    cryptoRbac: true,
+    decryptRateLimit: true,
+    rawCellDlp: true,
+    jitApproval: true,
+    anomalyScoring: true,
+    queryRateLimit: true,
+    maxRowsPerQuery: true,
+    fingerprinting: true,
+    temporalConstraints: true,
+    versionMask: true,
+  },
+  mysql: {
+    waf: true,
+    tenantIsolation: true,
+    cryptoRbac: true,
+    decryptRateLimit: true,
+    rawCellDlp: false,
+    jitApproval: false,
+    anomalyScoring: false,
+    queryRateLimit: false,
+    maxRowsPerQuery: false,
+    fingerprinting: false,
+    temporalConstraints: false,
+    versionMask: false,
+  },
+  mongodb: {
+    waf: true,
+    tenantIsolation: true,
+    cryptoRbac: true,
+    decryptRateLimit: true,
+    rawCellDlp: false,
+    jitApproval: false,
+    anomalyScoring: false,
+    queryRateLimit: false,
+    maxRowsPerQuery: false,
+    fingerprinting: false,
+    temporalConstraints: false,
+    versionMask: false,
+  },
+  mssql: {
+    waf: true,
+    tenantIsolation: true,
+    cryptoRbac: true,
+    decryptRateLimit: true,
+    rawCellDlp: false,
+    jitApproval: false,
+    anomalyScoring: false,
+    queryRateLimit: false,
+    maxRowsPerQuery: false,
+    fingerprinting: false,
+    temporalConstraints: false,
+    versionMask: false,
+  },
+  oracle: {
+    waf: true,
+    tenantIsolation: true,
+    cryptoRbac: true,
+    decryptRateLimit: true,
+    rawCellDlp: false,
+    jitApproval: false,
+    anomalyScoring: false,
+    queryRateLimit: false,
+    maxRowsPerQuery: false,
+    fingerprinting: false,
+    temporalConstraints: false,
+    versionMask: false,
+  },
+};
+
+export function validateProxyDriverSecurityConfig(dbType: DbProxyDriverType = 'postgres', config: ProxyConfig = DEFAULT_CONFIG): void {
+  const capabilities = DRIVER_SECURITY_CAPABILITIES[dbType];
+  if (!capabilities) {
+    throw new Error(`Unsupported dbType "${dbType}".`);
+  }
+  if (dbType === 'postgres') return;
+
+  const firewall = config.firewall;
+  const unsupported: string[] = [];
+  if (firewall?.jitApprovalRequired && !capabilities.jitApproval) unsupported.push('firewall.jitApprovalRequired');
+  if (firewall?.anomalyEngine?.enabled && !capabilities.anomalyScoring) unsupported.push('firewall.anomalyEngine.enabled');
+  if (firewall?.fingerprinting?.enabled && !capabilities.fingerprinting) unsupported.push('firewall.fingerprinting.enabled');
+  if (firewall?.rateLimits?.maxQueriesPerSecond && !capabilities.queryRateLimit) unsupported.push('firewall.rateLimits.maxQueriesPerSecond');
+  if (firewall?.maxRowsPerQuery && !capabilities.maxRowsPerQuery) unsupported.push('firewall.maxRowsPerQuery');
+  if (firewall?.temporalConstraints && Object.keys(firewall.temporalConstraints).length > 0 && !capabilities.temporalConstraints) unsupported.push('firewall.temporalConstraints');
+  if (firewall?.versionMask && !capabilities.versionMask) unsupported.push('firewall.versionMask');
+
+  if (unsupported.length > 0) {
+    throw new Error(
+      `db-proxy ${dbType} driver does not implement requested security controls: ${unsupported.join(', ')}. ` +
+      `Use dbType=postgres for these controls or disable them explicitly; startup is fail-closed to avoid a misleading protection level.`
+    );
+  }
+}

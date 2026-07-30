@@ -30,6 +30,7 @@ pub fn seal(
     recipient_x25519_pub: &[u8; 32],
     sender_id: &[u8],
     content: &[u8],
+    sender_signing_key: &[u8; 32],
 ) -> Result<Vec<u8>, CryptoError> {
     // 1. Generate ephemeral X25519 key pair
     let mut ephemeral_sk = StaticSecret::random_from_rng(OsRng);
@@ -55,11 +56,24 @@ pub fn seal(
     // Ensure shared_secret is zeroized immediately after key derivation
     shared_secret.zeroize();
 
-    // 4. Pack inner plaintext: [2 bytes sender_id_len | sender_id | content]
-    let sender_id_len = u16::try_from(sender_id.len()).map_err(|_| CryptoError::InvalidKeyLength)?;
-    let mut inner_plaintext = Vec::with_capacity(2 + sender_id.len() + content.len());
+    // Compute Ed25519 signature over sender_id and content
+    let mut sig_payload = Vec::with_capacity(sender_id.len() + content.len());
+    sig_payload.extend_from_slice(sender_id);
+    sig_payload.extend_from_slice(content);
+
+    let mut sk_copy = [0u8; 32];
+    sk_copy.copy_from_slice(sender_signing_key);
+    let signature = crate::keys::sign_message(&sk_copy, &sig_payload)
+        .map_err(|_| CryptoError::RatchetComputationFailed)?;
+    sk_copy.zeroize();
+
+    // 4. Pack inner plaintext: [2 bytes sender_id_len | sender_id | 64 bytes signature | content]
+    let sender_id_len =
+        u16::try_from(sender_id.len()).map_err(|_| CryptoError::InvalidKeyLength)?;
+    let mut inner_plaintext = Vec::with_capacity(2 + sender_id.len() + 64 + content.len());
     inner_plaintext.extend_from_slice(&sender_id_len.to_be_bytes());
     inner_plaintext.extend_from_slice(sender_id);
+    inner_plaintext.extend_from_slice(&signature);
     inner_plaintext.extend_from_slice(content);
 
     // 5. Encrypt with AES-256-GCM (returns [12B IV][ciphertext][16B tag])
@@ -75,24 +89,25 @@ pub fn seal(
     sealed_packet.extend_from_slice(ephemeral_pk.as_bytes());
     sealed_packet.extend_from_slice(&encrypted_inner);
 
-    // 7. Ephemeral Secret Key automatically zeroizes on drop (StaticSecret implements ZeroizeOnDrop natively in later versions, but we manually zeroize if possible, or it handles itself)
-    // Actually, x25519_dalek::StaticSecret zeroizes on drop.
     ephemeral_sk.zeroize();
 
     Ok(sealed_packet)
 }
 
-/// Unseals a sealed sender packet.
+/// Unseals a sealed sender packet and verifies the sender's signature against the log chain.
 ///
 /// # Arguments
 /// * `sealed_packet` - The output from `seal()`
 /// * `our_x25519_sk` - The recipient's X25519 static secret key (32 bytes)
+/// * `entries_json` - Key log chain entries JSON to fetch the sender's active public key
 ///
 /// # Returns
 /// `(sender_id, content)`
 pub fn unseal(
     sealed_packet: &[u8],
     our_x25519_sk: &[u8; 32],
+    entries_json: Option<&str>,
+    trusted_sender_public_key: Option<&[u8; 32]>,
 ) -> Result<(Vec<u8>, Vec<u8>), CryptoError> {
     // 1. Check minimum length (32 bytes ephemeral_pk + 12 bytes IV + 16 bytes tag)
     if sealed_packet.len() < 32 + 12 + 16 {
@@ -134,22 +149,60 @@ pub fn unseal(
     encryption_key.zeroize();
 
     // 6. Parse inner plaintext
-    if inner_plaintext.len() < 2 {
+    if inner_plaintext.len() < 2 + 64 {
         inner_plaintext.zeroize();
         return Err(CryptoError::InvalidSealedPacketFormat);
     }
 
     let sender_id_len = u16::from_be_bytes([inner_plaintext[0], inner_plaintext[1]]) as usize;
 
-    if inner_plaintext.len() < 2 + sender_id_len {
+    if inner_plaintext.len() < 2 + sender_id_len + 64 {
         inner_plaintext.zeroize();
         return Err(CryptoError::InvalidSealedPacketFormat);
     }
 
     let sender_id = inner_plaintext[2..2 + sender_id_len].to_vec();
-    let content = inner_plaintext[2 + sender_id_len..].to_vec();
+    let mut signature = [0u8; 64];
+    signature.copy_from_slice(&inner_plaintext[2 + sender_id_len..2 + sender_id_len + 64]);
+    let content = inner_plaintext[2 + sender_id_len + 64..].to_vec();
 
     inner_plaintext.zeroize();
+
+    // 7. Verify the sender's signature using the log chain
+    match entries_json {
+        Some(json_str) => {
+            let entries: Vec<crate::key_log::KeyLogEntry> = serde_json::from_str(json_str)
+                .map_err(|_| CryptoError::InvalidSealedPacketFormat)?;
+            let log = crate::key_log::KeyLog { entries };
+
+            // Verify the integrity of the key log chain first
+            log.verify_chain()?;
+
+            // Find the current active public key for this sender_id.
+            // The caller must pin the expected sender public key out-of-band; a self-signed
+            // key-log JSON alone is not a trust root.
+            let active_pk = log
+                .current_key_for(&sender_id)
+                .ok_or(CryptoError::KeyLogInvalidSignature { at_index: 0 })?;
+            let trusted_pk = trusted_sender_public_key
+                .ok_or(CryptoError::KeyLogInvalidSignature { at_index: 0 })?;
+            if active_pk != trusted_pk {
+                return Err(CryptoError::KeyLogInvalidSignature { at_index: 0 });
+            }
+
+            let mut sig_payload = Vec::with_capacity(sender_id.len() + content.len());
+            sig_payload.extend_from_slice(&sender_id);
+            sig_payload.extend_from_slice(&content);
+
+            let is_sig_valid = crate::keys::verify_signature(active_pk, &sig_payload, &signature);
+            if !is_sig_valid {
+                return Err(CryptoError::KeyLogInvalidSignature { at_index: 0 });
+            }
+        }
+        None => {
+            return Err(CryptoError::KeyLogInvalidSignature { at_index: 0 });
+        }
+    }
 
     Ok((sender_id, content))
 }
@@ -159,36 +212,101 @@ pub fn unseal(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keys::generate_x25519_keypair;
+    use crate::key_log::{GENESIS_HASH, KeyAction, create_entry};
+    use crate::keys::{generate_ed25519_keypair, generate_x25519_keypair};
+
+    fn setup_test_keys() -> ([u8; 32], [u8; 32], [u8; 32], [u8; 32], String) {
+        let bob_kp = generate_x25519_keypair();
+        let bob_sk: [u8; 32] = bob_kp.0.try_into().unwrap();
+        let bob_pk: [u8; 32] = bob_kp.1.try_into().unwrap();
+
+        let (alice_sk, alice_pk) = generate_ed25519_keypair();
+        let mut alice_pk_arr = [0u8; 32];
+        alice_pk_arr.copy_from_slice(&alice_pk);
+        let mut alice_sk_arr = [0u8; 32];
+        alice_sk_arr.copy_from_slice(&alice_sk);
+
+        let entry = create_entry(
+            b"alice",
+            &alice_pk_arr,
+            1000,
+            &GENESIS_HASH,
+            KeyAction::Add,
+            &alice_sk_arr,
+        )
+        .unwrap();
+        let entries = vec![entry];
+        let entries_json = serde_json::to_string(&entries).unwrap();
+
+        (bob_sk, bob_pk, alice_sk_arr, alice_pk_arr, entries_json)
+    }
 
     #[test]
     fn test_seal_unseal_roundtrip() {
-        let bob_kp = generate_x25519_keypair();
-        // bob_kp.0 = secret(32B), bob_kp.1 = public(32B)
-        let bob_sk: [u8; 32] = bob_kp.0.clone().try_into().unwrap();
-        let bob_pk: [u8; 32] = bob_kp.1.clone().try_into().unwrap();
-
-        let sender_id = b"alice@example.com";
+        let (bob_sk, bob_pk, alice_sk, alice_pk, entries_json) = setup_test_keys();
+        let sender_id = b"alice";
         let content = b"Secret message content";
 
-        let sealed = seal(&bob_pk, sender_id, content).unwrap();
-        let (recovered_sender, recovered_content) = unseal(&sealed, &bob_sk).unwrap();
+        let sealed = seal(&bob_pk, sender_id, content, &alice_sk).unwrap();
+        let (recovered_sender, recovered_content) =
+            unseal(&sealed, &bob_sk, Some(&entries_json), Some(&alice_pk)).unwrap();
 
         assert_eq!(recovered_sender, sender_id);
         assert_eq!(recovered_content, content);
     }
 
     #[test]
-    fn test_each_seal_produces_different_packet() {
-        // Every seal call should generate a different ephemeral key, thus a different packet
+    fn sealed_sender_rejects_untrusted_self_signed_keylog() {
         let bob_kp = generate_x25519_keypair();
-        let bob_pk: [u8; 32] = bob_kp.1.clone().try_into().unwrap();
+        let bob_sk: [u8; 32] = bob_kp.0.try_into().unwrap();
+        let bob_pk: [u8; 32] = bob_kp.1.try_into().unwrap();
 
+        let (trusted_alice_sk, trusted_alice_pk) = generate_ed25519_keypair();
+        let mut trusted_alice_pk_arr = [0u8; 32];
+        trusted_alice_pk_arr.copy_from_slice(&trusted_alice_pk);
+        let mut trusted_alice_sk_arr = [0u8; 32];
+        trusted_alice_sk_arr.copy_from_slice(&trusted_alice_sk);
+
+        let (attacker_sk, attacker_pk) = generate_ed25519_keypair();
+        let mut attacker_pk_arr = [0u8; 32];
+        attacker_pk_arr.copy_from_slice(&attacker_pk);
+        let mut attacker_sk_arr = [0u8; 32];
+        attacker_sk_arr.copy_from_slice(&attacker_sk);
+
+        let forged_entry = create_entry(
+            b"alice",
+            &attacker_pk_arr,
+            1000,
+            &GENESIS_HASH,
+            KeyAction::Add,
+            &attacker_sk_arr,
+        )
+        .unwrap();
+        let forged_entries_json = serde_json::to_string(&vec![forged_entry]).unwrap();
+        let forged = seal(&bob_pk, b"alice", b"forged content", &attacker_sk_arr).unwrap();
+
+        let result = unseal(
+            &forged,
+            &bob_sk,
+            Some(&forged_entries_json),
+            Some(&trusted_alice_pk_arr),
+        );
+        assert!(
+            result.is_err(),
+            "A self-signed attacker key-log must not be accepted without matching the pinned sender key"
+        );
+
+        trusted_alice_sk_arr.zeroize();
+    }
+
+    #[test]
+    fn test_each_seal_produces_different_packet() {
+        let (_, bob_pk, alice_sk, _, _) = setup_test_keys();
         let sender_id = b"alice";
         let content = b"same content";
 
-        let sealed_1 = seal(&bob_pk, sender_id, content).unwrap();
-        let sealed_2 = seal(&bob_pk, sender_id, content).unwrap();
+        let sealed_1 = seal(&bob_pk, sender_id, content, &alice_sk).unwrap();
+        let sealed_2 = seal(&bob_pk, sender_id, content, &alice_sk).unwrap();
 
         assert_ne!(
             sealed_1, sealed_2,
@@ -198,14 +316,11 @@ mod tests {
 
     #[test]
     fn test_sender_identity_hidden_in_packet() {
-        // The sender_id must not appear as plaintext inside the packet
-        let bob_kp = generate_x25519_keypair();
-        let bob_pk: [u8; 32] = bob_kp.1.clone().try_into().unwrap();
-
-        let sender_id = b"alice@example.com";
+        let (_, bob_pk, alice_sk, _, _) = setup_test_keys();
+        let sender_id = b"alice";
         let content = b"content";
 
-        let sealed = seal(&bob_pk, sender_id, content).unwrap();
+        let sealed = seal(&bob_pk, sender_id, content, &alice_sk).unwrap();
 
         let alice_str = b"alice";
         let windows: Vec<&[u8]> = sealed.windows(alice_str.len()).collect();
@@ -217,17 +332,15 @@ mod tests {
 
     #[test]
     fn test_wrong_recipient_key_fails() {
-        // Unsealing with a different recipient's key must fail
-        let bob_kp = generate_x25519_keypair();
-        let bob_pk: [u8; 32] = bob_kp.1.clone().try_into().unwrap();
+        let (_, bob_pk, alice_sk, alice_pk, entries_json) = setup_test_keys();
 
         let mallory_kp = generate_x25519_keypair();
-        let mallory_sk: [u8; 32] = mallory_kp.0.clone().try_into().unwrap();
+        let mallory_sk: [u8; 32] = mallory_kp.0.try_into().unwrap();
 
-        let sealed = seal(&bob_pk, b"alice", b"content").unwrap();
+        let sealed = seal(&bob_pk, b"alice", b"content", &alice_sk).unwrap();
 
         // Mallory tries to open Bob's packet
-        let result = unseal(&sealed, &mallory_sk);
+        let result = unseal(&sealed, &mallory_sk, Some(&entries_json), Some(&alice_pk));
 
         assert!(result.is_err(), "Unsealing with wrong key must fail");
         match result.unwrap_err() {
@@ -238,32 +351,26 @@ mod tests {
 
     #[test]
     fn test_tampered_packet_fails() {
-        // If the packet is altered, auth tag verification must fail
-        let bob_kp = generate_x25519_keypair();
-        let bob_sk: [u8; 32] = bob_kp.0.clone().try_into().unwrap();
-        let bob_pk: [u8; 32] = bob_kp.1.clone().try_into().unwrap();
+        let (bob_sk, bob_pk, alice_sk, alice_pk, entries_json) = setup_test_keys();
 
-        let mut sealed = seal(&bob_pk, b"alice", b"content").unwrap();
+        let mut sealed = seal(&bob_pk, b"alice", b"content", &alice_sk).unwrap();
 
-        // Tamper with one byte in the ciphertext part (after 32B ephemeral key + 8B into IV/Ciphertext space)
+        // Tamper with one byte in the ciphertext part
         let tamper_pos = 40;
         sealed[tamper_pos] ^= 0xFF;
 
-        let result = unseal(&sealed, &bob_sk);
+        let result = unseal(&sealed, &bob_sk, Some(&entries_json), Some(&alice_pk));
         assert!(result.is_err(), "Tampered packet must be rejected");
     }
 
     #[test]
     fn test_truncated_packet_fails() {
-        let bob_kp = generate_x25519_keypair();
-        let bob_sk: [u8; 32] = bob_kp.0.clone().try_into().unwrap();
-        let bob_pk: [u8; 32] = bob_kp.1.clone().try_into().unwrap();
+        let (bob_sk, bob_pk, alice_sk, alice_pk, entries_json) = setup_test_keys();
 
-        let sealed = seal(&bob_pk, b"alice", b"content").unwrap();
+        let sealed = seal(&bob_pk, b"alice", b"content", &alice_sk).unwrap();
 
-        // Under minimum length 32 + 12 + 16 = 60
         let truncated = &sealed[..30];
-        let result = unseal(truncated, &bob_sk);
+        let result = unseal(truncated, &bob_sk, Some(&entries_json), Some(&alice_pk));
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -274,27 +381,60 @@ mod tests {
 
     #[test]
     fn test_empty_content_supported() {
-        // Empty payload must be supported (for notifications/sync markers)
-        let bob_kp = generate_x25519_keypair();
-        let bob_sk: [u8; 32] = bob_kp.0.clone().try_into().unwrap();
-        let bob_pk: [u8; 32] = bob_kp.1.clone().try_into().unwrap();
+        let (bob_sk, bob_pk, alice_sk, alice_pk, entries_json) = setup_test_keys();
 
-        let sealed = seal(&bob_pk, b"alice", b"").unwrap();
-        let (sender, content) = unseal(&sealed, &bob_sk).unwrap();
+        let sealed = seal(&bob_pk, b"alice", b"", &alice_sk).unwrap();
+        let (sender, content) =
+            unseal(&sealed, &bob_sk, Some(&entries_json), Some(&alice_pk)).unwrap();
         assert_eq!(sender, b"alice");
         assert_eq!(content, b"");
     }
 
     #[test]
     fn test_large_content_supported() {
-        // 1 MB content
-        let bob_kp = generate_x25519_keypair();
-        let bob_sk: [u8; 32] = bob_kp.0.clone().try_into().unwrap();
-        let bob_pk: [u8; 32] = bob_kp.1.clone().try_into().unwrap();
+        let (bob_sk, bob_pk, alice_sk, alice_pk, entries_json) = setup_test_keys();
 
         let large_content = vec![0x42u8; 1024 * 1024];
-        let sealed = seal(&bob_pk, b"alice", &large_content).unwrap();
-        let (_, recovered) = unseal(&sealed, &bob_sk).unwrap();
+        let sealed = seal(&bob_pk, b"alice", &large_content, &alice_sk).unwrap();
+        let (_, recovered) =
+            unseal(&sealed, &bob_sk, Some(&entries_json), Some(&alice_pk)).unwrap();
         assert_eq!(recovered, large_content);
+    }
+
+    #[test]
+    fn test_revoked_sender_fails() {
+        let (bob_sk, bob_pk, alice_sk, alice_pk, _) = setup_test_keys();
+
+        // Register then revoke alice key
+        let entry_add = create_entry(
+            b"alice",
+            &alice_pk,
+            1000,
+            &GENESIS_HASH,
+            KeyAction::Add,
+            &alice_sk,
+        )
+        .unwrap();
+        let hash_add = entry_add.compute_hash();
+        let entry_revoke = create_entry(
+            b"alice",
+            &alice_pk,
+            2000,
+            &hash_add,
+            KeyAction::Revoke,
+            &alice_sk,
+        )
+        .unwrap();
+        let entries = vec![entry_add, entry_revoke];
+        let entries_json = serde_json::to_string(&entries).unwrap();
+
+        let sealed = seal(&bob_pk, b"alice", b"Secret", &alice_sk).unwrap();
+        let result = unseal(&sealed, &bob_sk, Some(&entries_json), Some(&alice_pk));
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CryptoError::KeyLogInvalidSignature { at_index: 0 } => {}
+            e => panic!("Unexpected error: {:?}", e),
+        }
     }
 }

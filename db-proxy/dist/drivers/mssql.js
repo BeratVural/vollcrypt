@@ -200,16 +200,17 @@ function handleMssqlConnection(clientSocket, options) {
             }
             if (type === 0x01 || type === 0x03) { // SQL Batch or RPC
                 const query = data.toString('utf16le', 8);
-                if (!options.noWaf) {
-                    try {
+                try {
+                    if (!options.noWaf) {
                         (0, waf_js_1.validateQuery)(query, currentRole);
                     }
-                    catch (err) {
-                        options.logSiem('WAF_MSSQL_BLOCK', 9, `MSSQL WAF violation blocked: ${err.message}`);
-                        const errPacket = serializeMssqlError(err.message, 50000);
-                        clientSocket.write(errPacket);
-                        return;
-                    }
+                    (0, waf_js_1.ensureTenantScopedQuery)(query, currentTenantId);
+                }
+                catch (err) {
+                    options.logSiem('WAF_MSSQL_BLOCK', 9, `MSSQL WAF violation blocked: ${err.message}`);
+                    const errPacket = serializeMssqlError(err.message, 50000);
+                    clientSocket.write(errPacket);
+                    return;
                 }
                 try {
                     currentTable = (0, waf_js_1.extractTableName)(query);
@@ -238,7 +239,7 @@ function handleMssqlConnection(clientSocket, options) {
     clientSocket.on('close', () => {
         backendSocket.destroy();
     });
-    clientSocket.on('close', () => {
+    backendSocket.on('close', () => {
         clientSocket.destroy();
     });
 }

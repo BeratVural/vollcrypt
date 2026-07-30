@@ -80,7 +80,14 @@ fn key_log_modify_prev_hash_breaks_chain() {
     let kp2 = generate_ed25519_keypair();
 
     let e0 = make_helper_entry(b"alice", &kp1, &GENESIS_HASH, KeyAction::Add, 1000);
-    let mut e1 = make_helper_entry_with_sig(b"alice", &kp2, &e0.compute_hash(), KeyAction::Update, 2000, &kp1.0);
+    let mut e1 = make_helper_entry_with_sig(
+        b"alice",
+        &kp2,
+        &e0.compute_hash(),
+        KeyAction::Update,
+        2000,
+        &kp1.0,
+    );
 
     e1.prev_entry_hash[0] ^= 0xFF; // Modify prev hash (breaks chain link AND invalidates e1's signature)
 
@@ -265,7 +272,11 @@ fn key_log_1000_entries_performance() {
     let mut prev_hash = GENESIS_HASH;
 
     for i in 0..1000 {
-        let action = if i == 0 { KeyAction::Add } else { KeyAction::Update };
+        let action = if i == 0 {
+            KeyAction::Add
+        } else {
+            KeyAction::Update
+        };
         let e = make_helper_entry(b"alice", &kp, &prev_hash, action, 1000 + i);
         prev_hash = e.compute_hash();
         log.append(e).unwrap();

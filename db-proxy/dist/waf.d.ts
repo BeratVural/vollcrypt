@@ -31,6 +31,10 @@ export declare function tokenizeSql(sql: string): string[];
  */
 export declare function rewriteQuery(sql: string, role: string, tenantId: string | undefined, config: any): string;
 /**
+ * Enforces fail-closed tenant scoping for non-PostgreSQL drivers.
+ */
+export declare function ensureTenantScopedQuery(sql: string, tenantId: string | undefined): void;
+/**
  * Generates Laplace noise for Differential Privacy.
  */
 export declare function generateLaplaceNoise(scale: number): number;

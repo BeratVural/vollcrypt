@@ -6,7 +6,7 @@ describe('Drizzle db-guard custom column adapter', () => {
   const key = Buffer.alloc(32, 7);
 
   test('creates custom column types with valid properties', () => {
-    const guard = createDrizzleGuard({ key });
+    const guard = createDrizzleGuard({ key, allowUnrestrictedDecrypt: true } as any);
     
     assert.ok(guard.pgText);
     assert.ok(guard.mysqlText);

@@ -100,8 +100,6 @@ export function generateRecipientKeypair(): any;
 
 export function generateSalt(): Uint8Array;
 
-export function getWasmMemoryView(ptr: number, len: number): Uint8Array;
-
 export function hybridKeypairGenerate(): any;
 
 export function hybridSign(sk: Uint8Array, pk: Uint8Array, domain: string, context: Uint8Array, payload: Uint8Array): Uint8Array;
@@ -175,7 +173,6 @@ export interface InitOutput {
     readonly generateGk: () => [number, number];
     readonly generateRecipientKeypair: () => [number, number, number];
     readonly generateSalt: () => [number, number];
-    readonly getWasmMemoryView: (a: number, b: number) => any;
     readonly groupmanifest_addMember: (a: number, b: number, c: number, d: any, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number];
     readonly groupmanifest_currentGkVersion: (a: number) => number;
     readonly groupmanifest_currentMembers: (a: number) => [number, number, number];

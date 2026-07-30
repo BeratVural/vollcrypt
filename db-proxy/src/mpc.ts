@@ -1,17 +1,17 @@
 /**
- * Reconstructs the original 32-byte Data Encryption Key (DEK)
- * using a threshold XOR-based secret sharing scheme.
+ * Reconstructs a DEK from single-process XOR key-split shares.
+ * This is an n-of-n compatibility helper; it requires every share and provides no threshold guarantee.
  */
-export function reconstructKeyMpc(shares: Buffer[]): Buffer {
+export function reconstructKeyFromXorShares(shares: Buffer[]): Buffer {
   if (shares.length < 2) {
-    throw new Error('MPC key reconstruction requires at least 2 shares');
+    throw new Error('XOR key-split reconstruction requires at least 2 shares');
   }
 
   const length = shares[0].length;
   // Assert all shares are of identical length
   for (const share of shares) {
     if (share.length !== length) {
-      throw new Error('All MPC key shares must have identical lengths');
+      throw new Error('All XOR key-split shares must have identical lengths');
     }
   }
 

@@ -10,8 +10,9 @@ describe('TypeORM db-guard subscriber', () => {
       key,
       entities: {
         User: ['credit_card']
-      }
-    });
+      },
+      allowUnrestrictedDecrypt: true
+    } as any);
 
     const subscriberInstance = new Subscriber();
 

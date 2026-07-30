@@ -1,5 +1,5 @@
 import * as net from 'net';
-import { validateQuery, extractProjectionColumns, extractTableName } from '../waf.js';
+import { validateQuery, ensureTenantScopedQuery, extractProjectionColumns, extractTableName } from '../waf.js';
 import { decryptValue, decryptWithSecurity, dbGuardContextStore } from '@vollcrypt/db-guard';
 import { getRbacConfig, resolveUserContext } from '../auth.js';
 
@@ -221,15 +221,16 @@ export function handleMssqlConnection(
 
       if (type === 0x01 || type === 0x03) { // SQL Batch or RPC
         const query = data.toString('utf16le', 8);
-        if (!options.noWaf) {
-          try {
+        try {
+          if (!options.noWaf) {
             validateQuery(query, currentRole);
-          } catch (err: any) {
+          }
+          ensureTenantScopedQuery(query, currentTenantId);
+        } catch (err: any) {
             options.logSiem('WAF_MSSQL_BLOCK', 9, `MSSQL WAF violation blocked: ${err.message}`);
             const errPacket = serializeMssqlError(err.message, 50000);
             clientSocket.write(errPacket);
-            return;
-          }
+          return;
         }
         try {
           currentTable = extractTableName(query);
@@ -258,7 +259,7 @@ export function handleMssqlConnection(
   clientSocket.on('close', () => {
     backendSocket.destroy();
   });
-  clientSocket.on('close', () => {
+  backendSocket.on('close', () => {
     clientSocket.destroy();
   });
 }

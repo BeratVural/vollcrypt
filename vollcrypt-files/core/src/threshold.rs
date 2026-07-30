@@ -58,11 +58,7 @@ fn gf256_inv(b: u8) -> u8 {
 }
 
 /// Splits a 32-byte Threshold Master Secret (TMS) into `n` shares with threshold `t`.
-pub fn split_tms(
-    tms: &[u8; 32],
-    t: u8,
-    n: u8,
-) -> Result<([u8; 16], Vec<Share>), FileFormatError> {
+pub fn split_tms(tms: &[u8; 32], t: u8, n: u8) -> Result<([u8; 16], Vec<Share>), FileFormatError> {
     if t == 0 || n == 0 || t > n {
         return Err(FileFormatError::KdfParameterOutOfRange(
             "Invalid threshold parameters: t, n must be 1..=255 and t <= n".to_string(),
@@ -83,21 +79,21 @@ pub fn split_tms(
         });
     }
 
-    for k in 0..32 {
+    for (k, &secret_byte) in tms.iter().enumerate() {
         let mut coeff = vec![0u8; t as usize];
-        coeff[0] = tms[k];
+        coeff[0] = secret_byte;
         if t > 1 {
             OsRng.fill_bytes(&mut coeff[1..]);
         }
 
-        for i in 0..(n as usize) {
+        for (i, share) in shares.iter_mut().enumerate() {
             let x = (i + 1) as u8;
             let mut y_val = 0;
             for j in (0..t as usize).rev() {
                 y_val = gf256_mul(y_val, x);
                 y_val ^= coeff[j];
             }
-            shares[i].y[k] = y_val;
+            share.y[k] = y_val;
         }
 
         coeff.zeroize();
@@ -135,7 +131,7 @@ pub fn reconstruct_tms(shares: &[Share]) -> Result<[u8; 32], FileFormatError> {
     }
 
     let mut tms = [0u8; 32];
-    for k in 0..32 {
+    for (k, output_byte) in tms.iter_mut().enumerate() {
         let mut secret_byte = 0u8;
         for i in 0..shares.len() {
             let mut num = 1;
@@ -153,16 +149,17 @@ pub fn reconstruct_tms(shares: &[Share]) -> Result<[u8; 32], FileFormatError> {
             let li = gf256_mul(num, gf256_inv(den));
             secret_byte ^= gf256_mul(shares[i].y[k], li);
         }
-        tms[k] = secret_byte;
+        *output_byte = secret_byte;
     }
 
     Ok(tms)
 }
 
-const BASE64URL_ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const BASE64URL_ALPHABET: &[u8; 64] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 fn base64url_encode(data: &[u8]) -> String {
-    let mut result = String::with_capacity((data.len() * 4 + 2) / 3);
+    let mut result = String::with_capacity((data.len() * 4).div_ceil(3));
     let mut buffer = 0u32;
     let mut bits = 0;
     for &byte in data {
@@ -344,7 +341,8 @@ pub fn unwrap_dek_with_threshold(
             wrapped_dek,
         } => {
             let mut tms = reconstruct_tms(shares)?;
-            let mut kek = derive_threshold_kek(&tms, file_id, share_set_id, *t, *n, cipher_suite_id)?;
+            let mut kek =
+                derive_threshold_kek(&tms, file_id, share_set_id, *t, *n, cipher_suite_id)?;
 
             let dek_res = aes256_kw_unwrap(&kek, wrapped_dek);
 

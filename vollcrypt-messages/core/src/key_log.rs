@@ -230,30 +230,33 @@ impl KeyLog {
                 return Err(CryptoError::KeyLogChainBroken { at_index: i });
             }
 
-            let verifying_key = if entry.action == KeyAction::Revoke || entry.action == KeyAction::Update {
-                // Find previous valid key for the same user
-                let mut prev_key = None;
-                for prev_entry in self.entries[..i].iter().rev() {
-                    if prev_entry.user_id == entry.user_id && prev_entry.action != KeyAction::Revoke
-                    {
-                        prev_key = Some(&prev_entry.public_key);
-                        break;
+            let verifying_key =
+                if entry.action == KeyAction::Revoke || entry.action == KeyAction::Update {
+                    // Find previous valid key for the same user
+                    let mut prev_key = None;
+                    for prev_entry in self.entries[..i].iter().rev() {
+                        if prev_entry.user_id == entry.user_id {
+                            if prev_entry.action == KeyAction::Revoke {
+                                return Err(CryptoError::KeyLogChainBroken { at_index: i });
+                            }
+                            prev_key = Some(&prev_entry.public_key);
+                            break;
+                        }
                     }
-                }
-                match prev_key {
-                    Some(key) => key,
-                    None => return Err(CryptoError::KeyLogInvalidSignature { at_index: i }), // Cannot verify update/revoke without previous key
-                }
-            } else {
-                // Ensure no prior entry of any kind exists for this user_id in the log history
-                let has_prior = self.entries[..i]
-                    .iter()
-                    .any(|prev_entry| prev_entry.user_id == entry.user_id);
-                if has_prior {
-                    return Err(CryptoError::KeyLogChainBroken { at_index: i });
-                }
-                &entry.public_key
-            };
+                    match prev_key {
+                        Some(key) => key,
+                        None => return Err(CryptoError::KeyLogInvalidSignature { at_index: i }), // Cannot verify update/revoke without previous key
+                    }
+                } else {
+                    // Ensure no prior entry of any kind exists for this user_id in the log history
+                    let has_prior = self.entries[..i]
+                        .iter()
+                        .any(|prev_entry| prev_entry.user_id == entry.user_id);
+                    if has_prior {
+                        return Err(CryptoError::KeyLogChainBroken { at_index: i });
+                    }
+                    &entry.public_key
+                };
 
             let is_valid =
                 verify_signature(verifying_key, &entry.compute_entry_body(), &entry.signature);
@@ -543,5 +546,28 @@ mod tests {
             CryptoError::KeyLogChainBroken { at_index: 1 } => {}
             e => panic!("Unexpected error: {:?}", e),
         }
+    }
+
+    #[test]
+    fn test_revoked_key_cannot_sign_future_update() {
+        let kp1 = generate_ed25519_keypair();
+        let kp2 = generate_ed25519_keypair();
+
+        let e0 = make_entry(b"alice", &kp1, &GENESIS_HASH, KeyAction::Add, 1000);
+        let e0_hash = e0.compute_hash();
+        let e1 = make_entry(b"alice", &kp1, &e0_hash, KeyAction::Revoke, 2000);
+        let e1_hash = e1.compute_hash();
+        let e2 = make_entry_with_sig(b"alice", &kp2, &e1_hash, KeyAction::Update, 3000, &kp1.0);
+
+        let mut log = KeyLog::new();
+        log.append(e0).unwrap();
+        log.append(e1).unwrap();
+        log.append(e2).unwrap();
+
+        let result = log.verify_chain();
+        assert!(matches!(
+            result,
+            Err(CryptoError::KeyLogChainBroken { at_index: 2 })
+        ));
     }
 }

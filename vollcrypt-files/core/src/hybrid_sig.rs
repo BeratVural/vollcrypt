@@ -1,7 +1,10 @@
-use zeroize::Zeroize;
 use crate::error::FileFormatError;
-use crate::mldsa::{mldsa_keypair_generate, mldsa_sign, mldsa_verify, MlDsa65PublicKey, MlDsa65SecretKey, MlDsa65Signature};
+use crate::mldsa::{
+    mldsa_keypair_generate, mldsa_sign, mldsa_verify, MlDsa65PublicKey, MlDsa65SecretKey,
+    MlDsa65Signature,
+};
 use crate::signing::{ed25519_keypair_generate, ed25519_sign, ed25519_verify};
+use zeroize::Zeroize;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HybridPublicKey {
@@ -101,9 +104,17 @@ pub fn hybrid_verify(
 
     let ed_ok = ed25519_verify(&pk.ed25519, &msg_prime, &sig.ed25519).is_ok();
 
+    if pk.mldsa.iter().all(|b| *b == 0) {
+        return false;
+    }
+
     if sig.mldsa.len() != 3309 {
         return false;
     }
+    if sig.mldsa.iter().all(|b| *b == 0) {
+        return false;
+    }
+
     let mut mldsa_sig_arr = [0u8; 3309];
     mldsa_sig_arr.copy_from_slice(&sig.mldsa);
     let mldsa_sig_wrapped = MlDsa65Signature(mldsa_sig_arr);
@@ -159,6 +170,13 @@ impl HybridSignature {
         mldsa_len_bytes.copy_from_slice(&input[64..66]);
         let mldsa_len = u16::from_be_bytes(mldsa_len_bytes) as usize;
 
+        if mldsa_len != 3309 {
+            return Err(FileFormatError::IntegrityError(format!(
+                "Invalid ML-DSA signature length: expected 3309, got {}",
+                mldsa_len
+            )));
+        }
+
         if input.len() < 66 + mldsa_len {
             return Err(FileFormatError::TruncatedChunk {
                 expected: 66 + mldsa_len,
@@ -191,5 +209,28 @@ impl HybridSecretKey {
         let mut mldsa = [0u8; 4032];
         mldsa.copy_from_slice(&input[32..4064]);
         Ok(HybridSecretKey { ed25519, mldsa })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hybrid_verify_rejects_zero_mldsa_public_key() {
+        let (mut pk, sk) = hybrid_keypair_generate();
+        let sig = hybrid_sign(&sk, &pk, "test-domain", b"ctx", b"payload");
+        pk.mldsa = [0u8; 1952];
+
+        assert!(!hybrid_verify(&pk, "test-domain", b"ctx", b"payload", &sig));
+    }
+
+    #[test]
+    fn hybrid_verify_rejects_zero_mldsa_signature() {
+        let (pk, sk) = hybrid_keypair_generate();
+        let mut sig = hybrid_sign(&sk, &pk, "test-domain", b"ctx", b"payload");
+        sig.mldsa = vec![0u8; 3309];
+
+        assert!(!hybrid_verify(&pk, "test-domain", b"ctx", b"payload", &sig));
     }
 }

@@ -134,18 +134,13 @@ class Pkcs11KmsProvider {
                     throw new Error(`Secret key with ID ${this.config.keyId} not found in HSM.`);
                 }
                 const keyHandle = objects[0];
-                // Extract 16-byte IV for CKM_AES_CBC_PAD, otherwise fallback to zeros
-                let iv = Buffer.alloc(16, 0);
-                let actualCiphertext = ciphertext;
-                if (ciphertext.length > 16) {
-                    iv = ciphertext.subarray(0, 16);
-                    actualCiphertext = ciphertext.subarray(16);
+                if (!pkcs11js.CKM_AES_KEY_WRAP_PAD) {
+                    throw new Error('PKCS#11 module does not expose CKM_AES_KEY_WRAP_PAD; refusing unauthenticated CBC unwrap.');
                 }
                 pkcs11.C_DecryptInit(session, {
-                    mechanism: pkcs11js.CKM_AES_CBC_PAD,
-                    parameter: iv
+                    mechanism: pkcs11js.CKM_AES_KEY_WRAP_PAD
                 }, keyHandle);
-                const decrypted = pkcs11.C_Decrypt(session, actualCiphertext, Buffer.alloc(actualCiphertext.length + 16));
+                const decrypted = pkcs11.C_Decrypt(session, ciphertext, Buffer.alloc(ciphertext.length));
                 return Buffer.from(decrypted);
             }
             finally {

@@ -25,7 +25,7 @@ fn header_roundtrip_password_pbkdf2() {
         signature: None,
     };
 
-    let serialized = header.write();
+    let serialized = header.write().expect("valid header should serialize");
     assert_eq!(serialized.len(), header.serialized_len());
 
     let (parsed, offset) = Header::parse(&serialized).unwrap();
@@ -57,7 +57,7 @@ fn header_roundtrip_password_argon2id() {
         signature: None,
     };
 
-    let serialized = header.write();
+    let serialized = header.write().expect("valid header should serialize");
     assert_eq!(serialized.len(), header.serialized_len());
 
     let (parsed, offset) = Header::parse(&serialized).unwrap();
@@ -89,7 +89,7 @@ fn header_roundtrip_hybrid_kem_single() {
         signature: None,
     };
 
-    let serialized = header.write();
+    let serialized = header.write().expect("valid header should serialize");
     assert_eq!(serialized.len(), header.serialized_len());
 
     let (parsed, offset) = Header::parse(&serialized).unwrap();
@@ -124,7 +124,7 @@ fn header_roundtrip_multi_recipient() {
         signature: None,
     };
 
-    let serialized = header.write();
+    let serialized = header.write().expect("valid header should serialize");
     assert_eq!(serialized.len(), header.serialized_len());
 
     let (parsed, offset) = Header::parse(&serialized).unwrap();
@@ -166,7 +166,7 @@ fn header_roundtrip_mixed() {
         signature: None,
     };
 
-    let serialized = header.write();
+    let serialized = header.write().expect("valid header should serialize");
     assert_eq!(serialized.len(), header.serialized_len());
 
     let (parsed, offset) = Header::parse(&serialized).unwrap();

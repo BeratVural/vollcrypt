@@ -45,6 +45,8 @@ pub trait CryptoProvider: Send + Sync {
         tag: &[u8; 16],
     ) -> Result<(), FileFormatError>;
 
+    // Keep the tuple result compatible with the existing public provider API.
+    #[allow(clippy::type_complexity)]
     fn encrypt_async(
         &self,
         key: &[u8; 32],

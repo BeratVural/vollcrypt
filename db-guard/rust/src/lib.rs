@@ -169,7 +169,8 @@ pub fn clear_registry() {
 pub fn encrypt_field(plaintext: &[u8]) -> Result<String, &'static str> {
     let (version, key) = get_active_key().ok_or("Active key not set in registry")?;
     let key = zeroize::Zeroizing::new(key);
-    let ciphertext = encrypt_aes256gcm(&key, plaintext)?;
+    let padded = pad_message_with_len(plaintext);
+    let ciphertext = encrypt_aes256gcm(&key, &padded)?;
 
     use base64::Engine;
     let b64 = base64::engine::general_purpose::STANDARD.encode(ciphertext);
@@ -206,7 +207,7 @@ pub fn decrypt_field(stored_val: &str) -> Result<Vec<u8>, &'static str> {
         .map_err(|_| "Failed to decode base64 ciphertext")?;
 
     let plaintext = decrypt_aes256gcm(&key, &ciphertext)?;
-    Ok(plaintext)
+    unpad_message_with_len(&plaintext)
 }
 
 /// Computes a hardened, frequency-resistant blind index for a database field.
@@ -237,6 +238,49 @@ pub fn compute_blind_index(
 }
 
 // Local cryptographic helper functions using standard crates
+
+fn calculate_padding(content_len: usize) -> Vec<u8> {
+    use rand::{rngs::OsRng, RngCore};
+
+    let sizes = [64usize, 128, 256, 512, 1024, 2048];
+    let min_padding = 2usize;
+    let target = sizes
+        .iter()
+        .copied()
+        .find(|size| *size >= content_len + min_padding)
+        .unwrap_or_else(|| {
+            let remainder = (content_len + min_padding) % 1024;
+            if remainder == 0 {
+                content_len + min_padding
+            } else {
+                content_len + min_padding + (1024 - remainder)
+            }
+        });
+
+    let mut padding = vec![0u8; target - content_len];
+    OsRng.fill_bytes(&mut padding);
+    padding
+}
+
+fn pad_message_with_len(content: &[u8]) -> Vec<u8> {
+    let mut padded = Vec::with_capacity(4 + content.len() + 64);
+    padded.extend_from_slice(&(content.len() as u32).to_be_bytes());
+    padded.extend_from_slice(content);
+    let padding = calculate_padding(padded.len());
+    padded.extend_from_slice(&padding);
+    padded
+}
+
+fn unpad_message_with_len(padded: &[u8]) -> Result<Vec<u8>, &'static str> {
+    if padded.len() < 4 {
+        return Err("Padded message too short");
+    }
+    let len = u32::from_be_bytes([padded[0], padded[1], padded[2], padded[3]]) as usize;
+    if len > padded.len() - 4 {
+        return Err("Invalid padded message length");
+    }
+    Ok(padded[4..4 + len].to_vec())
+}
 
 fn encrypt_aes256gcm(key: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, &'static str> {
     if key.len() != 32 {

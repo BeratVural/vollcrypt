@@ -1,6 +1,29 @@
-use crate::keys::generate_x25519_keypair;
+use crate::key_log::{GENESIS_HASH, KeyAction, create_entry};
+use crate::keys::{generate_ed25519_keypair, generate_x25519_keypair};
 use crate::ratchet::CryptoError;
 use crate::sealed_sender::{seal, unseal};
+
+fn setup_test_context(sender_id: &[u8]) -> ([u8; 32], [u8; 32], String) {
+    let (alice_sk, alice_pk) = generate_ed25519_keypair();
+    let mut alice_pk_arr = [0u8; 32];
+    alice_pk_arr.copy_from_slice(&alice_pk);
+    let mut alice_sk_arr = [0u8; 32];
+    alice_sk_arr.copy_from_slice(&alice_sk);
+
+    let entry = create_entry(
+        sender_id,
+        &alice_pk_arr,
+        1000,
+        &GENESIS_HASH,
+        KeyAction::Add,
+        &alice_sk_arr,
+    )
+    .unwrap();
+    let entries = vec![entry];
+    let entries_json = serde_json::to_string(&entries).unwrap();
+
+    (alice_sk_arr, alice_pk_arr, entries_json)
+}
 
 // ── Identity Confidentiality ───────────────────────────────────────────────
 
@@ -8,10 +31,10 @@ use crate::sealed_sender::{seal, unseal};
 fn sealed_sender_identity_not_in_packet_substring() {
     let (_, bob_pk) = generate_x25519_keypair();
     let sender_id = b"alice@example.com";
+    let (alice_sk, _, _) = setup_test_context(sender_id);
 
-    // bob_pk is a Vec, extract 32 bytes
     let pk_array: [u8; 32] = bob_pk.try_into().unwrap();
-    let sealed = seal(&pk_array, sender_id, b"message").unwrap();
+    let sealed = seal(&pk_array, sender_id, b"message", &alice_sk).unwrap();
 
     let alice = b"alice";
     let example = b"example";
@@ -33,9 +56,10 @@ fn sealed_sender_identity_not_in_packet_substring() {
 fn sealed_sender_identity_not_in_packet_any_substring_8_chars() {
     let (_, bob_pk) = generate_x25519_keypair();
     let sender_id = b"secureuser";
+    let (alice_sk, _, _) = setup_test_context(sender_id);
 
     let pk_array: [u8; 32] = bob_pk.try_into().unwrap();
-    let sealed = seal(&pk_array, sender_id, b"message").unwrap();
+    let sealed = seal(&pk_array, sender_id, b"message", &alice_sk).unwrap();
 
     if sender_id.len() >= 8 {
         for i in 0..=(sender_id.len() - 8) {
@@ -53,13 +77,12 @@ fn sealed_sender_identity_not_in_packet_any_substring_8_chars() {
 fn sealed_sender_two_messages_unlinkable() {
     let (_, bob_pk) = generate_x25519_keypair();
     let pk_array: [u8; 32] = bob_pk.try_into().unwrap();
-
     let sender_id = b"alice";
+    let (alice_sk, _, _) = setup_test_context(sender_id);
 
-    let sealed1 = seal(&pk_array, sender_id, b"message 1").unwrap();
-    let sealed2 = seal(&pk_array, sender_id, b"message 2").unwrap();
+    let sealed1 = seal(&pk_array, sender_id, b"message 1", &alice_sk).unwrap();
+    let sealed2 = seal(&pk_array, sender_id, b"message 2", &alice_sk).unwrap();
 
-    // The first 32 bytes are the ephemeral public key
     let eph_pk1 = &sealed1[0..32];
     let eph_pk2 = &sealed2[0..32];
 
@@ -76,15 +99,16 @@ fn sealed_sender_flip_every_byte() {
     let (bob_sk, bob_pk) = generate_x25519_keypair();
     let sk_array: [u8; 32] = bob_sk.try_into().unwrap();
     let pk_array: [u8; 32] = bob_pk.try_into().unwrap();
+    let sender_id = b"alice";
+    let (alice_sk, alice_pk, entries_json) = setup_test_context(sender_id);
 
-    let sealed = seal(&pk_array, b"alice", b"payload").unwrap();
+    let sealed = seal(&pk_array, sender_id, b"payload", &alice_sk).unwrap();
 
-    // Try flipping every single byte in the packet
     for i in 0..sealed.len() {
         let mut tampered = sealed.clone();
-        tampered[i] ^= 0xFF; // flip the byte completely
+        tampered[i] ^= 0xFF;
 
-        let result = unseal(&tampered, &sk_array);
+        let result = unseal(&tampered, &sk_array, Some(&entries_json), Some(&alice_pk));
         assert!(
             result.is_err(),
             "Unseal must fail when byte {} is tampered with",
@@ -98,12 +122,14 @@ fn sealed_sender_truncate_to_each_length() {
     let (bob_sk, bob_pk) = generate_x25519_keypair();
     let sk_array: [u8; 32] = bob_sk.try_into().unwrap();
     let pk_array: [u8; 32] = bob_pk.try_into().unwrap();
+    let sender_id = b"alice";
+    let (alice_sk, alice_pk, entries_json) = setup_test_context(sender_id);
 
-    let sealed = seal(&pk_array, b"alice", b"payload").unwrap();
+    let sealed = seal(&pk_array, sender_id, b"payload", &alice_sk).unwrap();
 
     for i in 0..sealed.len() {
         let truncated = &sealed[..i];
-        let result = unseal(truncated, &sk_array);
+        let result = unseal(truncated, &sk_array, Some(&entries_json), Some(&alice_pk));
         assert!(result.is_err(), "Truncated packet length {} must fail", i);
     }
 }
@@ -113,14 +139,16 @@ fn sealed_sender_extend_with_random_bytes() {
     let (bob_sk, bob_pk) = generate_x25519_keypair();
     let sk_array: [u8; 32] = bob_sk.try_into().unwrap();
     let pk_array: [u8; 32] = bob_pk.try_into().unwrap();
+    let sender_id = b"alice";
+    let (alice_sk, alice_pk, entries_json) = setup_test_context(sender_id);
 
-    let sealed = seal(&pk_array, b"alice", b"payload").unwrap();
+    let sealed = seal(&pk_array, sender_id, b"payload", &alice_sk).unwrap();
 
     for ext_len in [1, 10, 100, 1000] {
         let mut extended = sealed.clone();
         extended.extend(vec![0x42; ext_len]);
 
-        let result = unseal(&extended, &sk_array);
+        let result = unseal(&extended, &sk_array, Some(&entries_json), Some(&alice_pk));
         assert!(
             result.is_err(),
             "Extended packet with +{} bytes must fail",
@@ -133,14 +161,21 @@ fn sealed_sender_extend_with_random_bytes() {
 fn sealed_sender_wrong_recipient_multiple_attempts() {
     let (_, bob_pk) = generate_x25519_keypair();
     let pk_array: [u8; 32] = bob_pk.try_into().unwrap();
+    let sender_id = b"alice";
+    let (alice_sk, alice_pk, entries_json) = setup_test_context(sender_id);
 
-    let sealed = seal(&pk_array, b"alice", b"payload").unwrap();
+    let sealed = seal(&pk_array, sender_id, b"payload", &alice_sk).unwrap();
 
     for _ in 0..10 {
         let (wrong_sk, _) = generate_x25519_keypair();
         let wrong_sk_array: [u8; 32] = wrong_sk.try_into().unwrap();
 
-        let result = unseal(&sealed, &wrong_sk_array);
+        let result = unseal(
+            &sealed,
+            &wrong_sk_array,
+            Some(&entries_json),
+            Some(&alice_pk),
+        );
         assert!(
             result.is_err(),
             "Unseal with entirely wrong recipient private key must fail"
@@ -153,9 +188,12 @@ fn sealed_sender_empty_sender_id() {
     let (bob_sk, bob_pk) = generate_x25519_keypair();
     let sk_array: [u8; 32] = bob_sk.try_into().unwrap();
     let pk_array: [u8; 32] = bob_pk.try_into().unwrap();
+    let sender_id = b"";
+    let (alice_sk, alice_pk, entries_json) = setup_test_context(sender_id);
 
-    let sealed = seal(&pk_array, b"", b"payload").unwrap();
-    let (recovered_id, _) = unseal(&sealed, &sk_array).unwrap();
+    let sealed = seal(&pk_array, sender_id, b"payload", &alice_sk).unwrap();
+    let (recovered_id, _) =
+        unseal(&sealed, &sk_array, Some(&entries_json), Some(&alice_pk)).unwrap();
 
     assert_eq!(
         recovered_id, b"",
@@ -168,12 +206,12 @@ fn sealed_sender_very_long_sender_id() {
     let (bob_sk, bob_pk) = generate_x25519_keypair();
     let sk_array: [u8; 32] = bob_sk.try_into().unwrap();
     let pk_array: [u8; 32] = bob_pk.try_into().unwrap();
-
-    // Max length specified by u16 prefix: 65535, lets use a robust length
     let long_id = vec![b'a'; 65000];
+    let (alice_sk, alice_pk, entries_json) = setup_test_context(&long_id);
 
-    let sealed = seal(&pk_array, &long_id, b"payload").unwrap();
-    let (recovered_id, recovered_content) = unseal(&sealed, &sk_array).unwrap();
+    let sealed = seal(&pk_array, &long_id, b"payload", &alice_sk).unwrap();
+    let (recovered_id, recovered_content) =
+        unseal(&sealed, &sk_array, Some(&entries_json), Some(&alice_pk)).unwrap();
 
     assert_eq!(recovered_id.len(), 65000_usize);
     assert_eq!(recovered_content, b"payload");
@@ -184,18 +222,9 @@ fn sealed_sender_sender_id_length_overflow_attempt() {
     let (bob_sk, bob_pk) = generate_x25519_keypair();
     let sk_array: [u8; 32] = bob_sk.try_into().unwrap();
     let pk_array: [u8; 32] = bob_pk.try_into().unwrap();
+    let sender_id = b"alice";
+    let (_, alice_pk, entries_json) = setup_test_context(sender_id);
 
-    // To trigger length overflow attempt, we craft a packet manually
-    // 1. We seal a valid small packet
-    // 2. We decrypt it locally to edit, edit the length prefix, re-encrypt it
-
-    // We can simulate an attacker who compromises the shared secret (or just try to test the parser).
-    // Let's create a raw unseal buffer that the library will parse to simulate this
-    // Since we don't expose the inner plaintext directly, we can test parsing via a modified buffer
-    // when unsealing. Wait, the decrypt_aes256gcm authenticates it, so we can't tamper the ciphertext
-    // without the encryption key.
-
-    // Let's do the manual process
     use crate::kdf::derive_hkdf;
     use crate::symmetric::encrypt_aes256gcm_padded;
     use rand::rngs::OsRng;
@@ -214,7 +243,6 @@ fn sealed_sender_sender_id_length_overflow_attempt() {
     )
     .unwrap();
 
-    // Create malicious plaintext: length = 65000, actual data = 10 bytes
     let mut inner_plaintext = Vec::new();
     let spoof_len: u16 = 65000;
     inner_plaintext.extend_from_slice(&spoof_len.to_be_bytes());
@@ -227,10 +255,13 @@ fn sealed_sender_sender_id_length_overflow_attempt() {
     sealed_packet.extend_from_slice(ephemeral_pk.as_bytes());
     sealed_packet.extend_from_slice(&encrypted_inner);
 
-    // Now trigger unseal
-    let result = unseal(&sealed_packet, &sk_array);
+    let result = unseal(
+        &sealed_packet,
+        &sk_array,
+        Some(&entries_json),
+        Some(&alice_pk),
+    );
 
-    // It should fail cleanly, not cause a slice out-of-bounds panic
     assert!(
         result.is_err(),
         "Overflow attempt parsed without panicking but must fail"
@@ -244,7 +275,8 @@ fn sealed_sender_sender_id_length_overflow_attempt() {
 #[test]
 fn sealed_sender_seal_fails_on_low_order_recipient_key() {
     let low_order_pk = [0u8; 32];
-    let result = seal(&low_order_pk, b"alice", b"payload");
+    let (alice_sk, _, _) = setup_test_context(b"alice");
+    let result = seal(&low_order_pk, b"alice", b"payload", &alice_sk);
     assert!(
         result.is_err(),
         "Sealing with a low-order recipient key must fail"
@@ -256,11 +288,9 @@ fn sealed_sender_unseal_fails_on_low_order_ephemeral_key() {
     let (bob_sk, _) = generate_x25519_keypair();
     let sk_array: [u8; 32] = bob_sk.try_into().unwrap();
 
-    // Construct a packet where ephemeral public key is all zeros (low order point)
-    let mut sealed_packet = vec![0u8; 32]; // 32 bytes of zeros
-    sealed_packet.extend(vec![0x42; 12 + 16 + 10]); // padding for IV, tag and some ciphertext
+    let sealed_packet = vec![0u8; 100];
 
-    let result = unseal(&sealed_packet, &sk_array);
+    let result = unseal(&sealed_packet, &sk_array, None, None);
     assert!(
         result.is_err(),
         "Unsealing a packet with a low-order ephemeral key must fail"
@@ -272,10 +302,10 @@ fn sealed_sender_seal_fails_on_huge_sender_id() {
     let (_, bob_pk) = generate_x25519_keypair();
     let bob_pk_array: [u8; 32] = bob_pk.try_into().unwrap();
     let huge_sender_id = vec![0u8; 65536];
-    let result = seal(&bob_pk_array, &huge_sender_id, b"payload");
+    let (alice_sk, _, _) = setup_test_context(b"alice");
+    let result = seal(&bob_pk_array, &huge_sender_id, b"payload", &alice_sk);
     assert!(
         result.is_err(),
         "Sealing with a huge sender_id must fail due to u16 overflow prevention"
     );
 }
-

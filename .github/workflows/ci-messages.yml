@@ -60,6 +60,9 @@ jobs:
       - name: Build Node Bindings
         run: cd vollcrypt-messages/node && npm run build
 
+      - name: Test Node Bindings
+        run: cd vollcrypt-messages/node && npm test
+
   build-wasm:
     name: Build WASM Bindings
     runs-on: ubuntu-latest

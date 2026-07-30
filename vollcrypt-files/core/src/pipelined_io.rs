@@ -11,9 +11,15 @@ use crate::error::FileFormatError;
 use crate::header::{CipherId, Header, Mode, SignedMetadata};
 use crate::hybrid_sig::{HybridPublicKey, HybridSecretKey, HybridSignature};
 use crate::merkle::{chunk_leaf_hash_raw_with_algo, chunk_leaf_hash_with_algo, StreamingMerkle};
-use crate::signature::{sign_header_plain, sign_header_sealed, verify_header_signature_plain_policy, VerificationPolicy};
+use crate::signature::{
+    sign_header_plain, sign_header_sealed, verify_header_signature_plain_policy, VerificationPolicy,
+};
 use crate::wrap::WrapEntry;
 use crate::writer::IoWriteMode;
+
+const MAX_STREAM_HEADER_VARIABLE_LEN: usize = 16 * 1024;
+const MAX_STREAM_HEADER_METADATA_LEN: usize = 16 * 1024;
+const MAX_STREAM_HEADER_MLDSA_LEN: usize = 8 * 1024;
 
 /// Signature/signing details to apply to the header after encryption is complete.
 #[derive(Clone)]
@@ -309,10 +315,10 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
 
     // 3. Spawn workers
     let mut workers = Vec::with_capacity(num_workers);
-    for worker_id in 0..num_workers {
+    for local_file in direct_write_files.iter_mut().take(num_workers) {
         let read_rx_c = read_rx.clone();
         let write_tx_c = write_tx.clone();
-        let local_file = direct_write_files[worker_id].take();
+        let local_file = local_file.take();
         let pool_c = Arc::clone(&pool);
 
         let t = thread::spawn(move || loop {
@@ -420,8 +426,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
             }
 
             if idx == u32::MAX {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                return Err(std::io::Error::other(
                     "TooManyChunks: chunk count exceeds u32::MAX",
                 ));
             }
@@ -507,7 +512,9 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
                         }
                         if sequential_count >= batch_size {
                             for _ in 0..batch_size {
-                                if let Some((buf, len, leaf)) = pending[next_expected as usize].take() {
+                                if let Some((buf, len, leaf)) =
+                                    pending[next_expected as usize].take()
+                                {
                                     merkle_reducer.push_leaf(leaf);
                                     let dest = dest_opt.as_mut().expect("dest must be present");
                                     if let Err(e) = dest.write_all(buf.as_envelope_slice(len)) {
@@ -552,10 +559,8 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
         }
 
         // Cleanup remaining buffers in case of errors
-        for opt in pending {
-            if let Some((buf, _, _)) = opt {
-                pool.return_buffer(buf);
-            }
+        for (buf, _, _) in pending.into_iter().flatten() {
+            pool.return_buffer(buf);
         }
 
         if let Some(e) = encrypt_err {
@@ -563,9 +568,9 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
         }
 
         // Wait for read thread safely
-        let read_res = read_thread.join().map_err(|_| {
-            FileFormatError::IoError("Read thread panicked".to_string())
-        })?;
+        let read_res = read_thread
+            .join()
+            .map_err(|_| FileFormatError::IoError("Read thread panicked".to_string()))?;
         plaintext_size = read_res.map_err(|e| {
             if e.to_string().contains("TooManyChunks") {
                 FileFormatError::TooManyChunks
@@ -582,7 +587,9 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
             }
         }
         if worker_panicked {
-            return Err(FileFormatError::IoError("Worker thread panicked".to_string()));
+            return Err(FileFormatError::IoError(
+                "Worker thread panicked".to_string(),
+            ));
         }
     }
 
@@ -613,13 +620,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
                 key_log_id,
                 timestamp,
             } => {
-                sign_header_plain(
-                    &mut header,
-                    &signer_pk,
-                    &signer_sk,
-                    key_log_id,
-                    timestamp,
-                )?;
+                sign_header_plain(&mut header, &signer_pk, &signer_sk, key_log_id, timestamp)?;
             }
             PipelinedSignInfo::Sealed {
                 signer_pk,
@@ -644,7 +645,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
         }
     }
 
-    let serialized_header = header.write();
+    let serialized_header = header.write()?;
     assert_eq!(
         serialized_header.len(),
         header_len,
@@ -676,7 +677,9 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
 /// * `dest`: Writer where the decrypted plaintext is written.
 /// * `dek`: Data Encryption Key (32 bytes).
 /// * `num_workers`: Number of parallel worker threads for decryption.
-pub(crate) fn read_header_from_stream<R: Read>(mut source: R) -> Result<(Header, usize), FileFormatError> {
+pub(crate) fn read_header_from_stream<R: Read>(
+    mut source: R,
+) -> Result<(Header, usize), FileFormatError> {
     // 1. Read the fixed portion of the header first (80 bytes)
     let mut fixed_buf = [0u8; FIXED_HEADER_LEN];
     source
@@ -690,6 +693,12 @@ pub(crate) fn read_header_from_stream<R: Read>(mut source: R) -> Result<(Header,
     let mut var_len_bytes = [0u8; 4];
     var_len_bytes.copy_from_slice(&fixed_buf[76..80]);
     let variable_len = u32::from_be_bytes(var_len_bytes) as usize;
+    if variable_len > MAX_STREAM_HEADER_VARIABLE_LEN {
+        return Err(FileFormatError::TruncatedHeader {
+            expected: variable_len,
+            got: MAX_STREAM_HEADER_VARIABLE_LEN,
+        });
+    }
 
     let version = fixed_buf[8];
     let mut total_header_len = FIXED_HEADER_LEN + variable_len;
@@ -706,6 +715,12 @@ pub(crate) fn read_header_from_stream<R: Read>(mut source: R) -> Result<(Header,
             .read_exact(&mut meta_len_bytes)
             .map_err(|e| FileFormatError::IoError(e.to_string()))?;
         let metadata_len = u32::from_be_bytes(meta_len_bytes) as usize;
+        if metadata_len > MAX_STREAM_HEADER_METADATA_LEN {
+            return Err(FileFormatError::TruncatedHeader {
+                expected: metadata_len,
+                got: MAX_STREAM_HEADER_METADATA_LEN,
+            });
+        }
 
         let extra_bytes = if version == 3 {
             let mut meta_bytes = vec![0u8; metadata_len];
@@ -719,6 +734,12 @@ pub(crate) fn read_header_from_stream<R: Read>(mut source: R) -> Result<(Header,
                 .map_err(|e| FileFormatError::IoError(e.to_string()))?;
 
             let mldsa_len = u16::from_be_bytes([sig_header[64], sig_header[65]]) as usize;
+            if mldsa_len > MAX_STREAM_HEADER_MLDSA_LEN {
+                return Err(FileFormatError::TruncatedHeader {
+                    expected: mldsa_len,
+                    got: MAX_STREAM_HEADER_MLDSA_LEN,
+                });
+            }
             let mut mldsa_bytes = vec![0u8; mldsa_len];
             source
                 .read_exact(&mut mldsa_bytes)
@@ -943,10 +964,8 @@ fn decrypt_file_pipelined_internal<R: Read + Send + 'static, W: Write>(
     }
 
     // Cleanup remaining buffers in case of errors
-    for opt in pending {
-        if let Some((buf, _, _)) = opt {
-            pool.return_buffer(buf);
-        }
+    for (buf, _, _) in pending.into_iter().flatten() {
+        pool.return_buffer(buf);
     }
 
     if let Some(e) = decrypt_err {
@@ -954,9 +973,9 @@ fn decrypt_file_pipelined_internal<R: Read + Send + 'static, W: Write>(
     }
 
     // Wait for read thread safely
-    let read_res = read_thread.join().map_err(|_| {
-        FileFormatError::IoError("Read thread panicked".to_string())
-    })?;
+    let read_res = read_thread
+        .join()
+        .map_err(|_| FileFormatError::IoError("Read thread panicked".to_string()))?;
     read_res?;
 
     // Wait for workers safely
@@ -967,7 +986,9 @@ fn decrypt_file_pipelined_internal<R: Read + Send + 'static, W: Write>(
         }
     }
     if worker_panicked {
-        return Err(FileFormatError::IoError("Worker thread panicked".to_string()));
+        return Err(FileFormatError::IoError(
+            "Worker thread panicked".to_string(),
+        ));
     }
 
     // Verify integrity checks:
@@ -1026,14 +1047,22 @@ pub fn map_shield_report_to_error(report: crate::shield::ShieldReport) -> FileFo
                 FileFormatError::IntegrityError(f)
             }
         }
-        crate::shield::ShieldReport::WrapTable => FileFormatError::IntegrityError("Wrap table integrity error".to_string()),
+        crate::shield::ShieldReport::WrapTable => {
+            FileFormatError::IntegrityError("Wrap table integrity error".to_string())
+        }
         crate::shield::ShieldReport::Signature => FileFormatError::SignatureInvalid,
-        crate::shield::ShieldReport::ChunkIndexMismatch { expected, got } => FileFormatError::ChunkIndexOutOfOrder { expected, got },
+        crate::shield::ShieldReport::ChunkIndexMismatch { expected, got } => {
+            FileFormatError::ChunkIndexOutOfOrder { expected, got }
+        }
         crate::shield::ShieldReport::ChunkTag { index: _ } => FileFormatError::AesGcmDecryptFailed,
         crate::shield::ShieldReport::MerkleRoot => FileFormatError::AesGcmDecryptFailed,
-        crate::shield::ShieldReport::MerkleProof { index: _ } => FileFormatError::AesGcmDecryptFailed,
+        crate::shield::ShieldReport::MerkleProof { index: _ } => {
+            FileFormatError::AesGcmDecryptFailed
+        }
         crate::shield::ShieldReport::ContainerSealed => FileFormatError::ContainerSealed,
-        crate::shield::ShieldReport::Rollback { expected, got } => FileFormatError::RollbackError { expected, got },
+        crate::shield::ShieldReport::Rollback { expected, got } => {
+            FileFormatError::RollbackError { expected, got }
+        }
         crate::shield::ShieldReport::UntrustedGenesis => FileFormatError::UntrustedGenesis,
         _ => FileFormatError::IntegrityError("Unknown shield verification failure".to_string()),
     }
@@ -1073,7 +1102,13 @@ pub fn decrypt_streaming_online<R: Read + Send + 'static, W: Write>(
     dek: &[u8; 32],
     num_workers: usize,
 ) -> Result<Header, FileFormatError> {
-    decrypt_streaming_online_policy(source, dest, dek, num_workers, &crate::shield::ShieldPolicy::strict())
+    decrypt_streaming_online_policy(
+        source,
+        dest,
+        dek,
+        num_workers,
+        &crate::shield::ShieldPolicy::strict(),
+    )
 }
 
 pub fn decrypt_verified_policy<R: Read + Seek + Send + 'static, W: Write>(
@@ -1083,7 +1118,9 @@ pub fn decrypt_verified_policy<R: Read + Seek + Send + 'static, W: Write>(
     num_workers: usize,
     policy: &crate::shield::ShieldPolicy,
 ) -> Result<Header, FileFormatError> {
-    let payload_start_pos = source.stream_position().map_err(|e| FileFormatError::IoError(e.to_string()))?;
+    let payload_start_pos = source
+        .stream_position()
+        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
 
     // Call verify_container on the reader by reference
     let report = crate::shield::verify_container(&mut source, policy);
@@ -1092,7 +1129,9 @@ pub fn decrypt_verified_policy<R: Read + Seek + Send + 'static, W: Write>(
     }
 
     // Seek back to the beginning of the payload
-    source.seek(SeekFrom::Start(payload_start_pos)).map_err(|e| FileFormatError::IoError(e.to_string()))?;
+    source
+        .seek(SeekFrom::Start(payload_start_pos))
+        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
 
     // Now read the header again and proceed with internal pipelined decryption
     let (header, _) = read_header_from_stream(&mut source)?;
@@ -1107,7 +1146,13 @@ pub fn decrypt_verified<R: Read + Seek + Send + 'static, W: Write>(
     dek: &[u8; 32],
     num_workers: usize,
 ) -> Result<Header, FileFormatError> {
-    decrypt_verified_policy(source, dest, dek, num_workers, &crate::shield::ShieldPolicy::strict())
+    decrypt_verified_policy(
+        source,
+        dest,
+        dek,
+        num_workers,
+        &crate::shield::ShieldPolicy::strict(),
+    )
 }
 
 pub fn decrypt_file_pipelined_with_policy<R: Read + Seek + Send + 'static, W: Write>(
@@ -1120,7 +1165,9 @@ pub fn decrypt_file_pipelined_with_policy<R: Read + Seek + Send + 'static, W: Wr
     let default_policy = crate::shield::ShieldPolicy::strict();
     let pol = policy.unwrap_or(&default_policy);
     match pol.release_mode {
-        crate::shield::ReleaseMode::Verified => decrypt_verified_policy(source, dest, dek, num_workers, pol),
+        crate::shield::ReleaseMode::Verified => {
+            decrypt_verified_policy(source, dest, dek, num_workers, pol)
+        }
         crate::shield::ReleaseMode::Streaming => {
             decrypt_streaming_online_policy(source, dest, dek, num_workers, pol)
         }
@@ -1223,7 +1270,6 @@ pub async fn encrypt_file_pipelined_async(
             let chunk_data = plaintext[offset_start..offset_end].to_vec();
             let dek = *dek;
             let file_id = *file_id;
-            let header_hash = header_hash;
 
             futures.push(async move {
                 let res =
@@ -1252,13 +1298,7 @@ pub async fn encrypt_file_pipelined_async(
                 key_log_id,
                 timestamp,
             } => {
-                sign_header_plain(
-                    &mut header,
-                    &signer_pk,
-                    &signer_sk,
-                    key_log_id,
-                    timestamp,
-                )?;
+                sign_header_plain(&mut header, &signer_pk, &signer_sk, key_log_id, timestamp)?;
             }
             PipelinedSignInfo::Sealed {
                 signer_pk,
@@ -1283,7 +1323,7 @@ pub async fn encrypt_file_pipelined_async(
         }
     }
 
-    let serialized_header = header.write();
+    let serialized_header = header.write()?;
     let total_capacity =
         serialized_header.len() + encrypted_chunks.iter().map(|c| c.len()).sum::<usize>();
     let mut final_output = Vec::with_capacity(total_capacity);
@@ -1350,7 +1390,8 @@ pub async fn decrypt_file_pipelined_async_policy(
     let total_chunks = total_chunks_u64 as u32;
 
     let mut decrypted_chunks = vec![Vec::new(); total_chunks as usize];
-    let mut leaf_hashes = Vec::with_capacity(std::cmp::min(total_chunks as usize, max_possible_chunks));
+    let mut leaf_hashes =
+        Vec::with_capacity(std::cmp::min(total_chunks as usize, max_possible_chunks));
     let mut offset = header_len;
 
     // Process batches of 16 chunks concurrently
@@ -1388,8 +1429,6 @@ pub async fn decrypt_file_pipelined_async_policy(
             leaf_hashes.push(leaf);
 
             let dek = *dek;
-            let file_id = file_id;
-            let header_hash = header_hash;
             futures.push(async move {
                 let res =
                     decrypt_chunk_async(&dek, &file_id, idx as u32, env, Some(&header_hash)).await;
@@ -1418,7 +1457,10 @@ pub async fn decrypt_file_pipelined_async_policy(
         return Err(FileFormatError::AesGcmDecryptFailed);
     }
 
-    let mut plaintext = Vec::with_capacity(std::cmp::min(plaintext_size as usize, ciphertext_bytes.len()));
+    let mut plaintext = Vec::with_capacity(std::cmp::min(
+        plaintext_size as usize,
+        ciphertext_bytes.len(),
+    ));
     for chunk in decrypted_chunks {
         plaintext.extend_from_slice(&chunk);
     }
@@ -1439,4 +1481,39 @@ pub async fn decrypt_file_pipelined_async(
     dek: &[u8; 32],
 ) -> Result<(Header, Vec<u8>), FileFormatError> {
     decrypt_file_pipelined_async_policy(ciphertext_bytes, dek, None).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::constants::MAGIC;
+    use std::io::Cursor;
+
+    fn fixed_header_with_variable_len(variable_len: u32, version: u8) -> [u8; FIXED_HEADER_LEN] {
+        let mut fixed = [0u8; FIXED_HEADER_LEN];
+        fixed[0..8].copy_from_slice(&MAGIC);
+        fixed[8] = version;
+        fixed[76..80].copy_from_slice(&variable_len.to_be_bytes());
+        fixed
+    }
+
+    #[test]
+    fn read_header_rejects_oversized_variable_len_before_allocation() {
+        let fixed = fixed_header_with_variable_len(u32::MAX, 1);
+        let err = read_header_from_stream(Cursor::new(fixed)).unwrap_err();
+        assert!(
+            matches!(err, FileFormatError::TruncatedHeader { expected, .. } if expected == u32::MAX as usize)
+        );
+    }
+
+    #[test]
+    fn read_header_rejects_oversized_metadata_len_before_allocation() {
+        let mut data = Vec::new();
+        data.extend_from_slice(&fixed_header_with_variable_len(0, 2));
+        data.extend_from_slice(&(u32::MAX).to_be_bytes());
+        let err = read_header_from_stream(Cursor::new(data)).unwrap_err();
+        assert!(
+            matches!(err, FileFormatError::TruncatedHeader { expected, .. } if expected == u32::MAX as usize)
+        );
+    }
 }

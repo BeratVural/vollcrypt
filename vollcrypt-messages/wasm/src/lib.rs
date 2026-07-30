@@ -186,8 +186,13 @@ pub fn verify_fingerprints_match(
 }
 
 #[wasm_bindgen]
-pub fn ecdh_shared_secret(our_secret: &[u8], their_public: &[u8]) -> Result<js_sys::Uint8Array, JsValue> {
-    core_ecdh_shared_secret(our_secret, their_public).map(zeroize_and_copy).map_err(JsValue::from_str)
+pub fn ecdh_shared_secret(
+    our_secret: &[u8],
+    their_public: &[u8],
+) -> Result<js_sys::Uint8Array, JsValue> {
+    core_ecdh_shared_secret(our_secret, their_public)
+        .map(zeroize_and_copy)
+        .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -196,7 +201,45 @@ pub fn sign_message(secret_key: &[u8], message: &[u8]) -> Result<Vec<u8>, JsValu
 }
 
 #[wasm_bindgen]
-pub fn verify_signature(public_key: &[u8], message: &[u8], signature: &[u8]) -> bool {
+pub fn verify_signature(
+    public_key: &[u8],
+    message: &[u8],
+    signature: &[u8],
+    entries_json: Option<String>,
+) -> bool {
+    if let Some(ref json_str) = entries_json {
+        if !json_str.is_empty() {
+            match serde_json::from_str::<Vec<vollcrypt_core::key_log::KeyLogEntry>>(json_str) {
+                Ok(entries) => {
+                    let log = vollcrypt_core::key_log::KeyLog { entries };
+                    if log.verify_chain().is_ok() {
+                        if let Ok(pk_arr) = <&[u8; 32]>::try_from(public_key) {
+                            let mut is_revoked = false;
+                            for entry in &log.entries {
+                                if &entry.public_key == pk_arr
+                                    && entry.action == vollcrypt_core::key_log::KeyAction::Revoke
+                                {
+                                    is_revoked = true;
+                                    break;
+                                }
+                            }
+                            if is_revoked {
+                                return false;
+                            }
+                        } else {
+                            return false;
+                        }
+                    } else {
+                        return false;
+                    }
+                }
+                Err(_) => {
+                    return false;
+                }
+            }
+        }
+    }
+
     core_verify_signature(public_key, message, signature)
 }
 
@@ -215,7 +258,9 @@ pub fn decrypt_aes_gcm(
     ciphertext: &[u8],
     aad: Option<Vec<u8>>,
 ) -> Result<js_sys::Uint8Array, JsValue> {
-    core_decrypt_aes256gcm(key, ciphertext, aad.as_deref()).map(zeroize_and_copy).map_err(JsValue::from_str)
+    core_decrypt_aes256gcm(key, ciphertext, aad.as_deref())
+        .map(zeroize_and_copy)
+        .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -233,7 +278,9 @@ pub fn decrypt_aes_gcm_padded(
     ciphertext: &[u8],
     aad: Option<Vec<u8>>,
 ) -> Result<js_sys::Uint8Array, JsValue> {
-    core_decrypt_aes256gcm_padded(key, ciphertext, aad.as_deref()).map(zeroize_and_copy).map_err(JsValue::from_str)
+    core_decrypt_aes256gcm_padded(key, ciphertext, aad.as_deref())
+        .map(zeroize_and_copy)
+        .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -253,7 +300,9 @@ pub fn decrypt_aes_gcm_chunked(
     ciphertext: &[u8],
     aad: Option<Vec<u8>>,
 ) -> Result<js_sys::Uint8Array, JsValue> {
-    core_decrypt_aes256gcm_chunked(key, ciphertext, aad.as_deref()).map(zeroize_and_copy).map_err(JsValue::from_str)
+    core_decrypt_aes256gcm_chunked(key, ciphertext, aad.as_deref())
+        .map(zeroize_and_copy)
+        .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -279,7 +328,12 @@ pub fn decrypt_aes_gcm_chunked_padded(
 }
 
 #[wasm_bindgen]
-pub fn derive_pbkdf2(password: &[u8], salt: &[u8], iterations: u32, key_len: u32) -> Result<js_sys::Uint8Array, JsValue> {
+pub fn derive_pbkdf2(
+    password: &[u8],
+    salt: &[u8],
+    iterations: u32,
+    key_len: u32,
+) -> Result<js_sys::Uint8Array, JsValue> {
     core_derive_pbkdf2(password, salt, iterations, key_len as usize)
         .map(zeroize_and_copy)
         .map_err(JsValue::from_str)
@@ -299,12 +353,16 @@ pub fn derive_hkdf(
 
 #[wasm_bindgen]
 pub fn derive_srk(dek: &[u8], chat_id: &[u8]) -> Result<js_sys::Uint8Array, JsValue> {
-    core_derive_srk(dek, chat_id).map(zeroize_and_copy).map_err(JsValue::from_str)
+    core_derive_srk(dek, chat_id)
+        .map(zeroize_and_copy)
+        .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
 pub fn derive_window_key(srk: &[u8], window_index: u32) -> Result<js_sys::Uint8Array, JsValue> {
-    core_derive_window_key(srk, window_index as u64).map(zeroize_and_copy).map_err(JsValue::from_str)
+    core_derive_window_key(srk, window_index as u64)
+        .map(zeroize_and_copy)
+        .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -314,7 +372,9 @@ pub fn wrap_key(kek: &[u8], key_to_wrap: &[u8]) -> Result<Vec<u8>, JsValue> {
 
 #[wasm_bindgen]
 pub fn unwrap_key(kek: &[u8], wrapped_key: &[u8]) -> Result<js_sys::Uint8Array, JsValue> {
-    core_unwrap_key(kek, wrapped_key).map(zeroize_and_copy).map_err(JsValue::from_str)
+    core_unwrap_key(kek, wrapped_key)
+        .map(zeroize_and_copy)
+        .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -473,30 +533,60 @@ pub fn seal_message(
     recipient_x25519_pub: &[u8],
     sender_id: &[u8],
     content: &[u8],
+    sender_signing_key: &[u8],
 ) -> Result<Vec<u8>, JsValue> {
     if recipient_x25519_pub.len() != 32 {
         return Err(JsValue::from_str("recipient_x25519_pub must be 32 bytes"));
+    }
+    if sender_signing_key.len() != 32 {
+        return Err(JsValue::from_str("sender_signing_key must be 32 bytes"));
     }
 
     let mut pub_bytes = [0u8; 32];
     pub_bytes.copy_from_slice(recipient_x25519_pub);
 
-    vollcrypt_core::sealed_sender::seal(&pub_bytes, sender_id, content)
-        .map_err(|e| JsValue::from_str(&format!("Sealing failed: {:?}", e)))
+    let mut sk_bytes = [0u8; 32];
+    sk_bytes.copy_from_slice(sender_signing_key);
+
+    let res = vollcrypt_core::sealed_sender::seal(&pub_bytes, sender_id, content, &sk_bytes)
+        .map_err(|e| JsValue::from_str(&format!("Sealing failed: {:?}", e)));
+
+    sk_bytes.zeroize();
+    res
 }
 
 #[wasm_bindgen]
-pub fn unseal_message(sealed_packet: &[u8], our_x25519_sk: &[u8]) -> Result<UnsealResult, JsValue> {
+pub fn unseal_message(
+    sealed_packet: &[u8],
+    our_x25519_sk: &[u8],
+    entries_json: Option<String>,
+    trusted_sender_public_key: &[u8],
+) -> Result<UnsealResult, JsValue> {
     if our_x25519_sk.len() != 32 {
         return Err(JsValue::from_str("our_x25519_sk must be 32 bytes"));
+    }
+    if trusted_sender_public_key.len() != 32 {
+        return Err(JsValue::from_str(
+            "trusted_sender_public_key must be 32 bytes",
+        ));
     }
 
     let mut sk_bytes = [0u8; 32];
     sk_bytes.copy_from_slice(our_x25519_sk);
+    let mut trusted_pk = [0u8; 32];
+    trusted_pk.copy_from_slice(trusted_sender_public_key);
 
-    vollcrypt_core::sealed_sender::unseal(sealed_packet, &sk_bytes)
-        .map(|(sender_id, content)| UnsealResult { sender_id, content })
-        .map_err(|e| JsValue::from_str(&format!("Unsealing failed: {:?}", e)))
+    let res = vollcrypt_core::sealed_sender::unseal(
+        sealed_packet,
+        &sk_bytes,
+        entries_json.as_deref(),
+        Some(&trusted_pk),
+    )
+    .map(|(sender_id, content)| UnsealResult { sender_id, content })
+    .map_err(|e| JsValue::from_str(&format!("Unsealing failed: {:?}", e)));
+
+    sk_bytes.zeroize();
+    res
 }
 
 #[wasm_bindgen]
@@ -537,8 +627,13 @@ pub fn ml_kem_encapsulate(encapsulation_key: &[u8]) -> Result<MlKemEncapsulation
 }
 
 #[wasm_bindgen]
-pub fn ml_kem_decapsulate(decapsulation_key: &[u8], ciphertext: &[u8]) -> Result<js_sys::Uint8Array, JsValue> {
-    core_ml_kem_decapsulate(decapsulation_key, ciphertext).map(zeroize_and_copy).map_err(JsValue::from_str)
+pub fn ml_kem_decapsulate(
+    decapsulation_key: &[u8],
+    ciphertext: &[u8],
+) -> Result<js_sys::Uint8Array, JsValue> {
+    core_ml_kem_decapsulate(decapsulation_key, ciphertext)
+        .map(zeroize_and_copy)
+        .map_err(JsValue::from_str)
 }
 
 #[wasm_bindgen]
@@ -851,6 +946,8 @@ pub fn key_log_current_key(entries_json: &str, user_id: &[u8]) -> Result<Vec<u8>
         .map_err(|e| JsValue::from_str(&format!("Invalid JSON array: {}", e)))?;
 
     let log = vollcrypt_core::key_log::KeyLog { entries };
+    log.verify_chain()
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
     match log.current_key_for(user_id) {
         Some(k) => Ok(k.to_vec()),
         None => Ok(Vec::new()),
@@ -867,6 +964,8 @@ pub fn key_log_key_at_timestamp(
         .map_err(|e| JsValue::from_str(&format!("Invalid JSON array: {}", e)))?;
 
     let log = vollcrypt_core::key_log::KeyLog { entries };
+    log.verify_chain()
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
     match log.key_at_timestamp(user_id, timestamp as u64) {
         Some(k) => Ok(k.to_vec()),
         None => Ok(Vec::new()),

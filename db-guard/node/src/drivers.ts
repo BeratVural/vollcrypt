@@ -11,6 +11,7 @@ export interface DbGuardDriverOptions {
     }>;
   };
   rateLimiter?: RateLimiterOptions;
+  allowUnrestrictedDecrypt?: boolean;
 }
 
 function getKeys(options: DbGuardDriverOptions) {
@@ -43,15 +44,24 @@ function cleanIdentifier(identifier: string): string {
   return cleaned.trim();
 }
 
-function getParamColumns(sql: string): { table: string; columns: string[] } | null {
+function getParamColumns(sql: string): { table: string; columns: string[]; assignments?: Record<string, string> } | null {
   const sqlClean = sql.replace(/\s+/g, ' ').trim();
   
-  // Match INSERT INTO table (col1, col2) ...
-  const insertMatch = sqlClean.match(/INSERT\s+INTO\s+([a-zA-Z0-9_"`[\]]+)\s*\(([^)]+)\)/i);
+  // Match INSERT INTO table (col1, col2) VALUES (?, ?) ...
+  const insertMatch = sqlClean.match(/INSERT\s+INTO\s+([a-zA-Z0-9_"`[\]]+)\s*\(([^)]+)\)(?:\s+VALUES\s*\(([^)]*)\))?/i);
   if (insertMatch) {
     const table = cleanIdentifier(insertMatch[1]);
     const columns = insertMatch[2].split(',').map(c => cleanIdentifier(c));
-    return { table, columns };
+    const assignments: Record<string, string> = {};
+    if (insertMatch[3] !== undefined) {
+      const values = insertMatch[3].split(',').map(v => v.trim());
+      columns.forEach((column, index) => {
+        if (values[index] !== undefined) {
+          assignments[column] = values[index];
+        }
+      });
+    }
+    return { table, columns, assignments };
   }
   
   // Match UPDATE table SET col1 = ?, col2 = ? ...
@@ -60,16 +70,46 @@ function getParamColumns(sql: string): { table: string; columns: string[] } | nu
     const table = cleanIdentifier(updateMatch[1]);
     const setParts = updateMatch[2].split(',');
     const columns: string[] = [];
+    const assignments: Record<string, string> = {};
     for (const part of setParts) {
-      const match = part.match(/([a-zA-Z0-9_"`[\]]+)\s*=/);
+      const match = part.match(/([a-zA-Z0-9_"`[\]]+)\s*=\s*([\s\S]+)/);
       if (match) {
-        columns.push(cleanIdentifier(match[1]));
+        const col = cleanIdentifier(match[1]);
+        columns.push(col);
+        assignments[col] = match[2].trim();
       }
     }
-    return { table, columns };
+    return { table, columns, assignments };
   }
   
   return null;
+}
+
+function hasEncryptedTargets(options: DbGuardDriverOptions): boolean {
+  return Object.values(options.entities).some(fields => fields.length > 0);
+}
+
+function isSqlParameterExpression(expr: string | undefined): boolean {
+  if (!expr) return false;
+  return /^(\?|\$\d+|[:@$][a-zA-Z0-9_]+)$/i.test(expr.trim());
+}
+
+function assertEncryptedWritesUseParameters(
+  sql: string,
+  parsed: { table: string; columns: string[]; assignments?: Record<string, string> } | null,
+  options: DbGuardDriverOptions
+): void {
+  if (!parsed || !/\b(insert|update)\b/i.test(sql)) return;
+  const fieldsToEncrypt = options.entities[parsed.table] || [];
+  if (fieldsToEncrypt.length === 0) return;
+
+  if (parsed.assignments) {
+    for (const field of fieldsToEncrypt) {
+      if (parsed.assignments[field] !== undefined && !isSqlParameterExpression(parsed.assignments[field])) {
+        throw new Error(`Vollcrypt Security: encrypted field ${parsed.table}.${field} must be written using a bind parameter, not a SQL literal or expression.`);
+      }
+    }
+  }
 }
 
 function decryptRow(
@@ -97,8 +137,8 @@ function decryptRow(
               undefined,
               options
             );
-          } catch {
-            // Keep original on failure
+          } catch (err) {
+            throw err;
           }
         }
       }
@@ -116,8 +156,8 @@ function decryptRow(
               row.id || row._id,
               options
             );
-          } catch {
-            // Keep original on failure
+          } catch (err) {
+            throw err;
           }
         }
       }
@@ -136,6 +176,10 @@ export function wrapSqliteDatabase(db: any, options: DbGuardDriverOptions): any 
   db.prepare = function (sql: string, ...args: any[]) {
     const statement = originalPrepare.call(this, sql, ...args);
     const parsed = getParamColumns(sql);
+    if (!parsed && hasEncryptedTargets(options) && /\b(insert|update)\b/i.test(sql)) {
+      throw new Error('Vollcrypt Security: SQL write statement could not be parsed for encrypted fields. Refusing plaintext write.');
+    }
+    assertEncryptedWritesUseParameters(sql, parsed, options);
 
     // Helper to encrypt query input parameters
     const encryptParams = (params: any[]) => {
@@ -225,6 +269,10 @@ export function wrapOracleConnection(connection: any, options: DbGuardDriverOpti
   const originalExecute = connection.execute;
   connection.execute = async function (sql: string, bindParams: any = {}, execOptions: any = {}, ...args: any[]) {
     const parsed = getParamColumns(sql);
+    if (!parsed && hasEncryptedTargets(options) && /\b(insert|update)\b/i.test(sql)) {
+      throw new Error('Vollcrypt Security: SQL write statement could not be parsed for encrypted fields. Refusing plaintext write.');
+    }
+    assertEncryptedWritesUseParameters(sql, parsed, options);
     let processedBinds = bindParams;
 
     if (parsed) {

@@ -22,7 +22,6 @@ export const generateFileId: () => [number, number];
 export const generateGk: () => [number, number];
 export const generateRecipientKeypair: () => [number, number, number];
 export const generateSalt: () => [number, number];
-export const getWasmMemoryView: (a: number, b: number) => any;
 export const groupmanifest_addMember: (a: number, b: number, c: number, d: any, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number];
 export const groupmanifest_currentGkVersion: (a: number) => number;
 export const groupmanifest_currentMembers: (a: number) => [number, number, number];

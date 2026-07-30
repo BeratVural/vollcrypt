@@ -14,7 +14,7 @@ describe('Compliance Scorecard Generator', () => {
     assert.ok(scorecard.kvkkScore < 100);
     assert.ok(scorecard.pciScore < 100);
     assert.ok(scorecard.failedChecks.length > 0);
-    assert.ok(scorecard.passedChecks.length > 0); // RAM zeroization and audit logs always pass
+    assert.ok(scorecard.passedChecks.length > 0); // RAM zeroization still passes
   });
 
   test('auditConfiguration achieves maximum compliance with full enterprise options', () => {
@@ -55,7 +55,8 @@ describe('Compliance Scorecard Generator', () => {
       },
       breakGlassThreshold: 2,
       breakGlassPublicKeys: ['hexkey1', 'hexkey2'],
-      postQuantumEnabled: true
+      postQuantumEnabled: true,
+      auditTrailPath: 'audit.log'
     };
 
     const scorecard = auditConfiguration(fullConfig);
@@ -83,4 +84,15 @@ describe('Compliance Scorecard Generator', () => {
     assert.ok(html.includes('PCI-DSS v4.0'));
     assert.ok(html.includes('Print Compliance PDF Report'));
   });
+});
+
+
+test('compliance report does not claim certification when controls fail', () => {
+  const scorecard = auditConfiguration({ key: Buffer.alloc(32, 1) });
+  assert.match(scorecard.summaryText, /not a GDPR, KVKK, PCI-DSS, FIPS, or CMVP certification/);
+
+  const html = generateComplianceHtmlReport({ key: Buffer.alloc(32, 1) });
+  assert.ok(html.includes('FAILED'));
+  assert.ok(!html.includes('CMVP FIPS 140-3'));
+  assert.ok(!html.includes('Official cryptographic compliance validation'));
 });

@@ -1,7 +1,7 @@
 use crate::error::FileFormatError;
 use crate::header::SignedMetadata;
-use crate::signature::{verify_header_signature_plain_policy, VerificationPolicy};
 use crate::pipelined_io::read_header_from_stream;
+use crate::signature::{verify_header_signature_plain_policy, VerificationPolicy};
 use std::io::{Read, Seek, SeekFrom};
 use subtle::ConstantTimeEq;
 
@@ -75,10 +75,7 @@ pub enum ShieldReport {
     UntrustedGenesis,
 }
 
-pub fn verify_container<R: Read + Seek>(
-    mut reader: R,
-    policy: &ShieldPolicy,
-) -> ShieldReport {
+pub fn verify_container<R: Read + Seek>(mut reader: R, policy: &ShieldPolicy) -> ShieldReport {
     // 1. Read header
     let (header, _header_len) = match read_header_from_stream(&mut reader) {
         Ok(res) => res,
@@ -92,7 +89,7 @@ pub fn verify_container<R: Read + Seek>(
     };
 
     if header.version == 2 || header.version == 3 {
-        if let Err(_) = verify_header_signature_plain_policy(&header, sig_policy) {
+        if verify_header_signature_plain_policy(&header, sig_policy).is_err() {
             return ShieldReport::Signature;
         }
     } else if sig_policy == VerificationPolicy::RequireSigned {
@@ -101,12 +98,13 @@ pub fn verify_container<R: Read + Seek>(
 
     // 3. Sealed marker integrity & Re-wrapping rejection
     let wraps_empty = header.wraps.is_empty();
-    let has_sealed_marker = matches!(header.signed_metadata, Some(SignedMetadata::SovereignSealed { .. }));
-    if has_sealed_marker {
-        if !wraps_empty {
-            // Re-adding a wrap to a sealed container is rejected
-            return ShieldReport::WrapTable;
-        }
+    let has_sealed_marker = matches!(
+        header.signed_metadata,
+        Some(SignedMetadata::SovereignSealed { .. })
+    );
+    if has_sealed_marker && !wraps_empty {
+        // Re-adding a wrap to a sealed container is rejected
+        return ShieldReport::WrapTable;
     }
 
     if policy.verify_sealed_marker && crate::sovereign::is_sealed(&header) {
@@ -160,29 +158,38 @@ pub fn verify_container<R: Read + Seek>(
 
         // Read index and IV
         let mut prefix = [0u8; 16];
-        if let Err(_) = reader.read_exact(&mut prefix) {
+        if reader.read_exact(&mut prefix).is_err() {
             return ShieldReport::ChunkTag { index: idx };
         }
         let read_idx = u32::from_be_bytes([prefix[0], prefix[1], prefix[2], prefix[3]]);
         if read_idx != idx {
-            return ShieldReport::ChunkIndexMismatch { expected: idx, got: read_idx };
+            return ShieldReport::ChunkIndexMismatch {
+                expected: idx,
+                got: read_idx,
+            };
         }
         let iv: [u8; 12] = prefix[4..16].try_into().unwrap();
 
         // Read ciphertext instead of seeking forward
         ciphertext_buf.resize(chunk_plaintext_len, 0);
-        if let Err(_) = reader.read_exact(&mut ciphertext_buf) {
+        if reader.read_exact(&mut ciphertext_buf).is_err() {
             return ShieldReport::ChunkTag { index: idx };
         }
 
         // Read tag
         let mut tag = [0u8; 16];
-        if let Err(_) = reader.read_exact(&mut tag) {
+        if reader.read_exact(&mut tag).is_err() {
             return ShieldReport::ChunkTag { index: idx };
         }
 
         // Compute leaf hash
-        let leaf = crate::merkle::chunk_leaf_hash_raw_with_algo(idx, &iv, &ciphertext_buf, &tag, hash_algo);
+        let leaf = crate::merkle::chunk_leaf_hash_raw_with_algo(
+            idx,
+            &iv,
+            &ciphertext_buf,
+            &tag,
+            hash_algo,
+        );
         leaf_hashes.push(leaf);
     }
 
@@ -219,14 +226,26 @@ fn map_format_error_to_report(err: FileFormatError) -> ShieldReport {
         FileFormatError::InvalidMagic => ShieldReport::Magic,
         FileFormatError::UnsupportedVersion(v) => ShieldReport::Version(v),
         FileFormatError::InvalidMode(m) => ShieldReport::HeaderField(format!("mode_{}", m)),
-        FileFormatError::InvalidCipherId(c) => ShieldReport::HeaderField(format!("cipher_id_{}", c)),
-        FileFormatError::UnsupportedHashAlgorithm(a) => ShieldReport::HeaderField(format!("hash_algorithm_{}", a)),
-        FileFormatError::TruncatedHeader { .. } => ShieldReport::HeaderField("truncated_header".to_string()),
-        FileFormatError::TruncatedChunk { .. } => ShieldReport::HeaderField("truncated_chunk".to_string()),
-        FileFormatError::ChunkIndexOutOfOrder { expected, got } => ShieldReport::ChunkIndexMismatch { expected, got },
+        FileFormatError::InvalidCipherId(c) => {
+            ShieldReport::HeaderField(format!("cipher_id_{}", c))
+        }
+        FileFormatError::UnsupportedHashAlgorithm(a) => {
+            ShieldReport::HeaderField(format!("hash_algorithm_{}", a))
+        }
+        FileFormatError::TruncatedHeader { .. } => {
+            ShieldReport::HeaderField("truncated_header".to_string())
+        }
+        FileFormatError::TruncatedChunk { .. } => {
+            ShieldReport::HeaderField("truncated_chunk".to_string())
+        }
+        FileFormatError::ChunkIndexOutOfOrder { expected, got } => {
+            ShieldReport::ChunkIndexMismatch { expected, got }
+        }
         FileFormatError::AesGcmDecryptFailed => ShieldReport::MerkleRoot,
         FileFormatError::ContainerSealed => ShieldReport::ContainerSealed,
-        FileFormatError::RollbackError { expected, got } => ShieldReport::Rollback { expected, got },
+        FileFormatError::RollbackError { expected, got } => {
+            ShieldReport::Rollback { expected, got }
+        }
         FileFormatError::UntrustedGenesis => ShieldReport::UntrustedGenesis,
         _ => ShieldReport::HeaderField(err.to_string()),
     }

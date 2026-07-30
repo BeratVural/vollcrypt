@@ -62,7 +62,8 @@ pub fn mlkem768_encapsulate(pk: &[u8; 1184]) -> Result<([u8; 32], [u8; 1088]), F
     let ek_array = ml_kem::array::Array::try_from(pk.as_slice())
         .map_err(|_| FileFormatError::WrongRecipientKey)?;
     let ek = <EK as EncodedSizeUser>::from_bytes(&ek_array);
-    let (ct, ss) = ek.encapsulate(&mut OsRng)
+    let (ct, ss) = ek
+        .encapsulate(&mut OsRng)
         .map_err(|_| FileFormatError::WrongRecipientKey)?;
 
     shared_secret.copy_from_slice(ss.as_slice());
@@ -83,12 +84,25 @@ pub fn mlkem768_decapsulate(sk: &[u8; 2400], ct: &[u8; 1088]) -> Result<[u8; 32]
     let dk_array = ml_kem::array::Array::try_from(sk.as_slice())
         .map_err(|_| FileFormatError::WrongRecipientKey)?;
     let dk = <DK as EncodedSizeUser>::from_bytes(&dk_array);
-    let ct_obj = CT::try_from(ct.as_slice())
-        .map_err(|_| FileFormatError::WrongRecipientKey)?;
-    let ss = dk.decapsulate(&ct_obj)
+    let ct_obj = CT::try_from(ct.as_slice()).map_err(|_| FileFormatError::WrongRecipientKey)?;
+    let ss = dk
+        .decapsulate(&ct_obj)
         .map_err(|_| FileFormatError::WrongRecipientKey)?;
 
     shared_secret.copy_from_slice(ss.as_slice());
 
     Ok(shared_secret)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_zero_key_decapsulate() {
+        let sk = [0u8; 2400];
+        let ct = [0u8; 1088];
+        let res = mlkem768_decapsulate(&sk, &ct);
+        println!("Result of zero key decapsulate: {:?}", res);
+    }
 }

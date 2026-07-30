@@ -1,15 +1,16 @@
-use std::io::{Cursor, Read, Write, Seek, SeekFrom};
-use tempfile::tempfile;
+use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+use tempfile::{tempfile, NamedTempFile};
 use vollcrypt_files_core::{
-    encrypt_file_pipelined, decrypt_file_pipelined, decrypt_file_pipelined_with_policy,
-    seal_container, is_sealed, inspect_sealed, verify_container,
-    generate_dek, generate_file_id, hybrid_keypair_generate,
-    wrap_dek_with_password, KdfChoice,
+    decrypt_file_pipelined_with_policy, encrypt_file_pipelined,
     error::FileFormatError,
+    generate_dek, generate_file_id,
     header::{Header, Mode},
-    shield::{ShieldPolicy, ShieldReport, ReleaseMode, SignaturePolicy},
-    sovereign::{SealMode, SealOptions},
+    hybrid_keypair_generate, inspect_sealed, is_sealed,
     pipelined_io::PipelinedSignInfo,
+    seal_container, seal_container_in_place,
+    shield::{ReleaseMode, ShieldPolicy, ShieldReport, SignaturePolicy},
+    sovereign::{SealMode, SealOptions},
+    verify_container, wrap_dek_with_password, KdfChoice,
 };
 
 fn read_all(mut f: std::fs::File) -> Vec<u8> {
@@ -31,14 +32,15 @@ fn test_sovereign_seal_v1_v2_v3() {
     let dek = generate_dek();
     let file_id = generate_file_id();
     let plaintext = b"Hello, this is a sovereign sealing test.";
-    
+
     let password = b"seal-password";
-    let wrap = wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+    let wrap =
+        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
 
     // --- V1 Container ---
     let dest_encrypt = tempfile().unwrap();
     encrypt_file_pipelined(
-        Cursor::new(plaintext.to_vec()),
+        Cursor::new(*plaintext),
         dest_encrypt.try_clone().unwrap(),
         &dek,
         &file_id,
@@ -48,7 +50,8 @@ fn test_sovereign_seal_v1_v2_v3() {
         2,
         None,
         None,
-    ).unwrap();
+    )
+    .unwrap();
 
     let (signer_pk, signer_sk) = hybrid_keypair_generate();
     let key_log_id = generate_dek();
@@ -93,7 +96,7 @@ fn test_sovereign_seal_v1_v2_v3() {
 
     let dest_encrypt_v3 = tempfile().unwrap();
     encrypt_file_pipelined(
-        Cursor::new(plaintext.to_vec()),
+        Cursor::new(*plaintext),
         dest_encrypt_v3.try_clone().unwrap(),
         &dek,
         &file_id,
@@ -103,7 +106,8 @@ fn test_sovereign_seal_v1_v2_v3() {
         2,
         Some(sign_info.clone()),
         None,
-    ).unwrap();
+    )
+    .unwrap();
 
     let ciphertext_v3 = read_all(dest_encrypt_v3);
 
@@ -113,7 +117,12 @@ fn test_sovereign_seal_v1_v2_v3() {
         reason: Some("Testing V3 Seal".to_string()),
         sign_info: Some(sign_info),
     };
-    seal_container(Cursor::new(&ciphertext_v3), Cursor::new(&mut dest_v3), opts_v3).unwrap();
+    seal_container(
+        Cursor::new(&ciphertext_v3),
+        Cursor::new(&mut dest_v3),
+        opts_v3,
+    )
+    .unwrap();
 
     let (hdr_v3, _) = Header::parse(&dest_v3).unwrap();
     assert!(is_sealed(&hdr_v3));
@@ -129,13 +138,14 @@ fn test_sovereign_purge() {
     let dek = generate_dek();
     let file_id = generate_file_id();
     let plaintext = b"Sensitive content to be crypto-shredded.";
-    
+
     let password = b"seal-password";
-    let wrap = wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+    let wrap =
+        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
 
     let dest_encrypt = tempfile().unwrap();
     encrypt_file_pipelined(
-        Cursor::new(plaintext.to_vec()),
+        Cursor::new(*plaintext),
         dest_encrypt.try_clone().unwrap(),
         &dek,
         &file_id,
@@ -145,7 +155,8 @@ fn test_sovereign_purge() {
         2,
         None,
         None,
-    ).unwrap();
+    )
+    .unwrap();
 
     let ciphertext = read_all(dest_encrypt);
 
@@ -165,7 +176,12 @@ fn test_sovereign_purge() {
         reason: Some("Purging".to_string()),
         sign_info: Some(sign_info),
     };
-    seal_container(Cursor::new(&ciphertext), Cursor::new(&mut dest_purged), opts).unwrap();
+    seal_container(
+        Cursor::new(&ciphertext),
+        Cursor::new(&mut dest_purged),
+        opts,
+    )
+    .unwrap();
 
     let inspect = inspect_sealed(Cursor::new(&dest_purged)).unwrap();
     assert!(!inspect.ciphertext_present);
@@ -183,21 +199,78 @@ fn test_sovereign_purge() {
         2,
         Some(&policy),
     );
-    assert!(matches!(decrypt_res.unwrap_err(), FileFormatError::ContainerSealed));
+    assert!(matches!(
+        decrypt_res.unwrap_err(),
+        FileFormatError::ContainerSealed
+    ));
 }
 
+#[test]
+fn test_sovereign_purge_in_place_truncates_source_container() {
+    let dek = generate_dek();
+    let file_id = generate_file_id();
+    let plaintext = vec![0x5A; 32 * 1024];
+
+    let password = b"seal-password";
+    let wrap =
+        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+
+    let source = NamedTempFile::new().unwrap();
+    encrypt_file_pipelined(
+        Cursor::new(plaintext.clone()),
+        source.reopen().unwrap(),
+        &dek,
+        &file_id,
+        4096,
+        vec![wrap],
+        Mode::Password,
+        2,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let original_len = std::fs::metadata(source.path()).unwrap().len();
+
+    let (signer_pk, signer_sk) = hybrid_keypair_generate();
+    let sign_info = PipelinedSignInfo::Plain {
+        signer_pk,
+        signer_sk,
+        key_log_id: generate_dek(),
+        timestamp: 987654321,
+    };
+
+    seal_container_in_place(
+        source.path(),
+        SealOptions {
+            mode: SealMode::Purge,
+            reason: Some("In-place purge".to_string()),
+            sign_info: Some(sign_info),
+        },
+    )
+    .unwrap();
+
+    let purged_len = std::fs::metadata(source.path()).unwrap().len();
+    assert!(purged_len < original_len);
+
+    let purged = std::fs::read(source.path()).unwrap();
+    let inspect = inspect_sealed(Cursor::new(&purged)).unwrap();
+    assert_eq!(inspect.sealed_mode, Some(2));
+    assert!(!inspect.ciphertext_present);
+}
 #[test]
 fn test_idempotency_double_sealing() {
     let dek = generate_dek();
     let file_id = generate_file_id();
     let plaintext = b"Double seal test.";
-    
+
     let password = b"seal-password";
-    let wrap = wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+    let wrap =
+        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
 
     let dest_encrypt = tempfile().unwrap();
     encrypt_file_pipelined(
-        Cursor::new(plaintext.to_vec()),
+        Cursor::new(*plaintext),
         dest_encrypt.try_clone().unwrap(),
         &dek,
         &file_id,
@@ -207,7 +280,8 @@ fn test_idempotency_double_sealing() {
         2,
         None,
         None,
-    ).unwrap();
+    )
+    .unwrap();
 
     let ciphertext = read_all(dest_encrypt);
 
@@ -227,10 +301,20 @@ fn test_idempotency_double_sealing() {
         reason: Some("First seal".to_string()),
         sign_info: Some(sign_info),
     };
-    seal_container(Cursor::new(&ciphertext), Cursor::new(&mut dest_first), opts.clone()).unwrap();
+    seal_container(
+        Cursor::new(&ciphertext),
+        Cursor::new(&mut dest_first),
+        opts.clone(),
+    )
+    .unwrap();
 
     let mut dest_second = Vec::new();
-    seal_container(Cursor::new(&dest_first), Cursor::new(&mut dest_second), opts).unwrap();
+    seal_container(
+        Cursor::new(&dest_first),
+        Cursor::new(&mut dest_second),
+        opts,
+    )
+    .unwrap();
 
     assert_eq!(dest_first, dest_second);
 }
@@ -240,9 +324,10 @@ fn test_shield_verified_vs_streaming() {
     let dek = generate_dek();
     let file_id = generate_file_id();
     let plaintext = vec![0u8; 8192];
-    
+
     let password = b"seal-password";
-    let wrap = wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+    let wrap =
+        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
 
     let dest_encrypt = tempfile().unwrap();
     encrypt_file_pipelined(
@@ -256,7 +341,8 @@ fn test_shield_verified_vs_streaming() {
         2,
         None,
         None,
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut ciphertext = read_all(dest_encrypt);
 
@@ -304,9 +390,10 @@ fn test_tamper_shield() {
     let dek = generate_dek();
     let file_id = generate_file_id();
     let plaintext = b"Tamper shield test.";
-    
+
     let password = b"seal-password";
-    let wrap = wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+    let wrap =
+        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
 
     let (signer_pk, signer_sk) = hybrid_keypair_generate();
     let key_log_id = generate_dek();
@@ -321,7 +408,7 @@ fn test_tamper_shield() {
 
     let dest_encrypt = tempfile().unwrap();
     encrypt_file_pipelined(
-        Cursor::new(plaintext.to_vec()),
+        Cursor::new(*plaintext),
         dest_encrypt.try_clone().unwrap(),
         &dek,
         &file_id,
@@ -331,7 +418,8 @@ fn test_tamper_shield() {
         2,
         Some(sign_info),
         None,
-    ).unwrap();
+    )
+    .unwrap();
 
     let ciphertext = read_all(dest_encrypt);
 
@@ -346,5 +434,77 @@ fn test_tamper_shield() {
     tampered_ciphertext[120] ^= 0xFF; // Modify signature or metadata section
 
     let report_tampered = verify_container(Cursor::new(&tampered_ciphertext), &strict_policy);
-    assert!(matches!(report_tampered, ShieldReport::Signature | ShieldReport::MerkleRoot | ShieldReport::HeaderField(_)));
+    assert!(matches!(
+        report_tampered,
+        ShieldReport::Signature | ShieldReport::MerkleRoot | ShieldReport::HeaderField(_)
+    ));
+}
+
+#[test]
+fn test_seal_then_purge_removes_existing_ciphertext() {
+    let dek = generate_dek();
+    let file_id = generate_file_id();
+    let plaintext = vec![0xA5; 32 * 1024];
+
+    let password = b"seal-password";
+    let wrap =
+        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+
+    let encrypted = tempfile().unwrap();
+    encrypt_file_pipelined(
+        Cursor::new(plaintext),
+        encrypted.try_clone().unwrap(),
+        &dek,
+        &file_id,
+        4096,
+        vec![wrap],
+        Mode::Password,
+        2,
+        None,
+        None,
+    )
+    .unwrap();
+    let ciphertext = read_all(encrypted);
+
+    let (seal_pk, seal_sk) = hybrid_keypair_generate();
+    let seal_opts = SealOptions {
+        mode: SealMode::Seal,
+        reason: Some("Seal first".to_string()),
+        sign_info: Some(PipelinedSignInfo::Plain {
+            signer_pk: seal_pk,
+            signer_sk: seal_sk,
+            key_log_id: generate_dek(),
+            timestamp: 111,
+        }),
+    };
+
+    let mut sealed = Vec::new();
+    seal_container(
+        Cursor::new(&ciphertext),
+        Cursor::new(&mut sealed),
+        seal_opts,
+    )
+    .unwrap();
+    let sealed_inspect = inspect_sealed(Cursor::new(&sealed)).unwrap();
+    assert_eq!(sealed_inspect.sealed_mode, Some(1));
+    assert!(sealed_inspect.ciphertext_present);
+
+    let (purge_pk, purge_sk) = hybrid_keypair_generate();
+    let purge_opts = SealOptions {
+        mode: SealMode::Purge,
+        reason: Some("Purge after seal".to_string()),
+        sign_info: Some(PipelinedSignInfo::Plain {
+            signer_pk: purge_pk,
+            signer_sk: purge_sk,
+            key_log_id: generate_dek(),
+            timestamp: 222,
+        }),
+    };
+
+    let mut purged = Vec::new();
+    seal_container(Cursor::new(&sealed), Cursor::new(&mut purged), purge_opts).unwrap();
+    let purged_inspect = inspect_sealed(Cursor::new(&purged)).unwrap();
+    assert_eq!(purged_inspect.sealed_mode, Some(2));
+    assert!(!purged_inspect.ciphertext_present);
+    assert!(purged.len() < sealed.len());
 }

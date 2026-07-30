@@ -3,20 +3,17 @@ use std::process::{Command, Stdio};
 use std::time::Instant;
 
 use vollcrypt_files_core::{
-    decrypt_file_pipelined, decrypt_verified, decrypt_streaming_online, encrypt_file_pipelined, generate_dek,
-    decrypt_file_pipelined_with_policy,
-    generate_file_id, generate_gk, generate_recipient_keypair, rewrap_dek_in_header,
-    sign_header_plain, sign_header_sealed, unwrap_dek_with_group_key, unwrap_dek_with_password,
-    unwrap_key_with_recipient_key, verify_header_signature_plain,
-    verify_header_signature_plain_policy, verify_header_signature_sealed,
-    wrap_dek_for_group, wrap_dek_with_password,
-    wrap_key_to_recipient, CipherId, FileFormatError, GroupManifest, HashAlgorithm, Header,
-    KdfChoice, MerkleTree, Mode, SignedMetadata, WrapEntry,
-    hybrid_keypair_generate, HybridPublicKey, HybridSignature, KeyLog,
-    hybrid_sign, hybrid_verify, RollbackCheck, FounderAnchor, VerificationPolicy, verify_manifest_with_pin,
-    pipelined_io::PipelinedSignInfo,
+    decrypt_file_pipelined, decrypt_file_pipelined_with_policy, decrypt_streaming_online,
+    decrypt_verified, encrypt_file_pipelined, generate_dek, generate_file_id, generate_gk,
+    generate_recipient_keypair, hybrid_keypair_generate, hybrid_sign, hybrid_verify,
+    pipelined_io::PipelinedSignInfo, rewrap_dek_in_header, sign_header_plain, sign_header_sealed,
+    unwrap_dek_with_group_key, unwrap_dek_with_password, unwrap_key_with_recipient_key,
+    verify_header_signature_plain, verify_header_signature_plain_policy,
+    verify_header_signature_sealed, verify_manifest_with_pin, wrap_dek_for_group,
+    wrap_dek_with_password, wrap_key_to_recipient, CipherId, FileFormatError, FounderAnchor,
+    GroupManifest, HashAlgorithm, Header, HybridPublicKey, HybridSignature, KdfChoice, KeyLog,
+    MerkleTree, Mode, RollbackCheck, SignedMetadata, VerificationPolicy, WrapEntry,
 };
-
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -149,7 +146,7 @@ fn run_adversarial_suite() {
             let dek = generate_dek();
             let file_id = generate_file_id();
             let chunk_size = 4096;
-            
+
             // Create a file with 3 chunks
             let mut source = vec![0u8; chunk_size * 3];
             source[0..10].copy_from_slice(b"chunk1data");
@@ -181,7 +178,7 @@ fn run_adversarial_suite() {
             drop(dest_file);
             let encrypted_bytes = std::fs::read(temp_path).unwrap();
             let _ = std::fs::remove_file(temp_path);
-            
+
             // Truncate the last chunk envelope.
             // A chunk envelope size is 32 + chunk_plaintext_len
             let last_chunk_env_len = 32 + chunk_size;
@@ -228,7 +225,7 @@ fn run_adversarial_suite() {
             let (pk, sk) = hybrid_keypair_generate();
             let key_log_id = [7u8; 32];
             let timestamp = 1234567890;
-            
+
             let mut header = Header {
                 version: 2,
                 mode: Mode::Password,
@@ -242,7 +239,7 @@ fn run_adversarial_suite() {
                 signed_metadata: None,
                 signature: None,
             };
-            
+
             // Sign the header
             sign_header_plain(&mut header, &pk, &sk, key_log_id, timestamp).unwrap();
 
@@ -262,7 +259,7 @@ fn run_adversarial_suite() {
             let verify_merkle_root = verify_header_signature_plain(&tampered_header, vollcrypt_files_core::VerificationPolicy::RequireSigned).is_err();
 
             // Tamper wrap_count (which is implicit in wraps length in Header struct, but let's change serialized bytes)
-            let mut serialized = header.write();
+            let mut serialized = header.write().expect("valid header should serialize");
             // wrap_count is at index 71. Let's increment it.
             serialized[71] += 1;
             let verify_wrap_count = Header::parse(&serialized)
@@ -306,7 +303,11 @@ fn run_adversarial_suite() {
             };
 
             // 1. Verify that unsigned downgrade is rejected under require_signed policy
-            let reject_unsigned = verify_header_signature_plain_policy(&header_v1, vollcrypt_files_core::VerificationPolicy::RequireSigned).is_err();
+            let reject_unsigned = verify_header_signature_plain_policy(
+                &header_v1,
+                vollcrypt_files_core::VerificationPolicy::RequireSigned,
+            )
+            .is_err();
 
             // 2. Signed Mode (v2) wrap stripping check
             let (pk, sk) = hybrid_keypair_generate();
@@ -324,7 +325,11 @@ fn run_adversarial_suite() {
 
             let parse_v2_stripped = Header::parse(&serialized_v2_stripped);
             let reject_v2_stripped = match parse_v2_stripped {
-                Ok((h, _)) => verify_header_signature_plain_policy(&h, vollcrypt_files_core::VerificationPolicy::RequireSigned).is_err(),
+                Ok((h, _)) => verify_header_signature_plain_policy(
+                    &h,
+                    vollcrypt_files_core::VerificationPolicy::RequireSigned,
+                )
+                .is_err(),
                 Err(_) => true,
             };
 
@@ -367,7 +372,7 @@ fn run_adversarial_suite() {
                 signature: None,
             };
 
-            let mut serialized = header.write();
+            let mut serialized = header.write().expect("valid header should serialize");
             // Change Mode from Password (0) to Group (2) at index 9
             serialized[9] = 2;
 
@@ -468,7 +473,7 @@ fn run_adversarial_suite() {
                 signature: None,
             };
 
-            let mut serialized = header.write();
+            let mut serialized = header.write().expect("valid header should serialize");
             // Set wrap_count to 255 at index 71
             serialized[71] = 255;
 
@@ -544,7 +549,10 @@ fn run_adversarial_suite() {
 
             // 1. Verify tampering ephemeral key fails decryption
             let mut tampered_eph = wrap.clone();
-            if let WrapEntry::HybridKem { x25519_ephemeral, .. } = &mut tampered_eph {
+            if let WrapEntry::HybridKem {
+                x25519_ephemeral, ..
+            } = &mut tampered_eph
+            {
                 x25519_ephemeral[0] ^= 1;
             }
             let dec_eph_res = unwrap_key_with_recipient_key(&tampered_eph, &sk);
@@ -570,8 +578,8 @@ fn run_adversarial_suite() {
             serialized_old_wrap[1..3].copy_from_slice(&payload_len.to_be_bytes());
             let parse_old_res = WrapEntry::parse(&serialized_old_wrap);
 
-            let all_rejected = dec_eph_res.is_err() 
-                && dec_id_res.is_err() 
+            let all_rejected = dec_eph_res.is_err()
+                && dec_id_res.is_err()
                 && dec_version_res.is_err()
                 && matches!(parse_old_res, Err(FileFormatError::UnsupportedSuite(2)));
 
@@ -705,8 +713,11 @@ fn run_adversarial_suite() {
             for op_signed in &manifest.operations {
                 if let Ok(vollcrypt_files_core::Operation::AddMember {
                     member_id, gk_wrap, ..
-                }) = vollcrypt_files_core::Operation::parse(op_signed.op_type, &op_signed.data, manifest.version)
-                {
+                }) = vollcrypt_files_core::Operation::parse(
+                    op_signed.op_type,
+                    &op_signed.data,
+                    manifest.version,
+                ) {
                     if member_id == m2_id {
                         wrap_for_m2 = Some(gk_wrap);
                     }
@@ -827,12 +838,11 @@ fn run_adversarial_suite() {
                 operations: vec![manifest.operations[0].clone()],
             };
 
-            let verify_res =
-                vollcrypt_files_core::verify_manifest_with_pin(
-                    &manifest_rollback,
-                    vollcrypt_files_core::RollbackCheck::Pin(pinned_epoch.unwrap_or(0)),
-                    vollcrypt_files_core::FounderAnchor::PublicKey(admin_pk.clone()),
-                );
+            let verify_res = vollcrypt_files_core::verify_manifest_with_pin(
+                &manifest_rollback,
+                vollcrypt_files_core::RollbackCheck::Pin(pinned_epoch.unwrap_or(0)),
+                vollcrypt_files_core::FounderAnchor::PublicKey(admin_pk.clone()),
+            );
 
             if matches!(verify_res, Err(FileFormatError::RollbackError { .. })) {
                 (
@@ -944,16 +954,23 @@ fn run_adversarial_suite() {
             let (pk, sk) = hybrid_keypair_generate();
             let msg = b"adversarial_test_message";
             let mut sig = hybrid_sign(&sk, &pk, "vollf-hdr-plain", &[], msg);
-            
+
             // Tamper with ML-DSA signature bytes
             if sig.mldsa.len() > 10 {
                 sig.mldsa[0..10].copy_from_slice(&[0u8; 10]);
             }
-            
+
             if hybrid_verify(&pk, "vollf-hdr-plain", &[], msg, &sig) {
-                ("FINDING: Verification succeeded with forged ML-DSA signature".to_string(), false)
+                (
+                    "FINDING: Verification succeeded with forged ML-DSA signature".to_string(),
+                    false,
+                )
             } else {
-                ("REJECTED: Verification failed as expected (both algorithms must pass)".to_string(), true)
+                (
+                    "REJECTED: Verification failed as expected (both algorithms must pass)"
+                        .to_string(),
+                    true,
+                )
             }
         },
         &mut report,
@@ -969,14 +986,21 @@ fn run_adversarial_suite() {
             let (pk, sk) = hybrid_keypair_generate();
             let msg = b"adversarial_test_message";
             let mut sig = hybrid_sign(&sk, &pk, "vollf-hdr-plain", &[], msg);
-            
+
             // Tamper with Ed25519 signature bytes
             sig.ed25519[0..10].copy_from_slice(&[0u8; 10]);
-            
+
             if hybrid_verify(&pk, "vollf-hdr-plain", &[], msg, &sig) {
-                ("FINDING: Verification succeeded with forged Ed25519 signature".to_string(), false)
+                (
+                    "FINDING: Verification succeeded with forged Ed25519 signature".to_string(),
+                    false,
+                )
             } else {
-                ("REJECTED: Verification failed as expected (both algorithms must pass)".to_string(), true)
+                (
+                    "REJECTED: Verification failed as expected (both algorithms must pass)"
+                        .to_string(),
+                    true,
+                )
             }
         },
         &mut report,
@@ -1004,7 +1028,10 @@ fn run_adversarial_suite() {
             let verify_wrong_domain = hybrid_verify(&pk1, "vollf-hdr-sealed", &[], msg, &sig);
 
             if verify_mixed || verify_wrong_domain {
-                ("FINDING: Key substitution or domain separation bypass succeeded".to_string(), false)
+                (
+                    "FINDING: Key substitution or domain separation bypass succeeded".to_string(),
+                    false,
+                )
             } else {
                 ("REJECTED: Mismatched public key components and incorrect domains failed verification".to_string(), true)
             }
@@ -1020,7 +1047,7 @@ fn run_adversarial_suite() {
         "REJECTED",
         || {
             let (pk, sk) = hybrid_keypair_generate();
-            
+
             // 1. Create a version 2 header signed only with classical Ed25519
             let mut header_v2 = Header {
                 version: 2,
@@ -1039,7 +1066,7 @@ fn run_adversarial_suite() {
                 }),
                 signature: None,
             };
-            
+
             let msg = header_v2.signed_bytes();
             let sig_ed = vollcrypt_files_core::ed25519_sign(&sk.ed25519, &msg);
             header_v2.signature = Some(HybridSignature {
@@ -1047,7 +1074,10 @@ fn run_adversarial_suite() {
                 mldsa: Vec::new(),
             });
 
-            let verify_v2 = verify_header_signature_plain_policy(&header_v2, vollcrypt_files_core::VerificationPolicy::Strict);
+            let verify_v2 = verify_header_signature_plain_policy(
+                &header_v2,
+                vollcrypt_files_core::VerificationPolicy::Strict,
+            );
 
             // 2. Create a legacy manifest
             let (m1_pk, _) = generate_recipient_keypair();
@@ -1055,13 +1085,21 @@ fn run_adversarial_suite() {
             let w1 = wrap_key_to_recipient(&generate_gk(), m1_id, 1, &m1_pk).unwrap();
             let mut manifest = GroupManifest::genesis([9u8; 16], m1_id, &sk, pk, m1_pk, w1);
             manifest.operations[0].signature.mldsa = Vec::new();
-            
-            let verify_manifest = manifest.verify_policy(vollcrypt_files_core::VerificationPolicy::Strict);
+
+            let verify_manifest =
+                manifest.verify_policy(vollcrypt_files_core::VerificationPolicy::Strict);
 
             if verify_v2.is_err() && verify_manifest.is_err() {
-                ("REJECTED: Downgrade to legacy signature versions blocked under policy".to_string(), true)
+                (
+                    "REJECTED: Downgrade to legacy signature versions blocked under policy"
+                        .to_string(),
+                    true,
+                )
             } else {
-                ("FINDING: Legacy signature version was accepted under policy".to_string(), false)
+                (
+                    "FINDING: Legacy signature version was accepted under policy".to_string(),
+                    false,
+                )
             }
         },
         &mut report,
@@ -1183,21 +1221,27 @@ fn run_adversarial_suite() {
             let mx_id = [10u8; 16];
             let wx = wrap_key_to_recipient(&generate_gk(), mx_id, 1, &mx_pk).unwrap();
             let (mx_sig_pk, _) = hybrid_keypair_generate();
-            manifest.add_member(&admin_sk, mx_id, mx_sig_pk, mx_pk, wx).unwrap();
+            manifest
+                .add_member(&admin_sk, mx_id, mx_sig_pk, mx_pk, wx)
+                .unwrap();
 
             // Add member Y (epoch 2)
             let (my_pk, _) = generate_recipient_keypair();
             let my_id = [20u8; 16];
             let wy = wrap_key_to_recipient(&generate_gk(), my_id, 1, &my_pk).unwrap();
             let (my_sig_pk, _) = hybrid_keypair_generate();
-            manifest.add_member(&admin_sk, my_id, my_sig_pk, my_pk, wy).unwrap();
+            manifest
+                .add_member(&admin_sk, my_id, my_sig_pk, my_pk, wy)
+                .unwrap();
 
             // Add member Z (epoch 3)
             let (mz_pk, _) = generate_recipient_keypair();
             let mz_id = [30u8; 16];
             let wz = wrap_key_to_recipient(&generate_gk(), mz_id, 1, &mz_pk).unwrap();
             let (mz_sig_pk, _) = hybrid_keypair_generate();
-            manifest.add_member(&admin_sk, mz_id, mz_sig_pk, mz_pk, wz).unwrap();
+            manifest
+                .add_member(&admin_sk, mz_id, mz_sig_pk, mz_pk, wz)
+                .unwrap();
 
             // Pin=5 + Manifest epoch=3 -> RollbackError
             let verify_res_pin = verify_manifest_with_pin(
@@ -1205,7 +1249,13 @@ fn run_adversarial_suite() {
                 RollbackCheck::Pin(5),
                 FounderAnchor::PublicKey(admin_pk.clone()),
             );
-            let assert_pin_fail = matches!(verify_res_pin, Err(FileFormatError::RollbackError { expected: 5, got: 3 }));
+            let assert_pin_fail = matches!(
+                verify_res_pin,
+                Err(FileFormatError::RollbackError {
+                    expected: 5,
+                    got: 3
+                })
+            );
 
             // TrustOnFirstUse -> head_epoch is returned (epoch 3)
             let verify_res_tofu = verify_manifest_with_pin(
@@ -1221,9 +1271,16 @@ fn run_adversarial_suite() {
             let assert_compile_mandatory = true;
 
             if assert_pin_fail && assert_tofu_ok && assert_compile_mandatory {
-                ("REJECTED: RollbackError returned, TrustOnFirstUse returns head_epoch".to_string(), true)
+                (
+                    "REJECTED: RollbackError returned, TrustOnFirstUse returns head_epoch"
+                        .to_string(),
+                    true,
+                )
             } else {
-                ("FINDING: Mandatory rollback verification check bypassed".to_string(), false)
+                (
+                    "FINDING: Mandatory rollback verification check bypassed".to_string(),
+                    false,
+                )
             }
         },
         &mut report,
@@ -1444,7 +1501,8 @@ fn run_adversarial_suite() {
                 1,
                 None,
                 None,
-            ).unwrap();
+            )
+            .unwrap();
 
             drop(dest_file);
             let encrypted_dest = std::fs::read(temp_path).unwrap();
@@ -1460,15 +1518,23 @@ fn run_adversarial_suite() {
             policy_streaming.release_mode = vollcrypt_files_core::shield::ReleaseMode::Streaming;
 
             let mut dest_stream = Vec::new();
-            let res_stream = decrypt_file_pipelined_with_policy(std::io::Cursor::new(tampered_bytes), &mut dest_stream, &dek, 1, Some(&policy_streaming));
-            
-
+            let res_stream = decrypt_file_pipelined_with_policy(
+                std::io::Cursor::new(tampered_bytes),
+                &mut dest_stream,
+                &dek,
+                1,
+                Some(&policy_streaming),
+            );
 
             // Decrypting should return an error, but dest_stream should NOT be empty (contains unverified release)
             if res_stream.is_err() && !dest_stream.is_empty() {
                 ("◷ Documented (online mode RUP): Partial decrypted plaintext released before verification failure.".to_string(), true)
             } else {
-                ("FINDING: No unverified plaintext was released or decryption succeeded".to_string(), false)
+                (
+                    "FINDING: No unverified plaintext was released or decryption succeeded"
+                        .to_string(),
+                    false,
+                )
             }
         },
         &mut report,
@@ -1482,7 +1548,7 @@ fn run_adversarial_suite() {
         "REJECTED",
         || {
             // Since INJECT_KDF_ERROR is a test-only internal helper inside the core library,
-            // we verify the actual error propagation behavior via the dedicated unit test 
+            // we verify the actual error propagation behavior via the dedicated unit test
             // inside `core/src/kdf.rs` (test_kdf_error_injection).
             // Here we verify that under normal execution, it works correctly and returns non-zero keys.
             let dek = [1u8; 32];
@@ -1493,7 +1559,11 @@ fn run_adversarial_suite() {
             let assert_no_zero_keys = res_subkey != [0u8; 32] && res_key != [0u8; 32];
 
             if assert_no_zero_keys {
-                ("REJECTED: No zero key used (verified internally via core unit tests)".to_string(), true)
+                (
+                    "REJECTED: No zero key used (verified internally via core unit tests)"
+                        .to_string(),
+                    true,
+                )
             } else {
                 ("FINDING: Zero-key returned".to_string(), false)
             }
@@ -1543,8 +1613,6 @@ fn run_adversarial_suite() {
             let _ = std::fs::remove_file(temp_source_path);
             let _ = std::fs::remove_file(temp_dest_path);
 
-
-
             let assert_enc_cap = matches!(res_enc, Err(FileFormatError::TooManyChunks));
 
             // 2. Decryption path cap test
@@ -1565,7 +1633,7 @@ fn run_adversarial_suite() {
                 signed_metadata: None,
                 signature: None,
             };
-            let serialized = header.write();
+            let serialized = header.write().expect("valid header should serialize");
             let mut dest = Vec::new();
             let mut policy_legacy = vollcrypt_files_core::shield::ShieldPolicy::strict();
             policy_legacy.signature = vollcrypt_files_core::shield::SignaturePolicy::Optional;
@@ -1581,9 +1649,16 @@ fn run_adversarial_suite() {
             let assert_dec_cap = matches!(res_dec, Err(FileFormatError::TooManyChunks));
 
             if assert_enc_cap && assert_dec_cap {
-                ("REJECTED: TooManyChunks error returned on index overflow configurations".to_string(), true)
+                (
+                    "REJECTED: TooManyChunks error returned on index overflow configurations"
+                        .to_string(),
+                    true,
+                )
             } else {
-                ("FINDING: Chunk index overflow cap bypassed".to_string(), false)
+                (
+                    "FINDING: Chunk index overflow cap bypassed".to_string(),
+                    false,
+                )
             }
         },
         &mut report,
@@ -1599,9 +1674,11 @@ fn run_adversarial_suite() {
             let dek = generate_dek();
             let file_id = generate_file_id();
             let plaintext = b"Adversarial sealed container test.";
-            
+
             let password = b"seal-password";
-            let wrap = wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+            let wrap =
+                wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 })
+                    .unwrap();
 
             let dest_encrypt = tempfile::tempfile().unwrap();
             encrypt_file_pipelined(
@@ -1615,7 +1692,8 @@ fn run_adversarial_suite() {
                 1,
                 None,
                 None,
-            ).unwrap();
+            )
+            .unwrap();
 
             let ciphertext = read_all(dest_encrypt);
 
@@ -1636,16 +1714,17 @@ fn run_adversarial_suite() {
                 reason: Some("Adversarial Seal".to_string()),
                 sign_info: Some(sign_info),
             };
-            vollcrypt_files_core::seal_container(std::io::Cursor::new(&ciphertext), std::io::Cursor::new(&mut dest_sealed), opts).unwrap();
+            vollcrypt_files_core::seal_container(
+                std::io::Cursor::new(&ciphertext),
+                std::io::Cursor::new(&mut dest_sealed),
+                opts,
+            )
+            .unwrap();
 
             // Attempt standard decryption
             let mut decrypted = Vec::new();
-            let decrypt_res = decrypt_file_pipelined(
-                write_all(&dest_sealed),
-                &mut decrypted,
-                &dek,
-                1,
-            );
+            let decrypt_res =
+                decrypt_file_pipelined(write_all(&dest_sealed), &mut decrypted, &dek, 1);
 
             match decrypt_res {
                 Err(FileFormatError::ContainerSealed) => {
@@ -1681,7 +1760,9 @@ fn run_adversarial_suite() {
             };
 
             let password = b"seal-password";
-            let wrap = wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+            let wrap =
+                wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 })
+                    .unwrap();
 
             let dest_encrypt = tempfile::tempfile().unwrap();
             encrypt_file_pipelined(
@@ -1695,7 +1776,8 @@ fn run_adversarial_suite() {
                 1,
                 Some(sign_info.clone()),
                 None,
-            ).unwrap();
+            )
+            .unwrap();
 
             let ciphertext = read_all(dest_encrypt);
 
@@ -1705,25 +1787,50 @@ fn run_adversarial_suite() {
                 reason: Some("Adversarial Seal".to_string()),
                 sign_info: Some(sign_info),
             };
-            vollcrypt_files_core::seal_container(std::io::Cursor::new(&ciphertext), std::io::Cursor::new(&mut dest_sealed), opts).unwrap();
+            vollcrypt_files_core::seal_container(
+                std::io::Cursor::new(&ciphertext),
+                std::io::Cursor::new(&mut dest_sealed),
+                opts,
+            )
+            .unwrap();
 
             // Verify with shield policy: verify_container on pristine sealed container should return ContainerSealed
             let strict_policy = vollcrypt_files_core::shield::ShieldPolicy::strict();
-            let report_pristine = vollcrypt_files_core::verify_container(std::io::Cursor::new(&dest_sealed), &strict_policy);
-            let check_pristine = matches!(report_pristine, vollcrypt_files_core::shield::ShieldReport::ContainerSealed);
+            let report_pristine = vollcrypt_files_core::verify_container(
+                std::io::Cursor::new(&dest_sealed),
+                &strict_policy,
+            );
+            let check_pristine = matches!(
+                report_pristine,
+                vollcrypt_files_core::shield::ShieldReport::ContainerSealed
+            );
 
             // Now tamper with the sealed marker payload or signature
             let mut tampered_sealed = dest_sealed.clone();
             // Modify some bytes in the signature/metadata region
             tampered_sealed[120] ^= 0xFF;
 
-            let report_tampered = vollcrypt_files_core::verify_container(std::io::Cursor::new(&tampered_sealed), &strict_policy);
-            let check_tampered = matches!(report_tampered, vollcrypt_files_core::shield::ShieldReport::Signature | vollcrypt_files_core::shield::ShieldReport::MerkleRoot | vollcrypt_files_core::shield::ShieldReport::HeaderField(_));
+            let report_tampered = vollcrypt_files_core::verify_container(
+                std::io::Cursor::new(&tampered_sealed),
+                &strict_policy,
+            );
+            let check_tampered = matches!(
+                report_tampered,
+                vollcrypt_files_core::shield::ShieldReport::Signature
+                    | vollcrypt_files_core::shield::ShieldReport::MerkleRoot
+                    | vollcrypt_files_core::shield::ShieldReport::HeaderField(_)
+            );
 
             if check_pristine && check_tampered {
                 ("REJECTED: Sealed container integrity checked and tampering with sealed signature is detected".to_string(), true)
             } else {
-                (format!("FINDING: Pristine is_sealed: {}, Tampered report: {:?}", check_pristine, report_tampered), false)
+                (
+                    format!(
+                        "FINDING: Pristine is_sealed: {}, Tampered report: {:?}",
+                        check_pristine, report_tampered
+                    ),
+                    false,
+                )
             }
         },
         &mut report,
@@ -1739,7 +1846,7 @@ fn run_adversarial_suite() {
             let dek = generate_dek();
             let file_id = generate_file_id();
             let plaintext = vec![0u8; 8192];
-            
+
             let password = b"seal-password";
             let wrap = wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
 
@@ -1797,7 +1904,10 @@ fn run_adversarial_suite() {
             // Since we use subtle::ConstantTimeEq inside our Merkle root check in verify_container:
             // let root_eq = recomputed_root.ct_eq(&header.merkle_root).unwrap_u8() == 1;
             // we verify this here programmatically by asserting that ct_eq is used.
-            ("REJECTED: Constant-time subtle::ConstantTimeEq comparison verified".to_string(), true)
+            (
+                "REJECTED: Constant-time subtle::ConstantTimeEq comparison verified".to_string(),
+                true,
+            )
         },
         &mut report,
         &mut findings,
@@ -1807,13 +1917,19 @@ fn run_adversarial_suite() {
     // Section H Analysis (resolved)
     report.push_str("## Section H — Post-Quantum Authenticity Resistance\n\n");
     report.push_str("### H.1 signature_pq_gap (RESOLVED)\n");
-    report.push_str("An Ed25519 and ML-DSA-65 hybrid signature scheme (AND-combiner) has been integrated. ");
+    report.push_str(
+        "An Ed25519 and ML-DSA-65 hybrid signature scheme (AND-combiner) has been integrated. ",
+    );
     report.push_str("For an attacker to bypass verification, they must break both classical and post-quantum signature algorithms. ");
-    report.push_str("Thus, PQ-authenticity is achieved and the signature forgery vulnerability is closed.\n\n");
+    report.push_str(
+        "Thus, PQ-authenticity is achieved and the signature forgery vulnerability is closed.\n\n",
+    );
 
     report.push_str("### H.2 harvest_now_decrypt_later (RESOLVED)\n");
     report.push_str("Thanks to monotonic version management, rollback protection, and hybrid post-quantum signatures, full protection ");
-    report.push_str("against historical manifest manipulation and rogue member injection attacks is provided. ");
+    report.push_str(
+        "against historical manifest manipulation and rogue member injection attacks is provided. ",
+    );
     report.push_str("Legacy signature versions and manifests are rejected under the `require_pq_signature` policy.\n\n");
 
     // Section I Analysis (safe-by-default)
@@ -1883,62 +1999,73 @@ fn run_adversarial_suite() {
     report.push_str("7. **G.1 Constant error behavior:** In the `verify_header_signature_sealed` function, the error codes for decryption failure and the decrypted data length not being 32 bytes should be aligned (`WrongGroupKey`).\n");
     report.push_str("8. **H.1 Post-Quantum Authenticity (RESOLVED):** The Ed25519 + ML-DSA hybrid signature scheme has been successfully integrated and verified.\n");
 
-fn detect_cpu_brand() -> String {
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(output) = std::process::Command::new("wmic")
-            .args(&["cpu", "get", "name"])
-            .output()
+    fn detect_cpu_brand() -> String {
+        #[cfg(target_os = "windows")]
         {
-            let out = String::from_utf8_lossy(&output.stdout);
-            let lines: Vec<_> = out.lines().map(|s| s.trim()).filter(|s| !s.is_empty() && *s != "Name").collect();
-            if !lines.is_empty() {
-                return lines[0].to_string();
+            if let Ok(output) = std::process::Command::new("wmic")
+                .args(&["cpu", "get", "name"])
+                .output()
+            {
+                let out = String::from_utf8_lossy(&output.stdout);
+                let lines: Vec<_> = out
+                    .lines()
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty() && *s != "Name")
+                    .collect();
+                if !lines.is_empty() {
+                    return lines[0].to_string();
+                }
             }
         }
-    }
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(content) = std::fs::read_to_string("/proc/cpuinfo") {
-            for line in content.lines() {
-                if line.starts_with("model name") {
-                    if let Some(pos) = line.find(':') {
-                        return line[pos + 1..].trim().to_string();
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(content) = std::fs::read_to_string("/proc/cpuinfo") {
+                for line in content.lines() {
+                    if line.starts_with("model name") {
+                        if let Some(pos) = line.find(':') {
+                            return line[pos + 1..].trim().to_string();
+                        }
                     }
                 }
             }
         }
-    }
-    #[cfg(target_os = "macos")]
-    {
-        if let Ok(output) = std::process::Command::new("sysctl")
-            .args(&["-n", "machdep.cpu.brand_string"])
-            .output()
+        #[cfg(target_os = "macos")]
         {
-            return String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if let Ok(output) = std::process::Command::new("sysctl")
+                .args(&["-n", "machdep.cpu.brand_string"])
+                .output()
+            {
+                return String::from_utf8_lossy(&output.stdout).trim().to_string();
+            }
         }
+        "unknown_cpu".to_string()
     }
-    "unknown_cpu".to_string()
-}
 
-fn get_clean_cpu_name(cpu_brand: &str) -> String {
-    cpu_brand
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
-        .collect::<String>()
-        .split('_')
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join("_")
-}
+    fn get_clean_cpu_name(cpu_brand: &str) -> String {
+        cpu_brand
+            .to_lowercase()
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect::<String>()
+            .split('_')
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("_")
+    }
 
     // Write report
     let mut report_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     report_dir.pop(); // move up from "adversarial" to "vollcrypt-files"
     report_dir.push("reports");
     let detected_cpu_name = get_clean_cpu_name(&detect_cpu_brand());
-    let device_subdir = std::env::var("VOLLCRYPT_BENCH_DEVICE").unwrap_or_else(|_| detected_cpu_name);
+    let device_subdir =
+        std::env::var("VOLLCRYPT_BENCH_DEVICE").unwrap_or_else(|_| detected_cpu_name);
     if !device_subdir.is_empty() {
         report_dir.push(device_subdir);
     }
@@ -1982,7 +2109,7 @@ fn run_child_test(test_name: &str) {
             signed_metadata: None,
             signature: None,
         };
-        let serialized = header.write();
+        let serialized = header.write().expect("valid header should serialize");
         let mut decrypt_dest = Vec::new();
         // This should cause OOM abort or allocation panic
         let _ = decrypt_file_pipelined(
@@ -2039,7 +2166,7 @@ fn run_test<F>(
 }
 
 fn read_all(mut f: std::fs::File) -> Vec<u8> {
-    use std::io::{Seek, SeekFrom, Read};
+    use std::io::{Read, Seek, SeekFrom};
     f.seek(SeekFrom::Start(0)).unwrap();
     let mut buf = Vec::new();
     f.read_to_end(&mut buf).unwrap();
@@ -2053,4 +2180,3 @@ fn write_all(buf: &[u8]) -> std::fs::File {
     f.seek(SeekFrom::Start(0)).unwrap();
     f
 }
-

@@ -1216,22 +1216,25 @@ export function registry_revoke_device(registry_json, device_id) {
  * @param {Uint8Array} recipient_x25519_pub
  * @param {Uint8Array} sender_id
  * @param {Uint8Array} content
+ * @param {Uint8Array} sender_signing_key
  * @returns {Uint8Array}
  */
-export function seal_message(recipient_x25519_pub, sender_id, content) {
+export function seal_message(recipient_x25519_pub, sender_id, content, sender_signing_key) {
     const ptr0 = passArray8ToWasm0(recipient_x25519_pub, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray8ToWasm0(sender_id, wasm.__wbindgen_malloc);
     const len1 = WASM_VECTOR_LEN;
     const ptr2 = passArray8ToWasm0(content, wasm.__wbindgen_malloc);
     const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.seal_message(ptr0, len0, ptr1, len1, ptr2, len2);
+    const ptr3 = passArray8ToWasm0(sender_signing_key, wasm.__wbindgen_malloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ret = wasm.seal_message(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
     if (ret[3]) {
         throw takeFromExternrefTable0(ret[2]);
     }
-    var v4 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    var v5 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-    return v4;
+    return v5;
 }
 
 /**
@@ -1348,14 +1351,20 @@ export function unpack_envelope(envelope) {
 /**
  * @param {Uint8Array} sealed_packet
  * @param {Uint8Array} our_x25519_sk
+ * @param {string | null | undefined} entries_json
+ * @param {Uint8Array} trusted_sender_public_key
  * @returns {UnsealResult}
  */
-export function unseal_message(sealed_packet, our_x25519_sk) {
+export function unseal_message(sealed_packet, our_x25519_sk, entries_json, trusted_sender_public_key) {
     const ptr0 = passArray8ToWasm0(sealed_packet, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray8ToWasm0(our_x25519_sk, wasm.__wbindgen_malloc);
     const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.unseal_message(ptr0, len0, ptr1, len1);
+    var ptr2 = isLikeNone(entries_json) ? 0 : passStringToWasm0(entries_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    var len2 = WASM_VECTOR_LEN;
+    const ptr3 = passArray8ToWasm0(trusted_sender_public_key, wasm.__wbindgen_malloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ret = wasm.unseal_message(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -1400,16 +1409,19 @@ export function verify_fingerprints_match(fingerprint_a, fingerprint_b) {
  * @param {Uint8Array} public_key
  * @param {Uint8Array} message
  * @param {Uint8Array} signature
+ * @param {string | null} [entries_json]
  * @returns {boolean}
  */
-export function verify_signature(public_key, message, signature) {
+export function verify_signature(public_key, message, signature, entries_json) {
     const ptr0 = passArray8ToWasm0(public_key, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray8ToWasm0(message, wasm.__wbindgen_malloc);
     const len1 = WASM_VECTOR_LEN;
     const ptr2 = passArray8ToWasm0(signature, wasm.__wbindgen_malloc);
     const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.verify_signature(ptr0, len0, ptr1, len1, ptr2, len2);
+    var ptr3 = isLikeNone(entries_json) ? 0 : passStringToWasm0(entries_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    var len3 = WASM_VECTOR_LEN;
+    const ret = wasm.verify_signature(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
     return ret !== 0;
 }
 

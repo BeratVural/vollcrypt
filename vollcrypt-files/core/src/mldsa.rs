@@ -1,7 +1,7 @@
-use ml_dsa::{MlDsa65, SigningKey, VerifyingKey, Signature, ExpandedSigningKey, Generate};
-use ml_dsa::signature::{Verifier, Keypair};
-use zeroize::Zeroize;
 use getrandom::SysRng;
+use ml_dsa::signature::{Keypair, Verifier};
+use ml_dsa::{ExpandedSigningKey, Generate, MlDsa65, Signature, SigningKey, VerifyingKey};
+use zeroize::Zeroize;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MlDsa65PublicKey(pub [u8; 1952]);
@@ -40,13 +40,16 @@ pub fn mldsa_keypair_generate() -> (MlDsa65PublicKey, MlDsa65SecretKey) {
 }
 
 pub fn mldsa_sign(sk: &MlDsa65SecretKey, message: &[u8]) -> MlDsa65Signature {
-    let enc_sk = hybrid_array::Array::try_from(sk.0.as_slice()).expect("Invalid secret key bytes size");
+    let enc_sk =
+        hybrid_array::Array::try_from(sk.0.as_slice()).expect("Invalid secret key bytes size");
     #[allow(deprecated)]
     let esk = ExpandedSigningKey::<MlDsa65>::from_expanded(&enc_sk);
-    
+
     let mut rng = SysRng;
-    let sig = esk.sign_randomized(message, &[], &mut rng).expect("ML-DSA signature generation failed");
-    
+    let sig = esk
+        .sign_randomized(message, &[], &mut rng)
+        .expect("ML-DSA signature generation failed");
+
     let mut sig_bytes = [0u8; 3309];
     sig_bytes.copy_from_slice(sig.encode().as_slice());
     MlDsa65Signature(sig_bytes)

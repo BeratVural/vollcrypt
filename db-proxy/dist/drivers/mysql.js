@@ -236,16 +236,17 @@ function handleMysqlConnection(clientSocket, options) {
             }
             if (command === 0x03 || command === 0x16) { // COM_QUERY or COM_STMT_PREPARE
                 const query = data.toString('utf8', 5, 4 + packetLen);
-                if (!options.noWaf) {
-                    try {
+                try {
+                    if (!options.noWaf) {
                         (0, waf_js_1.validateQuery)(query, currentRole);
                     }
-                    catch (err) {
-                        options.logSiem('WAF_MYSQL_BLOCK', 9, `MySQL WAF violation blocked: ${err.message}`);
-                        const errPacket = serializeMysqlError(err.message, 1142, '42000');
-                        clientSocket.write(errPacket);
-                        return; // Halt and prevent forwarding to the backend DB
-                    }
+                    (0, waf_js_1.ensureTenantScopedQuery)(query, currentTenantId);
+                }
+                catch (err) {
+                    options.logSiem('WAF_MYSQL_BLOCK', 9, `MySQL WAF violation blocked: ${err.message}`);
+                    const errPacket = serializeMysqlError(err.message, 1142, '42000');
+                    clientSocket.write(errPacket);
+                    return; // Halt and prevent forwarding to the backend DB
                 }
                 try {
                     currentTable = (0, waf_js_1.extractTableName)(query);
@@ -274,7 +275,7 @@ function handleMysqlConnection(clientSocket, options) {
     clientSocket.on('close', () => {
         backendSocket.destroy();
     });
-    clientSocket.on('close', () => {
+    backendSocket.on('close', () => {
         clientSocket.destroy();
     });
 }

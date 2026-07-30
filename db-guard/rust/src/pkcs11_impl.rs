@@ -79,17 +79,9 @@ pub fn decrypt_with_hsm(
         }
         let key_handle = keys[0];
 
-        let mut iv = [0u8; 16];
-        let actual_ciphertext = if ciphertext.len() > 16 {
-            iv.copy_from_slice(&ciphertext[0..16]);
-            &ciphertext[16..]
-        } else {
-            ciphertext
-        };
-
-        let mechanism = Mechanism::AesCbcPad(iv);
+        let mechanism = Mechanism::AesKeyWrapPad;
         let decrypted = session
-            .decrypt(&mechanism, key_handle, actual_ciphertext)
+            .decrypt(&mechanism, key_handle, ciphertext)
             .map_err(|e| format!("PKCS#11 decryption failed: {}", e))?;
 
         Ok(decrypted)

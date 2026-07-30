@@ -3,6 +3,34 @@ import { validateQuery } from '../waf.js';
 import { decryptValue, decryptWithSecurity, dbGuardContextStore } from '@vollcrypt/db-guard';
 import { getRbacConfig, resolveUserContext } from '../auth.js';
 
+function mongoCommandHasTenantValue(value: any, tenantId: string): boolean {
+  if (!value || typeof value !== 'object') return false;
+  if (Array.isArray(value)) {
+    return value.some((item) => mongoCommandHasTenantValue(item, tenantId));
+  }
+
+  for (const [key, nested] of Object.entries(value)) {
+    if ((key === 'tenant_id' || key === 'tenantId') && nested === tenantId) {
+      return true;
+    }
+    if (nested && typeof nested === 'object' && mongoCommandHasTenantValue(nested, tenantId)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function ensureTenantScopedMongoCommand(commandDoc: any, tenantId: string | undefined): void {
+  if (!tenantId || !commandDoc || typeof commandDoc !== 'object') return;
+  const commandName = Object.keys(commandDoc)[0];
+  if (!commandName) return;
+  if (!/^(find|aggregate|update|delete|findAndModify|count|distinct)$/i.test(commandName)) return;
+
+  if (!mongoCommandHasTenantValue(commandDoc, tenantId)) {
+    throw new Error('Tenant isolation required: MongoDB command must include tenant_id or tenantId matching this connection');
+  }
+}
+
 export function parseBson(buf: Buffer, offset: number = 0): { value: any; nextOffset: number } {
   const size = buf.readInt32LE(offset);
   const end = offset + size;
@@ -322,8 +350,13 @@ export function handleMongoConnection(
                   }
                 }
               }
+              ensureTenantScopedMongoCommand(commandDoc, currentTenantId);
             } catch (e) {
-              // Ignore BSON parsing error in incoming request, WAF might still handle it
+              const msg = (e as Error).message || 'MongoDB request parsing failed';
+              options.logSiem('WAF_MONGO_BLOCK', 9, `MongoDB request blocked: ${msg}`);
+              const errPacket = serializeMongoError(msg, 13);
+              clientSocket.write(errPacket);
+              return;
             }
           }
         }
@@ -363,7 +396,7 @@ export function handleMongoConnection(
   clientSocket.on('close', () => {
     backendSocket.destroy();
   });
-  clientSocket.on('close', () => {
+  backendSocket.on('close', () => {
     clientSocket.destroy();
   });
 }

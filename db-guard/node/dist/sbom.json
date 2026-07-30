@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:54f5fdbd-84b0-47fe-95c1-e86fe565dcf8",
+  "serialNumber": "urn:uuid:db080136-0789-4e33-a82e-fc47752cdd1d",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-07-09T19:07:03.950Z",
+    "timestamp": "2026-07-30T23:01:03.918Z",
     "tools": [
       {
         "vendor": "Vollcrypt",
@@ -29,11 +29,11 @@
         },
         {
           "alg": "SHA-256",
-          "content": "43e818adf60173644896298637f47b01d5819b17eda46eaa32d0c7d64724d012"
+          "content": "4862bab756bdd466ec223af604079ff7e9bef662b130f8a812e534db8b948d74"
         },
         {
           "alg": "SHA-256",
-          "content": "33c313c9195a9e00099652c3e8fac9eac169ac3b94088222fbe97e7a2e51442a"
+          "content": "1c2540378aa0b5a1332294f006dbb3fe83c1220401d2fc2a3c34baf2e93603ef"
         },
         {
           "alg": "SHA-256",
@@ -41,15 +41,15 @@
         },
         {
           "alg": "SHA-256",
-          "content": "0b660e3eafcc27a78d5c97c7d34837a25c68295660a3d1c7da0ae8e0a676bfb6"
+          "content": "a2089e26a94ac2114621a09d96c6adcf802fee66b7887ce769a200ef15f59114"
         },
         {
           "alg": "SHA-256",
-          "content": "1363416c7c4ce5549331a13c43f89c8cba2865b26cac8e699b4504c48c29b049"
+          "content": "ce12dea69edc5266d2de6d23cce82823203bc75c90cefa77fab866cac9dd6527"
         },
         {
           "alg": "SHA-256",
-          "content": "fac1fd60cc16c2dafa9daf234177fd2f17d41cf1015d4fcd1821adb2cdbdb970"
+          "content": "d93279ca7c4d10fc6bc23e84c23d370a10d7f7e5fbfabfe091076b5caf93cbb6"
         },
         {
           "alg": "SHA-256",
@@ -73,7 +73,7 @@
         },
         {
           "alg": "SHA-256",
-          "content": "1619f068398e57c2044457d18d24ee1c626b54e12153246093d4c51add64368c"
+          "content": "67765c43ac82004e7d8a17e0233b5aa6e15f27fa6a947355c2766196f3a9f68b"
         },
         {
           "alg": "SHA-256",
@@ -89,15 +89,15 @@
         },
         {
           "alg": "SHA-256",
-          "content": "de57df0c3fc6657a996c804d6deee6ff83f889f457c82f55ea35064df6372eab"
+          "content": "c0e92f7299e7da1d777b01a5961e2bc963324c2e004bcd3688d3d59bba5e1428"
         },
         {
           "alg": "SHA-256",
-          "content": "dbe2dce83e417dc20d476e5bd476e31c3cf43e58fd363011a77dbc56ab82386f"
+          "content": "56513517e79f7a43b712965e9836dd8540cb48a7a94fd6699ccad30883f4e4a4"
         },
         {
           "alg": "SHA-256",
-          "content": "390eb8dbf9f2eab968445dadc43e1dfa6a13217851aa2b5138a5215059c487ed"
+          "content": "4da6cdea7edb7cc7930d2c58147a9bdab229060fc8ca9fb1fe5b414333ddc749"
         },
         {
           "alg": "SHA-256",
@@ -119,30 +119,6 @@
   "components": [
     {
       "type": "library",
-      "name": "@prisma/client",
-      "version": ">=4.7.0",
-      "purl": "pkg:npm/@prisma/client@4.7.0"
-    },
-    {
-      "type": "library",
-      "name": "mongoose",
-      "version": ">=6.0.0",
-      "purl": "pkg:npm/mongoose@6.0.0"
-    },
-    {
-      "type": "library",
-      "name": "drizzle-orm",
-      "version": ">=0.28.0",
-      "purl": "pkg:npm/drizzle-orm@0.28.0"
-    },
-    {
-      "type": "library",
-      "name": "typeorm",
-      "version": ">=0.3.0",
-      "purl": "pkg:npm/typeorm@0.3.0"
-    },
-    {
-      "type": "library",
       "name": "@aws-sdk/client-kms",
       "version": ">=3.0.0",
       "purl": "pkg:npm/@aws-sdk/client-kms@3.0.0"
@@ -155,6 +131,24 @@
     },
     {
       "type": "library",
+      "name": "@prisma/client",
+      "version": ">=4.7.0",
+      "purl": "pkg:npm/@prisma/client@4.7.0"
+    },
+    {
+      "type": "library",
+      "name": "drizzle-orm",
+      "version": ">=0.28.0",
+      "purl": "pkg:npm/drizzle-orm@0.28.0"
+    },
+    {
+      "type": "library",
+      "name": "mongoose",
+      "version": ">=6.0.0",
+      "purl": "pkg:npm/mongoose@6.0.0"
+    },
+    {
+      "type": "library",
       "name": "node-vault",
       "version": ">=0.9.0",
       "purl": "pkg:npm/node-vault@0.9.0"
@@ -164,6 +158,12 @@
       "name": "pkcs11js",
       "version": ">=1.0.0",
       "purl": "pkg:npm/pkcs11js@1.0.0"
+    },
+    {
+      "type": "library",
+      "name": "typeorm",
+      "version": ">=0.3.0",
+      "purl": "pkg:npm/typeorm@0.3.0"
     },
     {
       "type": "library",

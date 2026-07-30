@@ -1,5 +1,5 @@
 import * as net from 'net';
-import { validateQuery, extractProjectionColumns, extractTableName } from '../waf.js';
+import { validateQuery, ensureTenantScopedQuery, extractProjectionColumns, extractTableName } from '../waf.js';
 import { decryptValue, decryptWithSecurity, dbGuardContextStore } from '@vollcrypt/db-guard';
 import { getRbacConfig, resolveUserContext } from '../auth.js';
 
@@ -251,15 +251,16 @@ export function handleMysqlConnection(
 
       if (command === 0x03 || command === 0x16) { // COM_QUERY or COM_STMT_PREPARE
         const query = data.toString('utf8', 5, 4 + packetLen);
-        if (!options.noWaf) {
-          try {
+        try {
+          if (!options.noWaf) {
             validateQuery(query, currentRole);
-          } catch (err: any) {
+          }
+          ensureTenantScopedQuery(query, currentTenantId);
+        } catch (err: any) {
             options.logSiem('WAF_MYSQL_BLOCK', 9, `MySQL WAF violation blocked: ${err.message}`);
             const errPacket = serializeMysqlError(err.message, 1142, '42000');
             clientSocket.write(errPacket);
-            return; // Halt and prevent forwarding to the backend DB
-          }
+          return; // Halt and prevent forwarding to the backend DB
         }
         try {
           currentTable = extractTableName(query);
@@ -288,7 +289,7 @@ export function handleMysqlConnection(
   clientSocket.on('close', () => {
     backendSocket.destroy();
   });
-  clientSocket.on('close', () => {
+  backendSocket.on('close', () => {
     clientSocket.destroy();
   });
 }

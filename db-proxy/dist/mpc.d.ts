@@ -1,5 +1,5 @@
 /**
- * Reconstructs the original 32-byte Data Encryption Key (DEK)
- * using a threshold XOR-based secret sharing scheme.
+ * Reconstructs a DEK from single-process XOR key-split shares.
+ * This is an n-of-n compatibility helper; it requires every share and provides no threshold guarantee.
  */
-export declare function reconstructKeyMpc(shares: Buffer[]): Buffer;
+export declare function reconstructKeyFromXorShares(shares: Buffer[]): Buffer;

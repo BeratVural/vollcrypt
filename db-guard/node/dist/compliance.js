@@ -91,7 +91,7 @@ function auditConfiguration(config) {
         failed.push('NO_DATA_MASKING: Unauthorized decryptions fail closed with raw errors instead of displaying masked indicators.');
     }
     // Check 7: Audit Trail
-    const hasAuditLog = !!config.auditTrailPath || true; // Built-in audit trail
+    const hasAuditLog = !!config.auditTrailPath;
     if (hasAuditLog) {
         passed.push('CRYPTO_AUDIT_LOG: Immutable cryptographic SHA-256 hash chains log every decryption event, preventing auditing tampering.');
     }
@@ -138,7 +138,8 @@ function auditConfiguration(config) {
     if (hasRbac)
         gdprCount += 25;
     gdprCount += 25; // RAM Zeroization always active
-    gdprCount += 25; // Audit Log always active
+    if (hasAuditLog)
+        gdprCount += 25;
     // KVKK (Madde 12): Key custody, blind indexing, RBAC, rate limits
     let kvkkCount = 0;
     if (hasKms)
@@ -161,7 +162,9 @@ function auditConfiguration(config) {
         pciCount += 25;
     if (hasPageLimit)
         pciCount += 25;
-    const summaryText = `This system is configured using AES-256-GCM for field-level encryption, dynamic key routing with automatic RAM zeroization, and secure HKDF-SHA256 blind indexing. Cryptographic validation certifies compliance of the data protection boundaries with GDPR Article 32, KVKK Article 12, and PCI-DSS v4.0 Requirement 3.`;
+    const summaryText = failed.length === 0
+        ? `All automated configuration checks passed for AES-256-GCM field-level encryption, key routing, RAM zeroization, audit logging, and blind indexing. This scorecard is configuration evidence only and is not a regulatory certification.`
+        : `Automated configuration checks found ${failed.length} unmet control(s). This scorecard is not a GDPR, KVKK, PCI-DSS, FIPS, or CMVP certification and must not be presented as one.`;
     return {
         gdprScore: gdprCount,
         kvkkScore: kvkkCount,
@@ -194,7 +197,7 @@ function generateComplianceHtmlReport(config) {
         return `
       <div class="check-card failed">
         <div class="status-badge-container">
-          <span class="badge failed-badge">RECOMMENDED</span>
+          <span class="badge failed-badge">FAILED</span>
         </div>
         <div class="check-content">
           <h3>${title.replace(/_/g, ' ')}</h3>
@@ -209,7 +212,7 @@ function generateComplianceHtmlReport(config) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Vollcrypt Compliance Scorecard</title>
-  <meta name="description" content="Official cryptographic compliance validation report for GDPR, KVKK, and PCI-DSS.">
+  <meta name="description" content="Automated cryptographic configuration scorecard; not a regulatory certification.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -579,7 +582,7 @@ function generateComplianceHtmlReport(config) {
         </div>
         <div class="metadata-box">
           <p>Scan Timestamp: <strong>${dateStr}</strong></p>
-          <p>Verification Standard: <strong>CMVP FIPS 140-3</strong></p>
+          <p>Verification Scope: <strong>Automated Configuration Checks</strong></p>
           <p>Product Version: <strong>0.1.0</strong></p>
         </div>
       </div>
@@ -633,7 +636,7 @@ function generateComplianceHtmlReport(config) {
       <section>
         <div class="section-title">
           <span>Cryptographic Status Checkpoints</span>
-          <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">${scorecard.passedChecks.length} Passed / ${scorecard.failedChecks.length} Recommendations</span>
+          <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">${scorecard.passedChecks.length} Passed / ${scorecard.failedChecks.length} Failed</span>
         </div>
 
         <div class="checks-list">
@@ -648,7 +651,7 @@ function generateComplianceHtmlReport(config) {
     </main>
 
     <footer class="footer-seal">
-      <p>This document constitutes an automated cryptographic verification seal of the database security layer configuration.</p>
+      <p>This document is an automated configuration scorecard and does not constitute regulatory or FIPS certification.</p>
       <p>Verification Signature Hash:</p>
       <p class="seal-hash">VOLLSEAL:${configHash}</p>
     </footer>

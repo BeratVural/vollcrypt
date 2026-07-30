@@ -70,7 +70,41 @@ pub fn verify_signature(
     public_key: Uint8Array,
     message: Uint8Array,
     signature: Uint8Array,
+    entries_json: Option<String>,
 ) -> bool {
+    if let Some(ref json_str) = entries_json {
+        if !json_str.is_empty() {
+            match serde_json::from_str::<Vec<vollcrypt_core::key_log::KeyLogEntry>>(json_str) {
+                Ok(entries) => {
+                    let log = vollcrypt_core::key_log::KeyLog { entries };
+                    if log.verify_chain().is_ok() {
+                        if let Ok(pk_arr) = <&[u8; 32]>::try_from(public_key.as_ref()) {
+                            let mut is_revoked = false;
+                            for entry in &log.entries {
+                                if &entry.public_key == pk_arr
+                                    && entry.action == vollcrypt_core::key_log::KeyAction::Revoke
+                                {
+                                    is_revoked = true;
+                                    break;
+                                }
+                            }
+                            if is_revoked {
+                                return false;
+                            }
+                        } else {
+                            return false;
+                        }
+                    } else {
+                        return false;
+                    }
+                }
+                Err(_) => {
+                    return false;
+                }
+            }
+        }
+    }
+
     vollcrypt_core::verify_signature(public_key.as_ref(), message.as_ref(), signature.as_ref())
 }
 
@@ -206,11 +240,8 @@ pub fn decrypt_aes_gcm_chunked_padded(
 ) -> Result<Buffer> {
     let mut key_copy = key.as_ref().to_vec();
     let aad_ref = aad.as_ref().map(|x| x.as_ref());
-    let res = vollcrypt_core::decrypt_aes256gcm_chunked_padded(
-        &key_copy,
-        ciphertext.as_ref(),
-        aad_ref,
-    );
+    let res =
+        vollcrypt_core::decrypt_aes256gcm_chunked_padded(&key_copy, ciphertext.as_ref(), aad_ref);
     key_copy.zeroize();
     match res {
         Ok(v) => Ok(Buffer::from(v)),
@@ -226,12 +257,8 @@ pub fn derive_pbkdf2(
     key_len: u32,
 ) -> napi::Result<Buffer> {
     let mut password_copy = password.as_ref().to_vec();
-    let res = vollcrypt_core::derive_pbkdf2(
-        &password_copy,
-        salt.as_ref(),
-        iterations,
-        key_len as usize,
-    );
+    let res =
+        vollcrypt_core::derive_pbkdf2(&password_copy, salt.as_ref(), iterations, key_len as usize);
     password_copy.zeroize();
     let key = res.map_err(|e| napi::Error::from_reason(e))?;
     Ok(Buffer::from(key))
@@ -757,34 +784,68 @@ pub fn seal_message(
     recipient_x25519_pub: Uint8Array,
     sender_id: Uint8Array,
     content: Uint8Array,
+    sender_signing_key: Uint8Array,
 ) -> Result<Buffer> {
     if recipient_x25519_pub.len() != 32 {
         return Err(Error::from_reason(
             "recipient_x25519_pub must be 32 bytes".to_string(),
         ));
     }
+    if sender_signing_key.len() != 32 {
+        return Err(Error::from_reason(
+            "sender_signing_key must be 32 bytes".to_string(),
+        ));
+    }
 
     let mut pub_bytes = [0u8; 32];
     pub_bytes.copy_from_slice(recipient_x25519_pub.as_ref());
 
-    match vollcrypt_core::sealed_sender::seal(&pub_bytes, sender_id.as_ref(), content.as_ref()) {
+    let mut sk_bytes = [0u8; 32];
+    sk_bytes.copy_from_slice(sender_signing_key.as_ref());
+
+    let res = vollcrypt_core::sealed_sender::seal(
+        &pub_bytes,
+        sender_id.as_ref(),
+        content.as_ref(),
+        &sk_bytes,
+    );
+    sk_bytes.zeroize();
+
+    match res {
         Ok(sealed) => Ok(Buffer::from(sealed)),
         Err(e) => Err(Error::from_reason(format!("Sealing failed: {:?}", e))),
     }
 }
 
 #[napi]
-pub fn unseal_message(sealed_packet: Uint8Array, our_x25519_sk: Uint8Array) -> Result<Vec<Buffer>> {
+pub fn unseal_message(
+    sealed_packet: Uint8Array,
+    our_x25519_sk: Uint8Array,
+    entries_json: Option<String>,
+    trusted_sender_public_key: Uint8Array,
+) -> Result<Vec<Buffer>> {
     if our_x25519_sk.len() != 32 {
         return Err(Error::from_reason(
             "our_x25519_sk must be 32 bytes".to_string(),
         ));
     }
+    if trusted_sender_public_key.len() != 32 {
+        return Err(Error::from_reason(
+            "trusted_sender_public_key must be 32 bytes".to_string(),
+        ));
+    }
 
     let mut sk_bytes = [0u8; 32];
     sk_bytes.copy_from_slice(our_x25519_sk.as_ref());
+    let mut trusted_pk = [0u8; 32];
+    trusted_pk.copy_from_slice(trusted_sender_public_key.as_ref());
 
-    let res = vollcrypt_core::sealed_sender::unseal(sealed_packet.as_ref(), &sk_bytes);
+    let res = vollcrypt_core::sealed_sender::unseal(
+        sealed_packet.as_ref(),
+        &sk_bytes,
+        entries_json.as_deref(),
+        Some(&trusted_pk),
+    );
     sk_bytes.zeroize();
     match res {
         Ok((sender_id, content)) => Ok(vec![Buffer::from(sender_id), Buffer::from(content)]),
@@ -861,6 +922,8 @@ pub fn key_log_current_key(entries_json: String, user_id: Uint8Array) -> Result<
         .map_err(|e| Error::from_reason(format!("Invalid JSON array: {}", e)))?;
 
     let log = vollcrypt_core::key_log::KeyLog { entries };
+    log.verify_chain()
+        .map_err(|e| Error::from_reason(e.to_string()))?;
     match log.current_key_for(user_id.as_ref()) {
         Some(k) => Ok(Some(Buffer::from(k.to_vec()))),
         None => Ok(None),
@@ -877,6 +940,8 @@ pub fn key_log_key_at_timestamp(
         .map_err(|e| Error::from_reason(format!("Invalid JSON array: {}", e)))?;
 
     let log = vollcrypt_core::key_log::KeyLog { entries };
+    log.verify_chain()
+        .map_err(|e| Error::from_reason(e.to_string()))?;
     match log.key_at_timestamp(user_id.as_ref(), timestamp as u64) {
         Some(k) => Ok(Some(Buffer::from(k.to_vec()))),
         None => Ok(None),
@@ -890,4 +955,94 @@ pub fn key_log_compute_entry_hash(entry_json: String) -> Result<Buffer> {
 
     let hash = entry.compute_hash();
     Ok(Buffer::from(hash.to_vec()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use napi::bindgen_prelude::Uint8Array;
+    use vollcrypt_core::key_log::{create_entry, KeyAction, GENESIS_HASH};
+    use vollcrypt_core::keys::{generate_ed25519_keypair, sign_message};
+
+    #[test]
+    fn test_verify_signature_revocation() {
+        let (sk, pk) = generate_ed25519_keypair();
+        let message = b"Hello revoked world!";
+        let signature = sign_message(&sk, message).unwrap();
+
+        let pk_ua = Uint8Array::from(pk.clone());
+        let msg_ua = Uint8Array::from(message.to_vec());
+        let sig_ua = Uint8Array::from(signature);
+
+        // Case 1: No entries_json passed
+        assert!(verify_signature(
+            pk_ua.clone(),
+            msg_ua.clone(),
+            sig_ua.clone(),
+            None
+        ));
+
+        // Case 2: Empty entries_json passed
+        assert!(verify_signature(
+            pk_ua.clone(),
+            msg_ua.clone(),
+            sig_ua.clone(),
+            Some("".to_string())
+        ));
+
+        // Case 3: Key log without revocation
+        let mut pk_arr = [0u8; 32];
+        pk_arr.copy_from_slice(&pk);
+        let mut sk_arr = [0u8; 32];
+        sk_arr.copy_from_slice(&sk);
+
+        let entry = create_entry(
+            b"alice",
+            &pk_arr,
+            1000,
+            &GENESIS_HASH,
+            KeyAction::Add,
+            &sk_arr,
+        )
+        .unwrap();
+        let entries = vec![entry];
+        let entries_json = serde_json::to_string(&entries).unwrap();
+
+        assert!(verify_signature(
+            pk_ua.clone(),
+            msg_ua.clone(),
+            sig_ua.clone(),
+            Some(entries_json)
+        ));
+
+        // Case 4: Key log with active revocation
+        let entry_add = create_entry(
+            b"alice",
+            &pk_arr,
+            1000,
+            &GENESIS_HASH,
+            KeyAction::Add,
+            &sk_arr,
+        )
+        .unwrap();
+        let add_hash = entry_add.compute_hash();
+        let entry_revoke = create_entry(
+            b"alice",
+            &pk_arr,
+            2000,
+            &add_hash,
+            KeyAction::Revoke,
+            &sk_arr,
+        )
+        .unwrap();
+        let entries = vec![entry_add, entry_revoke];
+        let entries_json_revoked = serde_json::to_string(&entries).unwrap();
+
+        assert!(!verify_signature(
+            pk_ua.clone(),
+            msg_ua.clone(),
+            sig_ua.clone(),
+            Some(entries_json_revoked)
+        ));
+    }
 }

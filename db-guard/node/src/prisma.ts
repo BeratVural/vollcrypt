@@ -76,7 +76,12 @@ export const prismaDbGuard = (options: PrismaDbGuardOptions, resolvedKeys?: Reco
   const activeKey = keys ? keys[activeVersion] : undefined;
 
   const resolveTenantKeysAndActiveKey = async (tenantId: string | undefined): Promise<{ keys: Record<string, Buffer>; activeKey: Buffer; activeVersion: string }> => {
-    if (isBreakGlassActive()) {
+    if (options.multiTenant && tenantId && isBreakGlassActive(tenantId)) {
+      const bgKey = getBreakGlassKey(tenantId);
+      if (bgKey) {
+        return { keys: { '1': bgKey }, activeKey: bgKey, activeVersion: '1' };
+      }
+    } else if (!options.multiTenant && isBreakGlassActive()) {
       const bgKey = getBreakGlassKey();
       if (bgKey) {
         return { keys: { '1': bgKey }, activeKey: bgKey, activeVersion: '1' };

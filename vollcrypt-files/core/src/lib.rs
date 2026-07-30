@@ -1,4 +1,5 @@
 pub mod aead;
+pub mod archive;
 pub mod buffer_pool;
 pub mod chunk;
 pub mod constants;
@@ -20,20 +21,24 @@ pub mod provider;
 pub mod random;
 pub mod recipient;
 pub mod resolver;
+pub mod shield;
 pub mod signature;
 pub mod signing;
+pub mod sovereign;
+pub mod threshold;
 #[cfg(target_arch = "wasm32")]
 pub mod web_crypto;
 pub mod wrap;
 pub mod writer;
-pub mod shield;
-pub mod sovereign;
-pub mod threshold;
-pub mod archive;
 
-pub use shield::{ReleaseMode, SignaturePolicy, OnTamper, ShieldPolicy, ShieldReport, verify_container};
-pub use sovereign::{SealMode, SealOptions, SealedInspection, is_sealed, inspect_sealed, seal_container};
-pub use archive::{pack_directory, unpack_directory, is_vda_archive, derive_file_key};
+pub use archive::{derive_file_key, is_vda_archive, pack_directory, unpack_directory};
+pub use shield::{
+    verify_container, OnTamper, ReleaseMode, ShieldPolicy, ShieldReport, SignaturePolicy,
+};
+pub use sovereign::{
+    inspect_sealed, is_sealed, seal_container, seal_container_in_place, SealMode, SealOptions,
+    SealedInspection,
+};
 
 pub use aead::{
     aes256_gcm_decrypt, aes256_gcm_decrypt_async, aes256_gcm_decrypt_in_place,
@@ -63,13 +68,17 @@ pub use group::{
     wrap_dek_for_group,
 };
 pub use header::{CipherId, Header, Mode, SignedMetadata};
+pub use hybrid_sig::{
+    hybrid_keypair_generate, hybrid_sign, hybrid_verify, HybridPublicKey, HybridSecretKey,
+    HybridSignature,
+};
 pub use kdf::{derive_chunk_keys, derive_chunk_subkey, derive_kek_argon2id, derive_kek_pbkdf2};
 pub use keylog::{KeyLog, KeyLogEntry, KeyLogEntryType};
 pub use keywrap::{aes256_kw_unwrap, aes256_kw_wrap};
 pub use manifest::{
-    detect_equivocation, manifest_head, verify_manifest_with_pin, verify_manifest_with_pin_policy,
-    verify_manifest, EquivocationResult, GroupManifest, Operation, SignedOperation,
-    RollbackCheck, FounderAnchor,
+    detect_equivocation, manifest_head, verify_manifest, verify_manifest_with_pin,
+    verify_manifest_with_pin_policy, EquivocationResult, FounderAnchor, GroupManifest, Operation,
+    RollbackCheck, SignedOperation,
 };
 pub use merkle::{
     bind_root_with_length, check_proof_length, chunk_leaf_hash, chunk_leaf_hash_raw,
@@ -79,8 +88,8 @@ pub use merkle::{
 };
 pub use password::{unwrap_dek_with_password, wrap_dek_with_password, KdfChoice};
 pub use pipelined_io::{
-    decrypt_file_pipelined, decrypt_verified, decrypt_streaming_online,
-    decrypt_file_pipelined_with_policy, decrypt_file_pipelined_async_policy,
+    decrypt_file_pipelined, decrypt_file_pipelined_async_policy,
+    decrypt_file_pipelined_with_policy, decrypt_streaming_online, decrypt_verified,
     encrypt_file_pipelined, PipelinedSignInfo,
 };
 pub use random::{generate_dek, generate_file_id, generate_salt};
@@ -95,12 +104,7 @@ pub use signature::{
     verify_header_signature_sealed_policy, VerificationPolicy,
 };
 pub use signing::{ed25519_keypair_generate, ed25519_sign, ed25519_verify};
-pub use hybrid_sig::{
-    hybrid_keypair_generate, hybrid_sign, hybrid_verify, HybridPublicKey, HybridSecretKey,
-    HybridSignature,
+pub use threshold::{
+    decode_share, encode_share, unwrap_dek_with_threshold, wrap_dek_with_threshold, Share,
 };
 pub use wrap::WrapEntry;
-pub use threshold::{
-    Share, wrap_dek_with_threshold, unwrap_dek_with_threshold, encode_share, decode_share,
-};
-

@@ -9,6 +9,7 @@ exports.generateFingerprint = generateFingerprint;
 exports.evaluateThreatScore = evaluateThreatScore;
 exports.tokenizeSql = tokenizeSql;
 exports.rewriteQuery = rewriteQuery;
+exports.ensureTenantScopedQuery = ensureTenantScopedQuery;
 exports.generateLaplaceNoise = generateLaplaceNoise;
 exports.identifyAggregates = identifyAggregates;
 exports.extractProjectionColumns = extractProjectionColumns;
@@ -39,8 +40,9 @@ const DDL_PATTERNS = [
 function normalizeQuery(query) {
     // 1. Remove multiline comments
     let cleaned = query.replace(/\/\*[\s\S]*?\*\//g, ' ');
-    // 2. Remove single line comments
+    // 2. Remove single line comments, including MySQL '#' comments
     cleaned = cleaned.replace(/--.*$/gm, ' ');
+    cleaned = cleaned.replace(/#.*$/gm, ' ');
     // 3. Collapse multiple whitespaces to single spaces
     return cleaned.replace(/\s+/g, ' ').trim();
 }
@@ -355,6 +357,26 @@ function rewriteQuery(sql, role, tenantId, config) {
     return result;
 }
 /**
+ * Enforces fail-closed tenant scoping for non-PostgreSQL drivers.
+ */
+function ensureTenantScopedQuery(sql, tenantId) {
+    if (!tenantId)
+        return;
+    const normalized = normalizeQuery(sql);
+    if (!/\b(select|update|delete)\b/i.test(normalized))
+        return;
+    const anyTenantPredicate = /\btenant_?id\b\s*=\s*(['"]?)([^'"\s;)]+)\1/i.exec(normalized);
+    if (!anyTenantPredicate) {
+        throw new Error('Tenant isolation required: query must include an explicit tenant_id predicate matching this connection');
+    }
+    if (anyTenantPredicate[2] !== tenantId) {
+        throw new Error('Tenant isolation violation: query tenant_id does not match this connection');
+    }
+    if (/\bor\b/i.test(normalized)) {
+        throw new Error('Tenant isolation violation: OR predicates are not allowed in fail-closed tenant-scoped queries');
+    }
+}
+/**
  * Generates Laplace noise for Differential Privacy.
  */
 function generateLaplaceNoise(scale) {
@@ -509,7 +531,7 @@ function extractProjectionColumns(sql) {
     return projectionItems.map(item => {
         if (item.length === 0)
             return '';
-        // Find alias or column name
+        // Return source expression names, never client-controlled aliases.
         let asIdx = -1;
         let d = 0;
         for (let i = 0; i < item.length; i++) {
@@ -523,10 +545,10 @@ function extractProjectionColumns(sql) {
                 break;
             }
         }
-        if (asIdx !== -1 && item[asIdx + 1]) {
-            return cleanColumnName(item[asIdx + 1]);
+        if (asIdx !== -1 && asIdx > 0) {
+            return cleanColumnName(item[asIdx - 1]);
         }
-        // Check implicit alias
+        // Check implicit alias and return the preceding source token.
         const depth0Indices = [];
         let curDepth = 0;
         for (let i = 0; i < item.length; i++) {
@@ -543,7 +565,8 @@ function extractProjectionColumns(sql) {
             const lastIdx = depth0Indices[depth0Indices.length - 1];
             const lastToken = item[lastIdx];
             if (!['+', '-', '*', '/', 'AND', 'OR'].includes(lastToken.toUpperCase())) {
-                return cleanColumnName(lastToken);
+                const sourceIdx = depth0Indices[depth0Indices.length - 2];
+                return cleanColumnName(item[sourceIdx]);
             }
         }
         // Otherwise, clean the last token of the expression

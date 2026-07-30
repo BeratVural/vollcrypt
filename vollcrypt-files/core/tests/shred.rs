@@ -1,8 +1,8 @@
 use vollcrypt_files_core::{
-    chunk_leaf_hash, crypto_shred_header, decrypt_chunk, hybrid_keypair_generate, encrypt_chunk,
-    generate_dek, generate_file_id, generate_gk, generate_recipient_keypair, wrap_dek_for_group,
-    wrap_key_to_recipient, CipherId, FileFormatError, GroupManifest, HashAlgorithm, Header,
-    MerkleTree, Mode, VERSION,
+    chunk_leaf_hash, crypto_shred_header, decrypt_chunk, encrypt_chunk, generate_dek,
+    generate_file_id, generate_gk, generate_recipient_keypair, hybrid_keypair_generate,
+    wrap_dek_for_group, wrap_key_to_recipient, CipherId, FileFormatError, GroupManifest,
+    HashAlgorithm, Header, MerkleTree, Mode, VERSION,
 };
 
 #[test]
@@ -25,9 +25,7 @@ fn shred_group_key_marks_version() {
         founder_gk_wrap,
     );
 
-    manifest
-        .rotate_group_key(&gk2, &admin_sk, 100)
-        .unwrap();
+    manifest.rotate_group_key(&gk2, &admin_sk, 100).unwrap();
 
     assert!(!manifest.is_version_shredded(1));
     assert!(!manifest.is_version_shredded(2));

@@ -127,13 +127,24 @@ async fn test_async_pipelined_roundtrip() {
 
     // Create a policy for decrypting unsigned legacy files
     let policy_obj = js_sys::Object::new();
-    js_sys::Reflect::set(&policy_obj, &JsValue::from_str("releaseMode"), &JsValue::from_str("verified")).unwrap();
-    js_sys::Reflect::set(&policy_obj, &JsValue::from_str("signature"), &JsValue::from_str("optional")).unwrap();
+    js_sys::Reflect::set(
+        &policy_obj,
+        &JsValue::from_str("releaseMode"),
+        &JsValue::from_str("verified"),
+    )
+    .unwrap();
+    js_sys::Reflect::set(
+        &policy_obj,
+        &JsValue::from_str("signature"),
+        &JsValue::from_str("optional"),
+    )
+    .unwrap();
 
     // Call async decrypt
-    let dec_result_js = decrypt_file_pipelined_async_wasm(&enc_res.ciphertext, &dek, policy_obj.into())
-        .await
-        .unwrap();
+    let dec_result_js =
+        decrypt_file_pipelined_async_wasm(&enc_res.ciphertext, &dek, policy_obj.into())
+            .await
+            .unwrap();
 
     #[derive(serde::Deserialize)]
     struct DecResult {
@@ -168,13 +179,17 @@ fn test_threshold_wrapping() {
     let subset_shares = vec![res.shares[0].clone(), res.shares[1].clone()];
     let subset_shares_js = serde_wasm_bindgen::to_value(&subset_shares).unwrap();
     let wrap_js = serde_wasm_bindgen::to_value(&res.wrap).unwrap();
-    let unwrapped = unwrap_dek_with_threshold_shares(wrap_js, &file_id, subset_shares_js, cipher_suite_id).unwrap();
+    let unwrapped =
+        unwrap_dek_with_threshold_shares(wrap_js, &file_id, subset_shares_js, cipher_suite_id)
+            .unwrap();
     assert_eq!(unwrapped, dek);
 
     // Decrypt with 1 share (insufficient)
     let bad_shares = vec![res.shares[0].clone()];
     let bad_shares_js = serde_wasm_bindgen::to_value(&bad_shares).unwrap();
     let wrap_js2 = serde_wasm_bindgen::to_value(&res.wrap).unwrap();
-    assert!(unwrap_dek_with_threshold_shares(wrap_js2, &file_id, bad_shares_js, cipher_suite_id).is_err());
+    assert!(
+        unwrap_dek_with_threshold_shares(wrap_js2, &file_id, bad_shares_js, cipher_suite_id)
+            .is_err()
+    );
 }
-

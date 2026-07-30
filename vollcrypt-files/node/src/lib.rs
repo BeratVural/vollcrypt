@@ -3,13 +3,13 @@ use napi::{
     Env, Error, Result, Task,
 };
 use napi_derive::napi;
+use vollcrypt_files_core::hybrid_sig::{HybridPublicKey, HybridSecretKey, HybridSignature};
 use vollcrypt_files_core::{
     self, decrypt_chunk as core_decrypt_chunk, encrypt_chunk as core_encrypt_chunk,
     generate_recipient_keypair as core_generate_recipient_keypair,
     unwrap_key_with_recipient_key as core_unwrap_key_with_recipient_key,
     wrap_key_to_recipient as core_wrap_key_to_recipient, RecipientPublicKey, RecipientSecretKey,
 };
-use vollcrypt_files_core::hybrid_sig::{HybridPublicKey, HybridSecretKey, HybridSignature};
 
 fn to_hybrid_pubkey(slice: &[u8], name: &str) -> Result<HybridPublicKey> {
     if slice.len() == 32 {
@@ -742,9 +742,14 @@ pub fn wrap_dek_with_threshold(
     let dek_arr = to_arr32(dek.as_ref(), "dek")?;
     let file_id_arr = to_arr16(file_id.as_ref(), "file_id")?;
 
-    let (core_wrap, core_shares) =
-        vollcrypt_files_core::wrap_dek_with_threshold(&dek_arr, &file_id_arr, t, n, cipher_suite_id)
-            .map_err(|e| Error::from_reason(e.to_string()))?;
+    let (core_wrap, core_shares) = vollcrypt_files_core::wrap_dek_with_threshold(
+        &dek_arr,
+        &file_id_arr,
+        t,
+        n,
+        cipher_suite_id,
+    )
+    .map_err(|e| Error::from_reason(e.to_string()))?;
 
     let shares = core_shares
         .iter()
@@ -769,8 +774,8 @@ pub fn unwrap_dek_with_threshold_shares(
 
     let mut core_shares = Vec::with_capacity(shares.len());
     for s in &shares {
-        let decoded = vollcrypt_files_core::decode_share(s)
-            .map_err(|e| Error::from_reason(e.to_string()))?;
+        let decoded =
+            vollcrypt_files_core::decode_share(s).map_err(|e| Error::from_reason(e.to_string()))?;
         core_shares.push(decoded);
     }
 
@@ -801,8 +806,8 @@ pub fn encode_share(share: ShareJson) -> Result<String> {
 
 #[napi]
 pub fn decode_share(s: String) -> Result<ShareJson> {
-    let core_share = vollcrypt_files_core::decode_share(&s)
-        .map_err(|e| Error::from_reason(e.to_string()))?;
+    let core_share =
+        vollcrypt_files_core::decode_share(&s).map_err(|e| Error::from_reason(e.to_string()))?;
     Ok(ShareJson {
         share_set_id: Buffer::from(core_share.share_set_id.to_vec()),
         t: core_share.t,
@@ -875,7 +880,13 @@ pub fn hybrid_sign(
 ) -> Result<Buffer> {
     let sk_val = to_hybrid_secret_key(sk.as_ref(), "sk")?;
     let pk_val = to_hybrid_pubkey(pk.as_ref(), "pk")?;
-    let sig = vollcrypt_files_core::hybrid_sign(&sk_val, &pk_val, &domain, context.as_ref(), payload.as_ref());
+    let sig = vollcrypt_files_core::hybrid_sign(
+        &sk_val,
+        &pk_val,
+        &domain,
+        context.as_ref(),
+        payload.as_ref(),
+    );
     Ok(Buffer::from(sig.write()))
 }
 
@@ -890,7 +901,13 @@ pub fn hybrid_verify(
     let pk_val = to_hybrid_pubkey(pk.as_ref(), "pk")?;
     let sig_val = HybridSignature::parse(signature.as_ref())
         .map_err(|e| Error::from_reason(format!("Invalid signature: {}", e)))?;
-    Ok(vollcrypt_files_core::hybrid_verify(&pk_val, &domain, context.as_ref(), payload.as_ref(), &sig_val))
+    Ok(vollcrypt_files_core::hybrid_verify(
+        &pk_val,
+        &domain,
+        context.as_ref(),
+        payload.as_ref(),
+        &sig_val,
+    ))
 }
 
 // ==================== GroupManifest Class ====================
@@ -1065,12 +1082,7 @@ impl GroupManifest {
         let admin_sk_arr = to_hybrid_secret_key(admin_sk.as_ref(), "admin_sk")?;
 
         self.inner
-            .shred_group_key(
-                version_to_shred,
-                &reason,
-                &admin_sk_arr,
-                timestamp as u64,
-            )
+            .shred_group_key(version_to_shred, &reason, &admin_sk_arr, timestamp as u64)
             .map_err(|e| Error::from_reason(e.to_string()))
     }
 
@@ -1159,13 +1171,11 @@ fn signed_metadata_to_napi(meta: vollcrypt_files_core::SignedMetadata) -> Signed
             key_log_id,
         } => SignedMetadata {
             kind: "Plain".to_string(),
-            signer_pubkey: Some(Buffer::from(
-                if signer_pubkey.mldsa == [0u8; 1952] {
-                    signer_pubkey.ed25519.to_vec()
-                } else {
-                    signer_pubkey.write()
-                }
-            )),
+            signer_pubkey: Some(Buffer::from(if signer_pubkey.mldsa == [0u8; 1952] {
+                signer_pubkey.ed25519.to_vec()
+            } else {
+                signer_pubkey.write()
+            })),
             timestamp: timestamp as u32,
             key_log_id: Some(Buffer::from(key_log_id.to_vec())),
             sealed_group_id: None,
@@ -1203,13 +1213,11 @@ fn signed_metadata_to_napi(meta: vollcrypt_files_core::SignedMetadata) -> Signed
             timestamp,
         } => SignedMetadata {
             kind: "SovereignSealed".to_string(),
-            signer_pubkey: Some(Buffer::from(
-                if signer_pubkey.mldsa == [0u8; 1952] {
-                    signer_pubkey.ed25519.to_vec()
-                } else {
-                    signer_pubkey.write()
-                }
-            )),
+            signer_pubkey: Some(Buffer::from(if signer_pubkey.mldsa == [0u8; 1952] {
+                signer_pubkey.ed25519.to_vec()
+            } else {
+                signer_pubkey.write()
+            })),
             timestamp: timestamp as u32,
             key_log_id: None,
             sealed_group_id: None,
@@ -1286,7 +1294,8 @@ fn napi_to_signed_metadata(meta: SignedMetadata) -> Result<vollcrypt_files_core:
 
             let mode = meta
                 .sealed_mode
-                .ok_or_else(|| Error::from_reason("Missing sealed_mode"))? as u8;
+                .ok_or_else(|| Error::from_reason("Missing sealed_mode"))?
+                as u8;
 
             let reason = meta
                 .reason
@@ -1419,7 +1428,11 @@ impl HeaderClass {
     #[napi]
     pub fn write(header: HeaderObj) -> Result<Buffer> {
         let core_header = napi_to_header(header)?;
-        Ok(Buffer::from(core_header.write()))
+        Ok(Buffer::from(
+            core_header
+                .write()
+                .map_err(|e| Error::from_reason(e.to_string()))?,
+        ))
     }
 }
 
@@ -1451,7 +1464,11 @@ pub fn rewrap_dek_in_header(
         new_gk_version,
     ) {
         Ok(updated_count) => Ok(RewrapResult {
-            header: Buffer::from(header.write()),
+            header: Buffer::from(
+                header
+                    .write()
+                    .map_err(|e| Error::from_reason(e.to_string()))?,
+            ),
             updated_count: updated_count as u32,
         }),
         Err(e) => Err(Error::from_reason(e.to_string())),
@@ -1464,7 +1481,11 @@ pub fn crypto_shred_header(header_bytes: Uint8Array) -> Result<Buffer> {
         .map_err(|e| Error::from_reason(e.to_string()))?;
 
     vollcrypt_files_core::crypto_shred_header(&mut header);
-    Ok(Buffer::from(header.write()))
+    Ok(Buffer::from(
+        header
+            .write()
+            .map_err(|e| Error::from_reason(e.to_string()))?,
+    ))
 }
 
 // ==================== Signature Plain / Sealed ====================
@@ -1531,17 +1552,29 @@ pub fn sign_header_sealed(
 #[napi]
 pub fn verify_header_signature_plain(header: HeaderObj) -> Result<Buffer> {
     let core_header = napi_to_header(header)?;
-    match vollcrypt_files_core::verify_header_signature_plain(&core_header, vollcrypt_files_core::VerificationPolicy::RequireSigned) {
+    match vollcrypt_files_core::verify_header_signature_plain(
+        &core_header,
+        vollcrypt_files_core::VerificationPolicy::RequireSigned,
+    ) {
         Ok(pubkey) => Ok(Buffer::from(pubkey.write())),
         Err(e) => Err(Error::from_reason(e.to_string())),
     }
 }
 
 #[napi]
-pub fn verify_header_signature_sealed(header: HeaderObj, sealed_gk: Uint8Array, key_log: &KeyLog) -> Result<Buffer> {
+pub fn verify_header_signature_sealed(
+    header: HeaderObj,
+    sealed_gk: Uint8Array,
+    key_log: &KeyLog,
+) -> Result<Buffer> {
     let core_header = napi_to_header(header)?;
     let gk_arr = to_arr32(sealed_gk.as_ref(), "sealed_gk")?;
-    match vollcrypt_files_core::verify_header_signature_sealed(&core_header, &gk_arr, &key_log.inner, vollcrypt_files_core::VerificationPolicy::RequireSigned) {
+    match vollcrypt_files_core::verify_header_signature_sealed(
+        &core_header,
+        &gk_arr,
+        &key_log.inner,
+        vollcrypt_files_core::VerificationPolicy::RequireSigned,
+    ) {
         Ok(pubkey) => Ok(Buffer::from(pubkey.write())),
         Err(e) => Err(Error::from_reason(e.to_string())),
     }
@@ -1874,7 +1907,7 @@ pub struct NapiSealOptions {
 
 #[napi(object)]
 pub struct NapiShieldPolicy {
-    pub release_mode: String, // "verified" | "streaming"
+    pub release_mode: String,      // "verified" | "streaming"
     pub signature: Option<String>, // "required" | "optional"
     pub rollback_pin: Option<u32>,
     pub founder_anchor: Option<bool>,
@@ -1903,18 +1936,30 @@ fn napi_to_shield_policy(policy: NapiShieldPolicy) -> Result<vollcrypt_files_cor
     let release_mode = match policy.release_mode.as_str() {
         "verified" => vollcrypt_files_core::ReleaseMode::Verified,
         "streaming" => vollcrypt_files_core::ReleaseMode::Streaming,
-        _ => return Err(Error::from_reason("release_mode must be 'verified' or 'streaming'")),
+        _ => {
+            return Err(Error::from_reason(
+                "release_mode must be 'verified' or 'streaming'",
+            ))
+        }
     };
     let signature = match policy.signature.as_deref() {
         Some("required") | None => vollcrypt_files_core::SignaturePolicy::Required,
         Some("optional") => vollcrypt_files_core::SignaturePolicy::Optional,
-        _ => return Err(Error::from_reason("signature must be 'required' or 'optional'")),
+        _ => {
+            return Err(Error::from_reason(
+                "signature must be 'required' or 'optional'",
+            ))
+        }
     };
     let on_tamper = match policy.on_tamper.as_deref() {
         Some("abort") | None => vollcrypt_files_core::OnTamper::Abort,
         Some("report") => vollcrypt_files_core::OnTamper::AbortWithReport,
         Some("recover") => vollcrypt_files_core::OnTamper::AttemptRecovery,
-        _ => return Err(Error::from_reason("on_tamper must be 'abort', 'report' or 'recover'")),
+        _ => {
+            return Err(Error::from_reason(
+                "on_tamper must be 'abort', 'report' or 'recover'",
+            ))
+        }
     };
     Ok(vollcrypt_files_core::ShieldPolicy {
         release_mode,
@@ -1975,32 +2020,8 @@ impl Task for SealContainerTask {
     type JsValue = ();
 
     fn compute(&mut self) -> Result<Self::Output> {
-        let data = std::fs::read(&self.path)
-            .map_err(|e| Error::from_reason(format!("Failed to read file for sealing: {}", e)))?;
-        let mut source = std::io::Cursor::new(data);
-        let mut dest_buf = Vec::new();
-        let mut dest = std::io::Cursor::new(&mut dest_buf);
-
-        let mode = self.options.mode;
-
-        vollcrypt_files_core::seal_container(&mut source, &mut dest, self.options.clone())
+        vollcrypt_files_core::seal_container_in_place(&self.path, self.options.clone())
             .map_err(|e| Error::from_reason(e.to_string()))?;
-
-        if mode == vollcrypt_files_core::SealMode::Purge {
-            let original_len = source.get_ref().len();
-            let new_len = dest_buf.len();
-            if original_len > new_len {
-                let file = std::fs::OpenOptions::new()
-                    .write(true)
-                    .open(&self.path)
-                    .map_err(|e| Error::from_reason(format!("Failed to open file for purge overwrite: {}", e)))?;
-                file.set_len(new_len as u64)
-                    .map_err(|e| Error::from_reason(format!("Failed to truncate file: {}", e)))?;
-            }
-        }
-
-        std::fs::write(&self.path, dest_buf)
-            .map_err(|e| Error::from_reason(format!("Failed to write sealed container: {}", e)))?;
 
         Ok(())
     }
@@ -2033,10 +2054,10 @@ impl Task for InspectSealedTask {
     type JsValue = SealedInspectionObj;
 
     fn compute(&mut self) -> Result<Self::Output> {
-        let file = std::fs::File::open(&self.path)
-            .map_err(|e| Error::from_reason(format!("Failed to open container for inspection: {}", e)))?;
-        vollcrypt_files_core::inspect_sealed(file)
-            .map_err(|e| Error::from_reason(e.to_string()))
+        let file = std::fs::File::open(&self.path).map_err(|e| {
+            Error::from_reason(format!("Failed to open container for inspection: {}", e))
+        })?;
+        vollcrypt_files_core::inspect_sealed(file).map_err(|e| Error::from_reason(e.to_string()))
     }
 
     fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
@@ -2074,19 +2095,15 @@ pub fn napi_is_sealed(header: HeaderObj) -> Result<bool> {
 }
 
 #[napi(js_name = "inspectSealedContainer")]
-pub fn napi_inspect_sealed(
-    path: String,
-) -> Result<AsyncTask<InspectSealedTask>> {
+pub fn napi_inspect_sealed(path: String) -> Result<AsyncTask<InspectSealedTask>> {
     Ok(AsyncTask::new(InspectSealedTask { path }))
 }
 
 #[napi(js_name = "verifyContainer")]
-pub fn napi_verify_container(
-    path: String,
-    policy: NapiShieldPolicy,
-) -> Result<String> {
-    let file = std::fs::File::open(&path)
-        .map_err(|e| Error::from_reason(format!("Failed to open container for verification: {}", e)))?;
+pub fn napi_verify_container(path: String, policy: NapiShieldPolicy) -> Result<String> {
+    let file = std::fs::File::open(&path).map_err(|e| {
+        Error::from_reason(format!("Failed to open container for verification: {}", e))
+    })?;
     let core_policy = napi_to_shield_policy(policy)?;
     let report = vollcrypt_files_core::verify_container(file, &core_policy);
     Ok(format!("{:?}", report))

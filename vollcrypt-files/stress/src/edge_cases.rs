@@ -215,12 +215,7 @@ mod tests {
 
             if version == 501 || version == 1000 {
                 manifest
-                    .shred_group_key(
-                        version - 1,
-                        "Shredded for test",
-                        &admin_sk,
-                        version as u64,
-                    )
+                    .shred_group_key(version - 1, "Shredded for test", &admin_sk, version as u64)
                     .unwrap();
             }
         }
@@ -355,7 +350,7 @@ mod tests {
             signed_metadata: None,
             signature: None,
         };
-        let serialized = header.write();
+        let serialized = header.write().expect("valid header should serialize");
         let (parsed, _) = Header::parse(&serialized).unwrap();
         assert_eq!(parsed.chunk_size, chunk_size as u32);
     }

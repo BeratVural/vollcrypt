@@ -1,5 +1,5 @@
 use vollcrypt_files_core::{
-    hybrid_keypair_generate, generate_file_id, generate_gk, generate_recipient_keypair,
+    generate_file_id, generate_gk, generate_recipient_keypair, hybrid_keypair_generate,
     unwrap_key_with_recipient_key, wrap_key_to_recipient, FileFormatError, GroupManifest,
     Operation,
 };
@@ -26,9 +26,7 @@ fn rotate_increments_version() {
 
     assert_eq!(manifest.current_gk_version(), 1);
 
-    let ver = manifest
-        .rotate_group_key(&gk2, &admin_sk, 100)
-        .unwrap();
+    let ver = manifest.rotate_group_key(&gk2, &admin_sk, 100).unwrap();
 
     assert_eq!(ver, 2);
     assert_eq!(manifest.current_gk_version(), 2);
@@ -68,12 +66,14 @@ fn rotate_includes_all_current_members() {
         .unwrap();
 
     // Rotate Key
-    manifest
-        .rotate_group_key(&gk2, &admin_sk, 200)
-        .unwrap();
+    manifest.rotate_group_key(&gk2, &admin_sk, 200).unwrap();
 
-    let op =
-        Operation::parse(manifest.operations[2].op_type, &manifest.operations[2].data, manifest.version).unwrap();
+    let op = Operation::parse(
+        manifest.operations[2].op_type,
+        &manifest.operations[2].data,
+        manifest.version,
+    )
+    .unwrap();
 
     if let Operation::RotateKey {
         new_gk_version,
@@ -122,12 +122,14 @@ fn rotate_excludes_removed_members() {
     manifest.remove_member(&admin_sk, member2_id).unwrap();
 
     // Rotate Key
-    manifest
-        .rotate_group_key(&gk2, &admin_sk, 300)
-        .unwrap();
+    manifest.rotate_group_key(&gk2, &admin_sk, 300).unwrap();
 
-    let op =
-        Operation::parse(manifest.operations[3].op_type, &manifest.operations[3].data, manifest.version).unwrap();
+    let op = Operation::parse(
+        manifest.operations[3].op_type,
+        &manifest.operations[3].data,
+        manifest.version,
+    )
+    .unwrap();
 
     if let Operation::RotateKey { wraps, .. } = op {
         assert_eq!(wraps.len(), 1);
@@ -158,9 +160,7 @@ fn member_can_unwrap_new_gk() {
     );
 
     // Rotate
-    manifest
-        .rotate_group_key(&gk2, &admin_sk, 400)
-        .unwrap();
+    manifest.rotate_group_key(&gk2, &admin_sk, 400).unwrap();
 
     // Member retrieves wrap for version 2
     let wrap = manifest
@@ -192,9 +192,7 @@ fn member_can_still_unwrap_old_gk() {
     );
 
     // Rotate
-    manifest
-        .rotate_group_key(&gk2, &admin_sk, 400)
-        .unwrap();
+    manifest.rotate_group_key(&gk2, &admin_sk, 400).unwrap();
 
     // Member retrieves wrap for version 1
     let wrap = manifest
@@ -251,9 +249,7 @@ fn rotation_preserves_chain_integrity() {
         founder_gk_wrap,
     );
 
-    manifest
-        .rotate_group_key(&gk2, &admin_sk, 600)
-        .unwrap();
+    manifest.rotate_group_key(&gk2, &admin_sk, 600).unwrap();
 
     assert!(manifest.verify().is_ok());
 }

@@ -1,4 +1,9 @@
-use crate::ratchet::{RatchetConfig, generate_ratchet_keypair, ratchet_srk_sender, should_ratchet};
+use crate::kdf::derive_window_key;
+use crate::ratchet::{
+    RatchetConfig, generate_ratchet_keypair, ratchet_srk_receiver, ratchet_srk_sender,
+    should_ratchet,
+};
+use crate::symmetric::{decrypt_aes256gcm_padded, encrypt_aes256gcm_padded};
 
 // ── Ratchet Security ──────────────────────────────────────────────────────
 
@@ -10,7 +15,7 @@ fn ratchet_step_replay() {
 
     let srk1 = ratchet_srk_sender(
         &current_srk,
-        &kp_sender.secret_key(),
+        kp_sender.secret_key(),
         &kp_receiver.public_key,
         b"chat",
         1,
@@ -20,7 +25,7 @@ fn ratchet_step_replay() {
     // Replay exact same step and keys
     let srk2 = ratchet_srk_sender(
         &current_srk,
-        &kp_sender.secret_key(),
+        kp_sender.secret_key(),
         &kp_receiver.public_key,
         b"chat",
         1,
@@ -41,7 +46,7 @@ fn ratchet_step_zero() {
 
     let srk = ratchet_srk_sender(
         &current_srk,
-        &kp_sender.secret_key(),
+        kp_sender.secret_key(),
         &kp_receiver.public_key,
         b"chat",
         0,
@@ -59,7 +64,7 @@ fn ratchet_step_max_u64() {
 
     let srk = ratchet_srk_sender(
         &current_srk,
-        &kp_sender.secret_key(),
+        kp_sender.secret_key(),
         &kp_receiver.public_key,
         b"chat",
         u64::MAX,
@@ -77,7 +82,7 @@ fn ratchet_with_zero_srk() {
 
     let srk = ratchet_srk_sender(
         &current_srk,
-        &kp_sender.secret_key(),
+        kp_sender.secret_key(),
         &kp_receiver.public_key,
         b"chat",
         1,
@@ -96,7 +101,7 @@ fn ratchet_isolation_between_conversations() {
 
     let srk_a = ratchet_srk_sender(
         &current_srk,
-        &kp_sender.secret_key(),
+        kp_sender.secret_key(),
         &kp_receiver.public_key,
         b"chat-A",
         1,
@@ -105,7 +110,7 @@ fn ratchet_isolation_between_conversations() {
 
     let srk_b = ratchet_srk_sender(
         &current_srk,
-        &kp_sender.secret_key(),
+        kp_sender.secret_key(),
         &kp_receiver.public_key,
         b"chat-B",
         1,
@@ -129,7 +134,7 @@ fn ratchet_forward_secrecy_simulation() {
 
     let new_srk = ratchet_srk_sender(
         &current_srk,
-        &kp_sender.secret_key(),
+        kp_sender.secret_key(),
         &kp_receiver.public_key,
         b"chat",
         1,
@@ -152,4 +157,43 @@ fn ratchet_should_trigger_boundary() {
     assert!(should_ratchet(51, false, &config));
     assert!(should_ratchet(0, true, &config));
     assert!(!should_ratchet(1, false, &config));
+}
+
+#[test]
+fn ratchet_post_compromise_message_cannot_be_decrypted_with_leaked_old_srk() {
+    let leaked_old_srk = [0x55u8; 32];
+    let alice_kp = generate_ratchet_keypair().unwrap();
+    let bob_kp = generate_ratchet_keypair().unwrap();
+    let chat_id = b"pcs-e2e-chat";
+    let ratchet_step = 42;
+
+    let alice_new_srk = ratchet_srk_sender(
+        &leaked_old_srk,
+        alice_kp.secret_key(),
+        &bob_kp.public_key,
+        chat_id,
+        ratchet_step,
+    )
+    .unwrap();
+    let bob_new_srk = ratchet_srk_receiver(
+        &leaked_old_srk,
+        bob_kp.secret_key(),
+        &alice_kp.public_key,
+        chat_id,
+        ratchet_step,
+    )
+    .unwrap();
+    assert_eq!(alice_new_srk, bob_new_srk);
+
+    let post_heal_key = derive_window_key(&alice_new_srk, 0).unwrap();
+    let old_window_key = derive_window_key(&leaked_old_srk, 0).unwrap();
+    let ciphertext =
+        encrypt_aes256gcm_padded(&post_heal_key, b"post-heal message", Some(chat_id)).unwrap();
+
+    assert!(
+        decrypt_aes256gcm_padded(&old_window_key, &ciphertext, Some(chat_id)).is_err(),
+        "A leaked pre-ratchet SRK must not decrypt post-ratchet messages"
+    );
+    let plaintext = decrypt_aes256gcm_padded(&post_heal_key, &ciphertext, Some(chat_id)).unwrap();
+    assert_eq!(plaintext, b"post-heal message");
 }

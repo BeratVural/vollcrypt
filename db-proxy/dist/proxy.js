@@ -252,6 +252,14 @@ class ClusterManager {
     }
 }
 exports.ClusterManager = ClusterManager;
+function redactLogMessage(str) {
+    return str
+        .replace(/--\s*JIT_TOKEN:\s*[^\s;]+/gi, '-- JIT_TOKEN:[REDACTED]')
+        .replace(/VOLLVALT:[A-Za-z0-9+/=_\-:.]+/g, 'VOLLVALT:[REDACTED]')
+        .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[REDACTED_EMAIL]')
+        .replace(/'[^']*'/g, "'[REDACTED]'")
+        .replace(/\b\d{12,19}\b/g, '[REDACTED_NUMBER]');
+}
 function sanitizeCef(str) {
     return str.replace(/[\r\n]/g, ' ').replace(/\|/g, '\\|').replace(/\\/g, '\\\\');
 }
@@ -259,6 +267,7 @@ class DbProxyServer {
     options;
     server = null;
     activeConnections = new Set();
+    socketTenantIds = new Map();
     allowlistedFingerprints = new Set();
     activeSsoSessions = new Map();
     activeJitGrants = new Map();
@@ -284,7 +293,7 @@ class DbProxyServer {
         const timestamp = new Date().toISOString();
         const cleanIp = sanitizeCef(clientIp);
         const cleanUser = sanitizeCef(username);
-        const cleanMsg = sanitizeCef(message);
+        const cleanMsg = sanitizeCef(redactLogMessage(message));
         const cleanEvent = sanitizeCef(event);
         const cefStr = `CEF:0|Vollcrypt|DB-Proxy|1.0|${cleanEvent}|${cleanEvent}|${severity}|src=${cleanIp} usrName=${cleanUser} msg=${cleanMsg}\n`;
         try {
@@ -297,8 +306,19 @@ class DbProxyServer {
             console.error('Failed to write SIEM CEF log:', err);
         }
     }
-    triggerFailClosed() {
-        this.logSiemEvent('FAIL_CLOSED_TRIGGERED', 10, 'system', '127.0.0.1', 'Decryption rate limit or security violation threshold crossed. Zeroizing keys and shutting down all active connections.');
+    triggerFailClosed(tenantId) {
+        if (tenantId) {
+            this.logSiemEvent('FAIL_CLOSED_TRIGGERED', 10, 'system', '127.0.0.1', `Tenant-scoped fail-closed triggered for tenant ${tenantId}. Closing only matching active connections.`);
+            for (const socket of Array.from(this.activeConnections)) {
+                if (this.socketTenantIds.get(socket) === tenantId) {
+                    socket.destroy();
+                    this.activeConnections.delete(socket);
+                    this.socketTenantIds.delete(socket);
+                }
+            }
+            return;
+        }
+        this.logSiemEvent('FAIL_CLOSED_TRIGGERED', 10, 'system', '127.0.0.1', 'Global fail-closed triggered. Zeroizing keys and shutting down all active connections.');
         for (const key of Object.values(this.options.resolvedKeys)) {
             key.fill(0);
         }
@@ -306,11 +326,13 @@ class DbProxyServer {
             socket.destroy();
         }
         this.activeConnections.clear();
+        this.socketTenantIds.clear();
     }
     sslKey = '';
     sslCert = '';
     constructor(options) {
         this.options = options;
+        (0, auth_js_1.validateProxyDriverSecurityConfig)(this.options.dbType || 'postgres', this.options.config);
         this.loadAllowlist();
         // Clone resolvedKeys to prevent mutating/zeroizing references shared by the caller (e.g. tests)
         const clonedKeys = {};
@@ -401,11 +423,11 @@ class DbProxyServer {
             }
             this.logSiemEvent('FIPS_INIT', 1, 'system', '127.0.0.1', `FIPS 140-3 boundary compliance enabled. FIPS status: ${isFips}`);
         }
-        if (this.options.mpcShares && this.options.mpcShares.length >= 2) {
-            const { reconstructKeyMpc } = await import('./mpc.js');
-            const reconstructedKey = reconstructKeyMpc(this.options.mpcShares);
+        if (this.options.xorKeySplitShares && this.options.xorKeySplitShares.length >= 2) {
+            const { reconstructKeyFromXorShares } = await import('./mpc.js');
+            const reconstructedKey = reconstructKeyFromXorShares(this.options.xorKeySplitShares);
             this.options.resolvedKeys['1'] = reconstructedKey;
-            this.logSiemEvent('MPC_KEY_INIT', 1, 'system', '127.0.0.1', 'Decryption key successfully reconstructed using MPC threshold shares.');
+            this.logSiemEvent('XOR_KEY_SPLIT_INIT', 1, 'system', '127.0.0.1', 'Decryption key reconstructed using single-process n-of-n XOR key-split shares.');
         }
         return new Promise((resolve, reject) => {
             this.server = net.createServer((clientSocket) => {
@@ -421,7 +443,7 @@ class DbProxyServer {
                             dbHost: this.options.dbHost,
                             dbPort: this.options.dbPort,
                             noWaf: this.options.noWaf,
-                            role: this.options.config ? 'GUEST' : 'OWNER',
+                            role: 'GUEST',
                             clientIp: clientIp || '127.0.0.1',
                             resolvedKeys: this.options.resolvedKeys,
                             config: this.options.config,
@@ -436,7 +458,7 @@ class DbProxyServer {
                             dbHost: this.options.dbHost,
                             dbPort: this.options.dbPort,
                             noWaf: this.options.noWaf,
-                            role: this.options.config ? 'GUEST' : 'OWNER',
+                            role: 'GUEST',
                             clientIp: clientIp || '127.0.0.1',
                             resolvedKeys: this.options.resolvedKeys,
                             config: this.options.config,
@@ -451,7 +473,7 @@ class DbProxyServer {
                             dbHost: this.options.dbHost,
                             dbPort: this.options.dbPort,
                             noWaf: this.options.noWaf,
-                            role: this.options.config ? 'GUEST' : 'OWNER',
+                            role: 'GUEST',
                             clientIp: clientIp || '127.0.0.1',
                             resolvedKeys: this.options.resolvedKeys,
                             config: this.options.config,
@@ -466,7 +488,7 @@ class DbProxyServer {
                             dbHost: this.options.dbHost,
                             dbPort: this.options.dbPort,
                             noWaf: this.options.noWaf,
-                            role: this.options.config ? 'GUEST' : 'OWNER',
+                            role: 'GUEST',
                             clientIp: clientIp || '127.0.0.1',
                             resolvedKeys: this.options.resolvedKeys,
                             config: this.options.config,
@@ -491,6 +513,7 @@ class DbProxyServer {
                 socket.destroy();
             }
             this.activeConnections.clear();
+            this.socketTenantIds.clear();
             if (this.clusterManager) {
                 this.clusterManager.stop();
                 this.clusterManager = null;
@@ -563,7 +586,12 @@ class DbProxyServer {
                                 socket.removeAllListeners('error');
                                 activeClientSocket = tlsSocket;
                                 this.activeConnections.add(tlsSocket);
+                                const existingTenantId = this.socketTenantIds.get(clientSocket);
+                                if (existingTenantId) {
+                                    this.socketTenantIds.set(tlsSocket, existingTenantId);
+                                }
                                 this.activeConnections.delete(clientSocket);
+                                this.socketTenantIds.delete(clientSocket);
                                 setupClientSocketListeners(tlsSocket);
                                 return;
                             }
@@ -574,6 +602,10 @@ class DbProxyServer {
                             userContext = (0, auth_js_1.resolveUserContext)(username, this.options.config);
                             dbGuardContext.role = userContext.role;
                             dbGuardContext.userId = userContext.userId;
+                            dbGuardContext.tenantId = userContext.tenantId;
+                            if (userContext.tenantId) {
+                                this.socketTenantIds.set(activeClientSocket, userContext.tenantId);
+                            }
                             backendSocket.write(forwardedMsg);
                         }
                         else {
@@ -601,6 +633,10 @@ class DbProxyServer {
                                     };
                                     dbGuardContext.role = userContext.role;
                                     dbGuardContext.userId = userContext.userId;
+                                    dbGuardContext.tenantId = userContext.tenantId;
+                                    if (userContext.tenantId) {
+                                        this.socketTenantIds.set(activeClientSocket, userContext.tenantId);
+                                    }
                                     const realDbPassword = this.options.dbPassword || 'postgres';
                                     const newMsg = (0, pg_protocol_js_1.serializePasswordMessage)(realDbPassword);
                                     backendSocket.write(newMsg);
@@ -717,7 +753,9 @@ class DbProxyServer {
                                                             .createHmac('sha256', secret)
                                                             .update(`${tUserId}:${tExpiresAt}`)
                                                             .digest('hex');
-                                                        if (tSig === expectedSig) {
+                                                        const expectedSigBuf = buffer_1.Buffer.from(expectedSig, 'hex');
+                                                        const tokenSigBuf = buffer_1.Buffer.from(tSig, 'hex');
+                                                        if (expectedSigBuf.length === tokenSigBuf.length && crypto.timingSafeEqual(expectedSigBuf, tokenSigBuf)) {
                                                             approved = true;
                                                             this.registerJitGrant(dbGuardContext.userId, 'OWNER', 3600000);
                                                             this.logSiemEvent('JIT_APPROVED', 6, 'system', '127.0.0.1', `JIT request approved for user ${dbGuardContext.userId} via cryptographically signed token`);
@@ -883,8 +921,10 @@ class DbProxyServer {
             });
             socket.on('close', () => {
                 this.activeConnections.delete(socket);
+                this.socketTenantIds.delete(socket);
                 if (socket !== clientSocket) {
                     this.activeConnections.delete(clientSocket);
+                    this.socketTenantIds.delete(clientSocket);
                     clientSocket.destroy();
                 }
                 backendSocket.destroy();
@@ -1090,7 +1130,7 @@ class DbProxyServer {
                             if (isRateLimit) {
                                 const rateLimiterMode = this.options.config?.rateLimiter?.mode || 'fail_closed';
                                 if (rateLimiterMode === 'fail_closed') {
-                                    this.triggerFailClosed();
+                                    this.triggerFailClosed(userContext?.tenantId);
                                 }
                             }
                             // End the packet flow for this stream

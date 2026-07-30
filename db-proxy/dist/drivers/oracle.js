@@ -136,6 +136,7 @@ function handleOracleConnection(clientSocket, options) {
     let currentRole = options.role;
     let currentUserId = options.role === 'OWNER' ? 'usr-admin' : 'guest-user';
     let currentTenantId;
+    let identityResolved = false;
     let currentTable = 'default';
     let currentColumns = [];
     const backendSocket = net.connect({
@@ -168,16 +169,16 @@ function handleOracleConnection(clientSocket, options) {
     clientSocket.on('data', (data) => {
         if (data.length > 8) {
             const type = data[4];
-            // Parse Oracle TNS Connect / Data packets for usernames
-            // We look for patterns like (USER=username) or AUTH_USERNAME=username
-            const packetStr = data.toString('ascii');
+            // Parse usernames only from the initial TNS Connect packet.
+            const packetStr = type === 0x01 && !identityResolved ? data.toString('ascii') : '';
             const userMatch = packetStr.match(/\(\s*USER\s*=\s*([^)]+)\)/i) || packetStr.match(/AUTH_USERNAME\s*=\s*([A-Za-z0-9_]+)/i);
-            if (userMatch && userMatch[1]) {
+            if (type === 0x01 && !identityResolved && userMatch && userMatch[1]) {
                 const username = userMatch[1].trim();
                 const userContext = (0, auth_js_1.resolveUserContext)(username, options.config);
                 currentUserId = userContext.userId;
                 currentRole = userContext.role;
                 currentTenantId = userContext.tenantId;
+                identityResolved = true;
             }
             if (type === 0x06) { // TNS Data Packet
                 // Look for SQL query text in the packet payload
@@ -190,16 +191,17 @@ function handleOracleConnection(clientSocket, options) {
                     const sqlMatch = queryClean.match(/\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER)\b[\s\S]+/i);
                     if (sqlMatch) {
                         const query = sqlMatch[0].trim();
-                        if (!options.noWaf) {
-                            try {
+                        try {
+                            if (!options.noWaf) {
                                 (0, waf_js_1.validateQuery)(query, currentRole);
                             }
-                            catch (err) {
-                                options.logSiem('WAF_ORACLE_BLOCK', 9, `Oracle WAF violation blocked: ${err.message}`);
-                                const errPacket = serializeOracleError(err.message);
-                                clientSocket.write(errPacket);
-                                return;
-                            }
+                            (0, waf_js_1.ensureTenantScopedQuery)(query, currentTenantId);
+                        }
+                        catch (err) {
+                            options.logSiem('WAF_ORACLE_BLOCK', 9, `Oracle WAF violation blocked: ${err.message}`);
+                            const errPacket = serializeOracleError(err.message);
+                            clientSocket.write(errPacket);
+                            return;
                         }
                         try {
                             currentTable = (0, waf_js_1.extractTableName)(query);
@@ -230,7 +232,7 @@ function handleOracleConnection(clientSocket, options) {
     clientSocket.on('close', () => {
         backendSocket.destroy();
     });
-    clientSocket.on('close', () => {
+    backendSocket.on('close', () => {
         clientSocket.destroy();
     });
 }

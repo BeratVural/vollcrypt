@@ -40,7 +40,13 @@ const prismaDbGuard = (options, resolvedKeys) => {
     const activeVersion = options.kms?.activeKeyVersion || '1';
     const activeKey = keys ? keys[activeVersion] : undefined;
     const resolveTenantKeysAndActiveKey = async (tenantId) => {
-        if ((0, security_1.isBreakGlassActive)()) {
+        if (options.multiTenant && tenantId && (0, security_1.isBreakGlassActive)(tenantId)) {
+            const bgKey = (0, security_1.getBreakGlassKey)(tenantId);
+            if (bgKey) {
+                return { keys: { '1': bgKey }, activeKey: bgKey, activeVersion: '1' };
+            }
+        }
+        else if (!options.multiTenant && (0, security_1.isBreakGlassActive)()) {
             const bgKey = (0, security_1.getBreakGlassKey)();
             if (bgKey) {
                 return { keys: { '1': bgKey }, activeKey: bgKey, activeVersion: '1' };

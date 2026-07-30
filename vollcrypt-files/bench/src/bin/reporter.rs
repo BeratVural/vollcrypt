@@ -2,8 +2,8 @@ use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit};
 use rand::RngCore;
 use rayon::prelude::*;
 use std::fs;
-use std::io::Seek;
 use std::hint::black_box;
+use std::io::Seek;
 use std::time::Instant;
 
 use vollcrypt_files_bench::get_current_rss_mb;
@@ -147,7 +147,8 @@ impl std::io::Seek for SharedBuffer {
                 "invalid seek position",
             ));
         }
-        self.pos.store(new_pos as usize, std::sync::atomic::Ordering::Relaxed);
+        self.pos
+            .store(new_pos as usize, std::sync::atomic::Ordering::Relaxed);
         Ok(new_pos as u64)
     }
 }
@@ -161,8 +162,9 @@ impl std::io::Read for SharedBuffer {
             return Ok(0);
         }
         let amt = std::cmp::min(buf.len(), limit - pos);
-        buf[..amt].copy_from_slice(&data[pos..pos+amt]);
-        self.pos.store(pos + amt, std::sync::atomic::Ordering::Relaxed);
+        buf[..amt].copy_from_slice(&data[pos..pos + amt]);
+        self.pos
+            .store(pos + amt, std::sync::atomic::Ordering::Relaxed);
         Ok(amt)
     }
 }
@@ -562,7 +564,13 @@ fn get_clean_cpu_name(cpu_brand: &str) -> String {
     cpu_brand
         .to_lowercase()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>()
         .split('_')
         .filter(|s| !s.is_empty())
@@ -574,7 +582,8 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     println!("Running full performance and security benchmark suite...");
 
     let detected_cpu_name = get_clean_cpu_name(&hw.cpu_brand);
-    let device_subdir = std::env::var("VOLLCRYPT_BENCH_DEVICE").unwrap_or_else(|_| detected_cpu_name);
+    let device_subdir =
+        std::env::var("VOLLCRYPT_BENCH_DEVICE").unwrap_or_else(|_| detected_cpu_name);
     let reports_dir = if device_subdir.is_empty() {
         std::path::PathBuf::from("vollcrypt-files/reports")
     } else {
@@ -841,12 +850,12 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     let mut hw1_runs = Vec::new();
     for _ in 0..50 {
         let start = Instant::now();
-        let _res = header_1.write();
+        let _res = header_1.write().expect("valid header should serialize");
         hw1_runs.push(start.elapsed().as_secs_f64() * 1_000_000.0);
     }
     let (hw1_med, hw1_p99, _hw1_std) = stats(&hw1_runs);
 
-    let ser_1 = header_1.write();
+    let ser_1 = header_1.write().expect("valid header should serialize");
     let mut hp1_runs = Vec::new();
     for _ in 0..50 {
         let start = Instant::now();
@@ -1143,7 +1152,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
             signed_metadata: None,
             signature: None,
         };
-        let header_size = header.write().len();
+        let header_size = header.write().expect("valid header should serialize").len();
         multi_rec_rows.push(format!(
             "| {} | {:.2} ms | {} B |",
             count, elapsed, header_size
@@ -1174,7 +1183,13 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         for idx in 0..count {
             let mut mid = [0u8; 16];
             mid[0..4].copy_from_slice(&(idx as u32 + 2).to_be_bytes());
-            let _ = manifest.add_member(&admin_sk, mid, admin_pk.clone(), rec_pk.clone(), gk_wrap.clone());
+            let _ = manifest.add_member(
+                &admin_sk,
+                mid,
+                admin_pk.clone(),
+                rec_pk.clone(),
+                gk_wrap.clone(),
+            );
         }
         let add_time = start_add.elapsed().as_secs_f64() * 1000.0 / count as f64;
 
@@ -1381,12 +1396,12 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         cpu_min, cpu_max, cpu_avg,
         disk_r_min, disk_r_max, disk_r_avg,
         disk_w_min, disk_w_max, disk_w_avg,
-        peak_single_core_tput, 
+        peak_single_core_tput,
         peak_multi_core_tput,
         argon2_default_latency_ms,
         wrap_med,
         voll_mc_elapsed,
-        
+
         balanced_metrics.throughput, max_metrics.throughput,
         balanced_metrics.cycles_per_byte, max_metrics.cycles_per_byte,
         balanced_metrics.instructions_per_byte, max_metrics.instructions_per_byte,
@@ -1418,11 +1433,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         hkdf_med
     );
     let perf_path = reports_dir.join("PERFORMANCE_REPORT.md");
-    fs::write(
-        &perf_path,
-        perf_content,
-    )
-    .unwrap();
+    fs::write(&perf_path, perf_content).unwrap();
     println!("Generated: {:?}", perf_path);
 
     // ==========================================
@@ -1483,7 +1494,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         signed_metadata: None,
         signature: None,
     };
-    let ht_serialized = ht_header.write();
+    let ht_serialized = ht_header.write().expect("valid header should serialize");
     let mut ht_tested = 0;
     let mut ht_rejected = 0;
 
@@ -1623,7 +1634,13 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         epoch: ma_prev_op.epoch + 1,
     };
     let ma_msg = ma_forged_op.sig_message_for_version(ma_manifest.version);
-    ma_forged_op.signature = hybrid_sign(&ma_unauth_sk, &ma_unauth_pk, "vollf-manifest-op", &[], &ma_msg);
+    ma_forged_op.signature = hybrid_sign(
+        &ma_unauth_sk,
+        &ma_unauth_pk,
+        "vollf-manifest-op",
+        &[],
+        &ma_msg,
+    );
     ma_manifest.operations.push(ma_forged_op);
 
     let ma_accepted = if ma_manifest.verify().is_ok() { 1 } else { 0 };
@@ -1654,19 +1671,26 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         signature: None,
     };
     let sh_msg = sh_header.signed_bytes();
-    let sh_sig = hybrid_sign(&sh_signer_sk, &sh_signer_pk, "vollf-hdr-plain", &[], &sh_msg);
+    let sh_sig = hybrid_sign(
+        &sh_signer_sk,
+        &sh_signer_pk,
+        "vollf-hdr-plain",
+        &[],
+        &sh_msg,
+    );
     sh_header.signature = Some(sh_sig);
 
-    let sh_serialized = sh_header.write();
+    let sh_serialized = sh_header.write().expect("valid header should serialize");
     let (sh_parsed, _) = Header::parse(&sh_serialized).unwrap();
     let mut sh_tampered = sh_parsed.clone();
     sh_tampered.file_id = sh_file_id_2;
 
-    let sh_accepted = if verify_header_signature_plain(&sh_tampered, VerificationPolicy::RequireSigned).is_ok() {
-        1
-    } else {
-        0
-    };
+    let sh_accepted =
+        if verify_header_signature_plain(&sh_tampered, VerificationPolicy::RequireSigned).is_ok() {
+            1
+        } else {
+            0
+        };
 
     // ==========================================
     // RUN DYNAMIC BEHAVIORAL & CONCURRENCY TESTS
@@ -1895,11 +1919,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         stability_table
     );
     let behavioral_path = reports_dir.join("BEHAVIORAL_REPORT.md");
-    fs::write(
-        &behavioral_path,
-        behavioral_content,
-    )
-    .unwrap();
+    fs::write(&behavioral_path, behavioral_content).unwrap();
     println!("Generated: {:?}", behavioral_path);
 
     // Write SECURITY_AUDIT_REPORT.md
@@ -1947,11 +1967,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         (entropy / 8.0) * 100.0
     );
     let security_path = reports_dir.join("SECURITY_AUDIT_REPORT.md");
-    fs::write(
-        &security_path,
-        security_content,
-    )
-    .unwrap();
+    fs::write(&security_path, security_content).unwrap();
     println!("Generated: {:?}", security_path);
 
     println!("All reports successfully generated and saved!");

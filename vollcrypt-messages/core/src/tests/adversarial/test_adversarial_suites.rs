@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::panic;
 use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::ZeroizeOnDrop;
 
 use crate::keys::generate_x25519_keypair;
 use crate::ratchet::{CryptoError, generate_ratchet_keypair, ratchet_srk_sender};
@@ -319,6 +319,8 @@ impl ReplayPreventionStore {
         &mut self,
         packet: &[u8],
         recipient_sk: &[u8; 32],
+        entries_json: Option<&str>,
+        trusted_sender_public_key: Option<&[u8; 32]>,
     ) -> Result<(Vec<u8>, Vec<u8>), &'static str> {
         // Calculate hash of the raw packet for replay detection
         let mut hasher = sha2::Sha256::new();
@@ -330,7 +332,13 @@ impl ReplayPreventionStore {
         }
 
         // Unseal the packet
-        let decrypted = unseal(packet, recipient_sk).map_err(|_| "Decryption/Unseal failed")?;
+        let decrypted = unseal(
+            packet,
+            recipient_sk,
+            entries_json,
+            trusted_sender_public_key,
+        )
+        .map_err(|_| "Decryption/Unseal failed")?;
 
         // Record the hash on successful decryption
         self.processed_packet_hashes.insert(packet_hash);
@@ -347,8 +355,27 @@ fn test_sealed_sender_malleability_and_replay() {
     let sender_id = b"alice-identity";
     let message_content = b"highly-sensitive-payload";
 
+    // Setup mock log context for signing & verification
+    let (alice_sk, alice_pk) = crate::keys::generate_ed25519_keypair();
+    let mut alice_pk_arr = [0u8; 32];
+    alice_pk_arr.copy_from_slice(&alice_pk);
+    let mut alice_sk_arr = [0u8; 32];
+    alice_sk_arr.copy_from_slice(&alice_sk);
+
+    let entry = crate::key_log::create_entry(
+        sender_id,
+        &alice_pk_arr,
+        1000,
+        &crate::key_log::GENESIS_HASH,
+        crate::key_log::KeyAction::Add,
+        &alice_sk_arr,
+    )
+    .unwrap();
+    let entries = vec![entry];
+    let entries_json = serde_json::to_string(&entries).unwrap();
+
     // Create the authentic sealed packet
-    let sealed_packet = seal(&bob_pk, sender_id, message_content).unwrap();
+    let sealed_packet = seal(&bob_pk, sender_id, message_content, &alice_sk_arr).unwrap();
 
     // ---------------------------------------------------------
     // A. Byte Malleability Attack: Mutate every single byte
@@ -359,7 +386,12 @@ fn test_sealed_sender_malleability_and_replay() {
 
         // Attack 1: Bit flip
         corrupted_packet[i] = original_val ^ 0x01;
-        let result = unseal(&corrupted_packet, &bob_sk);
+        let result = unseal(
+            &corrupted_packet,
+            &bob_sk,
+            Some(&entries_json),
+            Some(&alice_pk_arr),
+        );
         assert!(
             result.is_err(),
             "Decryption must fail when byte {} is flipped",
@@ -372,7 +404,12 @@ fn test_sealed_sender_malleability_and_replay() {
             alt_val = alt_val.wrapping_add(1);
         }
         corrupted_packet[i] = alt_val;
-        let result_rand = unseal(&corrupted_packet, &bob_sk);
+        let result_rand = unseal(
+            &corrupted_packet,
+            &bob_sk,
+            Some(&entries_json),
+            Some(&alice_pk_arr),
+        );
         assert!(
             result_rand.is_err(),
             "Decryption must fail when byte {} is randomized to {}",
@@ -387,7 +424,12 @@ fn test_sealed_sender_malleability_and_replay() {
     let mut receiver_store = ReplayPreventionStore::new();
 
     // First delivery must succeed
-    let first_delivery = receiver_store.process_packet(&sealed_packet, &bob_sk);
+    let first_delivery = receiver_store.process_packet(
+        &sealed_packet,
+        &bob_sk,
+        Some(&entries_json),
+        Some(&alice_pk_arr),
+    );
     assert!(first_delivery.is_ok());
     let (recovered_sender, recovered_content) = first_delivery.unwrap();
     assert_eq!(recovered_sender, sender_id);
@@ -395,7 +437,12 @@ fn test_sealed_sender_malleability_and_replay() {
 
     // Subsequent 9 deliveries (replays) must be rejected
     for i in 2..=10 {
-        let replay_delivery = receiver_store.process_packet(&sealed_packet, &bob_sk);
+        let replay_delivery = receiver_store.process_packet(
+            &sealed_packet,
+            &bob_sk,
+            Some(&entries_json),
+            Some(&alice_pk_arr),
+        );
         assert!(
             replay_delivery.is_err(),
             "Delivery attempt {} (replay) should have been rejected",

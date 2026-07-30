@@ -176,7 +176,10 @@ fn test_old_kem_suite_rejected() {
     serialized_old_wrap[1..3].copy_from_slice(&payload_len.to_be_bytes());
 
     let parse_res = WrapEntry::parse(&serialized_old_wrap);
-    assert!(matches!(parse_res, Err(FileFormatError::UnsupportedSuite(2))));
+    assert!(matches!(
+        parse_res,
+        Err(FileFormatError::UnsupportedSuite(2))
+    ));
 }
 
 #[test]
@@ -191,7 +194,10 @@ fn test_hybrid_kem_binding() {
 
     // If we tamper x25519_ephemeral (ct_x25519) in the WrapEntry, decryption should fail with WrongRecipientKey
     let mut tampered_wrap = wrap.clone();
-    if let WrapEntry::HybridKem { x25519_ephemeral, .. } = &mut tampered_wrap {
+    if let WrapEntry::HybridKem {
+        x25519_ephemeral, ..
+    } = &mut tampered_wrap
+    {
         x25519_ephemeral[0] ^= 1;
     }
 
@@ -223,11 +229,13 @@ fn unwrap_key_fails_on_low_order_ephemeral_key() {
     let mut wrap = wrap_key_to_recipient(&dek, recipient_id, gk_version, &pk).unwrap();
 
     // Zero out the ephemeral public key inside the wrap to simulate a low-order point
-    if let WrapEntry::HybridKem { x25519_ephemeral, .. } = &mut wrap {
+    if let WrapEntry::HybridKem {
+        x25519_ephemeral, ..
+    } = &mut wrap
+    {
         *x25519_ephemeral = [0u8; 32];
     }
 
     let result = unwrap_key_with_recipient_key(&wrap, &sk);
     assert!(matches!(result, Err(FileFormatError::WrongRecipientKey)));
 }
-

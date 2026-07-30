@@ -80,12 +80,12 @@ fn hybrid_kem_flip_bit_in_mlkem_ciphertext() {
     ct[mid] ^= 0x01;
 
     let result = hybrid_kem_decapsulate(&bob_sk, &alice_pk, &bob_dk, &ct);
-    match result {
-        Ok(shared_dec) => assert_ne!(
+    // Explicit rejection is also acceptable.
+    if let Ok(shared_dec) = result {
+        assert_ne!(
             shared_enc, shared_dec,
             "Implicit rejection should yield different secret"
-        ),
-        Err(_) => {} // Or explicit rejection error
+        );
     }
 }
 

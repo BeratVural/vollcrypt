@@ -1,0 +1,45 @@
+name: DB Proxy CI
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "db-proxy/**"
+      - "db-guard/node/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/ci-db-proxy.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "db-proxy/**"
+      - "db-guard/node/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/ci-db-proxy.yml"
+
+jobs:
+  test:
+    name: Build and Test DB Proxy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build db-guard dependency
+        run: npm run build --workspace @vollcrypt/db-guard
+
+      - name: Build db-proxy
+        run: npm run build --workspace @vollcrypt/db-proxy
+
+      - name: Test db-proxy
+        run: npm test --workspace @vollcrypt/db-proxy

@@ -619,3 +619,24 @@ test('pipelined file encryption and decryption roundtrip with empty wraps', asyn
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
+test('hybrid signature downgrade protection', () => {
+  const keys = api.hybridKeypairGenerate();
+  const domain = "test-domain";
+  const context = Buffer.from("ctx");
+  const payload = Buffer.from("hello world");
+
+  const signature = api.hybridSign(keys.secretKey, keys.publicKey, domain, context, payload);
+
+  // Verify valid signature
+  const verified = api.hybridVerify(keys.publicKey, domain, context, payload, signature);
+  assert.strictEqual(verified, true);
+
+  // Downgrade ML-DSA signature payload size to 0
+  const manipulatedSignature = Buffer.from(signature);
+  manipulatedSignature.writeUInt16BE(0, 64);
+  const truncatedSignature = manipulatedSignature.subarray(0, 66);
+
+  assert.throws(() => {
+    api.hybridVerify(keys.publicKey, domain, context, payload, truncatedSignature);
+  }, /Invalid ML-DSA signature length/);
+});

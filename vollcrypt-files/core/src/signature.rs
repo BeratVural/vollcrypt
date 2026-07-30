@@ -1,6 +1,6 @@
 use crate::aead::{aes256_gcm_decrypt, aes256_gcm_encrypt};
 use crate::error::FileFormatError;
-use crate::header::{Header, SignedMetadata, Mode};
+use crate::header::{Header, Mode, SignedMetadata};
 use crate::hybrid_sig::{hybrid_sign, hybrid_verify, HybridPublicKey, HybridSecretKey};
 use crate::keylog::{KeyLog, KeyLogEntryType};
 use rand::rngs::OsRng;
@@ -63,7 +63,13 @@ pub fn sign_header_sealed(
     });
     header.signature = None;
     let bytes_to_sign = header.signed_bytes();
-    let sig = hybrid_sign(signer_sk, signer_pk, "vollf-hdr-sealed", &[], &bytes_to_sign);
+    let sig = hybrid_sign(
+        signer_sk,
+        signer_pk,
+        "vollf-hdr-sealed",
+        &[],
+        &bytes_to_sign,
+    );
     header.signature = Some(sig);
     Ok(())
 }
@@ -85,7 +91,13 @@ pub fn sign_header_sovereign_sealed(
     });
     header.signature = None;
     let bytes_to_sign = header.signed_bytes();
-    let sig = hybrid_sign(signer_sk, signer_pk, "vollcrypt-file-sealed-marker-v1", &[], &bytes_to_sign);
+    let sig = hybrid_sign(
+        signer_sk,
+        signer_pk,
+        "vollcrypt-file-sealed-marker-v1",
+        &[],
+        &bytes_to_sign,
+    );
     header.signature = Some(sig);
     Ok(())
 }
@@ -93,7 +105,7 @@ pub fn sign_header_sovereign_sealed(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VerificationPolicy {
     #[default]
-    Strict,        // PQ signatures required (v3 headers only)
+    Strict, // PQ signatures required (v3 headers only)
     RequireSigned, // Classic or hybrid signatures required
     AllowLegacy,   // Allow v1/v2 unsigned/legacy signatures (opt-in)
 }
@@ -121,10 +133,13 @@ pub fn verify_header_signature_plain_policy(
     header: &Header,
     policy: VerificationPolicy,
 ) -> Result<HybridPublicKey, FileFormatError> {
-    let is_unsigned_or_legacy = header.version == 1 || header.signed_metadata.is_none() || header.signature.is_none();
+    let is_unsigned_or_legacy =
+        header.version == 1 || header.signed_metadata.is_none() || header.signature.is_none();
 
     if is_unsigned_or_legacy {
-        if (header.mode == Mode::Recipient || header.mode == Mode::Group) && policy != VerificationPolicy::AllowLegacy {
+        if (header.mode == Mode::Recipient || header.mode == Mode::Group)
+            && policy != VerificationPolicy::AllowLegacy
+        {
             return Err(FileFormatError::IntegrityError(
                 "Unsigned or legacy header in recipient/group mode".to_string(),
             ));
@@ -178,7 +193,11 @@ pub fn verify_header_signature_plain_policy(
             return Err(FileFormatError::SignatureInvalid);
         }
     } else {
-        crate::signing::ed25519_verify(&signer_pubkey.ed25519, &bytes_to_verify, &signature.ed25519)?;
+        crate::signing::ed25519_verify(
+            &signer_pubkey.ed25519,
+            &bytes_to_verify,
+            &signature.ed25519,
+        )?;
     }
 
     Ok(signer_pubkey.clone())
@@ -199,10 +218,13 @@ pub fn verify_header_signature_sealed_policy(
     key_log: &KeyLog,
     policy: VerificationPolicy,
 ) -> Result<HybridPublicKey, FileFormatError> {
-    let is_unsigned_or_legacy = header.version == 1 || header.signed_metadata.is_none() || header.signature.is_none();
+    let is_unsigned_or_legacy =
+        header.version == 1 || header.signed_metadata.is_none() || header.signature.is_none();
 
     if is_unsigned_or_legacy {
-        if (header.mode == Mode::Recipient || header.mode == Mode::Group) && policy != VerificationPolicy::AllowLegacy {
+        if (header.mode == Mode::Recipient || header.mode == Mode::Group)
+            && policy != VerificationPolicy::AllowLegacy
+        {
             return Err(FileFormatError::IntegrityError(
                 "Unsigned or legacy header in recipient/group mode".to_string(),
             ));
@@ -285,7 +307,13 @@ pub fn verify_header_signature_sealed_policy(
         }
 
         let bytes_to_verify = header.signed_bytes();
-        let sig_ok = hybrid_verify(&signer_pubkey, "vollf-hdr-sealed", &[], &bytes_to_verify, signature);
+        let sig_ok = hybrid_verify(
+            &signer_pubkey,
+            "vollf-hdr-sealed",
+            &[],
+            &bytes_to_verify,
+            signature,
+        );
 
         if decrypt_ok && len_ok && key_found && sig_ok {
             Ok(signer_pubkey)
@@ -307,7 +335,9 @@ pub fn verify_header_signature_sealed_policy(
         safe_plaintext.zeroize();
 
         let bytes_to_verify = header.signed_bytes();
-        let sig_ok = crate::signing::ed25519_verify(&signer_ed_pubkey, &bytes_to_verify, &signature.ed25519).is_ok();
+        let sig_ok =
+            crate::signing::ed25519_verify(&signer_ed_pubkey, &bytes_to_verify, &signature.ed25519)
+                .is_ok();
 
         if decrypt_ok && len_ok && sig_ok {
             let signer_pubkey = HybridPublicKey {
@@ -328,7 +358,9 @@ pub fn extract_key_log_id_plain(header: &Header) -> Result<[u8; 32], FileFormatE
         .ok_or(FileFormatError::HeaderNotSigned)?;
     match signed_metadata {
         SignedMetadata::Plain { key_log_id, .. } => Ok(*key_log_id),
-        SignedMetadata::Sealed { .. } | SignedMetadata::SovereignSealed { .. } => Err(FileFormatError::HeaderSealed),
+        SignedMetadata::Sealed { .. } | SignedMetadata::SovereignSealed { .. } => {
+            Err(FileFormatError::HeaderSealed)
+        }
     }
 }
 

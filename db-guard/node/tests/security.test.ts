@@ -104,12 +104,28 @@ describe('Vollcrypt Central Security Modules (Phase 4)', () => {
     });
   });
 
+
+  test('decryptWithSecurity fails closed for non-owner roles when Crypto-RBAC is missing', () => {
+    dbGuardContextStore.run({ role: 'GUEST', userId: 'guest' }, () => {
+      assert.throws(() => {
+        decryptWithSecurity(
+          'VOLLVALT:v1:b64',
+          () => 'plaintext',
+          'User',
+          'email',
+          'rec_1'
+        );
+      }, /Crypto-RBAC is not configured/);
+    });
+  });
+
   test('Decryption Rate Limiter triggers Fail-Closed and zeroizes keys in RAM', () => {
     const localKeys = { '1': Buffer.from('my-sensitive-key-data-32-bytes') };
     const { registerKeysForZeroization } = require('../src/security');
     registerKeysForZeroization(localKeys);
 
     const options = {
+      allowUnrestrictedDecrypt: true,
       rateLimiter: {
         maxDecryptionsPerSecond: 3
       }
@@ -138,8 +154,8 @@ describe('Vollcrypt Central Security Modules (Phase 4)', () => {
 
     const mockDecryptRawFn = () => 'plaintext';
 
-    decryptWithSecurity('VOLLVALT:v1:b64', mockDecryptRawFn, 'User', 'email', 'rec_1');
-    decryptWithSecurity('VOLLVALT:v1:b64', mockDecryptRawFn, 'User', 'ssn', 'rec_2');
+    decryptWithSecurity('VOLLVALT:v1:b64', mockDecryptRawFn, 'User', 'email', 'rec_1', { allowUnrestrictedDecrypt: true });
+    decryptWithSecurity('VOLLVALT:v1:b64', mockDecryptRawFn, 'User', 'ssn', 'rec_2', { allowUnrestrictedDecrypt: true });
 
     assert.strictEqual(logs.length, 2);
 
@@ -168,6 +184,7 @@ describe('Vollcrypt Central Security Modules (Phase 4)', () => {
 
     try {
       const options = {
+        allowUnrestrictedDecrypt: true,
         rateLimiter: {
           maxDecryptionsPerSecond: 2,
           mode: 'warn' as const
@@ -270,6 +287,7 @@ describe('Vollcrypt Central Security Modules (Phase 4)', () => {
     resetFailClosedStatusForTesting();
     
     const options = {
+      allowUnrestrictedDecrypt: true,
       rateLimiter: {
         maxDecryptionsPerSecond: 3
       }

@@ -48,8 +48,9 @@ describe('Prisma db-guard fields encrypt/decrypt', () => {
       key,
       models: {
         User: ['credit_card']
-      }
-    });
+      },
+      allowUnrestrictedDecrypt: true
+    } as any);
 
     // Extract the mock client and query handlers
     // Prisma Extensions are functions that accept a client and call client.$extends(...)

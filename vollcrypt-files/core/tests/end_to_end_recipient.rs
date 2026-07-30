@@ -36,7 +36,7 @@ fn encrypt_decrypt_small_file_hybrid_kem() {
     };
 
     // 2. Serialize header and envelope
-    let mut serialized = header.write();
+    let mut serialized = header.write().expect("valid header should serialize");
     serialized.extend_from_slice(&envelope.write());
 
     // 3. Deserialize and Decrypt session
@@ -96,7 +96,7 @@ fn encrypt_decrypt_multi_recipient() {
         signature: None,
     };
 
-    let mut serialized = header.write();
+    let mut serialized = header.write().expect("valid header should serialize");
     serialized.extend_from_slice(&envelope.write());
 
     // Verify all 3 recipients can decrypt
@@ -153,7 +153,7 @@ fn mixed_password_and_recipient_header() {
         signature: None,
     };
 
-    let mut serialized = header.write();
+    let mut serialized = header.write().expect("valid header should serialize");
     serialized.extend_from_slice(&envelope.write());
 
     // 3. Verify unwrap via password

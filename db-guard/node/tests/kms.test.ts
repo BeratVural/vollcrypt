@@ -137,7 +137,8 @@ describe('KMS Providers & Envelope Decryption', () => {
             C_DecryptInit(session: number, mechanism: any, key: number) {
               assert.strictEqual(session, 99);
               assert.strictEqual(key, 101);
-              assert.ok(mechanism.parameter);
+              assert.strictEqual(mechanism.mechanism, 13);
+              assert.strictEqual(mechanism.parameter, undefined);
               decryptInitialized = true;
             }
             C_Decrypt(session: number, ciphertext: Buffer, output: Buffer) {
@@ -153,7 +154,8 @@ describe('KMS Providers & Envelope Decryption', () => {
           CKO_SECRET_KEY: 2,
           CKA_CLASS: 10,
           CKA_ID: 11,
-          CKM_AES_CBC_PAD: 12
+          CKM_AES_CBC_PAD: 12,
+          CKM_AES_KEY_WRAP_PAD: 13
         };
       }
       return originalLoad.apply(this, [request, parent, isMain]);

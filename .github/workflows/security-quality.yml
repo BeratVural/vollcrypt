@@ -1,0 +1,85 @@
+name: Security and Quality Gates
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "**/*.rs"
+      - "**/*.ts"
+      - "**/*.js"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/security-quality.yml"
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  rust-quality:
+    name: Rust fmt, clippy, and audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Remove wave submodule from Cargo.toml for CI
+        run: python -c "lines = [line for line in open('Cargo.toml') if 'vollcrypt-wave' not in line]; open('Cargo.toml', 'w').write(''.join(lines))"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Run clippy as errors
+        run: cargo clippy -p vollcrypt-core -p vollcrypt-files-core -p vollcrypt-db-guard --all-targets -- -D warnings
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Audit Rust dependencies
+        run: cargo audit
+
+  node-audit:
+    name: Node dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit npm workspaces
+        run: npm audit --workspaces --audit-level=high
+
+  codeql:
+    name: CodeQL analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3

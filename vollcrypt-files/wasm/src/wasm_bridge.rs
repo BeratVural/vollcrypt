@@ -98,10 +98,3 @@ impl WasmBufferPool {
         self.inner.return_buffer(buffer.inner);
     }
 }
-
-#[wasm_bindgen(js_name = getWasmMemoryView)]
-pub fn get_wasm_memory_view(ptr: *const u8, len: usize) -> js_sys::Uint8Array {
-    let memory = wasm_bindgen::memory();
-    let memory: js_sys::WebAssembly::Memory = wasm_bindgen::JsCast::dyn_into(memory).unwrap();
-    js_sys::Uint8Array::new_with_byte_offset_and_length(&memory.buffer(), ptr as u32, len as u32)
-}

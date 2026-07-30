@@ -171,7 +171,13 @@ fn bench_parallel_manifest_verify(c: &mut Criterion) {
         let mut mid = [0u8; 16];
         mid[0..4].copy_from_slice(&(idx as u32 + 2).to_be_bytes());
         manifest
-            .add_member(&admin_sk, mid, admin_pk.clone(), rec_pk.clone(), gk_wrap.clone())
+            .add_member(
+                &admin_sk,
+                mid,
+                admin_pk.clone(),
+                rec_pk.clone(),
+                gk_wrap.clone(),
+            )
             .unwrap();
     }
 

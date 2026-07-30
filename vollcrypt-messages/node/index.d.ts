@@ -9,7 +9,7 @@ export declare function generateEd25519Keypair(): Array<Buffer>
 export declare function generateX25519Keypair(): Array<Buffer>
 export declare function ecdhSharedSecret(ourSecret: Uint8Array, theirPublic: Uint8Array): Buffer
 export declare function signMessage(secretKey: Uint8Array, message: Uint8Array): Buffer
-export declare function verifySignature(publicKey: Uint8Array, message: Uint8Array, signature: Uint8Array): boolean
+export declare function verifySignature(publicKey: Uint8Array, message: Uint8Array, signature: Uint8Array, entriesJson?: string | undefined | null): boolean
 export declare function encryptAesGcm(key: Uint8Array, plaintext: Uint8Array, aad?: Uint8Array | undefined | null): Buffer
 export declare function decryptAesGcm(key: Uint8Array, ciphertext: Uint8Array, aad?: Uint8Array | undefined | null): Buffer
 export declare function encryptAesGcmPadded(key: Uint8Array, plaintext: Uint8Array, aad?: Uint8Array | undefined | null): Buffer
@@ -61,8 +61,8 @@ export declare function transcriptNew(sessionId: Uint8Array): Buffer
 export declare function transcriptUpdate(chainState: Uint8Array, messageHash: Uint8Array): Buffer
 export declare function transcriptComputeMessageHash(messageId: Uint8Array, senderId: Uint8Array, timestamp: number, ciphertext: Uint8Array): Buffer
 export declare function transcriptVerifySync(hashA: Uint8Array, hashB: Uint8Array): boolean
-export declare function sealMessage(recipientX25519Pub: Uint8Array, senderId: Uint8Array, content: Uint8Array): Buffer
-export declare function unsealMessage(sealedPacket: Uint8Array, ourX25519Sk: Uint8Array): Array<Buffer>
+export declare function sealMessage(recipientX25519Pub: Uint8Array, senderId: Uint8Array, content: Uint8Array, senderSigningKey: Uint8Array): Buffer
+export declare function unsealMessage(sealedPacket: Uint8Array, ourX25519Sk: Uint8Array, entriesJson: string | undefined | null, trustedSenderPublicKey: Uint8Array): Array<Buffer>
 export declare function keyLogCreateEntry(userId: Uint8Array, publicKey: Uint8Array, timestamp: number, prevEntryHash: Uint8Array, action: number, signingKey: Uint8Array): string
 export declare function keyLogVerifyChain(entriesJson: string): boolean
 export declare function keyLogCurrentKey(entriesJson: string, userId: Uint8Array): Buffer | null

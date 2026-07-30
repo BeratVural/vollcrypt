@@ -1,6 +1,6 @@
 use vollcrypt_files_core::{
-    chunk_leaf_hash, decrypt_chunk, hybrid_keypair_generate, encrypt_chunk, generate_dek,
-    generate_file_id, generate_gk, generate_recipient_keypair, rewrap_dek_in_header,
+    chunk_leaf_hash, decrypt_chunk, encrypt_chunk, generate_dek, generate_file_id, generate_gk,
+    generate_recipient_keypair, hybrid_keypair_generate, rewrap_dek_in_header,
     unwrap_dek_with_group_key, unwrap_key_with_recipient_key, wrap_dek_for_group,
     wrap_key_to_recipient, CipherId, FileFormatError, GroupManifest, HashAlgorithm, Header,
     MerkleTree, Mode, VERSION,
@@ -114,9 +114,7 @@ fn eager_revocation_full_flow() {
 
     // 2. Rotate Group Key to gk2 (v2)
     let gk2 = generate_gk();
-    let new_gk_version = manifest
-        .rotate_group_key(&gk2, &admin_sk, 1000)
-        .unwrap();
+    let new_gk_version = manifest.rotate_group_key(&gk2, &admin_sk, 1000).unwrap();
     assert_eq!(new_gk_version, 2);
 
     // 3. Rewrap DEK in file header

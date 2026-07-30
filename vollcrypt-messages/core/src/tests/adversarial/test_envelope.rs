@@ -1,6 +1,6 @@
 use crate::envelope::{pack_envelope, unpack_envelope};
 use crate::kdf::derive_window_key;
-use crate::symmetric::{decrypt_aes256gcm, encrypt_aes256gcm, decrypt_aes256gcm_padded, encrypt_aes256gcm_padded};
+use crate::symmetric::{decrypt_aes256gcm_padded, encrypt_aes256gcm_padded};
 use crate::transcript::TranscriptState;
 
 // ── Format Attacks ────────────────────────────────────────────────────────
@@ -73,7 +73,8 @@ fn envelope_wrong_window_index_on_decrypt() {
     let key_wrong = derive_window_key(&srk, window_index_wrong as u64).unwrap();
 
     let aad_hash = [0xAAu8; 32];
-    let encrypted_blob = encrypt_aes256gcm_padded(&key_correct, b"message", Some(&aad_hash)).unwrap();
+    let encrypted_blob =
+        encrypt_aes256gcm_padded(&key_correct, b"message", Some(&aad_hash)).unwrap();
 
     let envelope = pack_envelope(window_index_correct, &aad_hash, &encrypted_blob).unwrap();
 

@@ -35,7 +35,7 @@ fn encrypt_decrypt_small_file_pbkdf2() {
     };
 
     // 2. Serialize header and envelope
-    let mut serialized = header.write();
+    let mut serialized = header.write().expect("valid header should serialize");
     serialized.extend_from_slice(&envelope.write());
 
     // 3. Deserialize and Decrypt session
@@ -85,7 +85,7 @@ fn encrypt_decrypt_small_file_argon2id_interactive() {
     };
 
     // 2. Serialize header and envelope
-    let mut serialized = header.write();
+    let mut serialized = header.write().expect("valid header should serialize");
     serialized.extend_from_slice(&envelope.write());
 
     // 3. Deserialize and Decrypt session
@@ -136,7 +136,7 @@ fn wrong_password_end_to_end() {
     };
 
     // 2. Serialize
-    let mut serialized = header.write();
+    let mut serialized = header.write().expect("valid header should serialize");
     serialized.extend_from_slice(&envelope.write());
 
     // 3. Try to decrypt with wrong password

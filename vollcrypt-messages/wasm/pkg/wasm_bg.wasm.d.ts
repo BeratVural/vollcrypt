@@ -54,7 +54,7 @@ export const registry_add_device: (a: number, b: number, c: number, d: number, e
 export const registry_empty: () => [number, number];
 export const registry_get_active_devices: (a: number, b: number) => [number, number, number, number];
 export const registry_revoke_device: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-export const seal_message: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+export const seal_message: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
 export const should_ratchet: (a: number, b: number, c: number, d: number) => number;
 export const sign_message: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const transcript_compute_message_hash: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
@@ -64,7 +64,7 @@ export const transcript_verify_sync: (a: number, b: number, c: number, d: number
 export const unpack_envelope: (a: number, b: number) => [number, number, number];
 export const unpackedenvelope_aad_hash: (a: number) => [number, number];
 export const unpackedenvelope_encrypted_blob: (a: number) => [number, number];
-export const unseal_message: (a: number, b: number, c: number, d: number) => [number, number, number];
+export const unseal_message: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
 export const unsealresult_content: (a: number) => [number, number];
 export const unsealresult_free: (a: number) => void;
 export const unsealresult_sender_id: (a: number) => [number, number];
@@ -74,7 +74,7 @@ export const verificationcoderesult_fingerprint: (a: number) => [number, number]
 export const verificationcoderesult_numeric_digits: (a: number) => [number, number];
 export const verificationcoderesult_numeric_formatted: (a: number) => [number, number];
 export const verify_fingerprints_match: (a: number, b: number, c: number, d: number) => [number, number, number];
-export const verify_signature: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+export const verify_signature: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
 export const wrap_key: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const __wbg_mlkemencapsulationresult_free: (a: number, b: number) => void;
 export const hybridkemresult_ml_kem_ciphertext: (a: number) => [number, number];

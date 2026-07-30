@@ -63,7 +63,13 @@ fn bench_group_manifest_scaling(c: &mut Criterion) {
             let mut mid = [0u8; 16];
             mid[0..4].copy_from_slice(&(idx as u32 + 2).to_be_bytes());
             manifest
-                .add_member(&admin_sk, mid, admin_pk.clone(), rec_pk.clone(), gk_wrap.clone())
+                .add_member(
+                    &admin_sk,
+                    mid,
+                    admin_pk.clone(),
+                    rec_pk.clone(),
+                    gk_wrap.clone(),
+                )
                 .unwrap();
         }
 
@@ -80,7 +86,6 @@ fn bench_group_manifest_scaling(c: &mut Criterion) {
                 let _ = black_box(res);
             });
         });
-
     }
     g.finish();
 }
@@ -106,7 +111,13 @@ fn bench_rotation_cost(c: &mut Criterion) {
         let mut mid = [0u8; 16];
         mid[0..4].copy_from_slice(&(idx as u32 + 2).to_be_bytes());
         manifest
-            .add_member(&admin_sk, mid, admin_pk.clone(), rec_pk.clone(), gk_wrap.clone())
+            .add_member(
+                &admin_sk,
+                mid,
+                admin_pk.clone(),
+                rec_pk.clone(),
+                gk_wrap.clone(),
+            )
             .unwrap();
     }
 

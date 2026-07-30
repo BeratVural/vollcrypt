@@ -161,7 +161,7 @@ fn bench_header_ops(c: &mut Criterion) {
         signed_metadata: None,
         signature: None,
     };
-    let serialized_1 = header_1.write();
+    let serialized_1 = header_1.write().expect("valid header should serialize");
 
     // 100 wrap entries
     let header_100 = Header {
@@ -184,7 +184,7 @@ fn bench_header_ops(c: &mut Criterion) {
         signed_metadata: None,
         signature: None,
     };
-    let serialized_100 = header_100.write();
+    let serialized_100 = header_100.write().expect("valid header should serialize");
 
     let mut g = c.benchmark_group("header_parse_write");
     g.bench_function("write_1_wrap", |b| {

@@ -19,3 +19,6 @@ resolver = "2"
 lto = true
 opt-level = 3
 codegen-units = 1
+
+[patch.crates-io]
+ml-kem = { path = "./ml-kem" }

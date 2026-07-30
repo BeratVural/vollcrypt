@@ -93,8 +93,9 @@ describe('Mongoose db-guard plugin', () => {
     const schema = new MockSchema();
     mongooseDbGuard(schema as any, {
       key,
-      fields: ['credit_card']
-    });
+      fields: ['credit_card'],
+      allowUnrestrictedDecrypt: true
+    } as any);
 
     // Encrypt some test data first using save hook
     const tempDoc = {

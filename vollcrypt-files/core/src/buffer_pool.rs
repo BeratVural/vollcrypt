@@ -106,10 +106,7 @@ impl BufferPool {
         for _ in 0..pool_size {
             free_tx.send(PooledBuffer::new(chunk_size)).unwrap();
         }
-        Self {
-            free_tx,
-            free_rx,
-        }
+        Self { free_tx, free_rx }
     }
 
     pub fn rent(&self) -> PooledBuffer {

@@ -125,6 +125,41 @@ describe('Vollcrypt Phase 5 Enterprise Security Modules', () => {
     assert.strictEqual(getBreakGlassKey(), undefined);
   });
 
+  test('Break-Glass emergency keys are scoped per tenant', () => {
+    const kp1 = generateEd25519Keypair();
+    const kp2 = generateEd25519Keypair();
+    const pk1 = kp1[1].toString('hex');
+    const pk2 = kp2[1].toString('hex');
+
+    configureBreakGlass({ threshold: 2, publicKeys: [pk1, pk2] });
+
+    const timestamp = Date.now();
+    const msgBuf = Buffer.from(`break-glass-activate|${timestamp}`, 'utf8');
+    const sig1 = signMessage(kp1[0], msgBuf).toString('hex');
+    const sig2 = signMessage(kp2[0], msgBuf).toString('hex');
+    const signatures = [
+      { publicKey: pk1, signature: sig1, timestamp },
+      { publicKey: pk2, signature: sig2, timestamp }
+    ];
+
+    const tenantAKey = Buffer.alloc(32, 11);
+    const tenantBKey = Buffer.alloc(32, 22);
+    activateBreakGlass(signatures, tenantAKey, 'tenant-a');
+    activateBreakGlass(signatures, tenantBKey, 'tenant-b');
+
+    assert.strictEqual(isBreakGlassActive('tenant-a'), true);
+    assert.strictEqual(isBreakGlassActive('tenant-b'), true);
+    assert.deepStrictEqual(getBreakGlassKey('tenant-a'), tenantAKey);
+    assert.deepStrictEqual(getBreakGlassKey('tenant-b'), tenantBKey);
+    assert.notDeepStrictEqual(getBreakGlassKey('tenant-a'), getBreakGlassKey('tenant-b'));
+
+    deactivateBreakGlass('tenant-a');
+    assert.strictEqual(isBreakGlassActive('tenant-a'), false);
+    assert.strictEqual(isBreakGlassActive('tenant-b'), true);
+    assert.strictEqual(getBreakGlassKey('tenant-a'), undefined);
+    assert.deepStrictEqual(getBreakGlassKey('tenant-b'), tenantBKey);
+  });
+
   test('Multi-Tenant KMS Routing in Mongoose', async () => {
     const keyA = Buffer.alloc(32, 10);
     const keyB = Buffer.alloc(32, 20);
@@ -133,6 +168,7 @@ describe('Vollcrypt Phase 5 Enterprise Security Modules', () => {
     mongooseDbGuard(schema as any, {
       key: Buffer.alloc(32, 0), // dummy default key
       fields: ['secret'],
+      allowUnrestrictedDecrypt: true,
       multiTenant: {
         tenants: {
           'tenant-a': { key: keyA },

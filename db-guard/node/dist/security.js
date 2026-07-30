@@ -273,6 +273,11 @@ function resetSecureKeyCacheForTesting() {
         breakGlassEmergencyKey.fill(0);
         breakGlassEmergencyKey = undefined;
     }
+    for (const key of tenantBreakGlassEmergencyKeys.values()) {
+        key.fill(0);
+    }
+    tenantBreakGlassEmergencyKeys.clear();
+    tenantBreakGlassActive.clear();
     breakGlassThreshold = 0;
     breakGlassPublicKeys = [];
 }
@@ -281,25 +286,46 @@ let breakGlassThreshold = 0;
 let breakGlassPublicKeys = [];
 let breakGlassEmergencyKey;
 let isBreakGlassActiveFlag = false;
+const tenantBreakGlassEmergencyKeys = new Map();
+const tenantBreakGlassActive = new Set();
 function configureBreakGlass(options) {
     breakGlassThreshold = options.threshold;
     breakGlassPublicKeys = options.publicKeys;
 }
-function deactivateBreakGlass() {
+function deactivateBreakGlass(tenantId) {
+    if (tenantId) {
+        tenantBreakGlassActive.delete(tenantId);
+        const tenantKey = tenantBreakGlassEmergencyKeys.get(tenantId);
+        if (tenantKey) {
+            tenantKey.fill(0);
+            tenantBreakGlassEmergencyKeys.delete(tenantId);
+        }
+        logDecryption('SYSTEM', `BREAK_GLASS_DEACTIVATED:${tenantId}`, undefined);
+        return;
+    }
     isBreakGlassActiveFlag = false;
     if (breakGlassEmergencyKey) {
         breakGlassEmergencyKey.fill(0);
         breakGlassEmergencyKey = undefined;
     }
+    for (const key of tenantBreakGlassEmergencyKeys.values()) {
+        key.fill(0);
+    }
+    tenantBreakGlassEmergencyKeys.clear();
+    tenantBreakGlassActive.clear();
     logDecryption('SYSTEM', 'BREAK_GLASS_DEACTIVATED', undefined);
 }
-function isBreakGlassActive() {
+function isBreakGlassActive(tenantId) {
+    if (tenantId)
+        return tenantBreakGlassActive.has(tenantId);
     return isBreakGlassActiveFlag;
 }
-function getBreakGlassKey() {
+function getBreakGlassKey(tenantId) {
+    if (tenantId)
+        return tenantBreakGlassEmergencyKeys.get(tenantId);
     return breakGlassEmergencyKey;
 }
-function activateBreakGlass(signatures, emergencyBackupKey) {
+function activateBreakGlass(signatures, emergencyBackupKey, tenantId) {
     if (breakGlassThreshold <= 0 || breakGlassPublicKeys.length === 0) {
         throw new Error('Vollcrypt Security: Break-Glass protocol is not configured.');
     }
@@ -326,6 +352,15 @@ function activateBreakGlass(signatures, emergencyBackupKey) {
             throw new Error(`Vollcrypt Security: Invalid signature for public key ${sig.publicKey}.`);
         }
         verifiedKeys.add(sig.publicKey);
+    }
+    if (tenantId) {
+        const existing = tenantBreakGlassEmergencyKeys.get(tenantId);
+        if (existing)
+            existing.fill(0);
+        tenantBreakGlassEmergencyKeys.set(tenantId, Buffer.from(emergencyBackupKey));
+        tenantBreakGlassActive.add(tenantId);
+        logDecryption('SYSTEM', `BREAK_GLASS_ACTIVATED:${tenantId}`, undefined);
+        return;
     }
     breakGlassEmergencyKey = Buffer.from(emergencyBackupKey);
     isBreakGlassActiveFlag = true;
@@ -383,6 +418,11 @@ function triggerFailClosed(onFailClosedCallback, tenantId) {
         if (breakGlassEmergencyKey) {
             breakGlassEmergencyKey.fill(0);
         }
+        for (const key of tenantBreakGlassEmergencyKeys.values()) {
+            key.fill(0);
+        }
+        tenantBreakGlassEmergencyKeys.clear();
+        tenantBreakGlassActive.clear();
     }
     if (onFailClosedCallback) {
         try {
@@ -559,7 +599,14 @@ function decryptWithSecurity(stored, decryptRawFn, modelName, fieldName, recordI
             throw new Error(`Vollcrypt Security: Role "${role || 'GUEST'}" is not authorized to decrypt field "${fieldKey}".`);
         }
     }
-    // 2. Authorized or RBAC disabled: proceed with normal decryption
+    else if (!options?.allowUnrestrictedDecrypt) {
+        const context = exports.dbGuardContextStore.getStore();
+        const role = context?.role || 'GUEST';
+        if (role !== 'OWNER') {
+            throw new Error(`Vollcrypt Security: Crypto-RBAC is not configured. Refusing unrestricted decrypt for role "${role}" on field "${fieldKey}".`);
+        }
+    }
+    // 2. Authorized or explicitly unrestricted: proceed with normal decryption
     checkRateLimit(options?.rateLimiter);
     const result = decryptRawFn(stored);
     logDecryption(modelName, fieldName, recordId);

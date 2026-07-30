@@ -10,6 +10,7 @@ export interface DbGuardDriverOptions {
         }>;
     };
     rateLimiter?: RateLimiterOptions;
+    allowUnrestrictedDecrypt?: boolean;
 }
 export declare function wrapSqliteDatabase(db: any, options: DbGuardDriverOptions): any;
 export declare function wrapOracleConnection(connection: any, options: DbGuardDriverOptions): any;

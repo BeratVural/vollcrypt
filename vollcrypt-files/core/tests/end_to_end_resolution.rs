@@ -1,6 +1,7 @@
 use vollcrypt_files_core::{
-    hybrid_keypair_generate, generate_file_id, generate_gk, resolve_sender, sign_header_plain,
-    sign_header_sealed, CipherId, FileFormatError, HashAlgorithm, Header, KeyLog, Mode, VerificationPolicy,
+    generate_file_id, generate_gk, hybrid_keypair_generate, resolve_sender, sign_header_plain,
+    sign_header_sealed, CipherId, FileFormatError, HashAlgorithm, Header, KeyLog, Mode,
+    VerificationPolicy,
 };
 
 fn create_test_header() -> Header {
@@ -45,7 +46,8 @@ fn full_resolution_plain() {
     let mut header = create_test_header();
     sign_header_plain(&mut header, &device_pk, &device_sk, key_log_id, timestamp).unwrap();
 
-    let sender_info = resolve_sender(&header, &keylog, None, VerificationPolicy::RequireSigned).unwrap();
+    let sender_info =
+        resolve_sender(&header, &keylog, None, VerificationPolicy::RequireSigned).unwrap();
 
     assert_eq!(sender_info.user_id, user_id);
     assert_eq!(sender_info.device_id, device_id);
@@ -94,7 +96,13 @@ fn full_resolution_sealed() {
     .unwrap();
 
     // Resolving with correct GK works
-    let sender_info = resolve_sender(&header, &keylog, Some(&gk), VerificationPolicy::RequireSigned).unwrap();
+    let sender_info = resolve_sender(
+        &header,
+        &keylog,
+        Some(&gk),
+        VerificationPolicy::RequireSigned,
+    )
+    .unwrap();
     assert_eq!(sender_info.user_id, user_id);
     assert_eq!(sender_info.device_id, device_id);
     assert_eq!(sender_info.signer_pubkey, device_pk);
@@ -117,7 +125,14 @@ fn resolution_after_device_revoke() {
 
     // Register at 100
     let key_log_id = keylog
-        .register_device(user_id, device_id, device_pk.clone(), "Alice's Mac", &admin_sk, 100)
+        .register_device(
+            user_id,
+            device_id,
+            device_pk.clone(),
+            "Alice's Mac",
+            &admin_sk,
+            100,
+        )
         .unwrap();
 
     // Revoke at 150
@@ -131,7 +146,8 @@ fn resolution_after_device_revoke() {
 
     // Resolution should still succeed (signature verifies, device info is looked up)
     // but device_was_active should be false!
-    let sender_info = resolve_sender(&header, &keylog, None, VerificationPolicy::RequireSigned).unwrap();
+    let sender_info =
+        resolve_sender(&header, &keylog, None, VerificationPolicy::RequireSigned).unwrap();
     assert_eq!(sender_info.user_id, user_id);
     assert_eq!(sender_info.signer_pubkey, device_pk);
     assert!(!sender_info.device_was_active);
@@ -177,6 +193,11 @@ fn wrong_gk_for_sealed_resolution() {
     )
     .unwrap();
 
-    let res = resolve_sender(&header, &keylog, Some(&wrong_gk), VerificationPolicy::RequireSigned);
+    let res = resolve_sender(
+        &header,
+        &keylog,
+        Some(&wrong_gk),
+        VerificationPolicy::RequireSigned,
+    );
     assert!(matches!(res, Err(FileFormatError::WrongGroupKey)));
 }

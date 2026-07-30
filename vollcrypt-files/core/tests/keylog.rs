@@ -1,5 +1,5 @@
 use vollcrypt_files_core::{
-    hybrid_keypair_generate, generate_file_id, FileFormatError, KeyLog, KeyLogEntryType,
+    generate_file_id, hybrid_keypair_generate, FileFormatError, KeyLog, KeyLogEntryType,
 };
 
 #[test]

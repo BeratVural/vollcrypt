@@ -502,10 +502,29 @@ fn bench_sealed_sender(iterations: usize) {
     let sender_id = b"alice@example.com";
     let content = b"Secret message content";
 
+    // Setup mock log context for signing & verification
+    let (alice_sk, alice_pk) = vollcrypt_core::keys::generate_ed25519_keypair();
+    let mut alice_pk_arr = [0u8; 32];
+    alice_pk_arr.copy_from_slice(&alice_pk);
+    let mut alice_sk_arr = [0u8; 32];
+    alice_sk_arr.copy_from_slice(&alice_sk);
+
+    let entry = vollcrypt_core::key_log::create_entry(
+        sender_id,
+        &alice_pk_arr,
+        1000,
+        &vollcrypt_core::key_log::GENESIS_HASH,
+        vollcrypt_core::key_log::KeyAction::Add,
+        &alice_sk_arr,
+    )
+    .unwrap();
+    let entries = vec![entry];
+    let entries_json = serde_json::to_string(&entries).unwrap();
+
     let start_seal = Instant::now();
     let mut last_packet = Vec::new();
     for _ in 0..iterations {
-        let sealed = seal(&bob_pk, sender_id, content).unwrap();
+        let sealed = seal(&bob_pk, sender_id, content, &alice_sk_arr).unwrap();
         last_packet = sealed;
     }
     let seal_elapsed = start_seal.elapsed();
@@ -513,7 +532,13 @@ fn bench_sealed_sender(iterations: usize) {
 
     let start_unseal = Instant::now();
     for _ in 0..iterations {
-        let _ = unseal(&last_packet, &bob_sk).unwrap();
+        let _ = unseal(
+            &last_packet,
+            &bob_sk,
+            Some(&entries_json),
+            Some(&alice_pk_arr),
+        )
+        .unwrap();
     }
     let unseal_elapsed = start_unseal.elapsed();
     let unseal_ops = iterations as f64 / unseal_elapsed.as_secs_f64();
@@ -695,13 +720,35 @@ fn bench_multithreaded_handshake(iterations_per_thread: usize) {
     let bob_sk: [u8; 32] = bob_sk_vec.try_into().unwrap();
     let sender_id = b"alice@example.com";
     let content = b"Secret message content";
-    let sealed_packet = seal(&bob_pk, sender_id, content).unwrap();
+
+    // Setup mock log context for signing & verification
+    let (alice_sk, alice_pk) = vollcrypt_core::keys::generate_ed25519_keypair();
+    let mut alice_pk_arr = [0u8; 32];
+    alice_pk_arr.copy_from_slice(&alice_pk);
+    let mut alice_sk_arr = [0u8; 32];
+    alice_sk_arr.copy_from_slice(&alice_sk);
+
+    let entry = vollcrypt_core::key_log::create_entry(
+        sender_id,
+        &alice_pk_arr,
+        1000,
+        &vollcrypt_core::key_log::GENESIS_HASH,
+        vollcrypt_core::key_log::KeyAction::Add,
+        &alice_sk_arr,
+    )
+    .unwrap();
+    let entries = vec![entry];
+    let entries_json = serde_json::to_string(&entries).unwrap();
+
+    let sealed_packet = seal(&bob_pk, sender_id, content, &alice_sk_arr).unwrap();
 
     let (_dk, ek) = ml_kem_keygen();
 
     let shared_sealed = Arc::new(sealed_packet);
     let shared_ek = Arc::new(ek);
     let bob_sk_arc = Arc::new(bob_sk);
+    let entries_json_arc = Arc::new(entries_json);
+    let alice_pk_arc = Arc::new(alice_pk_arr);
 
     let start = Instant::now();
     let mut handles = Vec::new();
@@ -710,12 +757,20 @@ fn bench_multithreaded_handshake(iterations_per_thread: usize) {
         let sealed_clone = Arc::clone(&shared_sealed);
         let ek_clone = Arc::clone(&shared_ek);
         let sk_clone = Arc::clone(&bob_sk_arc);
+        let entries_clone = Arc::clone(&entries_json_arc);
+        let alice_pk_clone = Arc::clone(&alice_pk_arc);
 
         handles.push(std::thread::spawn(move || {
             let mut ok = 0usize;
             for _ in 0..iterations_per_thread {
                 let (_ct, _ss) = ml_kem_encapsulate(&ek_clone).unwrap();
-                let _unsealed = unseal(&sealed_clone, &sk_clone).unwrap();
+                let _unsealed = unseal(
+                    &sealed_clone,
+                    &sk_clone,
+                    Some(&entries_clone),
+                    Some(&alice_pk_clone),
+                )
+                .unwrap();
                 ok += 1;
             }
             ok

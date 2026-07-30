@@ -17,7 +17,7 @@ pub fn derive_pbkdf2(
     iterations: u32,
     key_len: usize,
 ) -> Result<Vec<u8>, &'static str> {
-    if iterations < 1000 || iterations > 5_000_000 {
+    if !(1000..=5_000_000).contains(&iterations) {
         return Err("PBKDF2 iterations out of safety bounds (must be between 1,000 and 5,000,000)");
     }
     let clamped_len = key_len.min(8160);

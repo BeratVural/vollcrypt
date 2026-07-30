@@ -1,16 +1,13 @@
 use std::io::{Read, Seek};
 use std::path::Path;
 use vollcrypt_files_core::{
-    encrypt_file_pipelined, decrypt_file_pipelined,
-    pipelined_io::{encrypt_file_pipelined_async, decrypt_file_pipelined_async},
-    decrypt_file_pipelined_with_policy,
-    generate_dek, generate_file_id, generate_salt,
-    wrap_dek_with_password, unwrap_dek_with_password,
-    generate_recipient_keypair, wrap_key_to_recipient, unwrap_key_with_recipient_key,
-    wrap_dek_with_threshold, unwrap_dek_with_threshold, encode_share, decode_share,
-    Mode, KdfChoice, RecipientPublicKey, RecipientSecretKey,
-    is_sealed,
-    pack_directory, unpack_directory, is_vda_archive,
+    decode_share, decrypt_file_pipelined, decrypt_file_pipelined_with_policy, encode_share,
+    encrypt_file_pipelined, generate_dek, generate_file_id, generate_recipient_keypair,
+    generate_salt, is_sealed, is_vda_archive, pack_directory,
+    pipelined_io::{decrypt_file_pipelined_async, encrypt_file_pipelined_async},
+    unpack_directory, unwrap_dek_with_password, unwrap_dek_with_threshold,
+    unwrap_key_with_recipient_key, wrap_dek_with_password, wrap_dek_with_threshold,
+    wrap_key_to_recipient, KdfChoice, Mode, RecipientPublicKey, RecipientSecretKey,
 };
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -47,7 +44,10 @@ fn serialize_pk(pk: &RecipientPublicKey) -> String {
 fn deserialize_pk(hex: &str) -> Result<RecipientPublicKey, String> {
     let bytes = hex_to_bytes(hex)?;
     if bytes.len() != 1216 {
-        return Err(format!("Invalid public key length: expected 1216, got {}", bytes.len()));
+        return Err(format!(
+            "Invalid public key length: expected 1216, got {}",
+            bytes.len()
+        ));
     }
     let mut x25519 = [0u8; 32];
     x25519.copy_from_slice(&bytes[0..32]);
@@ -69,7 +69,10 @@ fn serialize_sk(sk: &RecipientSecretKey) -> String {
 fn deserialize_sk(hex: &str) -> Result<RecipientSecretKey, String> {
     let bytes = hex_to_bytes(hex)?;
     if bytes.len() != 2432 {
-        return Err(format!("Invalid secret key length: expected 2432, got {}", bytes.len()));
+        return Err(format!(
+            "Invalid secret key length: expected 2432, got {}",
+            bytes.len()
+        ));
     }
     let mut x25519 = [0u8; 32];
     x25519.copy_from_slice(&bytes[0..32]);
@@ -109,7 +112,11 @@ fn get_kdf_choice(kdf_choice: &str, perf_profile: Option<&str>) -> KdfChoice {
                 Some("maximum") => (262_144, 4, 4),
                 _ => (32_768, 2, 2), // balanced (default)
             };
-            KdfChoice::Argon2id { m_cost, t_cost, p_cost }
+            KdfChoice::Argon2id {
+                m_cost,
+                t_cost,
+                p_cost,
+            }
         }
     }
 }
@@ -125,13 +132,14 @@ pub fn generate_keypair() -> Result<RecipientKeypairJson, String> {
 
 #[tauri::command]
 pub fn generate_share_qr(share: String) -> Result<String, String> {
-    use qrcode::QrCode;
     use qrcode::render::svg;
+    use qrcode::QrCode;
 
-    let code = QrCode::new(share.as_bytes())
-        .map_err(|e| format!("Failed to generate QR code: {}", e))?;
+    let code =
+        QrCode::new(share.as_bytes()).map_err(|e| format!("Failed to generate QR code: {}", e))?;
 
-    let svg_string = code.render()
+    let svg_string = code
+        .render()
         .min_dimensions(256, 256)
         .dark_color(svg::Color("#000000"))
         .light_color(svg::Color("#ffffff"))
@@ -165,11 +173,14 @@ impl<R: Read> Read for ProgressReader<R> {
             if n > 0 {
                 self.bytes_read += n as u64;
                 use tauri::Emitter;
-                let _ = self.window.emit("file-progress", ProgressPayload {
-                    file_path: self.file_path.clone(),
-                    bytes_processed: self.bytes_read,
-                    total_bytes: self.total_bytes,
-                });
+                let _ = self.window.emit(
+                    "file-progress",
+                    ProgressPayload {
+                        file_path: self.file_path.clone(),
+                        bytes_processed: self.bytes_read,
+                        total_bytes: self.total_bytes,
+                    },
+                );
             }
         }
         res
@@ -183,9 +194,9 @@ impl<R: Read + Seek> Seek for ProgressReader<R> {
 }
 
 fn secure_shred_file(path: &std::path::Path) -> std::io::Result<()> {
-    use std::fs::OpenOptions;
-    use std::io::{Write, Seek, SeekFrom};
     use rand::RngCore;
+    use std::fs::OpenOptions;
+    use std::io::{Seek, SeekFrom, Write};
 
     if !path.exists() {
         return Ok(());
@@ -198,9 +209,7 @@ fn secure_shred_file(path: &std::path::Path) -> std::io::Result<()> {
         return Ok(());
     }
 
-    let mut file = OpenOptions::new()
-        .write(true)
-        .open(path)?;
+    let mut file = OpenOptions::new().write(true).open(path)?;
 
     let buffer_size = 65536; // 64KB buffer
     let mut rng = rand::thread_rng();
@@ -311,7 +320,6 @@ pub fn send_desktop_notification(title: String, message: String) {
     }
 }
 
-
 #[tauri::command]
 pub async fn encrypt_file_password(
     window: tauri::Window,
@@ -343,8 +351,8 @@ pub async fn encrypt_file_password(
         let kdf = get_kdf_choice(&kdf_choice, perf_profile.as_deref());
         let num_workers = get_num_workers(perf_profile.as_deref());
 
-        let wrap = wrap_dek_with_password(&dek, password.as_bytes(), kdf)
-            .map_err(|e| e.to_string())?;
+        let wrap =
+            wrap_dek_with_password(&dek, password.as_bytes(), kdf).map_err(|e| e.to_string())?;
 
         let source_file = std::fs::File::open(&source_file_path)
             .map_err(|e| format!("Failed to open source file: {}", e))?;
@@ -422,9 +430,10 @@ pub async fn decrypt_file_password(
     tokio::task::spawn_blocking(move || {
         let mut source_file = std::fs::File::open(&source_path)
             .map_err(|e| format!("Failed to open source file: {}", e))?;
-        
+
         let mut buffer = vec![0u8; 65536];
-        let bytes_read = source_file.read(&mut buffer)
+        let bytes_read = source_file
+            .read(&mut buffer)
             .map_err(|e| format!("Failed to read file header: {}", e))?;
 
         let (header, _) = vollcrypt_files_core::Header::parse(&buffer[..bytes_read])
@@ -434,13 +443,16 @@ pub async fn decrypt_file_password(
             return Err("ContainerSealed".to_string());
         }
 
-        let wrap = header.wraps.first()
+        let wrap = header
+            .wraps
+            .first()
             .ok_or_else(|| "No wrap entries found in header".to_string())?;
 
         let dek = unwrap_dek_with_password(wrap, password.as_bytes())
             .map_err(|e| format!("Wrong password or corrupted file: {}", e))?;
 
-        source_file.seek(std::io::SeekFrom::Start(0))
+        source_file
+            .seek(std::io::SeekFrom::Start(0))
             .map_err(|e| format!("Failed to reset file read pointer: {}", e))?;
 
         let total_bytes = source_file.metadata().map(|m| m.len()).unwrap_or(0);
@@ -464,17 +476,21 @@ pub async fn decrypt_file_password(
         let num_workers = get_num_workers(perf_profile.as_deref());
 
         let decrypt_res = if let Some(ref pol) = core_policy {
-            decrypt_file_pipelined_with_policy(source, dest, &dek, num_workers, Some(pol))
-                .map_err(|e| match e {
-                    vollcrypt_files_core::FileFormatError::ContainerSealed => "ContainerSealed".to_string(),
+            decrypt_file_pipelined_with_policy(source, dest, &dek, num_workers, Some(pol)).map_err(
+                |e| match e {
+                    vollcrypt_files_core::FileFormatError::ContainerSealed => {
+                        "ContainerSealed".to_string()
+                    }
                     other => format!("Decryption failed: {}", other),
-                })
+                },
+            )
         } else {
-            decrypt_file_pipelined(source, dest, &dek, num_workers)
-                .map_err(|e| match e {
-                    vollcrypt_files_core::FileFormatError::ContainerSealed => "ContainerSealed".to_string(),
-                    other => format!("Decryption failed: {}", other),
-                })
+            decrypt_file_pipelined(source, dest, &dek, num_workers).map_err(|e| match e {
+                vollcrypt_files_core::FileFormatError::ContainerSealed => {
+                    "ContainerSealed".to_string()
+                }
+                other => format!("Decryption failed: {}", other),
+            })
         };
 
         if let Err(e) = decrypt_res {
@@ -484,11 +500,8 @@ pub async fn decrypt_file_password(
 
         // Post-process: check if VDA archive
         if is_vda_archive(Path::new(&temp_dec_path)) {
-            let unpack_res = unpack_directory(
-                Path::new(&temp_dec_path),
-                Path::new(&dest_path),
-                &dek,
-            );
+            let unpack_res =
+                unpack_directory(Path::new(&temp_dec_path), Path::new(&dest_path), &dek);
             let _ = std::fs::remove_file(&temp_dec_path);
             unpack_res.map_err(|e| format!("Failed to unpack directory: {}", e))?;
         } else {
@@ -551,8 +564,8 @@ pub async fn encrypt_file_recipient(
             }
             let pk = deserialize_pk(pk_hex_trimmed)?;
             let recipient_id = generate_salt();
-            let wrap = wrap_key_to_recipient(&dek, recipient_id, 1, &pk)
-                .map_err(|e| e.to_string())?;
+            let wrap =
+                wrap_key_to_recipient(&dek, recipient_id, 1, &pk).map_err(|e| e.to_string())?;
             wraps.push(wrap);
         }
 
@@ -563,13 +576,12 @@ pub async fn encrypt_file_recipient(
             return Err("At least one recipient public key is required".to_string());
         }
 
-        let source_file = std::fs::File::open(&source_file_path)
-            .map_err(|e| {
-                if let Some(ref path) = temp_archive_path {
-                    let _ = std::fs::remove_file(path);
-                }
-                format!("Failed to open source file: {}", e)
-            })?;
+        let source_file = std::fs::File::open(&source_file_path).map_err(|e| {
+            if let Some(ref path) = temp_archive_path {
+                let _ = std::fs::remove_file(path);
+            }
+            format!("Failed to open source file: {}", e)
+        })?;
         let total_bytes = source_file.metadata().map(|m| m.len()).unwrap_or(0);
         let source = ProgressReader {
             inner: source_file,
@@ -578,13 +590,12 @@ pub async fn encrypt_file_recipient(
             file_path: source_path.clone(),
             window: window_c,
         };
-        let dest = std::fs::File::create(&dest_path)
-            .map_err(|e| {
-                if let Some(ref path) = temp_archive_path {
-                    let _ = std::fs::remove_file(path);
-                }
-                format!("Failed to create destination file: {}", e)
-            })?;
+        let dest = std::fs::File::create(&dest_path).map_err(|e| {
+            if let Some(ref path) = temp_archive_path {
+                let _ = std::fs::remove_file(path);
+            }
+            format!("Failed to create destination file: {}", e)
+        })?;
 
         let num_workers = get_num_workers(perf_profile.as_deref());
 
@@ -650,7 +661,7 @@ pub async fn decrypt_file_recipient(
         let sk = deserialize_sk(&recipient_sk_hex)?;
         let mut source_file = std::fs::File::open(&source_path)
             .map_err(|e| format!("Failed to open source file: {}", e))?;
-        
+
         let mut buffer = vec![0u8; 65536];
         let bytes_read = source_file.read(&mut buffer)
             .map_err(|e| format!("Failed to read file header: {}", e))?;
@@ -775,8 +786,7 @@ pub async fn encrypt_text_password(
 
     let kdf = get_kdf_choice(&kdf_choice, perf_profile.as_deref());
 
-    let wrap = wrap_dek_with_password(&dek, password.as_bytes(), kdf)
-        .map_err(|e| e.to_string())?;
+    let wrap = wrap_dek_with_password(&dek, password.as_bytes(), kdf).map_err(|e| e.to_string())?;
 
     let (_, ciphertext) = encrypt_file_pipelined_async(
         text.as_bytes(),
@@ -799,13 +809,15 @@ pub async fn decrypt_text_password(
     ciphertext_hex: String,
     password: String,
 ) -> Result<String, String> {
-    let ciphertext = hex_to_bytes(&ciphertext_hex)
-        .map_err(|e| format!("Invalid hex container: {}", e))?;
+    let ciphertext =
+        hex_to_bytes(&ciphertext_hex).map_err(|e| format!("Invalid hex container: {}", e))?;
 
     let (header, _) = vollcrypt_files_core::Header::parse(&ciphertext)
         .map_err(|e| format!("Invalid header: {}", e))?;
 
-    let wrap = header.wraps.first()
+    let wrap = header
+        .wraps
+        .first()
         .ok_or_else(|| "No wrap entries found".to_string())?;
 
     let dek = unwrap_dek_with_password(wrap, password.as_bytes())
@@ -815,8 +827,7 @@ pub async fn decrypt_text_password(
         .await
         .map_err(|e| format!("Decryption failed: {}", e))?;
 
-    String::from_utf8(plaintext_bytes)
-        .map_err(|e| format!("Plaintext is not valid UTF-8: {}", e))
+    String::from_utf8(plaintext_bytes).map_err(|e| format!("Plaintext is not valid UTF-8: {}", e))
 }
 
 #[tauri::command]
@@ -835,8 +846,7 @@ pub async fn encrypt_text_recipient(
         }
         let pk = deserialize_pk(pk_hex_trimmed)?;
         let recipient_id = generate_salt();
-        let wrap = wrap_key_to_recipient(&dek, recipient_id, 1, &pk)
-            .map_err(|e| e.to_string())?;
+        let wrap = wrap_key_to_recipient(&dek, recipient_id, 1, &pk).map_err(|e| e.to_string())?;
         wraps.push(wrap);
     }
 
@@ -865,8 +875,8 @@ pub async fn decrypt_text_recipient(
     recipient_sk_hex: String,
 ) -> Result<String, String> {
     let sk = deserialize_sk(&recipient_sk_hex)?;
-    let ciphertext = hex_to_bytes(&ciphertext_hex)
-        .map_err(|e| format!("Invalid hex container: {}", e))?;
+    let ciphertext =
+        hex_to_bytes(&ciphertext_hex).map_err(|e| format!("Invalid hex container: {}", e))?;
 
     let (header, _) = vollcrypt_files_core::Header::parse(&ciphertext)
         .map_err(|e| format!("Invalid header: {}", e))?;
@@ -900,33 +910,28 @@ pub async fn decrypt_text_recipient(
         .await
         .map_err(|e| format!("Decryption failed: {}", e))?;
 
-    String::from_utf8(plaintext_bytes)
-        .map_err(|e| format!("Plaintext is not valid UTF-8: {}", e))
+    String::from_utf8(plaintext_bytes).map_err(|e| format!("Plaintext is not valid UTF-8: {}", e))
 }
 
 #[tauri::command]
 pub fn save_text_file(path: String, content: String) -> Result<(), String> {
-    std::fs::write(&path, content)
-        .map_err(|e| format!("Failed to write file: {}", e))
+    std::fs::write(&path, content).map_err(|e| format!("Failed to write file: {}", e))
 }
 
 #[tauri::command]
 pub fn load_text_file(path: String) -> Result<String, String> {
-    std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read file: {}", e))
+    std::fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {}", e))
 }
 
 #[tauri::command]
 pub fn save_bin_file(path: String, hex_content: String) -> Result<(), String> {
     let bytes = hex_to_bytes(&hex_content)?;
-    std::fs::write(&path, bytes)
-        .map_err(|e| format!("Failed to write binary file: {}", e))
+    std::fs::write(&path, bytes).map_err(|e| format!("Failed to write binary file: {}", e))
 }
 
 #[tauri::command]
 pub fn load_bin_file(path: String) -> Result<String, String> {
-    let bytes = std::fs::read(&path)
-        .map_err(|e| format!("Failed to read binary file: {}", e))?;
+    let bytes = std::fs::read(&path).map_err(|e| format!("Failed to read binary file: {}", e))?;
     Ok(bytes_to_hex(&bytes))
 }
 
@@ -943,7 +948,9 @@ pub struct ShieldPolicyJson {
     pub on_tamper: String,
 }
 
-fn to_core_policy(policy_json: ShieldPolicyJson) -> Result<vollcrypt_files_core::ShieldPolicy, String> {
+fn to_core_policy(
+    policy_json: ShieldPolicyJson,
+) -> Result<vollcrypt_files_core::ShieldPolicy, String> {
     let release_mode = match policy_json.release_mode.as_str() {
         "verified" => vollcrypt_files_core::ReleaseMode::Verified,
         "streaming" => vollcrypt_files_core::ReleaseMode::Streaming,
@@ -1042,9 +1049,9 @@ pub async fn seal_file(
         let temp_path = format!("{}.tmp_seal", path);
 
         let seal_result = (|| {
-            let source_file = std::fs::File::open(&path)
-                .map_err(|e| format!("Failed to open file: {}", e))?;
-            
+            let source_file =
+                std::fs::File::open(&path).map_err(|e| format!("Failed to open file: {}", e))?;
+
             let dest_file = std::fs::File::create(&temp_path)
                 .map_err(|e| format!("Failed to create temporary file: {}", e))?;
 
@@ -1055,7 +1062,12 @@ pub async fn seal_file(
             };
 
             let core_sign_info = match sign_info {
-                Some(si) => Some(parse_sign_info(&si.signer_pk, &si.signer_sk, &si.key_log_id, si.timestamp)?),
+                Some(si) => Some(parse_sign_info(
+                    &si.signer_pk,
+                    &si.signer_sk,
+                    &si.key_log_id,
+                    si.timestamp,
+                )?),
                 None => None,
             };
 
@@ -1079,7 +1091,10 @@ pub async fn seal_file(
         // Replace original file with temporary file
         if let Err(e) = std::fs::rename(&temp_path, &path) {
             let _ = std::fs::remove_file(&temp_path);
-            return Err(format!("Failed to replace original file with sealed container: {}", e));
+            return Err(format!(
+                "Failed to replace original file with sealed container: {}",
+                e
+            ));
         }
 
         Ok(())
@@ -1091,8 +1106,7 @@ pub async fn seal_file(
 #[tauri::command]
 pub async fn inspect_sealed_file(path: String) -> Result<InspectResultJson, String> {
     tokio::task::spawn_blocking(move || {
-        let file = std::fs::File::open(&path)
-            .map_err(|e| format!("Failed to open file: {}", e))?;
+        let file = std::fs::File::open(&path).map_err(|e| format!("Failed to open file: {}", e))?;
 
         let res = vollcrypt_files_core::inspect_sealed(file)
             .map_err(|e| format!("Failed to inspect sealed container: {}", e))?;
@@ -1120,8 +1134,7 @@ pub async fn verify_container_file(
     policy: ShieldPolicyJson,
 ) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        let file = std::fs::File::open(&path)
-            .map_err(|e| format!("Failed to open file: {}", e))?;
+        let file = std::fs::File::open(&path).map_err(|e| format!("Failed to open file: {}", e))?;
 
         let core_policy = to_core_policy(policy)?;
         let report = vollcrypt_files_core::verify_container(file, &core_policy);
@@ -1167,21 +1180,19 @@ pub async fn encrypt_file_threshold(
             temp_archive_path = Some(temp_path);
         }
 
-        let (wrap, shares) = wrap_dek_with_threshold(&dek, &file_id, t, n, 0)
-            .map_err(|e| {
-                if let Some(ref path) = temp_archive_path {
-                    let _ = std::fs::remove_file(path);
-                }
-                e.to_string()
-            })?;
+        let (wrap, shares) = wrap_dek_with_threshold(&dek, &file_id, t, n, 0).map_err(|e| {
+            if let Some(ref path) = temp_archive_path {
+                let _ = std::fs::remove_file(path);
+            }
+            e.to_string()
+        })?;
 
-        let source_file = std::fs::File::open(&source_file_path)
-            .map_err(|e| {
-                if let Some(ref path) = temp_archive_path {
-                    let _ = std::fs::remove_file(path);
-                }
-                format!("Failed to open source file: {}", e)
-            })?;
+        let source_file = std::fs::File::open(&source_file_path).map_err(|e| {
+            if let Some(ref path) = temp_archive_path {
+                let _ = std::fs::remove_file(path);
+            }
+            format!("Failed to open source file: {}", e)
+        })?;
         let total_bytes = source_file.metadata().map(|m| m.len()).unwrap_or(0);
         let source = ProgressReader {
             inner: source_file,
@@ -1190,13 +1201,12 @@ pub async fn encrypt_file_threshold(
             file_path: source_path.clone(),
             window: window_c,
         };
-        let dest = std::fs::File::create(&dest_path)
-            .map_err(|e| {
-                if let Some(ref path) = temp_archive_path {
-                    let _ = std::fs::remove_file(path);
-                }
-                format!("Failed to create destination file: {}", e)
-            })?;
+        let dest = std::fs::File::create(&dest_path).map_err(|e| {
+            if let Some(ref path) = temp_archive_path {
+                let _ = std::fs::remove_file(path);
+            }
+            format!("Failed to create destination file: {}", e)
+        })?;
 
         let num_workers = get_num_workers(perf_profile.as_deref());
 
@@ -1240,10 +1250,7 @@ pub async fn encrypt_file_threshold(
             }
         }
 
-        let share_strs = shares
-            .iter()
-            .map(|s| encode_share(s))
-            .collect();
+        let share_strs = shares.iter().map(|s| encode_share(s)).collect();
 
         Ok(share_strs)
     })
@@ -1266,9 +1273,10 @@ pub async fn decrypt_file_threshold(
     tokio::task::spawn_blocking(move || {
         let mut source_file = std::fs::File::open(&source_path)
             .map_err(|e| format!("Failed to open source file: {}", e))?;
-        
+
         let mut buffer = vec![0u8; 65536];
-        let bytes_read = source_file.read(&mut buffer)
+        let bytes_read = source_file
+            .read(&mut buffer)
             .map_err(|e| format!("Failed to read file header: {}", e))?;
 
         let (header, _) = vollcrypt_files_core::Header::parse(&buffer[..bytes_read])
@@ -1278,13 +1286,14 @@ pub async fn decrypt_file_threshold(
             return Err("ContainerSealed".to_string());
         }
 
-        let wrap = header.wraps.first()
+        let wrap = header
+            .wraps
+            .first()
             .ok_or_else(|| "No wrap entries found in header".to_string())?;
 
         let mut decoded_shares = Vec::with_capacity(shares.len());
         for s in &shares {
-            let decoded = decode_share(s)
-                .map_err(|e| format!("Invalid share: {}", e))?;
+            let decoded = decode_share(s).map_err(|e| format!("Invalid share: {}", e))?;
             decoded_shares.push(decoded);
         }
 
@@ -1294,9 +1303,15 @@ pub async fn decrypt_file_threshold(
             &decoded_shares,
             header.cipher_id as u8,
         )
-        .map_err(|e| format!("Failed to unwrap DEK (ensure threshold is met and shares are correct): {}", e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to unwrap DEK (ensure threshold is met and shares are correct): {}",
+                e
+            )
+        })?;
 
-        source_file.seek(std::io::SeekFrom::Start(0))
+        source_file
+            .seek(std::io::SeekFrom::Start(0))
             .map_err(|e| format!("Failed to reset file read pointer: {}", e))?;
 
         let total_bytes = source_file.metadata().map(|m| m.len()).unwrap_or(0);
@@ -1320,17 +1335,21 @@ pub async fn decrypt_file_threshold(
         let num_workers = get_num_workers(perf_profile.as_deref());
 
         let decrypt_res = if let Some(ref pol) = core_policy {
-            decrypt_file_pipelined_with_policy(source, dest, &dek, num_workers, Some(pol))
-                .map_err(|e| match e {
-                    vollcrypt_files_core::FileFormatError::ContainerSealed => "ContainerSealed".to_string(),
+            decrypt_file_pipelined_with_policy(source, dest, &dek, num_workers, Some(pol)).map_err(
+                |e| match e {
+                    vollcrypt_files_core::FileFormatError::ContainerSealed => {
+                        "ContainerSealed".to_string()
+                    }
                     other => format!("Decryption failed: {}", other),
-                })
+                },
+            )
         } else {
-            decrypt_file_pipelined(source, dest, &dek, num_workers)
-                .map_err(|e| match e {
-                    vollcrypt_files_core::FileFormatError::ContainerSealed => "ContainerSealed".to_string(),
-                    other => format!("Decryption failed: {}", other),
-                })
+            decrypt_file_pipelined(source, dest, &dek, num_workers).map_err(|e| match e {
+                vollcrypt_files_core::FileFormatError::ContainerSealed => {
+                    "ContainerSealed".to_string()
+                }
+                other => format!("Decryption failed: {}", other),
+            })
         };
 
         if let Err(e) = decrypt_res {
@@ -1340,11 +1359,8 @@ pub async fn decrypt_file_threshold(
 
         // Post-process: check if VDA archive
         if is_vda_archive(Path::new(&temp_dec_path)) {
-            let unpack_res = unpack_directory(
-                Path::new(&temp_dec_path),
-                Path::new(&dest_path),
-                &dek,
-            );
+            let unpack_res =
+                unpack_directory(Path::new(&temp_dec_path), Path::new(&dest_path), &dek);
             let _ = std::fs::remove_file(&temp_dec_path);
             unpack_res.map_err(|e| format!("Failed to unpack directory: {}", e))?;
         } else {
@@ -1381,8 +1397,8 @@ pub async fn encrypt_text_threshold(
     let dek = generate_dek();
     let file_id = generate_file_id();
 
-    let (wrap, shares) = wrap_dek_with_threshold(&dek, &file_id, t, n, 0)
-        .map_err(|e| e.to_string())?;
+    let (wrap, shares) =
+        wrap_dek_with_threshold(&dek, &file_id, t, n, 0).map_err(|e| e.to_string())?;
 
     let (_, ciphertext) = encrypt_file_pipelined_async(
         text.as_bytes(),
@@ -1396,10 +1412,7 @@ pub async fn encrypt_text_threshold(
     .await
     .map_err(|e| format!("Encryption failed: {}", e))?;
 
-    let share_strs = shares
-        .iter()
-        .map(|s| encode_share(s))
-        .collect();
+    let share_strs = shares.iter().map(|s| encode_share(s)).collect();
 
     Ok(EncryptTextThresholdResult {
         ciphertext_hex: bytes_to_hex(&ciphertext),
@@ -1412,19 +1425,20 @@ pub async fn decrypt_text_threshold(
     ciphertext_hex: String,
     shares: Vec<String>,
 ) -> Result<String, String> {
-    let ciphertext = hex_to_bytes(&ciphertext_hex)
-        .map_err(|e| format!("Invalid hex container: {}", e))?;
+    let ciphertext =
+        hex_to_bytes(&ciphertext_hex).map_err(|e| format!("Invalid hex container: {}", e))?;
 
     let (header, _) = vollcrypt_files_core::Header::parse(&ciphertext)
         .map_err(|e| format!("Invalid header: {}", e))?;
 
-    let wrap = header.wraps.first()
+    let wrap = header
+        .wraps
+        .first()
         .ok_or_else(|| "No wrap entries found".to_string())?;
 
     let mut decoded_shares = Vec::with_capacity(shares.len());
     for s in &shares {
-        let decoded = decode_share(s)
-            .map_err(|e| format!("Invalid share: {}", e))?;
+        let decoded = decode_share(s).map_err(|e| format!("Invalid share: {}", e))?;
         decoded_shares.push(decoded);
     }
 
@@ -1434,14 +1448,18 @@ pub async fn decrypt_text_threshold(
         &decoded_shares,
         header.cipher_id as u8,
     )
-    .map_err(|e| format!("Failed to unwrap DEK (ensure threshold is met and shares are correct): {}", e))?;
+    .map_err(|e| {
+        format!(
+            "Failed to unwrap DEK (ensure threshold is met and shares are correct): {}",
+            e
+        )
+    })?;
 
     let (_, plaintext_bytes) = decrypt_file_pipelined_async(&ciphertext, &dek)
         .await
         .map_err(|e| format!("Decryption failed: {}", e))?;
 
-    String::from_utf8(plaintext_bytes)
-        .map_err(|e| format!("Plaintext is not valid UTF-8: {}", e))
+    String::from_utf8(plaintext_bytes).map_err(|e| format!("Plaintext is not valid UTF-8: {}", e))
 }
 
 #[derive(serde::Serialize)]
@@ -1499,34 +1517,178 @@ pub async fn register_context_menu() -> Result<(), String> {
 
         let reg_commands = vec![
             // 1. File Association: .voll extension
-            vec!["add", "HKCU\\Software\\Classes\\.voll", "/ve", "/t", "REG_SZ", "/d", "VOLLcrypt.voll", "/f"],
-            vec!["add", "HKCU\\Software\\Classes\\.voll", "/v", "Content Type", "/t", "REG_SZ", "/d", "application/vnd.vollcrypt.file", "/f"],
-            
+            vec![
+                "add",
+                "HKCU\\Software\\Classes\\.voll",
+                "/ve",
+                "/t",
+                "REG_SZ",
+                "/d",
+                "VOLLcrypt.voll",
+                "/f",
+            ],
+            vec![
+                "add",
+                "HKCU\\Software\\Classes\\.voll",
+                "/v",
+                "Content Type",
+                "/t",
+                "REG_SZ",
+                "/d",
+                "application/vnd.vollcrypt.file",
+                "/f",
+            ],
             // 2. ProgID details
-            vec!["add", "HKCU\\Software\\Classes\\VOLLcrypt.voll", "/ve", "/t", "REG_SZ", "/d", "VOLLcrypt Secure Encrypted File", "/f"],
-            
+            vec![
+                "add",
+                "HKCU\\Software\\Classes\\VOLLcrypt.voll",
+                "/ve",
+                "/t",
+                "REG_SZ",
+                "/d",
+                "VOLLcrypt Secure Encrypted File",
+                "/f",
+            ],
             // 3. DefaultIcon (pointing to the exe resource)
-            vec!["add", "HKCU\\Software\\Classes\\VOLLcrypt.voll\\DefaultIcon", "/ve", "/t", "REG_SZ", "/d", &default_icon, "/f"],
-            
+            vec![
+                "add",
+                "HKCU\\Software\\Classes\\VOLLcrypt.voll\\DefaultIcon",
+                "/ve",
+                "/t",
+                "REG_SZ",
+                "/d",
+                &default_icon,
+                "/f",
+            ],
             // 4. Double click open command
-            vec!["add", "HKCU\\Software\\Classes\\VOLLcrypt.voll\\shell\\open\\command", "/ve", "/t", "REG_SZ", "/d", &open_command, "/f"],
-            
+            vec![
+                "add",
+                "HKCU\\Software\\Classes\\VOLLcrypt.voll\\shell\\open\\command",
+                "/ve",
+                "/t",
+                "REG_SZ",
+                "/d",
+                &open_command,
+                "/f",
+            ],
             // 5. Encrypt with VOLLcrypt for all files except .voll
-            vec!["add", "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Encrypt", "/ve", "/t", "REG_SZ", "/d", "Encrypt with VOLLcrypt", "/f"],
-            vec!["add", "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Encrypt", "/v", "Icon", "/t", "REG_SZ", "/d", &icon_param, "/f"],
-            vec!["add", "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Encrypt", "/v", "AppliesTo", "/t", "REG_SZ", "/d", "NOT System.FileExtension:=\".voll\"", "/f"],
-            vec!["add", "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Encrypt\\command", "/ve", "/t", "REG_SZ", "/d", &open_command, "/f"],
-            
+            vec![
+                "add",
+                "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Encrypt",
+                "/ve",
+                "/t",
+                "REG_SZ",
+                "/d",
+                "Encrypt with VOLLcrypt",
+                "/f",
+            ],
+            vec![
+                "add",
+                "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Encrypt",
+                "/v",
+                "Icon",
+                "/t",
+                "REG_SZ",
+                "/d",
+                &icon_param,
+                "/f",
+            ],
+            vec![
+                "add",
+                "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Encrypt",
+                "/v",
+                "AppliesTo",
+                "/t",
+                "REG_SZ",
+                "/d",
+                "NOT System.FileExtension:=\".voll\"",
+                "/f",
+            ],
+            vec![
+                "add",
+                "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Encrypt\\command",
+                "/ve",
+                "/t",
+                "REG_SZ",
+                "/d",
+                &open_command,
+                "/f",
+            ],
             // 6. Encrypt with VOLLcrypt for folders/directories
-            vec!["add", "HKCU\\Software\\Classes\\Directory\\shell\\VOLLcrypt_Encrypt", "/ve", "/t", "REG_SZ", "/d", "Encrypt with VOLLcrypt", "/f"],
-            vec!["add", "HKCU\\Software\\Classes\\Directory\\shell\\VOLLcrypt_Encrypt", "/v", "Icon", "/t", "REG_SZ", "/d", &icon_param, "/f"],
-            vec!["add", "HKCU\\Software\\Classes\\Directory\\shell\\VOLLcrypt_Encrypt\\command", "/ve", "/t", "REG_SZ", "/d", &open_command, "/f"],
-            
+            vec![
+                "add",
+                "HKCU\\Software\\Classes\\Directory\\shell\\VOLLcrypt_Encrypt",
+                "/ve",
+                "/t",
+                "REG_SZ",
+                "/d",
+                "Encrypt with VOLLcrypt",
+                "/f",
+            ],
+            vec![
+                "add",
+                "HKCU\\Software\\Classes\\Directory\\shell\\VOLLcrypt_Encrypt",
+                "/v",
+                "Icon",
+                "/t",
+                "REG_SZ",
+                "/d",
+                &icon_param,
+                "/f",
+            ],
+            vec![
+                "add",
+                "HKCU\\Software\\Classes\\Directory\\shell\\VOLLcrypt_Encrypt\\command",
+                "/ve",
+                "/t",
+                "REG_SZ",
+                "/d",
+                &open_command,
+                "/f",
+            ],
             // 7. Decrypt with VOLLcrypt for .voll files
-            vec!["add", "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Decrypt", "/ve", "/t", "REG_SZ", "/d", "Decrypt with VOLLcrypt", "/f"],
-            vec!["add", "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Decrypt", "/v", "Icon", "/t", "REG_SZ", "/d", &icon_param, "/f"],
-            vec!["add", "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Decrypt", "/v", "AppliesTo", "/t", "REG_SZ", "/d", "System.FileExtension:=\".voll\"", "/f"],
-            vec!["add", "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Decrypt\\command", "/ve", "/t", "REG_SZ", "/d", &open_command, "/f"],
+            vec![
+                "add",
+                "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Decrypt",
+                "/ve",
+                "/t",
+                "REG_SZ",
+                "/d",
+                "Decrypt with VOLLcrypt",
+                "/f",
+            ],
+            vec![
+                "add",
+                "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Decrypt",
+                "/v",
+                "Icon",
+                "/t",
+                "REG_SZ",
+                "/d",
+                &icon_param,
+                "/f",
+            ],
+            vec![
+                "add",
+                "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Decrypt",
+                "/v",
+                "AppliesTo",
+                "/t",
+                "REG_SZ",
+                "/d",
+                "System.FileExtension:=\".voll\"",
+                "/f",
+            ],
+            vec![
+                "add",
+                "HKCU\\Software\\Classes\\*\\shell\\VOLLcrypt_Decrypt\\command",
+                "/ve",
+                "/t",
+                "REG_SZ",
+                "/d",
+                &open_command,
+                "/f",
+            ],
         ];
 
         for args in reg_commands {
@@ -1535,7 +1697,10 @@ pub async fn register_context_menu() -> Result<(), String> {
                 .status()
                 .map_err(|e| format!("Failed to run reg: {}", e))?;
             if !status.success() {
-                return Err(format!("Failed to execute registry command: reg {:?}", args));
+                return Err(format!(
+                    "Failed to execute registry command: reg {:?}",
+                    args
+                ));
             }
         }
 
@@ -1555,16 +1720,14 @@ pub async fn register_context_menu() -> Result<(), String> {
             .map_err(|e| format!("Failed to get current executable path: {}", e))?;
         let exe_str = exe_path.to_string_lossy().to_string();
 
-        let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+        let home =
+            std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
 
         // 1. Nautilus Script
         let nautilus_dir = format!("{}/.local/share/nautilus/scripts", home);
         if std::fs::create_dir_all(&nautilus_dir).is_ok() {
             let script_path = format!("{}/Encrypt with VOLLcrypt", nautilus_dir);
-            let script_content = format!(
-                "#!/bin/sh\n\"{}\" \"$@\"\n",
-                exe_str
-            );
+            let script_content = format!("#!/bin/sh\n\"{}\" \"$@\"\n", exe_str);
             if std::fs::write(&script_path, script_content).is_ok() {
                 use std::os::unix::fs::PermissionsExt;
                 if let Ok(meta) = std::fs::metadata(&script_path) {
@@ -1578,7 +1741,7 @@ pub async fn register_context_menu() -> Result<(), String> {
         // 2. Dolphin Service Menu
         let dolphin_dir5 = format!("{}/.local/share/kservices5/ServiceMenus", home);
         let dolphin_dir6 = format!("{}/.local/share/kservices6/ServiceMenus", home);
-        
+
         let dolphin_content = format!(
             "[Desktop Entry]\n\
              Type=Service\n\
@@ -1603,7 +1766,8 @@ pub async fn register_context_menu() -> Result<(), String> {
 
     #[cfg(target_os = "macos")]
     {
-        let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+        let home =
+            std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
         let services_dir = format!("{}/Library/Services", home);
         let workflow_name = "Encrypt with VOLLcrypt.workflow";
         let workflow_path = format!("{}/{}", services_dir, workflow_name);
@@ -1806,23 +1970,32 @@ pub async fn unregister_context_menu() -> Result<(), String> {
 
     #[cfg(target_os = "linux")]
     {
-        let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
-        let _ = std::fs::remove_file(format!("{}/.local/share/nautilus/scripts/Encrypt with VOLLcrypt", home));
-        let _ = std::fs::remove_file(format!("{}/.local/share/kservices5/ServiceMenus/vollcrypt.desktop", home));
-        let _ = std::fs::remove_file(format!("{}/.local/share/kservices6/ServiceMenus/vollcrypt.desktop", home));
+        let home =
+            std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+        let _ = std::fs::remove_file(format!(
+            "{}/.local/share/nautilus/scripts/Encrypt with VOLLcrypt",
+            home
+        ));
+        let _ = std::fs::remove_file(format!(
+            "{}/.local/share/kservices5/ServiceMenus/vollcrypt.desktop",
+            home
+        ));
+        let _ = std::fs::remove_file(format!(
+            "{}/.local/share/kservices6/ServiceMenus/vollcrypt.desktop",
+            home
+        ));
     }
 
     #[cfg(target_os = "macos")]
     {
-        let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+        let home =
+            std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
         let workflow_path = format!("{}/Library/Services/Encrypt with VOLLcrypt.workflow", home);
         let _ = std::fs::remove_dir_all(workflow_path);
     }
 
     Ok(())
 }
-
-
 
 #[tauri::command]
 pub fn expand_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
@@ -1842,8 +2015,8 @@ pub fn expand_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
-use zeroize::Zeroize;
 use vollcrypt_files_core::aead::aes256_gcm_decrypt;
+use zeroize::Zeroize;
 
 #[derive(serde::Serialize, Clone)]
 pub struct VdaEntryInfo {
@@ -2056,14 +2229,14 @@ fn extract_vda_file(
                 return Err("VDA parsing overflow".to_string());
             }
             let ciphertext = &bytes[offset..offset + size];
-            
+
             if path == target_rel_path {
                 let file_key = vollcrypt_files_core::archive::derive_file_key(dek, &path)
                     .map_err(|e| format!("Failed to derive file key: {}", e))?;
-                
+
                 let plaintext = aes256_gcm_decrypt(&file_key, &iv, &[], ciphertext, &tag)
                     .map_err(|e| format!("AES-GCM decryption failed for file: {}", e))?;
-                
+
                 return Ok(plaintext);
             }
 
@@ -2083,9 +2256,10 @@ fn decrypt_file_to_memory(
 ) -> Result<(Vec<u8>, vollcrypt_files_core::Header, [u8; 32]), String> {
     let mut source_file = std::fs::File::open(source_path)
         .map_err(|e| format!("Failed to open source file: {}", e))?;
-    
+
     let mut buffer = vec![0u8; 65536];
-    let bytes_read = source_file.read(&mut buffer)
+    let bytes_read = source_file
+        .read(&mut buffer)
         .map_err(|e| format!("Failed to read file header: {}", e))?;
 
     let (header, _) = vollcrypt_files_core::Header::parse(&buffer[..bytes_read])
@@ -2095,7 +2269,9 @@ fn decrypt_file_to_memory(
         return Err("ContainerSealed".to_string());
     }
 
-    let wrap = header.wraps.first()
+    let wrap = header
+        .wraps
+        .first()
         .ok_or_else(|| "No wrap entries found in header".to_string())?;
 
     let dek = match active_mode.as_str() {
@@ -2105,9 +2281,10 @@ fn decrypt_file_to_memory(
                 .map_err(|e| format!("Wrong password or corrupted file: {}", e))?
         }
         "recipient" => {
-            let sk_hex = recipient_sk_hex.ok_or_else(|| "Recipient Secret Key is required".to_string())?;
+            let sk_hex =
+                recipient_sk_hex.ok_or_else(|| "Recipient Secret Key is required".to_string())?;
             let sk = deserialize_sk(&sk_hex)?;
-            
+
             let mut dek_opt = None;
             let mut last_err = None;
             for w in &header.wraps {
@@ -2132,8 +2309,7 @@ fn decrypt_file_to_memory(
             let shs = shares.ok_or_else(|| "Shares are required for SSS decryption".to_string())?;
             let mut decoded_shares = Vec::with_capacity(shs.len());
             for s in &shs {
-                let decoded = decode_share(s)
-                    .map_err(|e| format!("Invalid share: {}", e))?;
+                let decoded = decode_share(s).map_err(|e| format!("Invalid share: {}", e))?;
                 decoded_shares.push(decoded);
             }
             unwrap_dek_with_threshold(
@@ -2147,7 +2323,8 @@ fn decrypt_file_to_memory(
         _ => return Err("Invalid decryption mode".to_string()),
     };
 
-    source_file.seek(std::io::SeekFrom::Start(0))
+    source_file
+        .seek(std::io::SeekFrom::Start(0))
         .map_err(|e| format!("Failed to reset file read pointer: {}", e))?;
 
     let num_workers = 4;
@@ -2181,7 +2358,7 @@ pub async fn secure_preview_init(
     max_size_mb: Option<u64>,
 ) -> Result<SecurePreviewInitResult, String> {
     run_anti_debug_checks();
-    
+
     tokio::task::spawn_blocking(move || {
         let (mut data, _header, dek) = decrypt_file_to_memory(
             &source_path,
@@ -2196,7 +2373,10 @@ pub async fn secure_preview_init(
         let max_size = limit_mb * 1024 * 1024;
         if size > max_size {
             data.zeroize();
-            return Err(format!("File exceeds {}MB secure preview limit. Please decrypt to disk to view.", limit_mb));
+            return Err(format!(
+                "File exceeds {}MB secure preview limit. Please decrypt to disk to view.",
+                limit_mb
+            ));
         }
 
         lock_memory(&data);
@@ -2264,8 +2444,9 @@ pub async fn secure_preview_get(session_id: String) -> Result<Vec<u8>, String> {
     run_anti_debug_checks();
 
     let mut sessions = get_preview_sessions().lock().unwrap();
-    
-    let is_folder = sessions.get(&session_id)
+
+    let is_folder = sessions
+        .get(&session_id)
         .map(|s| s.is_folder)
         .ok_or_else(|| "Session not found or expired".to_string())?;
 
@@ -2290,7 +2471,8 @@ pub async fn secure_preview_get_file(
     run_anti_debug_checks();
 
     let mut sessions = get_preview_sessions().lock().unwrap();
-    let session = sessions.get_mut(&session_id)
+    let session = sessions
+        .get_mut(&session_id)
         .ok_or_else(|| "Session not found or expired".to_string())?;
 
     if !session.is_folder {
@@ -2316,8 +2498,12 @@ pub async fn secure_preview_cleanup(session_id: String) -> Result<(), String> {
 pub async fn prevent_screen_capture(window: tauri::Window) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        use windows::Win32::UI::WindowsAndMessaging::{SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE};
-        let hwnd = window.hwnd().map_err(|e| format!("Failed to get HWND: {}", e))?;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE,
+        };
+        let hwnd = window
+            .hwnd()
+            .map_err(|e| format!("Failed to get HWND: {}", e))?;
         unsafe {
             SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
                 .map_err(|e| format!("Failed to set display affinity: {}", e))?;
@@ -2337,5 +2523,3 @@ pub fn cleanup_all_preview_sessions() {
         }
     }
 }
-
-

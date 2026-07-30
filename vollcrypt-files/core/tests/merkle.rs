@@ -2,15 +2,6 @@ use rand::{rngs::StdRng, Rng, SeedableRng};
 use sha2::{Digest, Sha256};
 use vollcrypt_files_core::{chunk_leaf_hash, verify_merkle_proof, ChunkEnvelope, MerkleTree};
 
-fn hash_two(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(left);
-    hasher.update(right);
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&hasher.finalize());
-    out
-}
-
 #[test]
 fn single_leaf_root_is_leaf() {
     let leaf = [0xAA; 32];
@@ -29,9 +20,9 @@ fn two_leaves_root() {
     let leaf2 = [0x02; 32];
 
     let mut hasher = Sha256::new();
-    hasher.update(&[0x01]);
-    hasher.update(&leaf1);
-    hasher.update(&leaf2);
+    hasher.update([0x01]);
+    hasher.update(leaf1);
+    hasher.update(leaf2);
     let mut parent = [0u8; 32];
     parent.copy_from_slice(&hasher.finalize());
     let expected = vollcrypt_files_core::bind_root_with_length(
@@ -55,18 +46,18 @@ fn odd_leaves_duplication() {
     let l2 = [0x0C; 32];
 
     let mut hasher = Sha256::new();
-    hasher.update(&[0x01]);
-    hasher.update(&l0);
-    hasher.update(&l1);
+    hasher.update([0x01]);
+    hasher.update(l0);
+    hasher.update(l1);
     let mut p0 = [0u8; 32];
     p0.copy_from_slice(&hasher.finalize());
 
     let p1 = l2; // Promoted, not duplicated
 
     let mut hasher = Sha256::new();
-    hasher.update(&[0x01]);
-    hasher.update(&p0);
-    hasher.update(&p1);
+    hasher.update([0x01]);
+    hasher.update(p0);
+    hasher.update(p1);
     let mut r = [0u8; 32];
     r.copy_from_slice(&hasher.finalize());
 

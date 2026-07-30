@@ -72,7 +72,7 @@ pub fn is_valid_padded_len(len: usize) -> bool {
     if len <= 2048 {
         sizes.contains(&len)
     } else {
-        len % 1024 == 0
+        len.is_multiple_of(1024)
     }
 }
 

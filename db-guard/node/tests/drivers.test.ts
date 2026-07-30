@@ -10,7 +10,8 @@ test('wrapSqliteDatabase E2E parameters encryption and results decryption', asyn
     key: KEY,
     entities: {
       users: ['email', 'ssn']
-    }
+    },
+    allowUnrestrictedDecrypt: true
   };
 
   // Mock Statement
@@ -67,7 +68,8 @@ test('wrapOracleConnection bind parameter encryption and result decryption', asy
     key: KEY,
     entities: {
       employees: ['ssn']
-    }
+    },
+    allowUnrestrictedDecrypt: true
   };
 
   let lastBinds: any = null;
@@ -144,4 +146,41 @@ test('wrapSqliteDatabase support for quoted SQL identifiers', async (t) => {
   updateStmt.run('bob@example.com', '987-65-432', 1);
   assert.ok(lastParams[0].startsWith('VOLLVALT:'));
   assert.ok(lastParams[1].startsWith('VOLLVALT:'));
+});
+
+
+test('wrapSqliteDatabase refuses unparsable encrypted writes instead of plaintext passthrough', () => {
+  const wrappedDb = wrapSqliteDatabase({
+    prepare() {
+      return { run() {} };
+    }
+  }, {
+    key: KEY,
+    entities: { users: ['email'] }
+  });
+
+  assert.throws(() => {
+    wrappedDb.prepare('INSERT INTO users SELECT ?');
+  }, /could not be parsed for encrypted fields/);
+});
+
+test('wrapSqliteDatabase propagates unauthorized decrypt errors instead of keeping ciphertext', () => {
+  const encrypted = encryptValue('secret@example.com', KEY, '1');
+  const statement = {
+    get() {
+      return { id: 1, email: encrypted };
+    },
+    run() {},
+    all() { return []; }
+  };
+  const wrappedDb = wrapSqliteDatabase({
+    prepare() { return statement; }
+  }, {
+    key: KEY,
+    entities: { users: ['email'] },
+    cryptoRbac: { roles: { GUEST: { decrypt: [] } } }
+  });
+
+  const selectStmt = wrappedDb.prepare('SELECT * FROM users WHERE id = ?');
+  assert.throws(() => selectStmt.get(1), /not authorized to decrypt field "users.email"/);
 });

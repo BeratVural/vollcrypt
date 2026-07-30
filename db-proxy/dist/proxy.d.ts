@@ -15,7 +15,7 @@ export interface DbProxyOptions {
     noIpBanning?: boolean;
     dbType?: 'postgres' | 'mysql' | 'mongodb' | 'mssql' | 'oracle';
     fipsMode?: boolean;
-    mpcShares?: Buffer[];
+    xorKeySplitShares?: Buffer[];
 }
 /**
  * Serializes a PostgreSQL protocol ErrorResponse ('E') message.
@@ -52,6 +52,7 @@ export declare class DbProxyServer {
     private options;
     private server;
     private activeConnections;
+    private socketTenantIds;
     private allowlistedFingerprints;
     private activeSsoSessions;
     private activeJitGrants;
@@ -63,7 +64,7 @@ export declare class DbProxyServer {
     registerSsoSession(username: string, passcode: string, roles: string[], ttlMs?: number): void;
     registerJitGrant(userId: string, role: string, durationMs: number): void;
     logSiemEvent(event: string, severity: number, username: string, clientIp: string, message: string): void;
-    triggerFailClosed(): void;
+    triggerFailClosed(tenantId?: string): void;
     private sslKey;
     private sslCert;
     constructor(options: DbProxyOptions);

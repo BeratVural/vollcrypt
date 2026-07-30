@@ -10,6 +10,7 @@ import { DbProxyServer, DbProxyOptions, serializeErrorResponse } from '../src/pr
 import { serializeDataRow, serializeParameterStatus, parseParameterStatus } from '../src/pg-protocol.js';
 import { serializeLengthEncodedString, parseLengthEncodedString } from '../src/drivers/mysql.js';
 import { serializeBson, parseBson } from '../src/drivers/mongo.js';
+import { ensureTenantScopedQuery, extractProjectionColumns, validateQuery } from '../src/waf.js';
 
 const KEY = Buffer.alloc(32, 0x01); // Ephemeral test key (32 bytes of 0x01)
 
@@ -1262,6 +1263,7 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     } catch (err) {
       assert.ok(err);
     } finally {
+      await client2.end().catch(() => undefined);
       await node1.stop();
       await node2.stop();
     }
@@ -1379,6 +1381,8 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       assert.fail('Connection from banned IP should have been dropped');
     } catch (err) {
       assert.ok(err);
+    } finally {
+      await client3.end().catch(() => undefined);
     }
 
     await node.stop();
@@ -1458,6 +1462,7 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     } finally {
       process.stdout.write = originalWrite;
       process.stdin.setRawMode = originalSetRawMode;
+      process.stdin.pause();
       Object.defineProperty(process.stdin, 'isTTY', {
         value: originalTTY,
         configurable: true
@@ -1540,28 +1545,28 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     assert.ok(mongoRes.toString('utf8').includes('dropDatabase'));
   });
 
-  await t.test('31. MPC Split-Key Decryption Key Reconstruction', async () => {
+  await t.test('31. XOR Key-Split Decryption Key Reconstruction', async () => {
     // Create 3 shares of a 32-byte key
     const share1 = Buffer.alloc(32, 0x0f);
     const share2 = Buffer.alloc(32, 0xf0);
     const share3 = Buffer.alloc(32, 0xaa); // 0x0f ^ 0xf0 ^ 0xaa = 0x55
 
-    const mpcOptions: DbProxyOptions = {
+    const keySplitOptions: DbProxyOptions = {
       port: PROXY_PORT + 52,
       dbHost: '127.0.0.1',
       dbPort: MOCK_DB_PORT,
       resolvedKeys: {},
-      mpcShares: [share1, share2, share3],
+      xorKeySplitShares: [share1, share2, share3],
       minResponseTimeMs: 0,
     };
-    const mpcProxy = new DbProxyServer(mpcOptions);
-    await mpcProxy.start();
+    const keySplitProxy = new DbProxyServer(keySplitOptions);
+    await keySplitProxy.start();
 
     // Reconstructed key in resolvedKeys['1'] should be 32 bytes of 0x55
-    const reconstructedKey = (mpcProxy as any).options.resolvedKeys['1'];
+    const reconstructedKey = (keySplitProxy as any).options.resolvedKeys['1'];
     assert.ok(reconstructedKey);
     assert.strictEqual(reconstructedKey[0], 0x55);
-    await mpcProxy.stop();
+    await keySplitProxy.stop();
   });
 
   await t.test('32. AI-Driven Semantic Anomaly Threat Scoring and Blocking', async () => {
@@ -1572,6 +1577,13 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       resolvedKeys: { '1': KEY },
       config: {
         users: { postgres: { role: 'LAWYER', userId: 'usr-lawyer' } },
+        cryptoRbac: {
+          roles: {
+            LAWYER: {
+              decrypt: ['users.email', 'users.tc_no', 'users.credit_card'],
+            },
+          },
+        },
         firewall: {
           anomalyEngine: { enabled: true }
         }
@@ -1902,8 +1914,18 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     const mssqlMockRow = Buffer.concat([before, encValBuf1, mid, encValBuf2, after]);
 
     const mockMssqlServer = net.createServer((socket) => {
+      let pending = Buffer.alloc(0);
       socket.on('data', (data) => {
-        if (data.length === 4 && data.readInt32BE(0) === 0) {
+        pending = Buffer.concat([pending, data]);
+
+        if (pending.length >= 8 && pending[0] === 0x10) {
+          const loginLength = pending.readUInt16BE(2);
+          if (pending.length < loginLength) return;
+          pending = pending.subarray(loginLength);
+        }
+
+        if (pending.length >= 4 && pending.readInt32BE(0) === 0) {
+          pending = pending.subarray(4);
           socket.write(mssqlMockRow);
         }
       });
@@ -1946,7 +1968,13 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     client.write(loginPacket);
     await new Promise((resolve) => setTimeout(resolve, 50)); // let it parse
 
-    const responsePromise = new Promise<Buffer>((resolve) => client.once('data', resolve));
+    const responsePromise = new Promise<Buffer>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Timed out waiting for MSSQL mock row')), 2_000);
+      client.once('data', (data) => {
+        clearTimeout(timeout);
+        resolve(data);
+      });
+    });
     client.write(Buffer.from([0, 0, 0, 0])); // trigger response
 
     const res = await responsePromise;
@@ -1976,7 +2004,13 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     sqlReq.writeUInt16BE(sqlReq.length, 2);
     sqlBuf.copy(sqlReq, 8);
 
-    const wafResponsePromise = new Promise<Buffer>((resolve) => wafClient.once('data', resolve));
+    const wafResponsePromise = new Promise<Buffer>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Timed out waiting for MSSQL WAF response')), 2_000);
+      wafClient.once('data', (data) => {
+        clearTimeout(timeout);
+        resolve(data);
+      });
+    });
     wafClient.write(sqlReq);
 
     const wafRes = await wafResponsePromise;
@@ -2009,8 +2043,18 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     oracleMockRow.writeUInt16BE(oracleMockRow.length, 0); // length BE
 
     const mockOracleServer = net.createServer((socket) => {
+      let pending = Buffer.alloc(0);
       socket.on('data', (data) => {
-        if (data.length === 4 && data.readInt32BE(0) === 0) {
+        pending = Buffer.concat([pending, data]);
+
+        if (pending.length >= 8 && pending[4] === 0x01) {
+          const connectLength = pending.readUInt16BE(0);
+          if (pending.length < connectLength) return;
+          pending = pending.subarray(connectLength);
+        }
+
+        if (pending.length >= 4 && pending.readInt32BE(0) === 0) {
+          pending = pending.subarray(4);
           socket.write(oracleMockRow);
         }
       });
@@ -2044,11 +2088,21 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     await new Promise((resolve) => client.on('connect', resolve));
 
     // Send mock TNS Connect packet to authenticate as 'postgres'
-    const connectPacket = Buffer.from('(DESCRIPTION=(CONNECT_DATA=(SERVICE_NAME=orcl)(USER=postgres)))', 'ascii');
+    const connectPayload = Buffer.from('(DESCRIPTION=(CONNECT_DATA=(SERVICE_NAME=orcl)(USER=postgres)))', 'ascii');
+    const connectPacket = Buffer.alloc(8 + connectPayload.length);
+    connectPacket.writeUInt16BE(connectPacket.length, 0);
+    connectPacket[4] = 0x01;
+    connectPayload.copy(connectPacket, 8);
     client.write(connectPacket);
     await new Promise((resolve) => setTimeout(resolve, 50)); // let it parse
 
-    const responsePromise = new Promise<Buffer>((resolve) => client.once('data', resolve));
+    const responsePromise = new Promise<Buffer>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Timed out waiting for Oracle mock row')), 2_000);
+      client.once('data', (data) => {
+        clearTimeout(timeout);
+        resolve(data);
+      });
+    });
     client.write(Buffer.from([0, 0, 0, 0])); // trigger response
 
     const res = await responsePromise;
@@ -2077,7 +2131,13 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     sqlReq.writeUInt16BE(sqlReq.length, 0);
     sqlBuf.copy(sqlReq, 8);
 
-    const wafResponsePromise = new Promise<Buffer>((resolve) => wafClient.once('data', resolve));
+    const wafResponsePromise = new Promise<Buffer>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Timed out waiting for Oracle WAF response')), 2_000);
+      wafClient.once('data', (data) => {
+        clearTimeout(timeout);
+        resolve(data);
+      });
+    });
     wafClient.write(sqlReq);
 
     const wafRes = await wafResponsePromise;
@@ -2199,3 +2259,96 @@ function createMockAuthDbServer(port: number, passwordExpected: string): net.Ser
   server.listen(port);
   return server;
 }
+
+
+test('WAF blocks MySQL hash-comment UNION SELECT bypass', () => {
+  assert.throws(() => {
+    validateQuery('SELECT id FROM products WHERE id=1 UNION#x\nSELECT username,password_hash FROM admin_users', 'GUEST');
+  }, /SQL Injection signature detected/);
+});
+
+test('projection extraction uses source column instead of client alias for RBAC', () => {
+  assert.deepStrictEqual(extractProjectionColumns('SELECT credit_card AS email FROM users'), ['credit_card']);
+  assert.deepStrictEqual(extractProjectionColumns('SELECT users.credit_card email FROM users'), ['users.credit_card']);
+});
+
+test('tenant scoped SQL fails closed without explicit tenant predicate', () => {
+  assert.throws(() => {
+    ensureTenantScopedQuery('SELECT * FROM invoices', 'tenant-a');
+  }, /Tenant isolation required/);
+  assert.throws(() => {
+    ensureTenantScopedQuery("SELECT * FROM invoices WHERE tenant_id = 'tenant-b'", 'tenant-a');
+  }, /Tenant isolation violation/);
+  assert.doesNotThrow(() => {
+    ensureTenantScopedQuery("SELECT * FROM invoices WHERE tenant_id = 'tenant-a'", 'tenant-a');
+  });
+});
+
+test('non-Postgres drivers fail closed when unsupported firewall controls are configured', () => {
+  const baseOptions = {
+    port: 19999,
+    dbHost: '127.0.0.1',
+    dbPort: 19998,
+    resolvedKeys: { '1': KEY },
+  };
+
+  assert.throws(
+    () => new DbProxyServer({
+      ...baseOptions,
+      dbType: 'mysql',
+      config: {
+        users: {},
+        firewall: { jitApprovalRequired: true },
+      },
+    }),
+    /does not implement requested security controls: firewall\.jitApprovalRequired/,
+  );
+
+  assert.throws(
+    () => new DbProxyServer({
+      ...baseOptions,
+      dbType: 'mongodb',
+      config: {
+        users: {},
+        firewall: {
+          anomalyEngine: { enabled: true },
+          maxRowsPerQuery: 10,
+          rateLimits: { maxQueriesPerSecond: 5 },
+        },
+      },
+    }),
+    /firewall\.anomalyEngine\.enabled.*firewall\.rateLimits\.maxQueriesPerSecond.*firewall\.maxRowsPerQuery/,
+  );
+
+  assert.doesNotThrow(() => new DbProxyServer({
+    ...baseOptions,
+    dbType: 'oracle',
+    config: {
+      users: {},
+      cryptoRbac: { roles: { OWNER: { decrypt: ['*'] } } },
+      rateLimiter: { maxDecryptionsPerSecond: 10, mode: 'fail_closed' },
+    },
+  }));
+});
+
+test('Postgres driver accepts full firewall controls', () => {
+  assert.doesNotThrow(() => new DbProxyServer({
+    port: 20001,
+    dbHost: '127.0.0.1',
+    dbPort: 20000,
+    dbType: 'postgres',
+    resolvedKeys: { '1': KEY },
+    config: {
+      users: {},
+      firewall: {
+        jitApprovalRequired: true,
+        anomalyEngine: { enabled: true },
+        fingerprinting: { enabled: true, mode: 'blocking' },
+        rateLimits: { maxQueriesPerSecond: 5 },
+        maxRowsPerQuery: 100,
+        temporalConstraints: { analyst: { startHour: 9, endHour: 17, allowedDays: [1, 2, 3, 4, 5] } },
+        versionMask: '16.0',
+      },
+    },
+  }));
+});

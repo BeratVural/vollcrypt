@@ -62,13 +62,13 @@ fn hybrid_kek_derive(
 ) -> [u8; 32] {
     let label = [0x5c, 0x2e, 0x2f, 0x2f, 0x5e, 0x5c];
     let mut hasher = Sha3_256::new();
-    hasher.update(&label);
-    hasher.update(ss_pq);          // ss_mlkem
-    hasher.update(ss_classical);   // ss_x25519
-    hasher.update(ct_x25519);      // ct_x25519
-    hasher.update(pk_x25519);      // pk_x25519
+    hasher.update(label);
+    hasher.update(ss_pq); // ss_mlkem
+    hasher.update(ss_classical); // ss_x25519
+    hasher.update(ct_x25519); // ct_x25519
+    hasher.update(pk_x25519); // pk_x25519
     hasher.update(recipient_id);
-    hasher.update(&gk_version.to_be_bytes());
+    hasher.update(gk_version.to_be_bytes());
     let result = hasher.finalize();
     let mut combined_key = [0u8; 32];
     combined_key.copy_from_slice(&result);

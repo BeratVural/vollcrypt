@@ -52,3 +52,20 @@ export declare function getRbacConfig(config?: ProxyConfig): {
         mask?: Record<string, "credit_card" | "email" | "tc_no" | string>;
     }>;
 } | undefined;
+export type DbProxyDriverType = 'postgres' | 'mysql' | 'mongodb' | 'mssql' | 'oracle';
+export interface DriverSecurityCapability {
+    waf: boolean;
+    tenantIsolation: boolean;
+    cryptoRbac: boolean;
+    decryptRateLimit: boolean;
+    rawCellDlp: boolean;
+    jitApproval: boolean;
+    anomalyScoring: boolean;
+    queryRateLimit: boolean;
+    maxRowsPerQuery: boolean;
+    fingerprinting: boolean;
+    temporalConstraints: boolean;
+    versionMask: boolean;
+}
+export declare const DRIVER_SECURITY_CAPABILITIES: Record<DbProxyDriverType, DriverSecurityCapability>;
+export declare function validateProxyDriverSecurityConfig(dbType?: DbProxyDriverType, config?: ProxyConfig): void;

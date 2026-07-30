@@ -152,7 +152,10 @@ fn x25519_low_order_point() {
     let result = ecdh_shared_secret(&sk, &low_order_pk);
 
     // We now enforce that X25519 ECDH fails on non-contributory keys
-    assert!(result.is_err(), "Low-order point public key must result in an error");
+    assert!(
+        result.is_err(),
+        "Low-order point public key must result in an error"
+    );
 }
 
 #[test]

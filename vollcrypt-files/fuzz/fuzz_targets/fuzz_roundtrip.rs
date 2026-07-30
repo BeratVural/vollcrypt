@@ -1,32 +1,32 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use arbitrary::{Arbitrary, Unstructured};
+use arbitrary::Unstructured;
 use vollcrypt_files_core::*;
 
 fuzz_target!(|data: &[u8]| {
     let mut u = Unstructured::new(data);
-    
+
     // Construct a valid Header using Unstructured
     let version = if u.ratio(1, 2).unwrap_or(true) { 1 } else { 2 };
-    
+
     let mode_choice = u.int_in_range(0..=2).unwrap_or(0);
     let mode = match mode_choice {
         0 => Mode::Password,
         1 => Mode::Recipient,
         _ => Mode::Group,
     };
-    
+
     let cipher_id = CipherId::Aes256Gcm;
-    
+
     let mut file_id = [0u8; 16];
     if u.fill_buffer(&mut file_id).is_err() { return; }
-    
+
     let chunk_size = u.arbitrary::<u32>().unwrap_or(65536);
     let plaintext_size = u.arbitrary::<u64>().unwrap_or(0);
-    
+
     let mut merkle_root = [0u8; 32];
     if u.fill_buffer(&mut merkle_root).is_err() { return; }
-    
+
     // Construct some wraps
     let num_wraps = u.int_in_range(0..=5).unwrap_or(0);
     let mut wraps = Vec::new();
@@ -80,15 +80,19 @@ fuzz_target!(|data: &[u8]| {
         };
         wraps.push(wrap);
     }
-    
+
     let mut signed_metadata = None;
     let mut signature = None;
     if version == 2 {
         let is_plain = u.ratio(1, 2).unwrap_or(true);
         let timestamp = u.arbitrary::<u64>().unwrap_or(0);
         if is_plain {
-            let mut signer_pubkey = [0u8; 32];
-            if u.fill_buffer(&mut signer_pubkey).is_err() { return; }
+            let mut ed25519 = [0u8; 32];
+            if u.fill_buffer(&mut ed25519).is_err() { return; }
+            let signer_pubkey = HybridPublicKey {
+                ed25519,
+                mldsa: [0u8; 1952],
+            };
             let mut key_log_id = [0u8; 32];
             if u.fill_buffer(&mut key_log_id).is_err() { return; }
             signed_metadata = Some(SignedMetadata::Plain {
@@ -118,7 +122,10 @@ fuzz_target!(|data: &[u8]| {
         }
         let mut sig = [0u8; 64];
         if u.fill_buffer(&mut sig).is_err() { return; }
-        signature = Some(sig);
+        signature = Some(HybridSignature {
+            ed25519: sig,
+            mldsa: Vec::new(),
+        });
     }
 
     let header = Header {
@@ -129,15 +136,16 @@ fuzz_target!(|data: &[u8]| {
         chunk_size,
         plaintext_size,
         merkle_root,
+        hash_algorithm: HashAlgorithm::Sha256,
         wraps,
         signed_metadata,
         signature,
     };
 
     // Roundtrip verification: write -> parse -> compare serialized representations
-    let serialized1 = header.write();
+    let Ok(serialized1) = header.write() else { return; };
     if let Ok((parsed, _)) = Header::parse(&serialized1) {
-        let serialized2 = parsed.write();
+        let serialized2 = parsed.write().expect("parsed header should serialize");
         assert_eq!(serialized1, serialized2, "Serialization mismatch in roundtrip!");
     }
 });

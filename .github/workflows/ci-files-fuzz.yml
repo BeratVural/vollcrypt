@@ -1,0 +1,50 @@
+name: Vollcrypt Files Fuzz
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "vollcrypt-files/core/**"
+      - "vollcrypt-files/fuzz/**"
+      - ".github/workflows/ci-files-fuzz.yml"
+
+jobs:
+  fuzz:
+    name: Fuzz ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - fuzz_header_parse
+          - fuzz_manifest_parse
+          - fuzz_wrap_entry
+          - fuzz_roundtrip
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo +nightly install cargo-fuzz --locked
+
+      - name: Run fuzz target
+        working-directory: vollcrypt-files/fuzz
+        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=60
+
+      - name: Upload fuzz artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: |
+            vollcrypt-files/fuzz/artifacts/${{ matrix.target }}
+            vollcrypt-files/fuzz/corpus/${{ matrix.target }}
+          if-no-files-found: ignore

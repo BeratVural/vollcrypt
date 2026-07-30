@@ -1,8 +1,10 @@
 use crate::error::FileFormatError;
+use crate::hybrid_sig::{
+    hybrid_sign, hybrid_verify, HybridPublicKey, HybridSecretKey, HybridSignature,
+};
 use crate::recipient::RecipientPublicKey;
-use crate::wrap::WrapEntry;
-use crate::hybrid_sig::{HybridPublicKey, HybridSecretKey, HybridSignature, hybrid_sign, hybrid_verify};
 use crate::signature::VerificationPolicy;
+use crate::wrap::WrapEntry;
 
 /// Represents a group manifest operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -542,7 +544,13 @@ impl GroupManifest {
         };
 
         let msg = signed_op.sig_message_for_version(2);
-        signed_op.signature = hybrid_sign(founder_signing_sk, &founder_signing_pk, "vollf-manifest-op", &[], &msg);
+        signed_op.signature = hybrid_sign(
+            founder_signing_sk,
+            &founder_signing_pk,
+            "vollf-manifest-op",
+            &[],
+            &msg,
+        );
 
         GroupManifest {
             version: 2,
@@ -1038,9 +1046,7 @@ impl GroupManifest {
 
         let founder_pk = self.founder_signing_pk()?;
         let mut expected_prev_hash = [0u8; 32];
-        let mut expected_epoch = 0;
-
-        for op_signed in &self.operations {
+        for (expected_epoch, op_signed) in (0u64..).zip(&self.operations) {
             // 1. Verify hash chain link
             if op_signed.prev_hash != expected_prev_hash {
                 return Err(FileFormatError::InvalidManifestChain);
@@ -1062,16 +1068,26 @@ impl GroupManifest {
             // 4. Verify signature
             let msg = op_signed.sig_message_for_version(self.version);
 
-            if policy == VerificationPolicy::Strict {
-                if op_signed.signature.mldsa.is_empty() || self.version < 2 {
-                    return Err(FileFormatError::IntegrityError(
-                        "Manifest operation has no PQ signature under strict policy".to_string(),
-                    ));
-                }
+            if self.version == 2 && op_signed.signature.mldsa.is_empty() {
+                return Err(FileFormatError::IntegrityError(
+                    "Manifest v2 operation is missing required PQ signature".to_string(),
+                ));
             }
 
-            if !op_signed.signature.mldsa.is_empty() && self.version == 2 {
-                if !hybrid_verify(&op_signed.signer_pubkey, "vollf-manifest-op", &[], &msg, &op_signed.signature) {
+            if policy == VerificationPolicy::Strict && self.version < 2 {
+                return Err(FileFormatError::IntegrityError(
+                    "Manifest operation has no PQ signature under strict policy".to_string(),
+                ));
+            }
+
+            if self.version == 2 {
+                if !hybrid_verify(
+                    &op_signed.signer_pubkey,
+                    "vollf-manifest-op",
+                    &[],
+                    &msg,
+                    &op_signed.signature,
+                ) {
                     return Err(FileFormatError::SignatureInvalid);
                 }
             } else {
@@ -1080,12 +1096,15 @@ impl GroupManifest {
                         "Manifest operation has no PQ signature under strict policy".to_string(),
                     ));
                 }
-                crate::signing::ed25519_verify(&op_signed.signer_pubkey.ed25519, &msg, &op_signed.signature.ed25519)?;
+                crate::signing::ed25519_verify(
+                    &op_signed.signer_pubkey.ed25519,
+                    &msg,
+                    &op_signed.signature.ed25519,
+                )?;
             }
 
-            // 5. Update expected_prev_hash and expected_epoch for the next iteration
+            // 5. Update expected_prev_hash for the next iteration
             expected_prev_hash = op_signed.hash(self.version);
-            expected_epoch += 1;
         }
 
         Ok(())
@@ -1169,6 +1188,8 @@ pub enum RollbackCheck {
     TrustOnFirstUse,
 }
 
+// Preserve the public trust-anchor API; boxing would be a breaking change.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FounderAnchor {
     PublicKey(HybridPublicKey),
@@ -1182,7 +1203,12 @@ pub fn verify_manifest_with_pin(
     rollback_check: RollbackCheck,
     founder_anchor: FounderAnchor,
 ) -> Result<(u64, HybridPublicKey), FileFormatError> {
-    verify_manifest_with_pin_policy(manifest, rollback_check, founder_anchor, VerificationPolicy::RequireSigned)
+    verify_manifest_with_pin_policy(
+        manifest,
+        rollback_check,
+        founder_anchor,
+        VerificationPolicy::RequireSigned,
+    )
 }
 
 /// Verifies manifest chain integrity with a policy option.
@@ -1194,7 +1220,10 @@ pub fn verify_manifest_with_pin_policy(
 ) -> Result<(u64, HybridPublicKey), FileFormatError> {
     manifest.verify_policy(policy)?;
 
-    let genesis_op = manifest.operations.first().ok_or(FileFormatError::EmptyManifest)?;
+    let genesis_op = manifest
+        .operations
+        .first()
+        .ok_or(FileFormatError::EmptyManifest)?;
     let actual_founder = manifest.founder_signing_pk()?;
     let actual_genesis_hash = genesis_op.hash(manifest.version);
 

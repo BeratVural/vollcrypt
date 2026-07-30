@@ -1,6 +1,7 @@
 use vollcrypt_files_core::{
-    hybrid_keypair_generate, hybrid_sign, generate_file_id, generate_gk, generate_recipient_keypair,
-    wrap_key_to_recipient, FileFormatError, GroupManifest, RollbackCheck, FounderAnchor,
+    generate_file_id, generate_gk, generate_recipient_keypair, hybrid_keypair_generate,
+    hybrid_sign, wrap_key_to_recipient, FileFormatError, FounderAnchor, GroupManifest,
+    RollbackCheck,
 };
 
 #[test]
@@ -477,16 +478,35 @@ fn test_verify_manifest_with_pin() {
 
     // The head epoch of the manifest is 1.
     // 1. Pin is None: should pass
-    assert!(vollcrypt_files_core::verify_manifest_with_pin(&manifest, RollbackCheck::TrustOnFirstUse, anchor.clone()).is_ok());
+    assert!(vollcrypt_files_core::verify_manifest_with_pin(
+        &manifest,
+        RollbackCheck::TrustOnFirstUse,
+        anchor.clone()
+    )
+    .is_ok());
 
     // 2. Pin is Some(0): should pass because head epoch (1) >= pin (0)
-    assert!(vollcrypt_files_core::verify_manifest_with_pin(&manifest, RollbackCheck::Pin(0), anchor.clone()).is_ok());
+    assert!(vollcrypt_files_core::verify_manifest_with_pin(
+        &manifest,
+        RollbackCheck::Pin(0),
+        anchor.clone()
+    )
+    .is_ok());
 
     // 3. Pin is Some(1): should pass because head epoch (1) >= pin (1)
-    assert!(vollcrypt_files_core::verify_manifest_with_pin(&manifest, RollbackCheck::Pin(1), anchor.clone()).is_ok());
+    assert!(vollcrypt_files_core::verify_manifest_with_pin(
+        &manifest,
+        RollbackCheck::Pin(1),
+        anchor.clone()
+    )
+    .is_ok());
 
     // 4. Pin is Some(2): should fail with RollbackError because head epoch (1) < pin (2)
-    let res = vollcrypt_files_core::verify_manifest_with_pin(&manifest, RollbackCheck::Pin(2), anchor.clone());
+    let res = vollcrypt_files_core::verify_manifest_with_pin(
+        &manifest,
+        RollbackCheck::Pin(2),
+        anchor.clone(),
+    );
     assert!(matches!(
         res,
         Err(FileFormatError::RollbackError {
@@ -535,4 +555,30 @@ fn test_detect_equivocation() {
         res,
         vollcrypt_files_core::EquivocationResult::DifferentEpochs
     );
+}
+
+#[test]
+fn verify_rejects_v2_manifest_with_stripped_pq_signature() {
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
+    let (rec_pk, _rec_sk) = generate_recipient_keypair();
+    let group_id = generate_file_id();
+    let founder_id = generate_file_id();
+    let gk = generate_gk();
+    let founder_gk_wrap = wrap_key_to_recipient(&gk, founder_id, 0, &rec_pk).unwrap();
+
+    let mut manifest = GroupManifest::genesis(
+        group_id,
+        founder_id,
+        &admin_sk,
+        admin_pk,
+        rec_pk,
+        founder_gk_wrap,
+    );
+
+    assert_eq!(manifest.version, 2);
+    assert!(manifest.verify().is_ok());
+
+    manifest.operations[0].signature.mldsa.clear();
+    let result = manifest.verify();
+    assert!(matches!(result, Err(FileFormatError::IntegrityError(_))));
 }

@@ -1,10 +1,10 @@
+use crate::error::FileFormatError;
 use hkdf::Hkdf;
 use sha2::Sha256;
-use crate::error::FileFormatError;
 
 #[cfg(test)]
 thread_local! {
-    pub static INJECT_KDF_ERROR: std::cell::Cell<bool> = std::cell::Cell::new(false);
+    pub static INJECT_KDF_ERROR: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Derives a chunk-specific subkey using HKDF-SHA256.
@@ -21,7 +21,9 @@ pub fn derive_chunk_subkey(
 ) -> Result<[u8; 32], FileFormatError> {
     #[cfg(test)]
     if INJECT_KDF_ERROR.with(|h| h.get()) {
-        return Err(FileFormatError::IntegrityError("HKDF expansion failed for subkey (injected)".to_string()));
+        return Err(FileFormatError::IntegrityError(
+            "HKDF expansion failed for subkey (injected)".to_string(),
+        ));
     }
 
     let mut info = [0u8; 27];
@@ -31,8 +33,9 @@ pub fn derive_chunk_subkey(
     let hk = Hkdf::<Sha256>::new(Some(file_id), dek);
     let mut subkey = [0u8; 32];
 
-    hk.expand(&info, &mut subkey)
-        .map_err(|_| FileFormatError::IntegrityError("HKDF expansion failed for subkey".to_string()))?;
+    hk.expand(&info, &mut subkey).map_err(|_| {
+        FileFormatError::IntegrityError("HKDF expansion failed for subkey".to_string())
+    })?;
 
     Ok(subkey)
 }
@@ -44,8 +47,12 @@ pub fn derive_chunk_subkey(
 /// * `iterations`: The number of PBKDF2 iterations.
 ///
 /// If iterations is 0, it debug_asserts in debug mode and is forced to 1 in production mode.
-pub fn derive_kek_pbkdf2(password: &[u8], salt: &[u8; 16], iterations: u32) -> Result<[u8; 32], FileFormatError> {
-    if iterations < 1_000 || iterations > 5_000_000 {
+pub fn derive_kek_pbkdf2(
+    password: &[u8],
+    salt: &[u8; 16],
+    iterations: u32,
+) -> Result<[u8; 32], FileFormatError> {
+    if !(1_000..=5_000_000).contains(&iterations) {
         return Err(FileFormatError::KdfParameterOutOfRange(format!(
             "PBKDF2 iterations out of safety bounds: {}",
             iterations
@@ -75,7 +82,7 @@ pub fn derive_kek_argon2id(
 ) -> Result<[u8; 32], crate::error::FileFormatError> {
     use argon2::{Algorithm, Argon2, Params, Version};
 
-    if m_cost < 8 || m_cost > 262144 || t_cost < 1 || t_cost > 5 || p_cost < 1 || p_cost > 8 {
+    if !(8..=262144).contains(&m_cost) || !(1..=5).contains(&t_cost) || !(1..=8).contains(&p_cost) {
         return Err(crate::error::FileFormatError::KdfParameterOutOfRange(
             format!(
                 "Argon2 parameters exceed safety limits: m_cost={}, t_cost={}, p_cost={}",
@@ -112,7 +119,9 @@ pub fn derive_chunk_keys(
 ) -> Result<([u8; 32], [u8; 12]), FileFormatError> {
     #[cfg(test)]
     if INJECT_KDF_ERROR.with(|h| h.get()) {
-        return Err(FileFormatError::IntegrityError("HKDF expansion failed for chunk keys (injected)".to_string()));
+        return Err(FileFormatError::IntegrityError(
+            "HKDF expansion failed for chunk keys (injected)".to_string(),
+        ));
     }
 
     let mut info = [0u8; 27];
@@ -122,8 +131,9 @@ pub fn derive_chunk_keys(
     let hk = Hkdf::<Sha256>::new(Some(file_id), dek);
     let mut okm = [0u8; 44];
 
-    hk.expand(&info, &mut okm)
-        .map_err(|_| FileFormatError::IntegrityError("HKDF expansion failed for chunk keys".to_string()))?;
+    hk.expand(&info, &mut okm).map_err(|_| {
+        FileFormatError::IntegrityError("HKDF expansion failed for chunk keys".to_string())
+    })?;
 
     let mut subkey = [0u8; 32];
     subkey.copy_from_slice(&okm[0..32]);

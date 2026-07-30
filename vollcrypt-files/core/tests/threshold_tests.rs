@@ -12,8 +12,7 @@ fn test_threshold_correctness_and_subsets() {
     let n = 5;
     let cipher_suite_id = 0;
 
-    let (wrap, shares) =
-        wrap_dek_with_threshold(&dek, &file_id, t, n, cipher_suite_id).unwrap();
+    let (wrap, shares) = wrap_dek_with_threshold(&dek, &file_id, t, n, cipher_suite_id).unwrap();
 
     // Verify we got the correct number of shares
     assert_eq!(shares.len(), n as usize);
@@ -54,17 +53,10 @@ fn test_threshold_security_limits() {
     let n = 5;
     let cipher_suite_id = 0;
 
-    let (wrap, shares) =
-        wrap_dek_with_threshold(&dek, &file_id, t, n, cipher_suite_id).unwrap();
+    let (wrap, shares) = wrap_dek_with_threshold(&dek, &file_id, t, n, cipher_suite_id).unwrap();
 
     // Verify that any subset of size t-1 (2) fails to unwrap
-    let subsets_insufficient = vec![
-        vec![0, 1],
-        vec![0, 2],
-        vec![1, 2],
-        vec![2, 3],
-        vec![3, 4],
-    ];
+    let subsets_insufficient = vec![vec![0, 1], vec![0, 2], vec![1, 2], vec![2, 3], vec![3, 4]];
 
     for subset in subsets_insufficient {
         let test_shares: Vec<Share> = subset.iter().map(|&idx| shares[idx].clone()).collect();
@@ -73,7 +65,8 @@ fn test_threshold_security_limits() {
     }
 
     // Test with a single share
-    let res_single = unwrap_dek_with_threshold(&wrap, &file_id, &[shares[0].clone()], cipher_suite_id);
+    let res_single =
+        unwrap_dek_with_threshold(&wrap, &file_id, &[shares[0].clone()], cipher_suite_id);
     assert!(res_single.is_err());
 
     // Test with empty shares
@@ -170,11 +163,17 @@ fn test_parameter_bounds() {
 
     // t = 0 invalid
     let res_t0 = wrap_dek_with_threshold(&dek, &file_id, 0, 3, 0);
-    assert!(matches!(res_t0, Err(FileFormatError::KdfParameterOutOfRange(_))));
+    assert!(matches!(
+        res_t0,
+        Err(FileFormatError::KdfParameterOutOfRange(_))
+    ));
 
     // t > n invalid
     let res_t_gt_n = wrap_dek_with_threshold(&dek, &file_id, 4, 3, 0);
-    assert!(matches!(res_t_gt_n, Err(FileFormatError::KdfParameterOutOfRange(_))));
+    assert!(matches!(
+        res_t_gt_n,
+        Err(FileFormatError::KdfParameterOutOfRange(_))
+    ));
 
     // t = 1 is allowed
     let res_t1 = wrap_dek_with_threshold(&dek, &file_id, 1, 3, 0);

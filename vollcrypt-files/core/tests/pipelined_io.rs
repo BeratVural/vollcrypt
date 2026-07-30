@@ -1,7 +1,7 @@
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use vollcrypt_files_core::{
-    decrypt_file_pipelined, hybrid_keypair_generate, encrypt_file_pipelined, generate_dek,
-    generate_file_id, unwrap_dek_with_password, verify_header_signature_plain,
+    decrypt_file_pipelined, encrypt_file_pipelined, generate_dek, generate_file_id,
+    hybrid_keypair_generate, unwrap_dek_with_password, verify_header_signature_plain,
     wrap_dek_with_password, FileFormatError, KdfChoice, Mode, PipelinedSignInfo,
 };
 
@@ -148,7 +148,11 @@ fn test_pipelined_signed_header_plain() {
     .unwrap();
 
     // Verify signature passes
-    assert!(verify_header_signature_plain(&header, vollcrypt_files_core::VerificationPolicy::RequireSigned).is_ok());
+    assert!(verify_header_signature_plain(
+        &header,
+        vollcrypt_files_core::VerificationPolicy::RequireSigned
+    )
+    .is_ok());
 
     // Decrypt and verify roundtrip
     let mut decrypted = Vec::new();
@@ -275,7 +279,7 @@ fn test_pipelined_write_modes_equivalence() {
     // 1. Sequential Mode
     let mut file_seq = tempfile::tempfile().unwrap();
     src_file.seek(SeekFrom::Start(0)).unwrap();
-    let header_seq = encrypt_file_pipelined(
+    let _header_seq = encrypt_file_pipelined(
         src_file.try_clone().unwrap(),
         file_seq.try_clone().unwrap(),
         &dek,
@@ -296,7 +300,7 @@ fn test_pipelined_write_modes_equivalence() {
     // 2. Batched Mode
     let mut file_batch = tempfile::tempfile().unwrap();
     src_file.seek(SeekFrom::Start(0)).unwrap();
-    let header_batch = encrypt_file_pipelined(
+    let _header_batch = encrypt_file_pipelined(
         src_file.try_clone().unwrap(),
         file_batch.try_clone().unwrap(),
         &dek,
@@ -317,7 +321,7 @@ fn test_pipelined_write_modes_equivalence() {
     // 3. Direct Offset Mode
     let mut file_direct = tempfile::tempfile().unwrap();
     src_file.seek(SeekFrom::Start(0)).unwrap();
-    let header_direct = encrypt_file_pipelined(
+    let _header_direct = encrypt_file_pipelined(
         src_file.try_clone().unwrap(),
         file_direct.try_clone().unwrap(),
         &dek,
@@ -337,11 +341,13 @@ fn test_pipelined_write_modes_equivalence() {
 
     // Check equivalence of output sizes
     assert_eq!(
-        data_seq.len(), data_batch.len(),
+        data_seq.len(),
+        data_batch.len(),
         "Sequential and Batched output lengths differ!"
     );
     assert_eq!(
-        data_seq.len(), data_direct.len(),
+        data_seq.len(),
+        data_direct.len(),
         "Sequential and DirectOffset output lengths differ!"
     );
 
@@ -405,7 +411,7 @@ async fn test_pipelined_oom_vulnerability() {
     // Hash Algo (1 byte): 0 (Sha256)
     // Reserved (3 bytes): [0; 3]
     // Variable Len (4 bytes): 63 (0x0000003f) -> 1 wrap entry: 1 byte type, 2 bytes length (60), 60 bytes payload
-    
+
     let mut header = Vec::new();
     header.extend_from_slice(b"VOLLVALT"); // Magic
     header.push(1); // Version
@@ -439,7 +445,12 @@ async fn test_pipelined_oom_vulnerability() {
         signature: vollcrypt_files_core::SignaturePolicy::Optional,
         ..vollcrypt_files_core::ShieldPolicy::strict()
     };
-    let res = vollcrypt_files_core::pipelined_io::decrypt_file_pipelined_async_policy(&ciphertext, &dek, Some(&policy)).await;
+    let res = vollcrypt_files_core::pipelined_io::decrypt_file_pipelined_async_policy(
+        &ciphertext,
+        &dek,
+        Some(&policy),
+    )
+    .await;
     match &res {
         Ok(_) => println!("Ok!"),
         Err(e) => println!("Error: {:?}", e),
@@ -450,7 +461,8 @@ async fn test_pipelined_oom_vulnerability() {
 
 #[test]
 fn test_pipelined_roundtrip_no_wraps() {
-    let plaintext = b"This is a message encrypted directly with the DEK and no wrap entries.".to_vec();
+    let plaintext =
+        b"This is a message encrypted directly with the DEK and no wrap entries.".to_vec();
     let dek = generate_dek();
     let file_id = generate_file_id();
     let chunk_size = 16;
@@ -495,4 +507,3 @@ fn test_pipelined_roundtrip_no_wraps() {
     assert!(decrypt_res.is_ok());
     assert_eq!(decrypted, plaintext);
 }
-
