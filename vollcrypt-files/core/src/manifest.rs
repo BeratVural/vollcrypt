@@ -741,10 +741,8 @@ impl GroupManifest {
                         member_id: mid,
                         gk_wrap,
                         ..
-                    } => {
-                        if mid == *member_id {
-                            return Ok(gk_wrap);
-                        }
+                    } if mid == *member_id => {
+                        return Ok(gk_wrap);
                     }
                     _ => {}
                 }
@@ -952,16 +950,14 @@ impl GroupManifest {
                         member_id: mid,
                         gk_wrap,
                         ..
-                    } => {
-                        if mid == *member_id {
-                            let ver = match &gk_wrap {
-                                WrapEntry::HybridKem { gk_version: v, .. } => *v,
-                                WrapEntry::GroupWrap { gk_version: v, .. } => *v,
-                                _ => 0,
-                            };
-                            if ver == gk_version {
-                                return Ok(gk_wrap);
-                            }
+                    } if mid == *member_id => {
+                        let ver = match &gk_wrap {
+                            WrapEntry::HybridKem { gk_version: v, .. } => *v,
+                            WrapEntry::GroupWrap { gk_version: v, .. } => *v,
+                            _ => 0,
+                        };
+                        if ver == gk_version {
+                            return Ok(gk_wrap);
                         }
                     }
                     _ => {}
@@ -1022,10 +1018,8 @@ impl GroupManifest {
                             });
                         }
                     }
-                    Operation::RemoveMember { member_id: mid } => {
-                        if mid == *member_id {
-                            found_pk = None;
-                        }
+                    Operation::RemoveMember { member_id: mid } if mid == *member_id => {
+                        found_pk = None;
                     }
                     _ => {}
                 }
