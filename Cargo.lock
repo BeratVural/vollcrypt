@@ -5758,7 +5758,7 @@ dependencies = [
  "tokio",
  "vollcrypt-files-core",
  "windows 0.61.3",
- "windows-core 0.61.2",
+ "windows-core 0.62.2",
  "windows-future",
  "zeroize",
 ]
@@ -5872,30 +5872,6 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
-]
-
-[[package]]
-name = "vollcrypt-wave"
-version = "0.1.0"
-dependencies = [
- "aes",
- "aes-gcm",
- "curve25519-dalek",
- "ed25519-dalek",
- "hkdf",
- "hmac",
- "libm",
- "log",
- "ml-kem",
- "once_cell",
- "rand 0.8.6",
- "serde",
- "serde_json",
- "sha2",
- "subtle",
- "vollcrypt-db-guard",
- "x25519-dalek",
- "zeroize",
 ]
 
 [[package]]
