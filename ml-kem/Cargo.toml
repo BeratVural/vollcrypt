@@ -87,7 +87,7 @@ optional = true
 default-features = false
 
 [dev-dependencies.criterion]
-version = "0.5.1"
+version = "0.8.2"
 
 [dev-dependencies.crypto-common]
 version = "0.1.6"
