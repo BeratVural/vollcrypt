@@ -4,6 +4,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+      time: "04:00"
+      timezone: Europe/Istanbul
     open-pull-requests-limit: 10
 
   - package-ecosystem: cargo
