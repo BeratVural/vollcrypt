@@ -234,7 +234,7 @@ export class RatchetKeyPairObj {
      * @param {Uint8Array} current_srk
      * @param {Uint8Array} their_ratchet_pub
      * @param {Uint8Array} chat_id
-     * @param {number} ratchet_step
+     * @param {bigint} ratchet_step
      * @returns {Uint8Array}
      */
     compute_ratchet(current_srk, their_ratchet_pub, chat_id, ratchet_step) {
@@ -682,7 +682,7 @@ export function derive_srk(dek, chat_id) {
 
 /**
  * @param {Uint8Array} srk
- * @param {number} window_index
+ * @param {bigint} window_index
  * @returns {Uint8Array}
  */
 export function derive_window_key(srk, window_index) {
@@ -931,7 +931,7 @@ export function key_log_compute_entry_hash(entry_json) {
 /**
  * @param {Uint8Array} user_id
  * @param {Uint8Array} public_key
- * @param {number} timestamp
+ * @param {bigint} timestamp
  * @param {Uint8Array} prev_entry_hash
  * @param {number} action
  * @param {Uint8Array} signing_key
@@ -967,7 +967,7 @@ export function key_log_create_entry(user_id, public_key, timestamp, prev_entry_
 /**
  * @param {string} entries_json
  * @param {Uint8Array} user_id
- * @returns {Uint8Array}
+ * @returns {Uint8Array | undefined}
  */
 export function key_log_current_key(entries_json, user_id) {
     const ptr0 = passStringToWasm0(entries_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -978,16 +978,19 @@ export function key_log_current_key(entries_json, user_id) {
     if (ret[3]) {
         throw takeFromExternrefTable0(ret[2]);
     }
-    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    let v3;
+    if (ret[0] !== 0) {
+        v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    }
     return v3;
 }
 
 /**
  * @param {string} entries_json
  * @param {Uint8Array} user_id
- * @param {number} timestamp
- * @returns {Uint8Array}
+ * @param {bigint} timestamp
+ * @returns {Uint8Array | undefined}
  */
 export function key_log_key_at_timestamp(entries_json, user_id, timestamp) {
     const ptr0 = passStringToWasm0(entries_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -998,8 +1001,11 @@ export function key_log_key_at_timestamp(entries_json, user_id, timestamp) {
     if (ret[3]) {
         throw takeFromExternrefTable0(ret[2]);
     }
-    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    let v3;
+    if (ret[0] !== 0) {
+        v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    }
     return v3;
 }
 
@@ -1096,23 +1102,10 @@ export function pack_envelope(window_index, aad_hash, encrypted_blob) {
 }
 
 /**
- * @param {Uint8Array} content
- * @returns {Uint8Array}
- */
-export function pad_message(content) {
-    const ptr0 = passArray8ToWasm0(content, wasm.__wbindgen_malloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.pad_message(ptr0, len0);
-    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-    return v2;
-}
-
-/**
  * @param {string} registry_json
  * @param {string} device_id
  * @param {string} name
- * @param {number} added_at
+ * @param {bigint} added_at
  * @param {string} public_key
  * @returns {string}
  */
@@ -1271,7 +1264,7 @@ export function sign_message(secret_key, message) {
 /**
  * @param {Uint8Array} message_id
  * @param {Uint8Array} sender_id
- * @param {number} timestamp
+ * @param {bigint} timestamp
  * @param {Uint8Array} ciphertext
  * @returns {Uint8Array}
  */

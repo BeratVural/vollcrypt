@@ -1,5 +1,5 @@
 use crate::envelope::{pack_envelope, unpack_envelope};
-use crate::kdf::{derive_hkdf, derive_pbkdf2, derive_srk};
+use crate::kdf::{MIN_PBKDF2_ITERATIONS, derive_hkdf, derive_pbkdf2, derive_srk};
 use crate::pqc::ml_kem_decapsulate;
 use crate::symmetric::decrypt_aes256gcm;
 use std::panic;
@@ -37,10 +37,9 @@ fn panic_safety_hkdf() {
 #[test]
 fn panic_safety_pbkdf2() {
     let result = panic::catch_unwind(|| {
-        let _ = derive_pbkdf2(b"", b"", 1000, 32).unwrap();
-        // We know pbkdf2 panics on 0 iterations but we annotated that separately in test_kdf with #[should_panic].
-        // So we skip calling it with 0 here to keep the test suite green.
-        let _ = derive_pbkdf2(b"pass", b"salt", 1000, 32).unwrap();
+        let _ = derive_pbkdf2(b"", b"", MIN_PBKDF2_ITERATIONS, 32).unwrap();
+        assert!(derive_pbkdf2(b"pass", b"salt", 0, 32).is_err());
+        let _ = derive_pbkdf2(b"pass", b"salt", MIN_PBKDF2_ITERATIONS, 32).unwrap();
     });
     assert!(
         result.is_ok(),

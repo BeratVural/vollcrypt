@@ -6,6 +6,7 @@ use crate::kdf::derive_hkdf;
 use ml_kem::kem::{Decapsulate, Encapsulate};
 use ml_kem::{EncodedSizeUser, KemCore, MlKem768};
 use rand::rngs::OsRng;
+use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
 use zeroize::Zeroize;
 
 // ==================== ML-KEM Primitives ====================
@@ -25,8 +26,6 @@ pub fn ml_kem_encapsulate(ek_bytes: &[u8]) -> Result<(Vec<u8>, Vec<u8>), &'stati
     use ml_kem::EncodedSizeUser;
 
     type EK = <MlKem768 as KemCore>::EncapsulationKey;
-    let ek_encoded = <EK as EncodedSizeUser>::EncodedSize::default();
-    let _ = ek_encoded; // just for type inference
 
     // Try to build the encapsulation key from raw bytes
     let ek_array = ml_kem::array::Array::try_from(ek_bytes).map_err(|_| {
@@ -75,6 +74,32 @@ pub fn ml_kem_decapsulate(dk_bytes: &[u8], ct_bytes: &[u8]) -> Result<Vec<u8>, &
 
 // ==================== Hybrid KEM (X25519 + ML-KEM) ====================
 
+fn x25519_public_from_secret(secret: &[u8]) -> Result<[u8; 32], &'static str> {
+    let secret: [u8; 32] = secret
+        .try_into()
+        .map_err(|_| "Invalid X25519 secret key length")?;
+    Ok(X25519PublicKey::from(&StaticSecret::from(secret)).to_bytes())
+}
+
+fn x25519_public_bytes(public: &[u8]) -> Result<[u8; 32], &'static str> {
+    public
+        .try_into()
+        .map_err(|_| "Invalid X25519 public key length")
+}
+
+fn hybrid_kem_context(
+    sender_public: &[u8; 32],
+    recipient_public: &[u8; 32],
+    ml_kem_ciphertext: &[u8],
+) -> Vec<u8> {
+    let mut context = Vec::with_capacity(22 + 64 + ml_kem_ciphertext.len());
+    context.extend_from_slice(b"vollchat-hybrid-kem-v2");
+    context.extend_from_slice(sender_public);
+    context.extend_from_slice(recipient_public);
+    context.extend_from_slice(ml_kem_ciphertext);
+    context
+}
+
 /// Hybrid KEM Encapsulation: combines X25519 ECDH and ML-KEM-768
 /// to derive a single quantum-resistant shared key.
 ///
@@ -86,23 +111,30 @@ pub fn hybrid_kem_encapsulate(
 ) -> Result<(Vec<u8>, Vec<u8>), &'static str> {
     log::debug!("hybrid_kem_encapsulate: Starting hybrid encapsulation");
 
+    let sender_public = x25519_public_from_secret(x25519_our_secret)?;
+    let recipient_public = x25519_public_bytes(x25519_their_public)?;
+
     // Step 1: X25519 ECDH shared secret
     let mut x25519_shared = crate::ecdh_shared_secret(x25519_our_secret, x25519_their_public)?;
 
     // Step 2: ML-KEM encapsulation
     let (ml_kem_ct, mut ml_kem_shared) = ml_kem_encapsulate(ml_kem_ek_bytes)?;
 
-    // Step 3: Combine both shared secrets via HKDF
+    // Step 3: Bind both public keys and the ML-KEM ciphertext to the derived key.
+    let mut context = hybrid_kem_context(&sender_public, &recipient_public, &ml_kem_ct);
+
+    // Step 4: Combine both shared secrets via HKDF
     let mut combined_ikm = Vec::with_capacity(x25519_shared.len() + ml_kem_shared.len());
     combined_ikm.extend_from_slice(&x25519_shared);
     combined_ikm.extend_from_slice(&ml_kem_shared);
 
-    let hybrid_key = derive_hkdf(&combined_ikm, None, Some(b"vollchat-hybrid-kem-v1"), 32)?;
+    let hybrid_key = derive_hkdf(&combined_ikm, None, Some(&context), 32)?;
 
     // Zeroize intermediate secrets
     x25519_shared.zeroize();
     ml_kem_shared.zeroize();
     combined_ikm.zeroize();
+    context.zeroize();
 
     Ok((hybrid_key, ml_kem_ct))
 }
@@ -118,23 +150,30 @@ pub fn hybrid_kem_decapsulate(
 ) -> Result<Vec<u8>, &'static str> {
     log::debug!("hybrid_kem_decapsulate: Starting hybrid decapsulation");
 
+    let sender_public = x25519_public_bytes(x25519_their_public)?;
+    let recipient_public = x25519_public_from_secret(x25519_our_secret)?;
+
     // Step 1: X25519 ECDH shared secret
     let mut x25519_shared = crate::ecdh_shared_secret(x25519_our_secret, x25519_their_public)?;
 
     // Step 2: ML-KEM decapsulation
     let mut ml_kem_shared = ml_kem_decapsulate(ml_kem_dk_bytes, ml_kem_ct_bytes)?;
 
-    // Step 3: Combine both shared secrets via HKDF
+    // Step 3: Reconstruct the same sender/recipient/ciphertext context.
+    let mut context = hybrid_kem_context(&sender_public, &recipient_public, ml_kem_ct_bytes);
+
+    // Step 4: Combine both shared secrets via HKDF
     let mut combined_ikm = Vec::with_capacity(x25519_shared.len() + ml_kem_shared.len());
     combined_ikm.extend_from_slice(&x25519_shared);
     combined_ikm.extend_from_slice(&ml_kem_shared);
 
-    let hybrid_key = derive_hkdf(&combined_ikm, None, Some(b"vollchat-hybrid-kem-v1"), 32)?;
+    let hybrid_key = derive_hkdf(&combined_ikm, None, Some(&context), 32)?;
 
     // Zeroize intermediate secrets
     x25519_shared.zeroize();
     ml_kem_shared.zeroize();
     combined_ikm.zeroize();
+    context.zeroize();
 
     Ok(hybrid_key)
 }

@@ -1,6 +1,7 @@
 use crate::keys::generate_ed25519_keypair;
-use crate::verification::{EMOJI_PALETTE, generate_verification_code, verify_codes_match};
-use std::time::Instant;
+use crate::verification::{
+    EMOJI_PALETTE, generate_verification_code, verify_codes_match, verify_fingerprints_match,
+};
 
 // ── Symmetry and Determinism ──────────────────────────────────────────────
 
@@ -211,42 +212,16 @@ fn verification_emoji_groups_count() {
 // ── Timing ────────────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "Timing checks can be unstable on shared CI runners"]
-fn verification_fingerprint_comparison_constant_time() {
-    let (_, pk_a) = generate_ed25519_keypair();
-    let (_, pk_b) = generate_ed25519_keypair();
-    let (_, pk_c) = generate_ed25519_keypair();
+fn verification_fingerprint_rejects_every_mismatch_position() {
+    let expected = [0xA5u8; 32];
+    assert!(verify_fingerprints_match(&expected, &expected));
 
-    let pk_arr_a: [u8; 32] = pk_a.try_into().unwrap();
-    let pk_arr_b: [u8; 32] = pk_b.try_into().unwrap();
-    let pk_arr_c: [u8; 32] = pk_c.try_into().unwrap();
-
-    let code1 = generate_verification_code(&pk_arr_a, &pk_arr_b, b"conv");
-    let code2 = generate_verification_code(&pk_arr_a, &pk_arr_c, b"conv");
-    let code1_copy = code1.clone();
-
-    let mut equal_timings = Vec::new();
-    let mut unequal_timings = Vec::new();
-
-    for _ in 0..1000 {
-        let start = Instant::now();
-        let _ = verify_codes_match(&code1, &code1_copy);
-        equal_timings.push(start.elapsed().as_nanos());
+    for index in 0..expected.len() {
+        let mut different = expected;
+        different[index] ^= 1;
+        assert!(
+            !verify_fingerprints_match(&expected, &different),
+            "Mismatch at byte {index} was accepted"
+        );
     }
-
-    for _ in 0..1000 {
-        let start = Instant::now();
-        let _ = verify_codes_match(&code1, &code2);
-        unequal_timings.push(start.elapsed().as_nanos());
-    }
-
-    let avg_equal = equal_timings.iter().sum::<u128>() as f64 / 1000.0;
-    let avg_unequal = unequal_timings.iter().sum::<u128>() as f64 / 1000.0;
-
-    let diff = (avg_equal - avg_unequal).abs();
-    assert!(
-        diff < 1000.0,
-        "Time difference > 1 microsecond! (Diff: {} ns)",
-        diff
-    );
 }

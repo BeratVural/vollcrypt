@@ -16,10 +16,9 @@ use vollcrypt_core::{
     hybrid_kem_encapsulate as core_hybrid_kem_encapsulate,
     ml_kem_decapsulate as core_ml_kem_decapsulate, ml_kem_encapsulate as core_ml_kem_encapsulate,
     ml_kem_keygen as core_ml_kem_keygen, mnemonic_to_seed as core_mnemonic_to_seed,
-    pack_envelope as core_pack_envelope, pad_message as core_pad_message,
-    sign_message as core_sign_message, unpack_envelope as core_unpack_envelope,
-    unwrap_key as core_unwrap_key, verify_signature as core_verify_signature,
-    wrap_key as core_wrap_key,
+    pack_envelope as core_pack_envelope, sign_message as core_sign_message,
+    unpack_envelope as core_unpack_envelope, unwrap_key as core_unwrap_key,
+    verify_signature as core_verify_signature, wrap_key as core_wrap_key,
 };
 use wasm_bindgen::prelude::*;
 use zeroize::Zeroize;
@@ -359,8 +358,8 @@ pub fn derive_srk(dek: &[u8], chat_id: &[u8]) -> Result<js_sys::Uint8Array, JsVa
 }
 
 #[wasm_bindgen]
-pub fn derive_window_key(srk: &[u8], window_index: u32) -> Result<js_sys::Uint8Array, JsValue> {
-    core_derive_window_key(srk, window_index as u64)
+pub fn derive_window_key(srk: &[u8], window_index: u64) -> Result<js_sys::Uint8Array, JsValue> {
+    core_derive_window_key(srk, window_index)
         .map(zeroize_and_copy)
         .map_err(JsValue::from_str)
 }
@@ -375,11 +374,6 @@ pub fn unwrap_key(kek: &[u8], wrapped_key: &[u8]) -> Result<js_sys::Uint8Array, 
     core_unwrap_key(kek, wrapped_key)
         .map(zeroize_and_copy)
         .map_err(JsValue::from_str)
-}
-
-#[wasm_bindgen]
-pub fn pad_message(content: &[u8]) -> Vec<u8> {
-    core_pad_message(content)
 }
 
 #[wasm_bindgen]
@@ -479,14 +473,11 @@ pub fn transcript_update(chain_state: &[u8], message_hash: &[u8]) -> Result<Vec<
 pub fn transcript_compute_message_hash(
     message_id: &[u8],
     sender_id: &[u8],
-    timestamp: u32,
+    timestamp: u64,
     ciphertext: &[u8],
 ) -> Vec<u8> {
     vollcrypt_core::transcript::TranscriptState::compute_message_hash(
-        message_id,
-        sender_id,
-        timestamp as u64,
-        ciphertext,
+        message_id, sender_id, timestamp, ciphertext,
     )
     .to_vec()
 }
@@ -761,7 +752,7 @@ pub fn registry_add_device(
     registry_json: &str,
     device_id: &str,
     name: &str,
-    added_at: u32,
+    added_at: u64,
     public_key: &str,
 ) -> Result<String, JsValue> {
     let mut registry = vollcrypt_core::DefaultDeviceRegistry::from_json(registry_json)
@@ -770,7 +761,7 @@ pub fn registry_add_device(
     let device = vollcrypt_core::Device {
         device_id: device_id.to_string(),
         name: name.to_string(),
-        added_at: added_at as u64,
+        added_at,
         public_key: public_key.to_string(),
         is_revoked: false,
     };
@@ -834,7 +825,7 @@ impl RatchetKeyPairObj {
         current_srk: &[u8],
         their_ratchet_pub: &[u8],
         chat_id: &[u8],
-        ratchet_step: u32,
+        ratchet_step: u64,
     ) -> Result<Vec<u8>, JsValue> {
         if current_srk.len() != 32 || their_ratchet_pub.len() != 32 {
             return Err(JsValue::from_str("Keys must be 32 bytes"));
@@ -847,17 +838,27 @@ impl RatchetKeyPairObj {
         let mut our_secret_arr = [0u8; 32];
         our_secret_arr.copy_from_slice(&self.secret_key);
 
-        // Compute ratchet
-        let new_srk = vollcrypt_core::ratchet_srk_sender(
+        // Compute ratchet, then wipe every temporary key on both success and failure.
+        let result = vollcrypt_core::ratchet_srk_sender(
             &current_srk_arr,
             &our_secret_arr,
             &their_pub_arr,
             chat_id,
-            ratchet_step as u64,
-        )
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            ratchet_step,
+        );
 
-        Ok(new_srk.to_vec())
+        current_srk_arr.zeroize();
+        our_secret_arr.zeroize();
+        their_pub_arr.zeroize();
+
+        match result {
+            Ok(mut new_srk) => {
+                let output = new_srk.to_vec();
+                new_srk.zeroize();
+                Ok(output)
+            }
+            Err(e) => Err(JsValue::from_str(&e.to_string())),
+        }
     }
 }
 
@@ -892,7 +893,7 @@ pub fn should_ratchet(
 pub fn key_log_create_entry(
     user_id: &[u8],
     public_key: &[u8],
-    timestamp: u32,
+    timestamp: u64,
     prev_entry_hash: &[u8],
     action: u8,
     signing_key: &[u8],
@@ -912,17 +913,17 @@ pub fn key_log_create_entry(
         1 => vollcrypt_core::key_log::KeyAction::Add,
         2 => vollcrypt_core::key_log::KeyAction::Update,
         3 => vollcrypt_core::key_log::KeyAction::Revoke,
-        _ => return Err(JsValue::from_str("Invalid action type")),
+        _ => {
+            sign_key.zeroize();
+            return Err(JsValue::from_str("Invalid action type"));
+        }
     };
 
-    match vollcrypt_core::key_log::create_entry(
-        user_id,
-        &pk,
-        timestamp as u64,
-        &prev_hash,
-        act,
-        &sign_key,
-    ) {
+    let result =
+        vollcrypt_core::key_log::create_entry(user_id, &pk, timestamp, &prev_hash, act, &sign_key);
+    sign_key.zeroize();
+
+    match result {
         Ok(entry) => serde_json::to_string(&entry).map_err(|e| JsValue::from_str(&e.to_string())),
         Err(e) => Err(JsValue::from_str(&e.to_string())),
     }
@@ -941,35 +942,31 @@ pub fn key_log_verify_chain(entries_json: &str) -> Result<bool, JsValue> {
 }
 
 #[wasm_bindgen]
-pub fn key_log_current_key(entries_json: &str, user_id: &[u8]) -> Result<Vec<u8>, JsValue> {
+pub fn key_log_current_key(entries_json: &str, user_id: &[u8]) -> Result<Option<Vec<u8>>, JsValue> {
     let entries: Vec<vollcrypt_core::key_log::KeyLogEntry> = serde_json::from_str(entries_json)
         .map_err(|e| JsValue::from_str(&format!("Invalid JSON array: {}", e)))?;
 
     let log = vollcrypt_core::key_log::KeyLog { entries };
     log.verify_chain()
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    match log.current_key_for(user_id) {
-        Some(k) => Ok(k.to_vec()),
-        None => Ok(Vec::new()),
-    }
+    Ok(log.current_key_for(user_id).map(|key| key.to_vec()))
 }
 
 #[wasm_bindgen]
 pub fn key_log_key_at_timestamp(
     entries_json: &str,
     user_id: &[u8],
-    timestamp: u32,
-) -> Result<Vec<u8>, JsValue> {
+    timestamp: u64,
+) -> Result<Option<Vec<u8>>, JsValue> {
     let entries: Vec<vollcrypt_core::key_log::KeyLogEntry> = serde_json::from_str(entries_json)
         .map_err(|e| JsValue::from_str(&format!("Invalid JSON array: {}", e)))?;
 
     let log = vollcrypt_core::key_log::KeyLog { entries };
     log.verify_chain()
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    match log.key_at_timestamp(user_id, timestamp as u64) {
-        Some(k) => Ok(k.to_vec()),
-        None => Ok(Vec::new()),
-    }
+    Ok(log
+        .key_at_timestamp(user_id, timestamp)
+        .map(|key| key.to_vec()))
 }
 
 #[wasm_bindgen]

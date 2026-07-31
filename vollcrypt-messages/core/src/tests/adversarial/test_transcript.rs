@@ -1,5 +1,4 @@
 use crate::transcript::TranscriptState;
-use std::time::Instant;
 
 // ── Chain Manipulation ────────────────────────────────────────────────────
 
@@ -120,55 +119,32 @@ fn transcript_update_with_all_zeros_hash() {
 }
 
 #[test]
-fn transcript_large_number_of_messages() {
-    let mut ts = TranscriptState::new(b"chat5");
+fn transcript_large_sequence_is_deterministic() {
+    let mut first = TranscriptState::new(b"chat5");
+    let mut second = TranscriptState::new(b"chat5");
 
-    let start = Instant::now();
     for i in 0..100_000 {
-        // Just use `i` mapped into a 32-byte array to ensure variable inputs
         let mut msg_hash = [0u8; 32];
         msg_hash[0..8].copy_from_slice(&(i as u64).to_be_bytes());
-        ts.update(&msg_hash);
+        first.update(&msg_hash);
+        second.update(&msg_hash);
     }
-    let duration = start.elapsed();
 
-    assert!(
-        duration.as_secs() < 5,
-        "100k transcript updates took too long ({}ms)",
-        duration.as_millis()
-    );
+    assert_eq!(first.current_hash(), second.current_hash());
+    assert_ne!(first.current_hash(), &[0u8; 32]);
 }
 
 #[test]
-#[ignore = "Timing checks can be unstable on shared CI runners"]
-fn transcript_verify_sync_timing() {
-    let hash_a = [0x55u8; 32];
-    let hash_b = [0x55u8; 32]; // Equal to a
-    let hash_c = [0x44u8; 32]; // Not equal
+fn transcript_verify_sync_rejects_every_mismatch_position() {
+    let expected = [0x55u8; 32];
+    assert!(TranscriptState::verify_sync(&expected, &expected));
 
-    let mut equal_durations = Vec::new();
-    let mut unequal_durations = Vec::new();
-
-    for _ in 0..1000 {
-        let start = Instant::now();
-        let _ = TranscriptState::verify_sync(&hash_a, &hash_b);
-        equal_durations.push(start.elapsed().as_nanos());
+    for index in 0..expected.len() {
+        let mut different = expected;
+        different[index] ^= 1;
+        assert!(
+            !TranscriptState::verify_sync(&expected, &different),
+            "Mismatch at byte {index} was accepted"
+        );
     }
-
-    for _ in 0..1000 {
-        let start = Instant::now();
-        let _ = TranscriptState::verify_sync(&hash_a, &hash_c);
-        unequal_durations.push(start.elapsed().as_nanos());
-    }
-
-    let avg_equal = equal_durations.iter().sum::<u128>() as f64 / 1000.0;
-    let avg_unequal = unequal_durations.iter().sum::<u128>() as f64 / 1000.0;
-
-    let diff = (avg_equal - avg_unequal).abs();
-    // Less than 10µs difference
-    assert!(
-        diff < 10000.0,
-        "Verify sync timing divergence too high (diff: {}ns)",
-        diff
-    );
 }

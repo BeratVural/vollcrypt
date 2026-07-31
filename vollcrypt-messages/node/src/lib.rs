@@ -1,9 +1,19 @@
 use napi::{
-    bindgen_prelude::{Buffer, Uint8Array},
+    bindgen_prelude::{BigInt, Buffer, Uint8Array},
     Error, Result,
 };
 use napi_derive::napi;
 use zeroize::Zeroize;
+
+fn bigint_to_u64(value: BigInt, field: &str) -> Result<u64> {
+    let (negative, value, lossless) = value.get_u64();
+    if negative || !lossless {
+        return Err(Error::from_reason(format!(
+            "{field} must be an unsigned 64-bit BigInt"
+        )));
+    }
+    Ok(value)
+}
 
 #[napi]
 pub fn generate_mnemonic() -> String {
@@ -260,7 +270,7 @@ pub fn derive_pbkdf2(
     let res =
         vollcrypt_core::derive_pbkdf2(&password_copy, salt.as_ref(), iterations, key_len as usize);
     password_copy.zeroize();
-    let key = res.map_err(|e| napi::Error::from_reason(e))?;
+    let key = res.map_err(napi::Error::from_reason)?;
     Ok(Buffer::from(key))
 }
 
@@ -294,9 +304,10 @@ pub fn derive_srk(dek: Uint8Array, chat_id: Uint8Array) -> Result<Buffer> {
 }
 
 #[napi]
-pub fn derive_window_key(srk: Uint8Array, window_index: u32) -> Result<Buffer> {
+pub fn derive_window_key(srk: Uint8Array, window_index: BigInt) -> Result<Buffer> {
+    let window_index = bigint_to_u64(window_index, "window_index")?;
     let mut srk_copy = srk.as_ref().to_vec();
-    let res = vollcrypt_core::derive_window_key(srk_copy.as_ref(), window_index as u64);
+    let res = vollcrypt_core::derive_window_key(srk_copy.as_ref(), window_index);
     srk_copy.zeroize();
     match res {
         Ok(v) => Ok(Buffer::from(v)),
@@ -409,12 +420,6 @@ pub fn unwrap_key(kek: Uint8Array, wrapped_key: Uint8Array) -> Result<Buffer> {
         Ok(v) => Ok(Buffer::from(v)),
         Err(e) => Err(Error::from_reason(e.to_string())),
     }
-}
-
-#[napi]
-pub fn pad_message(content: Uint8Array) -> Buffer {
-    let padded = vollcrypt_core::pad_message(content.as_ref());
-    Buffer::from(padded)
 }
 
 #[napi]
@@ -603,16 +608,17 @@ pub fn registry_add_device(
     registry_json: String,
     device_id: String,
     name: String,
-    added_at: u32,
+    added_at: BigInt,
     public_key: String,
 ) -> Result<String> {
+    let added_at = bigint_to_u64(added_at, "added_at")?;
     let mut registry = vollcrypt_core::DefaultDeviceRegistry::from_json(&registry_json)
         .map_err(|e| Error::from_reason(e.to_string()))?;
 
     let device = vollcrypt_core::Device {
         device_id,
         name,
-        added_at: added_at as u64,
+        added_at,
         public_key,
         is_revoked: false,
     };
@@ -669,9 +675,10 @@ pub fn ratchet_srk(
     our_ratchet_secret: Uint8Array,
     their_ratchet_pub: Uint8Array,
     chat_id: Uint8Array,
-    ratchet_step: u32,
+    ratchet_step: BigInt,
     is_sender: bool,
 ) -> Result<Buffer> {
+    let ratchet_step = bigint_to_u64(ratchet_step, "ratchet_step")?;
     if current_srk.len() != 32 || our_ratchet_secret.len() != 32 || their_ratchet_pub.len() != 32 {
         return Err(Error::from_reason("Keys must be 32 bytes".to_string()));
     }
@@ -689,7 +696,7 @@ pub fn ratchet_srk(
             &our_secret_arr,
             &their_pub_arr,
             chat_id.as_ref(),
-            ratchet_step as u64,
+            ratchet_step,
         )
     } else {
         vollcrypt_core::ratchet_srk_receiver(
@@ -697,12 +704,20 @@ pub fn ratchet_srk(
             &our_secret_arr,
             &their_pub_arr,
             chat_id.as_ref(),
-            ratchet_step as u64,
+            ratchet_step,
         )
     };
 
+    current_srk_arr.zeroize();
+    our_secret_arr.zeroize();
+    their_pub_arr.zeroize();
+
     match result {
-        Ok(new_srk) => Ok(Buffer::from(new_srk.to_vec())),
+        Ok(mut new_srk) => {
+            let output = Buffer::from(new_srk.to_vec());
+            new_srk.zeroize();
+            Ok(output)
+        }
         Err(e) => Err(Error::from_reason(e.to_string())),
     }
 }
@@ -750,16 +765,17 @@ pub fn transcript_update(chain_state: Uint8Array, message_hash: Uint8Array) -> R
 pub fn transcript_compute_message_hash(
     message_id: Uint8Array,
     sender_id: Uint8Array,
-    timestamp: u32,
+    timestamp: BigInt,
     ciphertext: Uint8Array,
-) -> Buffer {
+) -> Result<Buffer> {
+    let timestamp = bigint_to_u64(timestamp, "timestamp")?;
     let hash = vollcrypt_core::transcript::TranscriptState::compute_message_hash(
         message_id.as_ref(),
         sender_id.as_ref(),
-        timestamp as u64,
+        timestamp,
         ciphertext.as_ref(),
     );
-    Buffer::from(hash.to_vec())
+    Ok(Buffer::from(hash.to_vec()))
 }
 
 #[napi]
@@ -859,11 +875,12 @@ pub fn unseal_message(
 pub fn key_log_create_entry(
     user_id: Uint8Array,
     public_key: Uint8Array,
-    timestamp: u32,
+    timestamp: BigInt,
     prev_entry_hash: Uint8Array,
     action: u8,
     signing_key: Uint8Array,
 ) -> Result<String> {
+    let timestamp = bigint_to_u64(timestamp, "timestamp")?;
     if public_key.len() != 32 || prev_entry_hash.len() != 32 || signing_key.len() != 32 {
         return Err(Error::from_reason(
             "Key lengths must be exactly 32 bytes".to_string(),
@@ -890,7 +907,7 @@ pub fn key_log_create_entry(
     let res = vollcrypt_core::key_log::create_entry(
         user_id.as_ref(),
         &pk,
-        timestamp as u64,
+        timestamp,
         &prev_hash,
         act,
         &sign_key,
@@ -934,15 +951,16 @@ pub fn key_log_current_key(entries_json: String, user_id: Uint8Array) -> Result<
 pub fn key_log_key_at_timestamp(
     entries_json: String,
     user_id: Uint8Array,
-    timestamp: u32,
+    timestamp: BigInt,
 ) -> Result<Option<Buffer>> {
+    let timestamp = bigint_to_u64(timestamp, "timestamp")?;
     let entries: Vec<vollcrypt_core::key_log::KeyLogEntry> = serde_json::from_str(&entries_json)
         .map_err(|e| Error::from_reason(format!("Invalid JSON array: {}", e)))?;
 
     let log = vollcrypt_core::key_log::KeyLog { entries };
     log.verify_chain()
         .map_err(|e| Error::from_reason(e.to_string()))?;
-    match log.key_at_timestamp(user_id.as_ref(), timestamp as u64) {
+    match log.key_at_timestamp(user_id.as_ref(), timestamp) {
         Some(k) => Ok(Some(Buffer::from(k.to_vec()))),
         None => Ok(None),
     }

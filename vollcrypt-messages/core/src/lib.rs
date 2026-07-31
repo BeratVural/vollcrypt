@@ -22,7 +22,6 @@ pub use keys::{
     ecdh_shared_secret, generate_ed25519_keypair, generate_x25519_keypair, sign_message,
     verify_signature,
 };
-pub use padding::pad_message;
 pub use pqc::{
     hybrid_kem_decapsulate, hybrid_kem_encapsulate, ml_kem_decapsulate, ml_kem_encapsulate,
     ml_kem_keygen,

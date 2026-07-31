@@ -55,7 +55,7 @@ export class RatchetKeyPairObj {
      * Computes SRK ratchet using this key pair.
      * secret_key never crosses the WASM boundary.
      */
-    compute_ratchet(current_srk: Uint8Array, their_ratchet_pub: Uint8Array, chat_id: Uint8Array, ratchet_step: number): Uint8Array;
+    compute_ratchet(current_srk: Uint8Array, their_ratchet_pub: Uint8Array, chat_id: Uint8Array, ratchet_step: bigint): Uint8Array;
     readonly public_key: Uint8Array;
 }
 
@@ -118,7 +118,7 @@ export function derive_pbkdf2(password: Uint8Array, salt: Uint8Array, iterations
 
 export function derive_srk(dek: Uint8Array, chat_id: Uint8Array): Uint8Array;
 
-export function derive_window_key(srk: Uint8Array, window_index: number): Uint8Array;
+export function derive_window_key(srk: Uint8Array, window_index: bigint): Uint8Array;
 
 export function ecdh_shared_secret(our_secret: Uint8Array, their_public: Uint8Array): Uint8Array;
 
@@ -148,11 +148,11 @@ export function init_logger(): void;
 
 export function key_log_compute_entry_hash(entry_json: string): Uint8Array;
 
-export function key_log_create_entry(user_id: Uint8Array, public_key: Uint8Array, timestamp: number, prev_entry_hash: Uint8Array, action: number, signing_key: Uint8Array): string;
+export function key_log_create_entry(user_id: Uint8Array, public_key: Uint8Array, timestamp: bigint, prev_entry_hash: Uint8Array, action: number, signing_key: Uint8Array): string;
 
-export function key_log_current_key(entries_json: string, user_id: Uint8Array): Uint8Array;
+export function key_log_current_key(entries_json: string, user_id: Uint8Array): Uint8Array | undefined;
 
-export function key_log_key_at_timestamp(entries_json: string, user_id: Uint8Array, timestamp: number): Uint8Array;
+export function key_log_key_at_timestamp(entries_json: string, user_id: Uint8Array, timestamp: bigint): Uint8Array | undefined;
 
 export function key_log_verify_chain(entries_json: string): boolean;
 
@@ -166,9 +166,7 @@ export function mnemonic_to_seed(phrase: string, password?: string | null): Uint
 
 export function pack_envelope(window_index: number, aad_hash: Uint8Array, encrypted_blob: Uint8Array): Uint8Array;
 
-export function pad_message(content: Uint8Array): Uint8Array;
-
-export function registry_add_device(registry_json: string, device_id: string, name: string, added_at: number, public_key: string): string;
+export function registry_add_device(registry_json: string, device_id: string, name: string, added_at: bigint, public_key: string): string;
 
 export function registry_empty(): string;
 
@@ -182,7 +180,7 @@ export function should_ratchet(message_count: number, window_changed: boolean, m
 
 export function sign_message(secret_key: Uint8Array, message: Uint8Array): Uint8Array;
 
-export function transcript_compute_message_hash(message_id: Uint8Array, sender_id: Uint8Array, timestamp: number, ciphertext: Uint8Array): Uint8Array;
+export function transcript_compute_message_hash(message_id: Uint8Array, sender_id: Uint8Array, timestamp: bigint, ciphertext: Uint8Array): Uint8Array;
 
 export function transcript_new(session_id: Uint8Array): Uint8Array;
 
@@ -226,7 +224,7 @@ export interface InitOutput {
     readonly derive_hkdf: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
     readonly derive_pbkdf2: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly derive_srk: (a: number, b: number, c: number, d: number) => [number, number, number];
-    readonly derive_window_key: (a: number, b: number, c: number) => [number, number, number];
+    readonly derive_window_key: (a: number, b: number, c: bigint) => [number, number, number];
     readonly ecdh_shared_secret: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly ed25519keypairobj_public_key: (a: number) => [number, number];
     readonly ed25519keypairobj_secret_key: (a: number) => [number, number];
@@ -244,25 +242,24 @@ export interface InitOutput {
     readonly hybrid_kem_encapsulate: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly init_logger: () => void;
     readonly key_log_compute_entry_hash: (a: number, b: number) => [number, number, number, number];
-    readonly key_log_create_entry: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
+    readonly key_log_create_entry: (a: number, b: number, c: number, d: number, e: bigint, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
     readonly key_log_current_key: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly key_log_key_at_timestamp: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly key_log_key_at_timestamp: (a: number, b: number, c: number, d: number, e: bigint) => [number, number, number, number];
     readonly key_log_verify_chain: (a: number, b: number) => [number, number, number];
     readonly ml_kem_decapsulate: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly ml_kem_encapsulate: (a: number, b: number) => [number, number, number];
     readonly ml_kem_keygen: () => number;
     readonly mnemonic_to_seed: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly pack_envelope: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
-    readonly pad_message: (a: number, b: number) => [number, number];
-    readonly ratchetkeypairobj_compute_ratchet: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
-    readonly registry_add_device: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number, number];
+    readonly ratchetkeypairobj_compute_ratchet: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint) => [number, number, number, number];
+    readonly registry_add_device: (a: number, b: number, c: number, d: number, e: number, f: number, g: bigint, h: number, i: number) => [number, number, number, number];
     readonly registry_empty: () => [number, number];
     readonly registry_get_active_devices: (a: number, b: number) => [number, number, number, number];
     readonly registry_revoke_device: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly seal_message: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly should_ratchet: (a: number, b: number, c: number, d: number) => number;
     readonly sign_message: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly transcript_compute_message_hash: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+    readonly transcript_compute_message_hash: (a: number, b: number, c: number, d: number, e: bigint, f: number, g: number) => [number, number];
     readonly transcript_new: (a: number, b: number) => [number, number];
     readonly transcript_update: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly transcript_verify_sync: (a: number, b: number, c: number, d: number) => number;

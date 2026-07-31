@@ -1,19 +1,20 @@
 use rand::{RngCore, rngs::OsRng};
 
+const PADDING_BUCKETS: [usize; 6] = [64, 128, 256, 512, 1024, 2048];
+
 /// Calculates deterministic padding for a given content length.
-/// Target sizes are predefined buckets: 64, 128, 256, 512, 1024, 2048.
+/// Target PADDING_BUCKETS are predefined buckets: 64, 128, 256, 512, 1024, 2048.
 /// If content exceeds 2048, it rounds up to the next multiple of 1024.
 /// Returns the random padding bytes to append.
-pub fn calculate_padding(content_len: usize) -> Vec<u8> {
-    let sizes = [64, 128, 256, 512, 1024, 2048];
+fn calculate_padding(content_len: usize) -> Vec<u8> {
     let min_padding = 2;
 
-    let target = sizes
+    let target = PADDING_BUCKETS
         .iter()
         .find(|&&s| s >= content_len + min_padding)
         .copied()
         .unwrap_or_else(|| {
-            // If larger than all predefined sizes, round to next multiple of 1024
+            // If larger than all predefined PADDING_BUCKETS, round to next multiple of 1024
             let remainder = (content_len + min_padding) % 1024;
             if remainder == 0 {
                 content_len + min_padding
@@ -26,15 +27,6 @@ pub fn calculate_padding(content_len: usize) -> Vec<u8> {
     let mut padding = vec![0u8; padding_len];
     OsRng.fill_bytes(&mut padding);
     padding
-}
-
-/// Helper function to randomly pad a message slice and return the padded vector.
-pub fn pad_message(content: &[u8]) -> Vec<u8> {
-    let padding_bytes = calculate_padding(content.len());
-    let mut padded_content = Vec::with_capacity(content.len() + padding_bytes.len());
-    padded_content.extend_from_slice(content);
-    padded_content.extend_from_slice(&padding_bytes);
-    padded_content
 }
 
 pub fn pad_message_with_len(content: &[u8]) -> Result<Vec<u8>, &'static str> {
@@ -68,9 +60,8 @@ pub fn unpad_message_with_len(padded: &[u8]) -> Result<Vec<u8>, &'static str> {
 
 /// Checks if a length matches a valid padded block size.
 pub fn is_valid_padded_len(len: usize) -> bool {
-    let sizes = [64, 128, 256, 512, 1024, 2048];
     if len <= 2048 {
-        sizes.contains(&len)
+        PADDING_BUCKETS.contains(&len)
     } else {
         len.is_multiple_of(1024)
     }

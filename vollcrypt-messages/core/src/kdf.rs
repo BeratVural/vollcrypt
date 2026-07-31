@@ -3,6 +3,10 @@ use pbkdf2::pbkdf2_hmac;
 use sha2::Sha256;
 use zeroize::Zeroize;
 
+pub const MIN_PBKDF2_ITERATIONS: u32 = 600_000;
+pub const MAX_PBKDF2_ITERATIONS: u32 = 5_000_000;
+pub const MAX_KDF_OUTPUT_LEN: usize = 8_160;
+
 /// Derives a key using PBKDF2-HMAC-SHA256.
 /// Useful for legacy compatibility or when a password is the source.
 /// Default VollChat config: Iterations = 600,000, Key Length = 32 bytes (for AES-256)
@@ -17,11 +21,15 @@ pub fn derive_pbkdf2(
     iterations: u32,
     key_len: usize,
 ) -> Result<Vec<u8>, &'static str> {
-    if !(1000..=5_000_000).contains(&iterations) {
-        return Err("PBKDF2 iterations out of safety bounds (must be between 1,000 and 5,000,000)");
+    if !(MIN_PBKDF2_ITERATIONS..=MAX_PBKDF2_ITERATIONS).contains(&iterations) {
+        return Err(
+            "PBKDF2 iterations out of safety bounds (must be between 600,000 and 5,000,000)",
+        );
     }
-    let clamped_len = key_len.min(8160);
-    let mut derived_key = vec![0u8; clamped_len];
+    if key_len > MAX_KDF_OUTPUT_LEN {
+        return Err("PBKDF2 output length too long");
+    }
+    let mut derived_key = vec![0u8; key_len];
     pbkdf2_hmac::<Sha256>(password, salt, iterations, &mut derived_key);
 
     // We expect the caller to securely zeroize the output key when they are done,
@@ -43,7 +51,7 @@ pub fn derive_hkdf(
     info: Option<&[u8]>,
     key_len: usize,
 ) -> Result<Vec<u8>, &'static str> {
-    if key_len > 8160 {
+    if key_len > MAX_KDF_OUTPUT_LEN {
         return Err("HKDF expansion failed (length too long)");
     }
     let hk = Hkdf::<Sha256>::new(salt, ikm);
@@ -113,14 +121,33 @@ mod tests {
         let pw = b"my_secure_password";
         let salt = b"some_random_salt";
 
-        let key1 = derive_pbkdf2(pw, salt, 10_000, 32).unwrap();
-        let key2 = derive_pbkdf2(pw, salt, 10_000, 32).unwrap();
+        let key1 = derive_pbkdf2(pw, salt, MIN_PBKDF2_ITERATIONS, 32).unwrap();
+        let key2 = derive_pbkdf2(pw, salt, MIN_PBKDF2_ITERATIONS, 32).unwrap();
 
         assert_eq!(key1.len(), 32);
         assert_eq!(key1, key2);
 
-        let key_different_salt = derive_pbkdf2(pw, b"other_salt", 10_000, 32).unwrap();
+        let key_different_salt =
+            derive_pbkdf2(pw, b"other_salt", MIN_PBKDF2_ITERATIONS, 32).unwrap();
         assert_ne!(key1, key_different_salt);
+    }
+
+    #[test]
+    fn test_pbkdf2_rejects_weak_iterations() {
+        assert!(derive_pbkdf2(b"password", b"salt", MIN_PBKDF2_ITERATIONS - 1, 32).is_err());
+    }
+
+    #[test]
+    fn test_pbkdf2_rejects_oversized_output() {
+        assert!(
+            derive_pbkdf2(
+                b"password",
+                b"salt",
+                MIN_PBKDF2_ITERATIONS,
+                MAX_KDF_OUTPUT_LEN + 1,
+            )
+            .is_err()
+        );
     }
 
     #[test]

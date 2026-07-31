@@ -1,10 +1,10 @@
 use bip39::{Language, Mnemonic};
-use rand::{RngCore, thread_rng};
+use rand::{RngCore, rngs::OsRng};
 
 /// Generates a new random BIP39 mnemonic (24 words by default).
 pub fn generate_mnemonic() -> String {
     let mut entropy = [0u8; 32]; // 32 bytes = 256 bits = 24 words
-    thread_rng().fill_bytes(&mut entropy);
+    OsRng.fill_bytes(&mut entropy);
 
     let mnemonic = Mnemonic::from_entropy_in(Language::English, &entropy)
         .expect("Entropy is exactly 32 bytes");
@@ -38,5 +38,26 @@ mod tests {
 
         let seed = mnemonic_to_seed(&phrase, None).unwrap();
         assert_eq!(seed.len(), 64);
+    }
+
+    #[test]
+    fn test_official_vector_with_passphrase() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let seed = mnemonic_to_seed(phrase, Some("TREZOR")).unwrap();
+        assert_eq!(
+            seed.iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+            concat!(
+                "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e5349553",
+                "1f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04"
+            )
+        );
+    }
+
+    #[test]
+    fn test_invalid_checksum_is_rejected() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon";
+        assert!(mnemonic_to_seed(phrase, None).is_err());
     }
 }
