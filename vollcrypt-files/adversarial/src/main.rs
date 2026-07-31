@@ -1998,16 +1998,24 @@ fn run_adversarial_suite() {
         report.push('\n');
     }
 
-    // Recommendations
+    // Recommendations must reflect the findings produced by this run. Keeping a
+    // static list here caused resolved controls to be reported as still missing.
     report.push_str("## Recommendations\n\n");
-    report.push_str("1. **A.1 & A.2 Merkle tree:** Domain separation prefixes (0x00 for leaves and 0x01 for internal nodes) should be added. Follow the RFC 6962 standard to prevent Merkle root collision and second-preimage attacks.\n");
-    report.push_str("2. **A.3 Merkle root validation:** The decryptor must be forced to validate chunk hashes against the Merkle root during decryption. In the current design, the Merkle root is purely decorative.\n");
-    report.push_str("3. **C.1 chunk_size Validation:** A ceiling limit should be added to the `Header::parse` function (e.g. maximum 16 MB). This prevents an attacker-controlled 4GB chunk_size from allocating 640GB in the BufferPool, causing DoS/OOM.\n");
-    report.push_str("4. **C.2 Argon2 Parameter Caps:** An upper limit capping check should be enforced for Argon2 KDF parameters ($m, t, p$) (e.g., $m_{max} = 64\\text{ MB}, t_{max} = 5$).\n");
-    report.push_str("5. **D.2 Combiner transcript binding:** The ephemeral x25519 public key and ML-KEM ciphertext should be included in the KDF info transcript in Hybrid KDF (X-Wing binding) to protect against key substitution attacks.\n");
-    report.push_str("6. **F.1 & F.2 Manifest Pinning:** Clients should bind the manifest version to a monotonic counter and pin the last known state. A gossip protocol or a centralized registration authority should be established to prevent Equivocation and Rollback attacks.\n");
-    report.push_str("7. **G.1 Constant error behavior:** In the `verify_header_signature_sealed` function, the error codes for decryption failure and the decrypted data length not being 32 bytes should be aligned (`WrongGroupKey`).\n");
-    report.push_str("8. **H.1 Post-Quantum Authenticity (RESOLVED):** The Ed25519 + ML-DSA hybrid signature scheme has been successfully integrated and verified.\n");
+    if findings.is_empty() {
+        report.push_str(
+            "No implementation security findings were reproduced by this run. Preserve the resolved controls with regression tests and review the design limitations below before deployment.\n",
+        );
+    } else {
+        report.push_str("Resolve and regression-test each reproduced finding:\n");
+        for (index, finding) in findings.iter().enumerate() {
+            report.push_str(&format!("{}. **{}**\n", index + 1, finding));
+        }
+    }
+    if !footguns.is_empty() {
+        report.push_str(
+            "\nTreat every listed design limitation as an explicit deployment constraint and document the selected operational mitigation.\n",
+        );
+    }
 
     fn detect_cpu_brand() -> String {
         #[cfg(target_os = "windows")]

@@ -46,6 +46,8 @@ jobs:
           components: clippy
 
       - name: Test adversarial and stress crates
+        env:
+          VOLLCRYPT_STABILITY_SECONDS: "30"
         run: cargo test -p vollcrypt-files-adversarial -p vollcrypt-files-stress
 
       - name: Lint all Files targets

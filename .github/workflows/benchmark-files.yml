@@ -1,0 +1,72 @@
+name: Vollcrypt Files Benchmark Regression
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  benchmark-regression:
+    name: Balanced profile regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Test regression checker
+        run: node --test vollcrypt-files/bench/scripts/check-regression.test.js
+
+      - name: Detect runner shape
+        id: runner-shape
+        run: echo "logical-cpus=$(nproc)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore prior successful baseline
+        id: baseline-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .benchmark-baseline
+          key: files-balanced-${{ runner.os }}-${{ runner.arch }}-${{ steps.runner-shape.outputs.logical-cpus }}-${{ github.run_id }}
+          restore-keys: |
+            files-balanced-${{ runner.os }}-${{ runner.arch }}-${{ steps.runner-shape.outputs.logical-cpus }}-
+
+      - name: Run balanced benchmark
+        run: |
+          mkdir -p .benchmark-candidate
+          cargo run --release -p vollcrypt-files-bench --bin vollcrypt -- bench --profile balanced --json > .benchmark-candidate/profile.json
+
+      - name: Check throughput regression
+        if: steps.baseline-cache.outputs.cache-matched-key != ''
+        run: node vollcrypt-files/bench/scripts/check-regression.js .benchmark-baseline/profile.json .benchmark-candidate/profile.json 20
+
+      - name: Promote successful candidate
+        run: |
+          mkdir -p .benchmark-baseline
+          cp .benchmark-candidate/profile.json .benchmark-baseline/profile.json
+
+      - name: Save successful baseline
+        uses: actions/cache/save@v4
+        with:
+          path: .benchmark-baseline
+          key: files-balanced-${{ runner.os }}-${{ runner.arch }}-${{ steps.runner-shape.outputs.logical-cpus }}-${{ github.run_id }}
+
+      - name: Upload benchmark result
+        uses: actions/upload-artifact@v4
+        with:
+          name: files-balanced-${{ runner.os }}-${{ runner.arch }}-${{ steps.runner-shape.outputs.logical-cpus }}
+          path: .benchmark-candidate/profile.json
+          retention-days: 30

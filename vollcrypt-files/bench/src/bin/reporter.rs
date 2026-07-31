@@ -183,6 +183,13 @@ fn run_profile_bench_internal(
 
     let dek = [0u8; 32];
     let file_id = [0u8; 16];
+    let (signer_pk, signer_sk) = hybrid_keypair_generate();
+    let sign_info = PipelinedSignInfo::Plain {
+        signer_pk,
+        signer_sk,
+        key_log_id: [0x42; 32],
+        timestamp: 1,
+    };
     let num_chunks = size_bytes / chunk_size;
 
     // HKDF timing
@@ -230,7 +237,7 @@ fn run_profile_bench_internal(
             vec![],
             Mode::Password,
             workers,
-            None,
+            Some(sign_info.clone()),
             None,
         )
         .unwrap();
@@ -330,11 +337,42 @@ fn run_profile_bench(
     };
 
     if is_json {
-        format!(
-            "{{\n  \"fileSize\": \"{}\",\n  \"profile\": \"{}\",\n  \"backend\": \"{}\",\n  \"chunkSize\": {},\n  \"workers\": {},\n  \"throughputGBs\": {:.2},\n  \"throughputStdDevSeconds\": {:.4},\n  \"cyclesPerByte\": {:.2},\n  \"instructionsPerByte\": {:.2},\n  \"allocationsPerChunk\": {},\n  \"bytesCopiedPerByteEncrypted\": {:.1},\n  \"workerIdlePercent\": {:.1},\n  \"queueWaitPercent\": {:.1},\n  \"ioWaitPercent\": {:.1},\n  \"merkleTimePercent\": {:.2},\n  \"hkdfTimePercent\": {:.2},\n  \"aeadTimePercent\": {:.2},\n  \"energyEstimateJoulesPerGB\": {:.2},\n  \"timeToFirstVerifiedPlaintextMs\": {:.3},\n  \"systemInfo\": {{\n    \"os\": \"{}\",\n    \"cpu\": \"{}\",\n    \"gpu\": \"{}\",\n    \"disk\": \"{}\",\n    \"ramMinPct\": {:.1},\n    \"ramMaxPct\": {:.1},\n    \"ramAvgPct\": {:.1},\n    \"cpuMinPct\": {:.1},\n    \"cpuMaxPct\": {:.1},\n    \"cpuAvgPct\": {:.1}\n  }}\n}}",
-            file_size_str, profile, backend_str, chunk_size, workers, metrics.throughput, metrics.pipe_std_dev, metrics.cycles_per_byte, metrics.instructions_per_byte, metrics.allocations, metrics.bytes_copied, metrics.worker_idle_percent, metrics.queue_wait_percent, metrics.io_wait_percent, metrics.merkle_ratio, metrics.hkdf_ratio, metrics.aead_ratio, metrics.energy_estimate, metrics.time_to_first_verified_ms,
-            hw.os, hw.cpu_brand, hw.gpu_brand, hw.disk_info.replace("\"", "\\\""), ram_min, ram_max, ram_avg, cpu_min, cpu_max, cpu_avg
-        )
+        serde_json::to_string_pretty(&serde_json::json!({
+            "schemaVersion": 1,
+            "generatedAt": chrono::Utc::now().to_rfc3339(),
+            "fileSize": file_size_str,
+            "profile": profile,
+            "backend": backend_str,
+            "chunkSize": chunk_size,
+            "workers": workers,
+            "throughputGBs": metrics.throughput,
+            "throughputStdDevSeconds": metrics.pipe_std_dev,
+            "cyclesPerByte": metrics.cycles_per_byte,
+            "instructionsPerByte": metrics.instructions_per_byte,
+            "allocationsPerChunk": metrics.allocations,
+            "bytesCopiedPerByteEncrypted": metrics.bytes_copied,
+            "workerIdlePercent": metrics.worker_idle_percent,
+            "queueWaitPercent": metrics.queue_wait_percent,
+            "ioWaitPercent": metrics.io_wait_percent,
+            "merkleTimePercent": metrics.merkle_ratio,
+            "hkdfTimePercent": metrics.hkdf_ratio,
+            "aeadTimePercent": metrics.aead_ratio,
+            "energyEstimateJoulesPerGB": metrics.energy_estimate,
+            "timeToFirstVerifiedPlaintextMs": metrics.time_to_first_verified_ms,
+            "systemInfo": {
+                "os": hw.os,
+                "cpu": hw.cpu_brand,
+                "gpu": hw.gpu_brand,
+                "disk": hw.disk_info,
+                "ramMinPct": ram_min,
+                "ramMaxPct": ram_max,
+                "ramAvgPct": ram_avg,
+                "cpuMinPct": cpu_min,
+                "cpuMaxPct": cpu_max,
+                "cpuAvgPct": cpu_avg,
+            },
+        }))
+        .expect("benchmark profile should serialize as JSON")
     } else {
         let mut output = format!(
             "=== Vollcrypt Profile Benchmark ===\n\
@@ -578,11 +616,30 @@ fn get_clean_cpu_name(cpu_brand: &str) -> String {
         .join("_")
 }
 
+fn write_benchmark_rows(
+    path: &std::path::Path,
+    device: &str,
+    generated_at: &str,
+    rows: &[String],
+) -> std::io::Result<()> {
+    let document = serde_json::json!({
+        "schemaVersion": 1,
+        "generatedAt": generated_at,
+        "device": device,
+        "rows": rows,
+    });
+    let payload = serde_json::to_vec_pretty(&document).map_err(std::io::Error::other)?;
+    fs::write(path, payload)
+}
+
 fn run_full_suite(hw: hwinfo::HwInfo) {
     println!("Running full performance and security benchmark suite...");
 
     let detected_cpu_name = get_clean_cpu_name(&hw.cpu_brand);
-    let device_subdir = std::env::var("VOLLCRYPT_BENCH_DEVICE").unwrap_or(detected_cpu_name);
+    let device_subdir = std::env::var("VOLLCRYPT_BENCH_DEVICE")
+        .map(|value| get_clean_cpu_name(&value))
+        .unwrap_or(detected_cpu_name);
+    let generated_at = chrono::Utc::now().to_rfc3339();
     let reports_dir = if device_subdir.is_empty() {
         std::path::PathBuf::from("vollcrypt-files/reports")
     } else {
@@ -905,11 +962,13 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
 
     // Save single-core results
     let single_core_report = single_core_rows.join("\n");
-    fs::write(
-        results_dir.join("single_core.json"),
-        format!("{{\"rows\": {:?}}}", single_core_rows),
+    write_benchmark_rows(
+        &results_dir.join("single_core.json"),
+        &device_subdir,
+        &generated_at,
+        &single_core_rows,
     )
-    .ok();
+    .expect("single-core benchmark results should be written");
 
     // 2. Parallel Throughput Benchmarks
     println!("Running Parallel scaling benchmarks...");
@@ -960,11 +1019,13 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
             threads, tput, speedup, efficiency
         ));
     }
-    fs::write(
-        results_dir.join("parallel.json"),
-        format!("{{\"rows\": {:?}}}", par_rows),
+    write_benchmark_rows(
+        &results_dir.join("parallel.json"),
+        &device_subdir,
+        &generated_at,
+        &par_rows,
     )
-    .ok();
+    .expect("parallel benchmark results should be written");
 
     // 3. KDF Benchmarks
     println!("Running KDF benchmarks...");

@@ -160,11 +160,21 @@ mod tests {
 
     #[test]
     fn test_stability_loop() {
-        let duration = if std::env::var("VOLLCRYPT_LONG_STABILITY").is_ok() {
-            Duration::from_secs(60)
-        } else {
-            Duration::from_secs(2)
+        let duration_secs = match std::env::var("VOLLCRYPT_STABILITY_SECONDS") {
+            Ok(value) => {
+                let seconds = value
+                    .parse::<u64>()
+                    .expect("VOLLCRYPT_STABILITY_SECONDS must be an integer");
+                assert!(
+                    (1..=3_600).contains(&seconds),
+                    "VOLLCRYPT_STABILITY_SECONDS must be between 1 and 3600"
+                );
+                seconds
+            }
+            Err(std::env::VarError::NotPresent) => 10,
+            Err(error) => panic!("VOLLCRYPT_STABILITY_SECONDS is invalid: {error}"),
         };
+        let duration = Duration::from_secs(duration_secs);
 
         let dek = [0u8; 32];
         let file_id = [0u8; 16];

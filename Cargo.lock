@@ -5792,6 +5792,7 @@ dependencies = [
  "rand 0.8.6",
  "raw-cpuid",
  "rayon",
+ "serde_json",
  "sha2",
  "sysinfo",
  "vollcrypt-files-core",
