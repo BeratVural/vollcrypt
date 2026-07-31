@@ -33,7 +33,8 @@
     "README.md",
     "LICENSE",
     "LICENSE-COMMERCIAL.md",
-    "LICENSE-GPL"
+    "LICENSE-GPL",
+    "sbom.cdx.json"
   ],
   "keywords": [
     "vollcrypt",

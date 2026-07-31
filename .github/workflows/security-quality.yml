@@ -60,8 +60,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Rust for SBOM generation
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Audit npm workspaces
         run: npm audit --workspaces --audit-level=high
+
+      - name: Validate release SBOM generation
+        run: |
+          node scripts/generate-cargo-sbom.js vollcrypt-files/node/Cargo.toml vollcrypt-files/node/package.json ${{ runner.temp }}/files-node-sbom.json
+          node scripts/generate-cargo-sbom.js vollcrypt-files/wasm/Cargo.toml vollcrypt-files/wasm/package.json ${{ runner.temp }}/files-wasm-sbom.json
+          node scripts/generate-cargo-sbom.js vollcrypt-messages/node/Cargo.toml vollcrypt-messages/node/package.json ${{ runner.temp }}/messages-node-sbom.json
+          node scripts/generate-cargo-sbom.js vollcrypt-messages/wasm/Cargo.toml vollcrypt-messages/wasm/package.json ${{ runner.temp }}/messages-wasm-sbom.json
 
   codeql:
     name: CodeQL analysis

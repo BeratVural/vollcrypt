@@ -38,7 +38,8 @@
     "LICENSE",
     "LICENSE-COMMERCIAL.md",
     "LICENSE-GPL",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "sbom.cdx.json"
   ],
   "keywords": [
     "vollcrypt",

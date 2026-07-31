@@ -87,6 +87,12 @@ jobs:
           pattern: messages-bindings-*
           merge-multiple: true
 
+      - name: Install Rust for SBOM generation
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate CycloneDX SBOM
+        run: node scripts/generate-cargo-sbom.js vollcrypt-messages/node/Cargo.toml vollcrypt-messages/node/package.json vollcrypt-messages/node/sbom.cdx.json
+
       - name: List binaries
         run: ls -la vollcrypt-messages/node/vollcrypt.*.node
 
@@ -121,6 +127,9 @@ jobs:
 
       - name: Build WASM
         run: npm run build:messages:wasm
+
+      - name: Generate CycloneDX SBOM
+        run: node scripts/generate-cargo-sbom.js vollcrypt-messages/wasm/Cargo.toml vollcrypt-messages/wasm/package.json vollcrypt-messages/wasm/sbom.cdx.json
 
       - name: Publish to NPM
         run: cd vollcrypt-messages/wasm && npm publish --access public --provenance
