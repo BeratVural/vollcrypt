@@ -310,7 +310,7 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { generateMnemonic, mnemonicToSeed, generateEd25519Keypair, generateX25519Keypair, ecdhSharedSecret, signMessage, verifySignature, encryptAesGcm, decryptAesGcm, encryptAesGcmPadded, decryptAesGcmPadded, encryptAesGcmChunked, decryptAesGcmChunked, encryptAesGcmChunkedPadded, decryptAesGcmChunkedPadded, derivePbkdf2, deriveHkdf, deriveSrk, deriveWindowKey, generateVerificationCode, computeFingerprint, verifyFingerprintsMatch, wrapKey, unwrapKey, packEnvelope, unpackEnvelope, mlKemKeygen, mlKemEncapsulate, mlKemDecapsulate, hybridKemEncapsulate, hybridKemDecapsulate, authenticatedKemEncapsulate, authenticatedKemDecapsulate, registryEmpty, registryAddDevice, registryRevokeDevice, registryGetActiveDevices, generateRatchetKeypair, ratchetSrk, shouldRatchet, transcriptNew, transcriptUpdate, transcriptComputeMessageHash, transcriptVerifySync, sealMessage, unsealMessage, keyLogCreateEntry, keyLogVerifyChain, keyLogCurrentKey, keyLogKeyAtTimestamp, keyLogComputeEntryHash } = nativeBinding
+const { generateMnemonic, mnemonicToSeed, generateEd25519Keypair, generateX25519Keypair, ecdhSharedSecret, signMessage, signFreshMessage, ReplayProtectionStore, verifySignature, encryptAesGcm, decryptAesGcm, encryptAesGcmPadded, decryptAesGcmPadded, encryptAesGcmChunked, decryptAesGcmChunked, encryptAesGcmChunkedPadded, decryptAesGcmChunkedPadded, derivePbkdf2, deriveHkdf, deriveSrk, deriveWindowKey, generateVerificationCode, computeFingerprint, verifyFingerprintsMatch, wrapKey, unwrapKey, packEnvelope, unpackEnvelope, mlKemKeygen, mlKemEncapsulate, mlKemDecapsulate, hybridKemEncapsulate, hybridKemDecapsulate, authenticatedKemEncapsulate, authenticatedKemDecapsulate, registryEmpty, registryAddDevice, registryRevokeDevice, registryGetActiveDevices, generateRatchetKeypair, ratchetSrk, shouldRatchet, transcriptNew, transcriptUpdate, transcriptComputeMessageHash, transcriptVerifySync, sealMessage, unsealMessage, keyLogCreateEntry, keyLogVerifyChain, keyLogCurrentKey, keyLogKeyAtTimestamp, keyLogComputeEntryHash } = nativeBinding
 
 module.exports.generateMnemonic = generateMnemonic
 module.exports.mnemonicToSeed = mnemonicToSeed
@@ -318,6 +318,8 @@ module.exports.generateEd25519Keypair = generateEd25519Keypair
 module.exports.generateX25519Keypair = generateX25519Keypair
 module.exports.ecdhSharedSecret = ecdhSharedSecret
 module.exports.signMessage = signMessage
+module.exports.signFreshMessage = signFreshMessage
+module.exports.ReplayProtectionStore = ReplayProtectionStore
 module.exports.verifySignature = verifySignature
 module.exports.encryptAesGcm = encryptAesGcm
 module.exports.decryptAesGcm = decryptAesGcm

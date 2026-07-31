@@ -8,6 +8,7 @@ pub mod padding;
 pub mod pqc;
 pub mod ratchet;
 pub mod sealed_sender;
+pub mod signed_message;
 pub mod symmetric;
 pub mod transcript;
 pub mod verification;
@@ -30,6 +31,7 @@ pub use ratchet::{
     CryptoError, RatchetConfig, RatchetKeyPair, RatchetOutput, generate_ratchet_keypair,
     ratchet_srk_receiver, ratchet_srk_sender, should_ratchet,
 };
+pub use signed_message::{ReplayProtectionStore, sign_fresh_message};
 pub use symmetric::{
     decrypt_aes256gcm, decrypt_aes256gcm_chunked, decrypt_aes256gcm_chunked_padded,
     decrypt_aes256gcm_padded, encrypt_aes256gcm, encrypt_aes256gcm_chunked,

@@ -111,4 +111,53 @@ describe('messages native binding smoke tests', () => {
       vc.unsealMessage(forged, recipientSk, JSON.stringify([forgedEntry]), alicePk);
     });
   });
+  test('fresh signed messages reject replay, stale timestamps, and metadata tampering', () => {
+    const [secretKey, publicKey] = vc.generateEd25519Keypair();
+    const now = 1_700_000_000_000n;
+    const messageId = Buffer.from('message-001');
+    const payload = Buffer.from('state transition');
+    const signature = vc.signFreshMessage(secretKey, messageId, now, payload);
+    const store = new vc.ReplayProtectionStore(300_000n, 10);
+
+    assert.strictEqual(
+      store.verifyAndRecord(publicKey, messageId, now, now, payload, signature),
+      true,
+    );
+    assert.strictEqual(store.size, 1);
+    assert.throws(
+      () => store.verifyAndRecord(publicKey, messageId, now, now + 1n, payload, signature),
+      /replay detected/,
+    );
+    assert.throws(
+      () => store.verifyAndRecord(
+        publicKey,
+        Buffer.from('message-002'),
+        now,
+        now,
+        payload,
+        signature,
+      ),
+      /signature is invalid/,
+    );
+
+    const staleTimestamp = now - 600_001n;
+    const staleId = Buffer.from('message-stale');
+    const staleSignature = vc.signFreshMessage(
+      secretKey,
+      staleId,
+      staleTimestamp,
+      payload,
+    );
+    assert.throws(
+      () => store.verifyAndRecord(
+        publicKey,
+        staleId,
+        staleTimestamp,
+        now,
+        payload,
+        staleSignature,
+      ),
+      /outside the validity window/,
+    );
+  });
 });

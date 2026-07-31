@@ -39,6 +39,26 @@ const isValid = vollcrypt.verifySignature(identity[1], message, signature);
 
 console.log("Signature Valid:", isValid); // true
 
+// Replay-safe verification for state-changing or network messages.
+// Keep one store per trust domain; do not recreate it for every message.
+const messageId = Buffer.from("018f-unique-message-id");
+const timestamp = BigInt(Date.now());
+const freshSignature = vollcrypt.signFreshMessage(
+  identity[0],
+  messageId,
+  timestamp,
+  message,
+);
+const replayStore = new vollcrypt.ReplayProtectionStore(300_000n, 100_000);
+replayStore.verifyAndRecord(
+  identity[1],
+  messageId,
+  timestamp,
+  BigInt(Date.now()),
+  message,
+  freshSignature,
+); // true; the same signed message is rejected on its second delivery
+
 // Hybrid Key Exchange (X25519)
 const alice = vollcrypt.generateX25519Keypair();
 const bob = vollcrypt.generateX25519Keypair();
@@ -46,6 +66,10 @@ const sharedSecret = vollcrypt.ecdhSharedSecret(alice[0], bob[1]);
 
 console.log("Shared Secret Derived successfully.");
 ```
+
+## Replay Safety
+
+The raw verifySignature API verifies Ed25519 authenticity only; it is intentionally stateless and cannot detect replay by itself. Any message that changes application state must use signFreshMessage and ReplayProtectionStore.verifyAndRecord, with receiver-controlled current time. Persist replay state, or reconstruct it from a durable message ledger, when replay protection must survive process restarts.
 
 ## Documentation
 

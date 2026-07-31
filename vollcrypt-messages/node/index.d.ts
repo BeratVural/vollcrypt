@@ -9,6 +9,7 @@ export declare function generateEd25519Keypair(): Array<Buffer>
 export declare function generateX25519Keypair(): Array<Buffer>
 export declare function ecdhSharedSecret(ourSecret: Uint8Array, theirPublic: Uint8Array): Buffer
 export declare function signMessage(secretKey: Uint8Array, message: Uint8Array): Buffer
+export declare function signFreshMessage(secretKey: Uint8Array, messageId: Uint8Array, timestampMs: bigint, payload: Uint8Array): Buffer
 export declare function verifySignature(publicKey: Uint8Array, message: Uint8Array, signature: Uint8Array, entriesJson?: string | undefined | null): boolean
 export declare function encryptAesGcm(key: Uint8Array, plaintext: Uint8Array, aad?: Uint8Array | undefined | null): Buffer
 export declare function decryptAesGcm(key: Uint8Array, ciphertext: Uint8Array, aad?: Uint8Array | undefined | null): Buffer
@@ -67,3 +68,9 @@ export declare function keyLogVerifyChain(entriesJson: string): boolean
 export declare function keyLogCurrentKey(entriesJson: string, userId: Uint8Array): Buffer | null
 export declare function keyLogKeyAtTimestamp(entriesJson: string, userId: Uint8Array, timestamp: bigint): Buffer | null
 export declare function keyLogComputeEntryHash(entryJson: string): Buffer
+export declare class ReplayProtectionStore {
+  constructor(validityWindowMs?: bigint | undefined | null, maxEntries?: number | undefined | null)
+  verifyAndRecord(publicKey: Uint8Array, messageId: Uint8Array, timestampMs: bigint, nowMs: bigint, payload: Uint8Array, signature: Uint8Array): boolean
+  get size(): number
+  clear(): void
+}

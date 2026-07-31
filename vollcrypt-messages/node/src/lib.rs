@@ -76,6 +76,101 @@ pub fn sign_message(secret_key: Uint8Array, message: Uint8Array) -> Result<Buffe
 }
 
 #[napi]
+pub fn sign_fresh_message(
+    secret_key: Uint8Array,
+    message_id: Uint8Array,
+    timestamp_ms: BigInt,
+    payload: Uint8Array,
+) -> Result<Buffer> {
+    let timestamp_ms = bigint_to_u64(timestamp_ms, "timestamp_ms")?;
+    let mut sk_copy = secret_key.as_ref().to_vec();
+    let result = vollcrypt_core::sign_fresh_message(
+        &sk_copy,
+        message_id.as_ref(),
+        timestamp_ms,
+        payload.as_ref(),
+    );
+    sk_copy.zeroize();
+
+    result
+        .map(Buffer::from)
+        .map_err(|error| Error::from_reason(error.to_string()))
+}
+
+#[napi]
+pub struct ReplayProtectionStore {
+    inner: std::sync::Mutex<vollcrypt_core::ReplayProtectionStore>,
+}
+
+#[napi]
+impl ReplayProtectionStore {
+    #[napi(constructor)]
+    pub fn new(validity_window_ms: Option<BigInt>, max_entries: Option<u32>) -> Result<Self> {
+        let validity_window_ms = match validity_window_ms {
+            Some(value) => bigint_to_u64(value, "validity_window_ms")?,
+            None => 300_000,
+        };
+        let max_entries = max_entries.unwrap_or(100_000) as usize;
+        let inner = vollcrypt_core::ReplayProtectionStore::new(validity_window_ms, max_entries)
+            .map_err(|error| Error::from_reason(error.to_string()))?;
+
+        Ok(Self {
+            inner: std::sync::Mutex::new(inner),
+        })
+    }
+
+    #[napi]
+    pub fn verify_and_record(
+        &self,
+        public_key: Uint8Array,
+        message_id: Uint8Array,
+        timestamp_ms: BigInt,
+        now_ms: BigInt,
+        payload: Uint8Array,
+        signature: Uint8Array,
+    ) -> Result<bool> {
+        let timestamp_ms = bigint_to_u64(timestamp_ms, "timestamp_ms")?;
+        let now_ms = bigint_to_u64(now_ms, "now_ms")?;
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| Error::from_reason("replay protection store lock poisoned".to_string()))?;
+
+        inner
+            .verify_and_record(
+                public_key.as_ref(),
+                message_id.as_ref(),
+                timestamp_ms,
+                now_ms,
+                payload.as_ref(),
+                signature.as_ref(),
+            )
+            .map_err(|error| Error::from_reason(error.to_string()))?;
+        Ok(true)
+    }
+
+    #[napi(getter)]
+    pub fn size(&self) -> Result<u32> {
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|_| Error::from_reason("replay protection store lock poisoned".to_string()))?;
+        u32::try_from(inner.len())
+            .map_err(|_| Error::from_reason("replay protection store size overflow".to_string()))
+    }
+
+    #[napi]
+    pub fn clear(&self) -> Result<()> {
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| Error::from_reason("replay protection store lock poisoned".to_string()))?;
+        inner.clear();
+        Ok(())
+    }
+}
+
+#[napi]
 pub fn verify_signature(
     public_key: Uint8Array,
     message: Uint8Array,
