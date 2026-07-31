@@ -17,7 +17,7 @@ describe('Compliance Scorecard Generator', () => {
     assert.ok(scorecard.passedChecks.length > 0); // RAM zeroization still passes
   });
 
-  test('auditConfiguration achieves maximum compliance with full enterprise options', () => {
+  test('auditConfiguration reports acknowledged equality-index leakage honestly', () => {
     const fullConfig = {
       kms: {
         provider: {},
@@ -30,6 +30,7 @@ describe('Compliance Scorecard Generator', () => {
       },
       blindIndexes: {
         rootSalt: Buffer.alloc(32, 4),
+        allowFrequencyLeakage: true,
         models: {
           User: ['email']
         }
@@ -56,19 +57,30 @@ describe('Compliance Scorecard Generator', () => {
       breakGlassThreshold: 2,
       breakGlassPublicKeys: ['hexkey1', 'hexkey2'],
       postQuantumEnabled: true,
-      auditTrailPath: 'audit.log'
+      auditTrailPath: 'audit.log',
+      auditIntegrityKey: Buffer.alloc(32, 5)
     };
 
     const scorecard = auditConfiguration(fullConfig);
 
     assert.strictEqual(scorecard.gdprScore, 100);
-    assert.strictEqual(scorecard.kvkkScore, 100);
+    assert.strictEqual(scorecard.kvkkScore, 75);
     assert.strictEqual(scorecard.pciScore, 100);
     assert.strictEqual(scorecard.failedChecks.length, 0);
     assert.ok(scorecard.passedChecks.some(c => c.includes('BREAK_GLASS_PROTOCOL')));
     assert.ok(scorecard.passedChecks.some(c => c.includes('POST_QUANTUM_KEM')));
   });
 
+  test('auditConfiguration rejects unacknowledged deterministic blind indexes', () => {
+    const scorecard = auditConfiguration({
+      blindIndexes: {
+        rootSalt: Buffer.alloc(32, 7),
+        models: { User: ['email'] }
+      }
+    });
+
+    assert.ok(scorecard.failedChecks.some(c => c.includes('BLIND_INDEX_RISK_NOT_ACKNOWLEDGED')));
+  });
   test('generateComplianceHtmlReport produces a beautiful valid HTML document', () => {
     const basicConfig = {
       key: Buffer.alloc(32, 1)

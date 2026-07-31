@@ -17,13 +17,15 @@ import {
   decryptValue,
   rewriteQueryWhere,
   addBlindIndexes,
-  computeBlindIndex
+  computeBlindIndex,
+  validateBlindIndexConfiguration
 } from './security';
 
 export interface PrismaDbGuardOptions extends DbGuardKeysOptions {
   models: Record<string, string[]>; // fields to encrypt/decrypt
   blindIndexes?: {
     rootSalt: Buffer;
+    allowFrequencyLeakage: true;
     models: Record<string, string[]>; // fields to calculate blind indexes for
   };
   cryptoRbac?: {
@@ -45,6 +47,12 @@ export interface PrismaDbGuardOptions extends DbGuardKeysOptions {
  * Bootstraps client-level field encryption, query translation, and automatic decryption.
  */
 export const prismaDbGuard = (options: PrismaDbGuardOptions, resolvedKeys?: Record<string, Buffer>) => {
+  if (options.blindIndexes) {
+    validateBlindIndexConfiguration(
+      options.blindIndexes.rootSalt,
+      options.blindIndexes.allowFrequencyLeakage
+    );
+  }
   let keys = resolvedKeys;
   if (!keys) {
     if (options.key) {
@@ -209,13 +217,13 @@ export const prismaDbGuard = (options: PrismaDbGuardOptions, resolvedKeys?: Reco
     const bidxFields = options.blindIndexes?.models[modelName];
     if (bidxFields && options.blindIndexes?.rootSalt) {
       if (args.data) {
-        addBlindIndexes(args.data, bidxFields, options.blindIndexes.rootSalt, modelName);
+        addBlindIndexes(args.data, bidxFields, options.blindIndexes.rootSalt, modelName, options.blindIndexes.allowFrequencyLeakage);
       }
       if (args.create) {
-        addBlindIndexes(args.create, bidxFields, options.blindIndexes.rootSalt, modelName);
+        addBlindIndexes(args.create, bidxFields, options.blindIndexes.rootSalt, modelName, options.blindIndexes.allowFrequencyLeakage);
       }
       if (args.update) {
-        addBlindIndexes(args.update, bidxFields, options.blindIndexes.rootSalt, modelName);
+        addBlindIndexes(args.update, bidxFields, options.blindIndexes.rootSalt, modelName, options.blindIndexes.allowFrequencyLeakage);
       }
     }
   };
@@ -226,7 +234,7 @@ export const prismaDbGuard = (options: PrismaDbGuardOptions, resolvedKeys?: Reco
     // Rewrite queries targeting encrypted columns to use the blind index column
     const bidxFields = options.blindIndexes?.models[modelName];
     if (bidxFields && options.blindIndexes?.rootSalt && args.where) {
-      rewriteQueryWhere(args.where, bidxFields, options.blindIndexes.rootSalt, modelName);
+      rewriteQueryWhere(args.where, bidxFields, options.blindIndexes.rootSalt, modelName, options.blindIndexes.allowFrequencyLeakage);
     }
   };
 
@@ -252,7 +260,7 @@ export const prismaDbGuard = (options: PrismaDbGuardOptions, resolvedKeys?: Reco
                   const encrypted = encryptPayload(model, item, resolved.activeKey, resolved.activeVersion);
                   const bidxFields = options.blindIndexes?.models[model];
                   if (bidxFields && options.blindIndexes?.rootSalt) {
-                    addBlindIndexes(encrypted, bidxFields, options.blindIndexes.rootSalt, model);
+                    addBlindIndexes(encrypted, bidxFields, options.blindIndexes.rootSalt, model, options.blindIndexes.allowFrequencyLeakage);
                   }
                   return encrypted;
                 });

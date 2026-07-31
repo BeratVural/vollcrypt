@@ -5,6 +5,7 @@ import {
   decryptValue,
   rewriteQueryWhere,
   computeBlindIndex,
+  validateBlindIndexConfiguration,
   decryptWithSecurity,
   registerKeysForZeroization,
   RateLimiterOptions,
@@ -22,6 +23,7 @@ export interface MongooseDbGuardOptions {
   fields: string[];
   blindIndexes?: {
     rootSalt: Buffer;
+    allowFrequencyLeakage: true;
     fields: string[];
     modelName?: string;
   };
@@ -39,6 +41,12 @@ export interface MongooseDbGuardOptions {
 }
 
 export function mongooseDbGuard(schema: Schema, options: MongooseDbGuardOptions) {
+  if (options.blindIndexes) {
+    validateBlindIndexConfiguration(
+      options.blindIndexes.rootSalt,
+      options.blindIndexes.allowFrequencyLeakage
+    );
+  }
   const { fields } = options;
 
   let keys: Record<string, Buffer> = {};
@@ -155,7 +163,7 @@ export function mongooseDbGuard(schema: Schema, options: MongooseDbGuardOptions)
               ? decryptValue(doc[field], keys) 
               : doc[field];
             
-            doc[bidxField] = computeBlindIndex(rawVal, options.blindIndexes.rootSalt, `${modelName}.${field}`);
+            doc[bidxField] = computeBlindIndex(rawVal, options.blindIndexes.rootSalt, `${modelName}.${field}`, options.blindIndexes.allowFrequencyLeakage);
           }
         }
       }
@@ -190,7 +198,7 @@ export function mongooseDbGuard(schema: Schema, options: MongooseDbGuardOptions)
         if (obj[currentPart] !== undefined && obj[currentPart] !== null) {
           if (options.blindIndexes && options.blindIndexes.fields.includes(fullPath) && options.blindIndexes.rootSalt) {
             const bidxField = `${currentPart}_bidx`;
-            obj[bidxField] = computeBlindIndex(obj[currentPart], options.blindIndexes.rootSalt, `${modelName}.${fullPath}`);
+            obj[bidxField] = computeBlindIndex(obj[currentPart], options.blindIndexes.rootSalt, `${modelName}.${fullPath}`, options.blindIndexes.allowFrequencyLeakage);
           }
           obj[currentPart] = encryptValue(obj[currentPart], encKey, encVer);
         }
@@ -202,7 +210,7 @@ export function mongooseDbGuard(schema: Schema, options: MongooseDbGuardOptions)
         if (obj[dotNotatedPath] !== undefined && obj[dotNotatedPath] !== null) {
           if (options.blindIndexes && options.blindIndexes.fields.includes(fullPath) && options.blindIndexes.rootSalt) {
             const bidxField = `${dotNotatedPath}_bidx`;
-            obj[bidxField] = computeBlindIndex(obj[dotNotatedPath], options.blindIndexes.rootSalt, `${modelName}.${fullPath}`);
+            obj[bidxField] = computeBlindIndex(obj[dotNotatedPath], options.blindIndexes.rootSalt, `${modelName}.${fullPath}`, options.blindIndexes.allowFrequencyLeakage);
           }
           obj[dotNotatedPath] = encryptValue(obj[dotNotatedPath], encKey, encVer);
         }
@@ -245,7 +253,7 @@ export function mongooseDbGuard(schema: Schema, options: MongooseDbGuardOptions)
         // 2. Process query criteria (rewrite exact match search queries on conditions)
         const conditions = typeof query.getQuery === 'function' ? query.getQuery() : null;
         if (conditions && options.blindIndexes && options.blindIndexes.rootSalt) {
-          rewriteQueryWhere(conditions, options.blindIndexes.fields, options.blindIndexes.rootSalt, modelName);
+          rewriteQueryWhere(conditions, options.blindIndexes.fields, options.blindIndexes.rootSalt, modelName, options.blindIndexes.allowFrequencyLeakage);
         }
         if (typeof next === 'function') {
           next();
@@ -276,7 +284,7 @@ export function mongooseDbGuard(schema: Schema, options: MongooseDbGuardOptions)
       const conditions = typeof query.getQuery === 'function' ? query.getQuery() : null;
       
       if (conditions && options.blindIndexes && options.blindIndexes.rootSalt) {
-        rewriteQueryWhere(conditions, options.blindIndexes.fields, options.blindIndexes.rootSalt, modelName);
+        rewriteQueryWhere(conditions, options.blindIndexes.fields, options.blindIndexes.rootSalt, modelName, options.blindIndexes.allowFrequencyLeakage);
       }
       next();
     });

@@ -1,6 +1,6 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { dbGuardContextStore, configureAuditLogger, decryptWithSecurity, resetFailClosedStatusForTesting, resetAuditLoggerForTesting, AuditLogEntry } from '../src/index';
+import { dbGuardContextStore, configureAuditLogger, decryptWithSecurity, resetFailClosedStatusForTesting, resetAuditLoggerForTesting, verifyAuditLogEntries, AuditLogEntry } from '../src/index';
 
 describe('Vollcrypt Central Security Modules (Phase 4)', () => {
   const key = Buffer.alloc(32, 17);
@@ -144,9 +144,11 @@ describe('Vollcrypt Central Security Modules (Phase 4)', () => {
     assert.deepStrictEqual(localKeys['1'], Buffer.alloc(30, 0));
   });
 
-  test('Cryptographic Audit Trail forms immutable SHA-256 chain', () => {
+  test('Cryptographic Audit Trail requires a keyed HMAC chain', () => {
     const logs: AuditLogEntry[] = [];
+    const integrityKey = Buffer.alloc(32, 0xA7);
     configureAuditLogger({
+      integrityKey,
       onAuditLog(entry) {
         logs.push(entry);
       }
@@ -158,19 +160,23 @@ describe('Vollcrypt Central Security Modules (Phase 4)', () => {
     decryptWithSecurity('VOLLVALT:v1:b64', mockDecryptRawFn, 'User', 'ssn', 'rec_2', { allowUnrestrictedDecrypt: true });
 
     assert.strictEqual(logs.length, 2);
-
     assert.strictEqual(logs[0].prevHash, '0'.repeat(64));
-    assert.ok(logs[0].hash);
-
     assert.strictEqual(logs[1].prevHash, logs[0].hash);
+    assert.strictEqual(verifyAuditLogEntries(logs, integrityKey), true);
 
-    const entry = logs[0];
-    const payload = `${entry.timestamp}|${entry.userId || ''}|${entry.role || ''}|${entry.model}|${entry.field}|${entry.recordId || ''}|${entry.action}|${entry.prevHash}`;
-    const crypto = require('crypto');
-    const expectedHash = crypto.createHash('sha256').update(payload).digest('hex');
-    assert.strictEqual(entry.hash, expectedHash);
+    const tampered = logs.map((entry) => ({ ...entry }));
+    tampered[0].field = 'salary';
+    assert.strictEqual(
+      verifyAuditLogEntries(tampered, integrityKey),
+      false,
+      'Changing an old entry must invalidate the keyed chain'
+    );
+
+    assert.throws(
+      () => configureAuditLogger({ integrityKey: Buffer.alloc(16) }),
+      /at least 32 bytes/
+    );
   });
-
   test('Rate Limiter custom modes: warn and disabled', () => {
     const localKeys = { '1': Buffer.from('my-sensitive-key-data-32-bytes') };
     const { registerKeysForZeroization } = require('../src/security');

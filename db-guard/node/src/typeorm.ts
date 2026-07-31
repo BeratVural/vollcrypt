@@ -1,5 +1,5 @@
 import type { EntitySubscriberInterface, InsertEvent, UpdateEvent } from 'typeorm';
-import { encryptValue, decryptValue, computeBlindIndex, decryptWithSecurity, registerKeysForZeroization, RateLimiterOptions } from './security';
+import { encryptValue, decryptValue, computeBlindIndex, validateBlindIndexConfiguration, decryptWithSecurity, registerKeysForZeroization, RateLimiterOptions } from './security';
 
 export interface TypeOrmDbGuardOptions {
   key: Buffer | Record<string, Buffer>;
@@ -7,6 +7,7 @@ export interface TypeOrmDbGuardOptions {
   entities: Record<string, string[]>;
   blindIndexes?: {
     rootSalt: Buffer;
+    allowFrequencyLeakage: true;
     entities: Record<string, string[]>; // entities and fields to calculate blind indexes for
   };
   cryptoRbac?: {
@@ -37,6 +38,12 @@ function getKeys(options: TypeOrmDbGuardOptions) {
 }
 
 export function createTypeOrmSubscriber(options: TypeOrmDbGuardOptions) {
+  if (options.blindIndexes) {
+    validateBlindIndexConfiguration(
+      options.blindIndexes.rootSalt,
+      options.blindIndexes.allowFrequencyLeakage
+    );
+  }
   const { EventSubscriber } = require('typeorm');
   const { keys, activeVersion } = getKeys(options);
   const activeKey = keys[activeVersion];
@@ -64,7 +71,7 @@ export function createTypeOrmSubscriber(options: TypeOrmDbGuardOptions) {
             for (const field of bidxFields) {
               if (event.entity[field] !== undefined && event.entity[field] !== null) {
                 const bidxField = `${field}_bidx`;
-                event.entity[bidxField] = computeBlindIndex(event.entity[field], options.blindIndexes.rootSalt, `${entityName}.${field}`);
+                event.entity[bidxField] = computeBlindIndex(event.entity[field], options.blindIndexes.rootSalt, `${entityName}.${field}`, options.blindIndexes.allowFrequencyLeakage);
               }
             }
           }
@@ -90,7 +97,7 @@ export function createTypeOrmSubscriber(options: TypeOrmDbGuardOptions) {
             for (const field of bidxFields) {
               if (event.entity[field] !== undefined && event.entity[field] !== null) {
                 const bidxField = `${field}_bidx`;
-                event.entity[bidxField] = computeBlindIndex(event.entity[field], options.blindIndexes.rootSalt, `${entityName}.${field}`);
+                event.entity[bidxField] = computeBlindIndex(event.entity[field], options.blindIndexes.rootSalt, `${entityName}.${field}`, options.blindIndexes.allowFrequencyLeakage);
               }
             }
           }

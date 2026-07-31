@@ -4,6 +4,7 @@ export interface PrismaDbGuardOptions extends DbGuardKeysOptions {
     models: Record<string, string[]>;
     blindIndexes?: {
         rootSalt: Buffer;
+        allowFrequencyLeakage: true;
         models: Record<string, string[]>;
     };
     cryptoRbac?: {

@@ -538,51 +538,134 @@ export interface AuditLogEntry {
   hash: string;
 }
 
-let lastLogHash = '0'.repeat(64);
+type UnsignedAuditLogEntry = Omit<AuditLogEntry, 'hash'>;
+
+const AUDIT_GENESIS_HASH = '0'.repeat(64);
+let lastLogHash = AUDIT_GENESIS_HASH;
 let auditLogPath: string | undefined;
+let auditIntegrityKey: Buffer | undefined;
 let onAuditLogCallback: ((entry: AuditLogEntry) => void) | undefined;
 let auditWriteQueue = Promise.resolve();
 
+function serializeAuditEntry(entry: UnsignedAuditLogEntry): string {
+  return JSON.stringify([
+    entry.timestamp,
+    entry.userId ?? null,
+    entry.role ?? null,
+    entry.model,
+    entry.field,
+    entry.recordId ?? null,
+    entry.action,
+    entry.prevHash
+  ]);
+}
+
+function computeAuditMac(entry: UnsignedAuditLogEntry, integrityKey: Buffer): string {
+  return crypto
+    .createHmac('sha256', integrityKey)
+    .update(serializeAuditEntry(entry))
+    .digest('hex');
+}
+
+export function verifyAuditLogEntries(
+  entries: readonly AuditLogEntry[],
+  integrityKey: Buffer
+): boolean {
+  if (!Buffer.isBuffer(integrityKey) || integrityKey.length < 32) return false;
+
+  let expectedPrevHash = AUDIT_GENESIS_HASH;
+  for (const entry of entries) {
+    if (
+      entry.prevHash !== expectedPrevHash ||
+      typeof entry.hash !== 'string' ||
+      !/^[0-9a-f]{64}$/i.test(entry.hash)
+    ) {
+      return false;
+    }
+
+    const unsigned: UnsignedAuditLogEntry = {
+      timestamp: entry.timestamp,
+      userId: entry.userId,
+      role: entry.role,
+      model: entry.model,
+      field: entry.field,
+      recordId: entry.recordId,
+      action: entry.action,
+      prevHash: entry.prevHash
+    };
+    const expectedMac = Buffer.from(computeAuditMac(unsigned, integrityKey), 'hex');
+    const actualMac = Buffer.from(entry.hash, 'hex');
+    if (
+      expectedMac.length !== actualMac.length ||
+      !crypto.timingSafeEqual(expectedMac, actualMac)
+    ) {
+      return false;
+    }
+    expectedPrevHash = entry.hash;
+  }
+
+  return true;
+}
+
 export function configureAuditLogger(options?: {
+  integrityKey: Buffer;
   path?: string;
   onAuditLog?: (entry: AuditLogEntry) => void;
 }) {
-  if (options?.path) {
-    auditLogPath = options.path;
-    try {
-      if (fs.existsSync(auditLogPath)) {
-        const content = fs.readFileSync(auditLogPath, 'utf8').trim();
-        if (content) {
-          const lines = content.split('\n');
-          const lastLine = lines[lines.length - 1];
-          if (lastLine) {
-            const entry = JSON.parse(lastLine);
-            if (entry && entry.hash) {
-              lastLogHash = entry.hash;
-            }
-          }
-        }
-      }
-    } catch {
-      // fallback to genesis hash on error
-    }
+  if (!options) {
+    resetAuditLoggerForTesting();
+    return;
   }
-  if (options?.onAuditLog) onAuditLogCallback = options.onAuditLog;
+  if (!Buffer.isBuffer(options.integrityKey) || options.integrityKey.length < 32) {
+    throw new Error('Vollcrypt Security: Audit integrity key must be at least 32 bytes.');
+  }
+
+  if (auditIntegrityKey) auditIntegrityKey.fill(0);
+  auditIntegrityKey = Buffer.from(options.integrityKey);
+  auditLogPath = options.path;
+  onAuditLogCallback = options.onAuditLog;
+  lastLogHash = AUDIT_GENESIS_HASH;
+
+  if (!auditLogPath || !fs.existsSync(auditLogPath)) return;
+
+  let entries: AuditLogEntry[];
+  try {
+    const content = fs.readFileSync(auditLogPath, 'utf8').trim();
+    entries = content
+      ? content.split('\n').map((line) => JSON.parse(line) as AuditLogEntry)
+      : [];
+  } catch (error) {
+    throw new Error(
+      'Vollcrypt Security: Audit log could not be parsed; refusing to continue.',
+      { cause: error }
+    );
+  }
+
+  if (!verifyAuditLogEntries(entries, auditIntegrityKey)) {
+    throw new Error(
+      'Vollcrypt Security: Audit log integrity verification failed; refusing to continue.'
+    );
+  }
+  if (entries.length > 0) {
+    lastLogHash = entries[entries.length - 1].hash;
+  }
 }
 
 export function resetAuditLoggerForTesting() {
-  lastLogHash = '0'.repeat(64);
+  lastLogHash = AUDIT_GENESIS_HASH;
   auditLogPath = undefined;
+  if (auditIntegrityKey) auditIntegrityKey.fill(0);
+  auditIntegrityKey = undefined;
   onAuditLogCallback = undefined;
   auditWriteQueue = Promise.resolve();
 }
 
 export function logDecryption(model: string, field: string, recordId?: string) {
+  if (!auditIntegrityKey) return;
+
   const context = dbGuardContextStore.getStore();
-  const timestamp = new Date().toISOString();
-  
-  const entry: Omit<AuditLogEntry, 'hash'> = {
-    timestamp,
+  const entry: UnsignedAuditLogEntry = {
+    timestamp: new Date().toISOString(),
     userId: context?.userId,
     role: context?.role,
     model,
@@ -592,17 +675,15 @@ export function logDecryption(model: string, field: string, recordId?: string) {
     prevHash: lastLogHash
   };
 
-  const payload = `${entry.timestamp}|${entry.userId || ''}|${entry.role || ''}|${entry.model}|${entry.field}|${entry.recordId || ''}|${entry.action}|${entry.prevHash}`;
-  const hash = crypto.createHash('sha256').update(payload).digest('hex');
+  const hash = computeAuditMac(entry, auditIntegrityKey);
   const fullEntry: AuditLogEntry = { ...entry, hash };
-
   lastLogHash = hash;
 
   if (onAuditLogCallback) {
     try {
       onAuditLogCallback(fullEntry);
     } catch {
-      // prevent callback errors from stopping application flow
+      // Audit callbacks are observers and cannot change decryption behavior.
     }
   }
 
@@ -614,7 +695,6 @@ export function logDecryption(model: string, field: string, recordId?: string) {
     });
   }
 }
-
 export function decryptWithSecurity(
   stored: any,
   decryptRawFn: (val: string) => any,
@@ -719,28 +799,47 @@ export function parseCiphertext(stored: string): { algoId: string; version: stri
 }
 
 /**
- * Computes a hardened, frequency-resistant blind index for a database field.
+ * Computes a keyed deterministic equality index.
+ *
+ * Equal plaintexts in the same column produce equal indexes and therefore leak
+ * frequency information. Callers must explicitly acknowledge that tradeoff.
  */
-export function computeBlindIndex(value: any, rootSalt: Buffer, columnName: string): string {
-  if (value === null || value === undefined) return value;
-  
-  const plaintext = typeof value === 'string' ? value : JSON.stringify(value);
-  const columnNameBuf = Buffer.from(columnName, 'utf8');
-
-  // 1. Derive column-specific key using HKDF-SHA256
-  const derivedColumnKey = deriveHkdf(rootSalt, null, columnNameBuf, 32);
-
-  try {
-    // 2. Compute the final blind index using the derived column key
-    const plaintextBuf = Buffer.from(plaintext, 'utf8');
-    const blindIndex = deriveHkdf(derivedColumnKey, null, plaintextBuf, 32);
-    return blindIndex.toString('hex');
-  } finally {
-    // 3. RAM Security: Zeroize the derived key immediately (Anti-Core Dump)
-    derivedColumnKey.fill(0);
+export function validateBlindIndexConfiguration(
+  rootSalt: Buffer,
+  allowFrequencyLeakage: true
+): void {
+  if (!Buffer.isBuffer(rootSalt) || rootSalt.length < 32) {
+    throw new Error('Vollcrypt Security: Blind-index rootSalt must be at least 32 bytes.');
+  }
+  if (allowFrequencyLeakage !== true) {
+    throw new Error(
+      'Vollcrypt Security: Deterministic blind indexes leak equality frequency. Set allowFrequencyLeakage: true only after accepting this risk.'
+    );
   }
 }
 
+export function computeBlindIndex(
+  value: any,
+  rootSalt: Buffer,
+  columnName: string,
+  allowFrequencyLeakage: true
+): string {
+  if (value === null || value === undefined) return value;
+  validateBlindIndexConfiguration(rootSalt, allowFrequencyLeakage);
+
+  const plaintext = typeof value === 'string' ? value : JSON.stringify(value);
+  const columnNameBuf = Buffer.from(columnName, 'utf8');
+  const derivedColumnKey = deriveHkdf(rootSalt, null, columnNameBuf, 32);
+  const plaintextBuf = Buffer.from(plaintext, 'utf8');
+
+  try {
+    const blindIndex = deriveHkdf(derivedColumnKey, null, plaintextBuf, 32);
+    return blindIndex.toString('hex');
+  } finally {
+    plaintextBuf.fill(0);
+    derivedColumnKey.fill(0);
+  }
+}
 export function encryptValue(val: any, key: Buffer, version: string): string {
   if (val === null || val === undefined) return val;
   const context = dbGuardContextStore.getStore();
@@ -802,7 +901,7 @@ export function decryptValue(stored: any, keys: Record<string, Buffer>): any {
   }
 }
 
-export function rewriteQueryWhere(where: any, fields: string[], rootSalt: Buffer, modelName: string) {
+export function rewriteQueryWhere(where: any, fields: string[], rootSalt: Buffer, modelName: string, allowFrequencyLeakage: true) {
   if (!where || typeof where !== 'object') return;
 
   for (const field of fields) {
@@ -811,12 +910,12 @@ export function rewriteQueryWhere(where: any, fields: string[], rootSalt: Buffer
       const bidxField = `${field}_bidx`;
 
       if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
-        where[bidxField] = computeBlindIndex(val, rootSalt, `${modelName}.${field}`);
+        where[bidxField] = computeBlindIndex(val, rootSalt, `${modelName}.${field}`, allowFrequencyLeakage);
         delete where[field];
       } else if (val && typeof val === 'object') {
         if (val.equals !== undefined) {
           where[bidxField] = {
-            equals: computeBlindIndex(val.equals, rootSalt, `${modelName}.${field}`),
+            equals: computeBlindIndex(val.equals, rootSalt, `${modelName}.${field}`, allowFrequencyLeakage),
           };
           delete where[field];
         }
@@ -828,25 +927,25 @@ export function rewriteQueryWhere(where: any, fields: string[], rootSalt: Buffer
   const operators = ['AND', 'OR', 'NOT'];
   for (const op of operators) {
     if (Array.isArray(where[op])) {
-      where[op].forEach((item: any) => rewriteQueryWhere(item, fields, rootSalt, modelName));
+      where[op].forEach((item: any) => rewriteQueryWhere(item, fields, rootSalt, modelName, allowFrequencyLeakage));
     } else if (where[op] && typeof where[op] === 'object') {
-      rewriteQueryWhere(where[op], fields, rootSalt, modelName);
+      rewriteQueryWhere(where[op], fields, rootSalt, modelName, allowFrequencyLeakage);
     }
   }
 }
 
-export function addBlindIndexes(data: any, fields: string[], rootSalt: Buffer, modelName: string) {
+export function addBlindIndexes(data: any, fields: string[], rootSalt: Buffer, modelName: string, allowFrequencyLeakage: true) {
   if (!data || typeof data !== 'object') return;
 
   if (Array.isArray(data)) {
-    data.forEach((item) => addBlindIndexes(item, fields, rootSalt, modelName));
+    data.forEach((item) => addBlindIndexes(item, fields, rootSalt, modelName, allowFrequencyLeakage));
     return;
   }
 
   for (const field of fields) {
     if (data[field] !== undefined && data[field] !== null) {
       const bidxField = `${field}_bidx`;
-      data[bidxField] = computeBlindIndex(data[field], rootSalt, `${modelName}.${field}`);
+      data[bidxField] = computeBlindIndex(data[field], rootSalt, `${modelName}.${field}`, allowFrequencyLeakage);
     }
   }
 }

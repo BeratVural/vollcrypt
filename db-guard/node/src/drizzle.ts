@@ -1,13 +1,14 @@
 import type { customType as pgCustomTypeType } from 'drizzle-orm/pg-core';
 import type { customType as mysqlCustomTypeType } from 'drizzle-orm/mysql-core';
 import type { customType as sqliteCustomTypeType } from 'drizzle-orm/sqlite-core';
-import { encryptValue, decryptValue, computeBlindIndex, registerKeysForZeroization, decryptWithSecurity, RateLimiterOptions } from './security';
+import { encryptValue, decryptValue, computeBlindIndex, validateBlindIndexConfiguration, registerKeysForZeroization, decryptWithSecurity, RateLimiterOptions } from './security';
 
 export interface DrizzleDbGuardOptions {
   key: Buffer | Record<string, Buffer>;
   activeKeyVersion?: string;
   blindIndexes?: {
     rootSalt: Buffer;
+    allowFrequencyLeakage: true;
   };
   cryptoRbac?: {
     roles: Record<string, {
@@ -37,6 +38,12 @@ function getKeys(options: DrizzleDbGuardOptions) {
 }
 
 export const createDrizzleGuard = (options: DrizzleDbGuardOptions) => {
+  if (options.blindIndexes) {
+    validateBlindIndexConfiguration(
+      options.blindIndexes.rootSalt,
+      options.blindIndexes.allowFrequencyLeakage
+    );
+  }
   const pgCustomType = require('drizzle-orm/pg-core').customType as typeof pgCustomTypeType;
   const mysqlCustomType = require('drizzle-orm/mysql-core').customType as typeof mysqlCustomTypeType;
   const sqliteCustomType = require('drizzle-orm/sqlite-core').customType as typeof sqliteCustomTypeType;
@@ -127,7 +134,7 @@ export const createDrizzleGuard = (options: DrizzleDbGuardOptions) => {
         if (!rootSalt) {
           throw new Error('Blind index root salt is not configured in Drizzle guard options.');
         }
-        return computeBlindIndex(value, rootSalt, columnName);
+        return computeBlindIndex(value, rootSalt, columnName, options.blindIndexes!.allowFrequencyLeakage);
       },
       fromDriver(value: any): string {
         return value;
@@ -142,7 +149,7 @@ export const createDrizzleGuard = (options: DrizzleDbGuardOptions) => {
         if (!rootSalt) {
           throw new Error('Blind index root salt is not configured in Drizzle guard options.');
         }
-        return computeBlindIndex(value, rootSalt, columnName);
+        return computeBlindIndex(value, rootSalt, columnName, options.blindIndexes!.allowFrequencyLeakage);
       },
       fromDriver(value: any): string {
         return value;
@@ -157,7 +164,7 @@ export const createDrizzleGuard = (options: DrizzleDbGuardOptions) => {
         if (!rootSalt) {
           throw new Error('Blind index root salt is not configured in Drizzle guard options.');
         }
-        return computeBlindIndex(value, rootSalt, columnName);
+        return computeBlindIndex(value, rootSalt, columnName, options.blindIndexes!.allowFrequencyLeakage);
       },
       fromDriver(value: any): string {
         return value;

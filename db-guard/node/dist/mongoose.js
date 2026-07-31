@@ -4,6 +4,9 @@ exports.mongooseDbGuard = mongooseDbGuard;
 const kms_1 = require("./kms");
 const security_1 = require("./security");
 function mongooseDbGuard(schema, options) {
+    if (options.blindIndexes) {
+        (0, security_1.validateBlindIndexConfiguration)(options.blindIndexes.rootSalt, options.blindIndexes.allowFrequencyLeakage);
+    }
     const { fields } = options;
     let keys = {};
     let activeVersion;
@@ -100,7 +103,7 @@ function mongooseDbGuard(schema, options) {
                         const rawVal = doc.isModified(field) && doc[field].startsWith('VOLLVALT:')
                             ? (0, security_1.decryptValue)(doc[field], keys)
                             : doc[field];
-                        doc[bidxField] = (0, security_1.computeBlindIndex)(rawVal, options.blindIndexes.rootSalt, `${modelName}.${field}`);
+                        doc[bidxField] = (0, security_1.computeBlindIndex)(rawVal, options.blindIndexes.rootSalt, `${modelName}.${field}`, options.blindIndexes.allowFrequencyLeakage);
                     }
                 }
             }
@@ -137,7 +140,7 @@ function mongooseDbGuard(schema, options) {
                 if (obj[currentPart] !== undefined && obj[currentPart] !== null) {
                     if (options.blindIndexes && options.blindIndexes.fields.includes(fullPath) && options.blindIndexes.rootSalt) {
                         const bidxField = `${currentPart}_bidx`;
-                        obj[bidxField] = (0, security_1.computeBlindIndex)(obj[currentPart], options.blindIndexes.rootSalt, `${modelName}.${fullPath}`);
+                        obj[bidxField] = (0, security_1.computeBlindIndex)(obj[currentPart], options.blindIndexes.rootSalt, `${modelName}.${fullPath}`, options.blindIndexes.allowFrequencyLeakage);
                     }
                     obj[currentPart] = (0, security_1.encryptValue)(obj[currentPart], encKey, encVer);
                 }
@@ -150,7 +153,7 @@ function mongooseDbGuard(schema, options) {
                 if (obj[dotNotatedPath] !== undefined && obj[dotNotatedPath] !== null) {
                     if (options.blindIndexes && options.blindIndexes.fields.includes(fullPath) && options.blindIndexes.rootSalt) {
                         const bidxField = `${dotNotatedPath}_bidx`;
-                        obj[bidxField] = (0, security_1.computeBlindIndex)(obj[dotNotatedPath], options.blindIndexes.rootSalt, `${modelName}.${fullPath}`);
+                        obj[bidxField] = (0, security_1.computeBlindIndex)(obj[dotNotatedPath], options.blindIndexes.rootSalt, `${modelName}.${fullPath}`, options.blindIndexes.allowFrequencyLeakage);
                     }
                     obj[dotNotatedPath] = (0, security_1.encryptValue)(obj[dotNotatedPath], encKey, encVer);
                 }
@@ -187,7 +190,7 @@ function mongooseDbGuard(schema, options) {
                 // 2. Process query criteria (rewrite exact match search queries on conditions)
                 const conditions = typeof query.getQuery === 'function' ? query.getQuery() : null;
                 if (conditions && options.blindIndexes && options.blindIndexes.rootSalt) {
-                    (0, security_1.rewriteQueryWhere)(conditions, options.blindIndexes.fields, options.blindIndexes.rootSalt, modelName);
+                    (0, security_1.rewriteQueryWhere)(conditions, options.blindIndexes.fields, options.blindIndexes.rootSalt, modelName, options.blindIndexes.allowFrequencyLeakage);
                 }
                 if (typeof next === 'function') {
                     next();
@@ -219,7 +222,7 @@ function mongooseDbGuard(schema, options) {
             const modelName = options.blindIndexes?.modelName || query.model?.modelName || 'Model';
             const conditions = typeof query.getQuery === 'function' ? query.getQuery() : null;
             if (conditions && options.blindIndexes && options.blindIndexes.rootSalt) {
-                (0, security_1.rewriteQueryWhere)(conditions, options.blindIndexes.fields, options.blindIndexes.rootSalt, modelName);
+                (0, security_1.rewriteQueryWhere)(conditions, options.blindIndexes.fields, options.blindIndexes.rootSalt, modelName, options.blindIndexes.allowFrequencyLeakage);
             }
             next();
         });

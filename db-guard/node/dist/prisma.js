@@ -9,6 +9,9 @@ const security_1 = require("./security");
  * Bootstraps client-level field encryption, query translation, and automatic decryption.
  */
 const prismaDbGuard = (options, resolvedKeys) => {
+    if (options.blindIndexes) {
+        (0, security_1.validateBlindIndexConfiguration)(options.blindIndexes.rootSalt, options.blindIndexes.allowFrequencyLeakage);
+    }
     let keys = resolvedKeys;
     if (!keys) {
         if (options.key) {
@@ -151,13 +154,13 @@ const prismaDbGuard = (options, resolvedKeys) => {
         const bidxFields = options.blindIndexes?.models[modelName];
         if (bidxFields && options.blindIndexes?.rootSalt) {
             if (args.data) {
-                (0, security_1.addBlindIndexes)(args.data, bidxFields, options.blindIndexes.rootSalt, modelName);
+                (0, security_1.addBlindIndexes)(args.data, bidxFields, options.blindIndexes.rootSalt, modelName, options.blindIndexes.allowFrequencyLeakage);
             }
             if (args.create) {
-                (0, security_1.addBlindIndexes)(args.create, bidxFields, options.blindIndexes.rootSalt, modelName);
+                (0, security_1.addBlindIndexes)(args.create, bidxFields, options.blindIndexes.rootSalt, modelName, options.blindIndexes.allowFrequencyLeakage);
             }
             if (args.update) {
-                (0, security_1.addBlindIndexes)(args.update, bidxFields, options.blindIndexes.rootSalt, modelName);
+                (0, security_1.addBlindIndexes)(args.update, bidxFields, options.blindIndexes.rootSalt, modelName, options.blindIndexes.allowFrequencyLeakage);
             }
         }
     };
@@ -167,7 +170,7 @@ const prismaDbGuard = (options, resolvedKeys) => {
         // Rewrite queries targeting encrypted columns to use the blind index column
         const bidxFields = options.blindIndexes?.models[modelName];
         if (bidxFields && options.blindIndexes?.rootSalt && args.where) {
-            (0, security_1.rewriteQueryWhere)(args.where, bidxFields, options.blindIndexes.rootSalt, modelName);
+            (0, security_1.rewriteQueryWhere)(args.where, bidxFields, options.blindIndexes.rootSalt, modelName, options.blindIndexes.allowFrequencyLeakage);
         }
     };
     const { Prisma } = require('@prisma/client');
@@ -192,7 +195,7 @@ const prismaDbGuard = (options, resolvedKeys) => {
                                     const encrypted = encryptPayload(model, item, resolved.activeKey, resolved.activeVersion);
                                     const bidxFields = options.blindIndexes?.models[model];
                                     if (bidxFields && options.blindIndexes?.rootSalt) {
-                                        (0, security_1.addBlindIndexes)(encrypted, bidxFields, options.blindIndexes.rootSalt, model);
+                                        (0, security_1.addBlindIndexes)(encrypted, bidxFields, options.blindIndexes.rootSalt, model, options.blindIndexes.allowFrequencyLeakage);
                                     }
                                     return encrypted;
                                 });

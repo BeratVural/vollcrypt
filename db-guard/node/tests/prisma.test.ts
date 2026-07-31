@@ -128,7 +128,7 @@ describe('Prisma db-guard fields encrypt/decrypt', () => {
     const fields = ['email'];
     const where = { email: 'test@example.com' };
 
-    rewriteQueryWhere(where, fields, rootSalt, 'User');
+    rewriteQueryWhere(where, fields, rootSalt, 'User', true);
 
     assert.strictEqual(where.email, undefined);
     assert.ok((where as any).email_bidx);

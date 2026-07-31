@@ -19,6 +19,9 @@ function getKeys(options) {
     return { keys, activeVersion };
 }
 const createDrizzleGuard = (options) => {
+    if (options.blindIndexes) {
+        (0, security_1.validateBlindIndexConfiguration)(options.blindIndexes.rootSalt, options.blindIndexes.allowFrequencyLeakage);
+    }
     const pgCustomType = require('drizzle-orm/pg-core').customType;
     const mysqlCustomType = require('drizzle-orm/mysql-core').customType;
     const sqliteCustomType = require('drizzle-orm/sqlite-core').customType;
@@ -80,7 +83,7 @@ const createDrizzleGuard = (options) => {
                 if (!rootSalt) {
                     throw new Error('Blind index root salt is not configured in Drizzle guard options.');
                 }
-                return (0, security_1.computeBlindIndex)(value, rootSalt, columnName);
+                return (0, security_1.computeBlindIndex)(value, rootSalt, columnName, options.blindIndexes.allowFrequencyLeakage);
             },
             fromDriver(value) {
                 return value;
@@ -94,7 +97,7 @@ const createDrizzleGuard = (options) => {
                 if (!rootSalt) {
                     throw new Error('Blind index root salt is not configured in Drizzle guard options.');
                 }
-                return (0, security_1.computeBlindIndex)(value, rootSalt, columnName);
+                return (0, security_1.computeBlindIndex)(value, rootSalt, columnName, options.blindIndexes.allowFrequencyLeakage);
             },
             fromDriver(value) {
                 return value;
@@ -108,7 +111,7 @@ const createDrizzleGuard = (options) => {
                 if (!rootSalt) {
                     throw new Error('Blind index root salt is not configured in Drizzle guard options.');
                 }
-                return (0, security_1.computeBlindIndex)(value, rootSalt, columnName);
+                return (0, security_1.computeBlindIndex)(value, rootSalt, columnName, options.blindIndexes.allowFrequencyLeakage);
             },
             fromDriver(value) {
                 return value;

@@ -63,7 +63,9 @@ export interface AuditLogEntry {
     prevHash: string;
     hash: string;
 }
+export declare function verifyAuditLogEntries(entries: readonly AuditLogEntry[], integrityKey: Buffer): boolean;
 export declare function configureAuditLogger(options?: {
+    integrityKey: Buffer;
     path?: string;
     onAuditLog?: (entry: AuditLogEntry) => void;
 }): void;
@@ -90,10 +92,14 @@ export declare function parseCiphertext(stored: string): {
     base64Data: string;
 } | null;
 /**
- * Computes a hardened, frequency-resistant blind index for a database field.
+ * Computes a keyed deterministic equality index.
+ *
+ * Equal plaintexts in the same column produce equal indexes and therefore leak
+ * frequency information. Callers must explicitly acknowledge that tradeoff.
  */
-export declare function computeBlindIndex(value: any, rootSalt: Buffer, columnName: string): string;
+export declare function validateBlindIndexConfiguration(rootSalt: Buffer, allowFrequencyLeakage: true): void;
+export declare function computeBlindIndex(value: any, rootSalt: Buffer, columnName: string, allowFrequencyLeakage: true): string;
 export declare function encryptValue(val: any, key: Buffer, version: string): string;
 export declare function decryptValue(stored: any, keys: Record<string, Buffer>): any;
-export declare function rewriteQueryWhere(where: any, fields: string[], rootSalt: Buffer, modelName: string): void;
-export declare function addBlindIndexes(data: any, fields: string[], rootSalt: Buffer, modelName: string): void;
+export declare function rewriteQueryWhere(where: any, fields: string[], rootSalt: Buffer, modelName: string, allowFrequencyLeakage: true): void;
+export declare function addBlindIndexes(data: any, fields: string[], rootSalt: Buffer, modelName: string, allowFrequencyLeakage: true): void;

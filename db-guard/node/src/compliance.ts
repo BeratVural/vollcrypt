@@ -11,6 +11,7 @@ export interface ComplianceAuditInput {
   models?: Record<string, string[]>;
   blindIndexes?: {
     rootSalt: any;
+    allowFrequencyLeakage?: boolean;
     models: Record<string, string[]>;
   };
   cryptoRbac?: {
@@ -26,6 +27,7 @@ export interface ComplianceAuditInput {
     onPageSizeExceeded?: 'warn' | 'error' | 'bypass';
   };
   auditTrailPath?: string;
+  auditIntegrityKey?: Buffer;
   breakGlassThreshold?: number;
   breakGlassPublicKeys?: string[];
   postQuantumEnabled?: boolean; // ML-KEM
@@ -66,8 +68,11 @@ export function auditConfiguration(config: ComplianceAuditInput): ComplianceScor
 
   // Check 4: Blind Indexing
   const hasBlindIndex = !!config.blindIndexes?.rootSalt && Object.keys(config.blindIndexes?.models || {}).length > 0;
-  if (hasBlindIndex) {
-    passed.push('BLIND_INDEXING: Database query translations target secure HKDF-SHA256 blind indexes, preventing raw column decryption leakage.');
+  const blindIndexRiskAccepted = config.blindIndexes?.allowFrequencyLeakage === true;
+  if (hasBlindIndex && blindIndexRiskAccepted) {
+    passed.push('BLIND_INDEX_EQUALITY_SEARCH: Keyed deterministic indexes are enabled with explicit acknowledgement that equality frequencies remain visible.');
+  } else if (hasBlindIndex) {
+    failed.push('BLIND_INDEX_RISK_NOT_ACKNOWLEDGED: Deterministic indexes expose equality frequencies and require allowFrequencyLeakage: true.');
   } else {
     failed.push('DIRECT_QUERY_DECRYPTION: Queries on encrypted columns require bulk decryption, risking side-channel leaking or N+1 queries.');
   }
@@ -97,11 +102,14 @@ export function auditConfiguration(config: ComplianceAuditInput): ComplianceScor
   }
 
   // Check 7: Audit Trail
-  const hasAuditLog = !!config.auditTrailPath;
+  const hasAuditLog =
+    !!config.auditTrailPath &&
+    Buffer.isBuffer(config.auditIntegrityKey) &&
+    config.auditIntegrityKey.length >= 32;
   if (hasAuditLog) {
-    passed.push('CRYPTO_AUDIT_LOG: Immutable cryptographic SHA-256 hash chains log every decryption event, preventing auditing tampering.');
+    passed.push('KEYED_AUDIT_LOG: Decryption events are chained with HMAC-SHA256 and verified before logger startup.');
   } else {
-    failed.push('NO_AUDIT_LOG: Decryptions are not tracked with cryptographic hash chaining.');
+    failed.push('NO_KEYED_AUDIT_LOG: Audit logging requires both a path and an integrity key of at least 32 bytes.');
   }
 
   // Check 8: Rate Limiting
@@ -133,7 +141,7 @@ export function auditConfiguration(config: ComplianceAuditInput): ComplianceScor
   // Check 11: Post-Quantum Cryptography
   const hasPqc = !!config.postQuantumEnabled;
   if (hasPqc) {
-    passed.push('POST_QUANTUM_KEM: NIST FIPS 203 (ML-KEM) lattice-based algorithms are registered for hybrid key exchange.');
+    passed.push('POST_QUANTUM_KEM: Hybrid ML-KEM mode is configured. This does not imply FIPS or CMVP validation.');
   }
 
   // Compute Scores
@@ -147,7 +155,7 @@ export function auditConfiguration(config: ComplianceAuditInput): ComplianceScor
   // KVKK (Madde 12): Key custody, blind indexing, RBAC, rate limits
   let kvkkCount = 0;
   if (hasKms) kvkkCount += 25;
-  if (hasBlindIndex) kvkkCount += 25;
+  // Deterministic equality indexes do not earn a confidentiality point because they leak frequency.
   if (hasRbac) kvkkCount += 25;
   if (rateLimitMode === 'fail_closed') kvkkCount += 25;
   else if (rateLimitMode === 'warn') kvkkCount += 15;
@@ -160,7 +168,7 @@ export function auditConfiguration(config: ComplianceAuditInput): ComplianceScor
   if (hasPageLimit) pciCount += 25;
 
   const summaryText = failed.length === 0
-    ? `All automated configuration checks passed for AES-256-GCM field-level encryption, key routing, RAM zeroization, audit logging, and blind indexing. This scorecard is configuration evidence only and is not a regulatory certification.`
+    ? `All automated configuration checks passed for field-level encryption, key routing, keyed audit logging, and explicitly acknowledged equality indexes. This scorecard is configuration evidence only and is not a regulatory certification.`
     : `Automated configuration checks found ${failed.length} unmet control(s). This scorecard is not a GDPR, KVKK, PCI-DSS, FIPS, or CMVP certification and must not be presented as one.`;
 
   return {

@@ -39,12 +39,33 @@ describe('Drizzle db-guard custom column adapter', () => {
     assert.strictEqual(decrypted, rawVal);
   });
 
+  test('blind indexes require explicit leakage acknowledgement and a strong root salt', () => {
+    assert.throws(
+      () => createDrizzleGuard({
+        key,
+        blindIndexes: { rootSalt: Buffer.alloc(32, 9) }
+      } as any),
+      /allowFrequencyLeakage/
+    );
+
+    assert.throws(
+      () => createDrizzleGuard({
+        key,
+        blindIndexes: {
+          rootSalt: Buffer.alloc(16, 9),
+          allowFrequencyLeakage: true
+        }
+      }),
+      /at least 32 bytes/
+    );
+  });
   test('creates custom blind index column types and hashes values', () => {
     const rootSalt = Buffer.alloc(32, 9);
     const guard = createDrizzleGuard({
       key,
       blindIndexes: {
-        rootSalt
+        rootSalt,
+        allowFrequencyLeakage: true
       }
     });
 

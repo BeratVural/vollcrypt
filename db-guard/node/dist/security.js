@@ -60,11 +60,13 @@ exports.checkRateLimit = checkRateLimit;
 exports.checkPageSize = checkPageSize;
 exports.getFailClosedStatus = getFailClosedStatus;
 exports.resetFailClosedStatusForTesting = resetFailClosedStatusForTesting;
+exports.verifyAuditLogEntries = verifyAuditLogEntries;
 exports.configureAuditLogger = configureAuditLogger;
 exports.resetAuditLoggerForTesting = resetAuditLoggerForTesting;
 exports.logDecryption = logDecryption;
 exports.decryptWithSecurity = decryptWithSecurity;
 exports.parseCiphertext = parseCiphertext;
+exports.validateBlindIndexConfiguration = validateBlindIndexConfiguration;
 exports.computeBlindIndex = computeBlindIndex;
 exports.encryptValue = encryptValue;
 exports.decryptValue = decryptValue;
@@ -500,46 +502,108 @@ function resetFailClosedStatusForTesting() {
     tenantRateLimitStates.clear();
     tenantKeys.clear();
 }
-let lastLogHash = '0'.repeat(64);
+const AUDIT_GENESIS_HASH = '0'.repeat(64);
+let lastLogHash = AUDIT_GENESIS_HASH;
 let auditLogPath;
+let auditIntegrityKey;
 let onAuditLogCallback;
 let auditWriteQueue = Promise.resolve();
-function configureAuditLogger(options) {
-    if (options?.path) {
-        auditLogPath = options.path;
-        try {
-            if (fs.existsSync(auditLogPath)) {
-                const content = fs.readFileSync(auditLogPath, 'utf8').trim();
-                if (content) {
-                    const lines = content.split('\n');
-                    const lastLine = lines[lines.length - 1];
-                    if (lastLine) {
-                        const entry = JSON.parse(lastLine);
-                        if (entry && entry.hash) {
-                            lastLogHash = entry.hash;
-                        }
-                    }
-                }
-            }
+function serializeAuditEntry(entry) {
+    return JSON.stringify([
+        entry.timestamp,
+        entry.userId ?? null,
+        entry.role ?? null,
+        entry.model,
+        entry.field,
+        entry.recordId ?? null,
+        entry.action,
+        entry.prevHash
+    ]);
+}
+function computeAuditMac(entry, integrityKey) {
+    return crypto
+        .createHmac('sha256', integrityKey)
+        .update(serializeAuditEntry(entry))
+        .digest('hex');
+}
+function verifyAuditLogEntries(entries, integrityKey) {
+    if (!Buffer.isBuffer(integrityKey) || integrityKey.length < 32)
+        return false;
+    let expectedPrevHash = AUDIT_GENESIS_HASH;
+    for (const entry of entries) {
+        if (entry.prevHash !== expectedPrevHash ||
+            typeof entry.hash !== 'string' ||
+            !/^[0-9a-f]{64}$/i.test(entry.hash)) {
+            return false;
         }
-        catch {
-            // fallback to genesis hash on error
+        const unsigned = {
+            timestamp: entry.timestamp,
+            userId: entry.userId,
+            role: entry.role,
+            model: entry.model,
+            field: entry.field,
+            recordId: entry.recordId,
+            action: entry.action,
+            prevHash: entry.prevHash
+        };
+        const expectedMac = Buffer.from(computeAuditMac(unsigned, integrityKey), 'hex');
+        const actualMac = Buffer.from(entry.hash, 'hex');
+        if (expectedMac.length !== actualMac.length ||
+            !crypto.timingSafeEqual(expectedMac, actualMac)) {
+            return false;
         }
+        expectedPrevHash = entry.hash;
     }
-    if (options?.onAuditLog)
-        onAuditLogCallback = options.onAuditLog;
+    return true;
+}
+function configureAuditLogger(options) {
+    if (!options) {
+        resetAuditLoggerForTesting();
+        return;
+    }
+    if (!Buffer.isBuffer(options.integrityKey) || options.integrityKey.length < 32) {
+        throw new Error('Vollcrypt Security: Audit integrity key must be at least 32 bytes.');
+    }
+    if (auditIntegrityKey)
+        auditIntegrityKey.fill(0);
+    auditIntegrityKey = Buffer.from(options.integrityKey);
+    auditLogPath = options.path;
+    onAuditLogCallback = options.onAuditLog;
+    lastLogHash = AUDIT_GENESIS_HASH;
+    if (!auditLogPath || !fs.existsSync(auditLogPath))
+        return;
+    let entries;
+    try {
+        const content = fs.readFileSync(auditLogPath, 'utf8').trim();
+        entries = content
+            ? content.split('\n').map((line) => JSON.parse(line))
+            : [];
+    }
+    catch (error) {
+        throw new Error('Vollcrypt Security: Audit log could not be parsed; refusing to continue.', { cause: error });
+    }
+    if (!verifyAuditLogEntries(entries, auditIntegrityKey)) {
+        throw new Error('Vollcrypt Security: Audit log integrity verification failed; refusing to continue.');
+    }
+    if (entries.length > 0) {
+        lastLogHash = entries[entries.length - 1].hash;
+    }
 }
 function resetAuditLoggerForTesting() {
-    lastLogHash = '0'.repeat(64);
+    lastLogHash = AUDIT_GENESIS_HASH;
     auditLogPath = undefined;
+    if (auditIntegrityKey)
+        auditIntegrityKey.fill(0);
+    auditIntegrityKey = undefined;
     onAuditLogCallback = undefined;
     auditWriteQueue = Promise.resolve();
 }
 function logDecryption(model, field, recordId) {
+    if (!auditIntegrityKey)
+        return;
     const context = exports.dbGuardContextStore.getStore();
-    const timestamp = new Date().toISOString();
     const entry = {
-        timestamp,
+        timestamp: new Date().toISOString(),
         userId: context?.userId,
         role: context?.role,
         model,
@@ -548,8 +612,7 @@ function logDecryption(model, field, recordId) {
         action: 'decrypt',
         prevHash: lastLogHash
     };
-    const payload = `${entry.timestamp}|${entry.userId || ''}|${entry.role || ''}|${entry.model}|${entry.field}|${entry.recordId || ''}|${entry.action}|${entry.prevHash}`;
-    const hash = crypto.createHash('sha256').update(payload).digest('hex');
+    const hash = computeAuditMac(entry, auditIntegrityKey);
     const fullEntry = { ...entry, hash };
     lastLogHash = hash;
     if (onAuditLogCallback) {
@@ -557,7 +620,7 @@ function logDecryption(model, field, recordId) {
             onAuditLogCallback(fullEntry);
         }
         catch {
-            // prevent callback errors from stopping application flow
+            // Audit callbacks are observers and cannot change decryption behavior.
         }
     }
     if (auditLogPath) {
@@ -642,23 +705,33 @@ function parseCiphertext(stored) {
     throw new Error("Vollcrypt Security: Legacy unversioned ciphertexts are deprecated and unsupported.");
 }
 /**
- * Computes a hardened, frequency-resistant blind index for a database field.
+ * Computes a keyed deterministic equality index.
+ *
+ * Equal plaintexts in the same column produce equal indexes and therefore leak
+ * frequency information. Callers must explicitly acknowledge that tradeoff.
  */
-function computeBlindIndex(value, rootSalt, columnName) {
+function validateBlindIndexConfiguration(rootSalt, allowFrequencyLeakage) {
+    if (!Buffer.isBuffer(rootSalt) || rootSalt.length < 32) {
+        throw new Error('Vollcrypt Security: Blind-index rootSalt must be at least 32 bytes.');
+    }
+    if (allowFrequencyLeakage !== true) {
+        throw new Error('Vollcrypt Security: Deterministic blind indexes leak equality frequency. Set allowFrequencyLeakage: true only after accepting this risk.');
+    }
+}
+function computeBlindIndex(value, rootSalt, columnName, allowFrequencyLeakage) {
     if (value === null || value === undefined)
         return value;
+    validateBlindIndexConfiguration(rootSalt, allowFrequencyLeakage);
     const plaintext = typeof value === 'string' ? value : JSON.stringify(value);
     const columnNameBuf = Buffer.from(columnName, 'utf8');
-    // 1. Derive column-specific key using HKDF-SHA256
     const derivedColumnKey = deriveHkdf(rootSalt, null, columnNameBuf, 32);
+    const plaintextBuf = Buffer.from(plaintext, 'utf8');
     try {
-        // 2. Compute the final blind index using the derived column key
-        const plaintextBuf = Buffer.from(plaintext, 'utf8');
         const blindIndex = deriveHkdf(derivedColumnKey, null, plaintextBuf, 32);
         return blindIndex.toString('hex');
     }
     finally {
-        // 3. RAM Security: Zeroize the derived key immediately (Anti-Core Dump)
+        plaintextBuf.fill(0);
         derivedColumnKey.fill(0);
     }
 }
@@ -714,7 +787,7 @@ function decryptValue(stored, keys) {
         throw new Error(`Failed to decrypt field value: ${err.message}`);
     }
 }
-function rewriteQueryWhere(where, fields, rootSalt, modelName) {
+function rewriteQueryWhere(where, fields, rootSalt, modelName, allowFrequencyLeakage) {
     if (!where || typeof where !== 'object')
         return;
     for (const field of fields) {
@@ -722,13 +795,13 @@ function rewriteQueryWhere(where, fields, rootSalt, modelName) {
             const val = where[field];
             const bidxField = `${field}_bidx`;
             if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
-                where[bidxField] = computeBlindIndex(val, rootSalt, `${modelName}.${field}`);
+                where[bidxField] = computeBlindIndex(val, rootSalt, `${modelName}.${field}`, allowFrequencyLeakage);
                 delete where[field];
             }
             else if (val && typeof val === 'object') {
                 if (val.equals !== undefined) {
                     where[bidxField] = {
-                        equals: computeBlindIndex(val.equals, rootSalt, `${modelName}.${field}`),
+                        equals: computeBlindIndex(val.equals, rootSalt, `${modelName}.${field}`, allowFrequencyLeakage),
                     };
                     delete where[field];
                 }
@@ -739,24 +812,24 @@ function rewriteQueryWhere(where, fields, rootSalt, modelName) {
     const operators = ['AND', 'OR', 'NOT'];
     for (const op of operators) {
         if (Array.isArray(where[op])) {
-            where[op].forEach((item) => rewriteQueryWhere(item, fields, rootSalt, modelName));
+            where[op].forEach((item) => rewriteQueryWhere(item, fields, rootSalt, modelName, allowFrequencyLeakage));
         }
         else if (where[op] && typeof where[op] === 'object') {
-            rewriteQueryWhere(where[op], fields, rootSalt, modelName);
+            rewriteQueryWhere(where[op], fields, rootSalt, modelName, allowFrequencyLeakage);
         }
     }
 }
-function addBlindIndexes(data, fields, rootSalt, modelName) {
+function addBlindIndexes(data, fields, rootSalt, modelName, allowFrequencyLeakage) {
     if (!data || typeof data !== 'object')
         return;
     if (Array.isArray(data)) {
-        data.forEach((item) => addBlindIndexes(item, fields, rootSalt, modelName));
+        data.forEach((item) => addBlindIndexes(item, fields, rootSalt, modelName, allowFrequencyLeakage));
         return;
     }
     for (const field of fields) {
         if (data[field] !== undefined && data[field] !== null) {
             const bidxField = `${field}_bidx`;
-            data[bidxField] = computeBlindIndex(data[field], rootSalt, `${modelName}.${field}`);
+            data[bidxField] = computeBlindIndex(data[field], rootSalt, `${modelName}.${field}`, allowFrequencyLeakage);
         }
     }
 }

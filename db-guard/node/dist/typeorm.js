@@ -53,6 +53,9 @@ function getKeys(options) {
     return { keys, activeVersion };
 }
 function createTypeOrmSubscriber(options) {
+    if (options.blindIndexes) {
+        (0, security_1.validateBlindIndexConfiguration)(options.blindIndexes.rootSalt, options.blindIndexes.allowFrequencyLeakage);
+    }
     const { EventSubscriber } = require('typeorm');
     const { keys, activeVersion } = getKeys(options);
     const activeKey = keys[activeVersion];
@@ -88,7 +91,7 @@ function createTypeOrmSubscriber(options) {
                             for (const field of bidxFields) {
                                 if (event.entity[field] !== undefined && event.entity[field] !== null) {
                                     const bidxField = `${field}_bidx`;
-                                    event.entity[bidxField] = (0, security_1.computeBlindIndex)(event.entity[field], options.blindIndexes.rootSalt, `${entityName}.${field}`);
+                                    event.entity[bidxField] = (0, security_1.computeBlindIndex)(event.entity[field], options.blindIndexes.rootSalt, `${entityName}.${field}`, options.blindIndexes.allowFrequencyLeakage);
                                 }
                             }
                         }
@@ -112,7 +115,7 @@ function createTypeOrmSubscriber(options) {
                             for (const field of bidxFields) {
                                 if (event.entity[field] !== undefined && event.entity[field] !== null) {
                                     const bidxField = `${field}_bidx`;
-                                    event.entity[bidxField] = (0, security_1.computeBlindIndex)(event.entity[field], options.blindIndexes.rootSalt, `${entityName}.${field}`);
+                                    event.entity[bidxField] = (0, security_1.computeBlindIndex)(event.entity[field], options.blindIndexes.rootSalt, `${entityName}.${field}`, options.blindIndexes.allowFrequencyLeakage);
                                 }
                             }
                         }

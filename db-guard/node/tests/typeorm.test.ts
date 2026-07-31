@@ -79,6 +79,7 @@ describe('TypeORM db-guard subscriber', () => {
       },
       blindIndexes: {
         rootSalt,
+        allowFrequencyLeakage: true,
         entities: {
           User: ['credit_card']
         }

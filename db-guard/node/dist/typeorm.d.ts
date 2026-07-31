@@ -6,6 +6,7 @@ export interface TypeOrmDbGuardOptions {
     entities: Record<string, string[]>;
     blindIndexes?: {
         rootSalt: Buffer;
+        allowFrequencyLeakage: true;
         entities: Record<string, string[]>;
     };
     cryptoRbac?: {

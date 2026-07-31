@@ -128,6 +128,7 @@ describe('Mongoose db-guard plugin', () => {
       fields: ['credit_card'],
       blindIndexes: {
         rootSalt,
+        allowFrequencyLeakage: true,
         fields: ['credit_card'],
         modelName: 'User'
       }

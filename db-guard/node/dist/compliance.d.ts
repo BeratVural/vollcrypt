@@ -9,6 +9,7 @@ export interface ComplianceAuditInput {
     models?: Record<string, string[]>;
     blindIndexes?: {
         rootSalt: any;
+        allowFrequencyLeakage?: boolean;
         models: Record<string, string[]>;
     };
     cryptoRbac?: {
@@ -24,6 +25,7 @@ export interface ComplianceAuditInput {
         onPageSizeExceeded?: 'warn' | 'error' | 'bypass';
     };
     auditTrailPath?: string;
+    auditIntegrityKey?: Buffer;
     breakGlassThreshold?: number;
     breakGlassPublicKeys?: string[];
     postQuantumEnabled?: boolean;

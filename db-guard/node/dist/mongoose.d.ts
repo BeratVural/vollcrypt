@@ -6,6 +6,7 @@ export interface MongooseDbGuardOptions {
     fields: string[];
     blindIndexes?: {
         rootSalt: Buffer;
+        allowFrequencyLeakage: true;
         fields: string[];
         modelName?: string;
     };

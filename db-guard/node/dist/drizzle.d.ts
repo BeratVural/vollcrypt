@@ -4,6 +4,7 @@ export interface DrizzleDbGuardOptions {
     activeKeyVersion?: string;
     blindIndexes?: {
         rootSalt: Buffer;
+        allowFrequencyLeakage: true;
     };
     cryptoRbac?: {
         roles: Record<string, {
