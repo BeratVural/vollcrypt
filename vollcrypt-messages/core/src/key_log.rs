@@ -9,7 +9,7 @@ use zeroize::Zeroize;
 pub const GENESIS_HASH: [u8; 32] = [0u8; 32];
 
 /// Bir key log kaydında gerçekleşen işlem türü.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyAction {
     /// Kullanıcı sisteme ilk kez katıldı veya yeni key yükledi.
     Add,
@@ -17,6 +17,29 @@ pub enum KeyAction {
     Update,
     /// Key iptal edildi. Bu kullanıcının bu key'i artık geçersiz.
     Revoke,
+}
+
+impl KeyAction {
+    pub const fn as_u8(self) -> u8 {
+        match self {
+            Self::Add => 0x01,
+            Self::Update => 0x02,
+            Self::Revoke => 0x03,
+        }
+    }
+}
+
+impl TryFrom<u8> for KeyAction {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x01 => Ok(Self::Add),
+            0x02 => Ok(Self::Update),
+            0x03 => Ok(Self::Revoke),
+            _ => Err("invalid key action"),
+        }
+    }
 }
 
 mod array64 {
@@ -74,6 +97,8 @@ pub struct KeyLogEntry {
 
 /// Bir zinciri temsil eden yapı.
 /// Doğrulama ve sorgu işlemleri için kullanılır.
+/// Mutation requires &mut self; callers sharing a log across threads must
+/// serialize access, for example with Arc<Mutex<KeyLog>>.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyLog {
     pub entries: Vec<KeyLogEntry>,
@@ -96,11 +121,7 @@ impl KeyLogEntry {
         body.extend_from_slice(&self.public_key);
         body.extend_from_slice(&self.timestamp.to_be_bytes());
         body.extend_from_slice(&self.prev_entry_hash);
-        body.push(match self.action {
-            KeyAction::Add => 0x01,
-            KeyAction::Update => 0x02,
-            KeyAction::Revoke => 0x03,
-        });
+        body.push(self.action.as_u8());
         body
     }
 
@@ -120,13 +141,8 @@ impl KeyLogEntry {
     /// `verifying_key`: İmzayı doğrulamak için kullanılacak Ed25519 public key.
     ///                  Genellikle bu kaydın `public_key` alanının kendisi
     ///                  (Add/Update için) veya önceki geçerli key (Revoke için).
-    pub fn verify_signature(&self, verifying_key: &[u8; 32]) -> Result<bool, CryptoError> {
-        let is_valid = verify_signature(verifying_key, &self.compute_entry_body(), &self.signature);
-        if is_valid {
-            Ok(true)
-        } else {
-            Err(CryptoError::KeyLogInvalidSignature { at_index: 0 }) // Generic error, mapping inside chain validation is better
-        }
+    pub fn verify_signature(&self, verifying_key: &[u8; 32]) -> bool {
+        verify_signature(verifying_key, &self.compute_entry_body(), &self.signature)
     }
 }
 
@@ -258,8 +274,7 @@ impl KeyLog {
                     &entry.public_key
                 };
 
-            let is_valid =
-                verify_signature(verifying_key, &entry.compute_entry_body(), &entry.signature);
+            let is_valid = entry.verify_signature(verifying_key);
 
             if !is_valid {
                 return Err(CryptoError::KeyLogInvalidSignature { at_index: i });
@@ -569,5 +584,38 @@ mod tests {
             result,
             Err(CryptoError::KeyLogChainBroken { at_index: 2 })
         ));
+    }
+
+    #[test]
+    fn externally_synchronized_concurrent_appends_preserve_chain() {
+        use std::sync::{Arc, Mutex};
+        use std::thread;
+
+        let kp = generate_ed25519_keypair();
+        let genesis = make_entry(b"alice", &kp, &GENESIS_HASH, KeyAction::Add, 1_000);
+        let mut initial = KeyLog::new();
+        initial.append(genesis).unwrap();
+        let shared = Arc::new(Mutex::new(initial));
+
+        let handles: Vec<_> = (0..16)
+            .map(|_| {
+                let shared = Arc::clone(&shared);
+                let kp = kp.clone();
+                thread::spawn(move || {
+                    let mut log = shared.lock().unwrap();
+                    let previous = log.entries.last().unwrap().compute_hash();
+                    let entry = make_entry(b"alice", &kp, &previous, KeyAction::Update, 1_000);
+                    log.append(entry).unwrap();
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let log = shared.lock().unwrap();
+        assert_eq!(log.entries.len(), 17);
+        assert!(log.verify_chain().is_ok());
     }
 }

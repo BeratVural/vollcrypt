@@ -79,8 +79,11 @@ fn panic_safety_pqc_decap() {
         let bad_sk = [0u8; 2400]; // ML-KEM-768 SK len
         let bad_ct = [0u8; 1088]; // ML-KEM-768 CT len
 
-        // They might cause validation failures and return Err
-        let _ = ml_kem_decapsulate(&bad_sk, &bad_ct);
+        // ML-KEM implicit rejection may return a pseudorandom shared secret for
+        // malformed ciphertext. A structured error or a 32-byte secret is safe.
+        if let Ok(shared_secret) = ml_kem_decapsulate(&bad_sk, &bad_ct) {
+            assert_eq!(shared_secret.len(), 32);
+        }
     });
     assert!(
         result.is_ok(),

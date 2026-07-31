@@ -52,10 +52,15 @@ export class RatchetKeyPairObj {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * Computes SRK ratchet using this key pair.
+     * Computes the sender-side SRK ratchet using this key pair.
      * secret_key never crosses the WASM boundary.
      */
     compute_ratchet(current_srk: Uint8Array, their_ratchet_pub: Uint8Array, chat_id: Uint8Array, ratchet_step: bigint): Uint8Array;
+    /**
+     * Computes the receiver-side SRK ratchet using this key pair.
+     * secret_key never crosses the WASM boundary.
+     */
+    compute_ratchet_receiver(current_srk: Uint8Array, their_ratchet_pub: Uint8Array, chat_id: Uint8Array, ratchet_step: bigint): Uint8Array;
     readonly public_key: Uint8Array;
 }
 
@@ -252,6 +257,7 @@ export interface InitOutput {
     readonly mnemonic_to_seed: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly pack_envelope: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly ratchetkeypairobj_compute_ratchet: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint) => [number, number, number, number];
+    readonly ratchetkeypairobj_compute_ratchet_receiver: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint) => [number, number, number, number];
     readonly registry_add_device: (a: number, b: number, c: number, d: number, e: number, f: number, g: bigint, h: number, i: number) => [number, number, number, number];
     readonly registry_empty: () => [number, number];
     readonly registry_get_active_devices: (a: number, b: number) => [number, number, number, number];

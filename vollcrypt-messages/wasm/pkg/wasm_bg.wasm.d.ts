@@ -49,6 +49,7 @@ export const ml_kem_keygen: () => number;
 export const mnemonic_to_seed: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const pack_envelope: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
 export const ratchetkeypairobj_compute_ratchet: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint) => [number, number, number, number];
+export const ratchetkeypairobj_compute_ratchet_receiver: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint) => [number, number, number, number];
 export const registry_add_device: (a: number, b: number, c: number, d: number, e: number, f: number, g: bigint, h: number, i: number) => [number, number, number, number];
 export const registry_empty: () => [number, number];
 export const registry_get_active_devices: (a: number, b: number) => [number, number, number, number];

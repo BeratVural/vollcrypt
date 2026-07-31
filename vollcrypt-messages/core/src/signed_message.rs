@@ -49,6 +49,10 @@ pub fn sign_fresh_message(
     sign_message(secret_key, &digest)
 }
 
+/// Bounded replay cache for a single trust domain.
+///
+/// Mutation requires &mut self; callers sharing a store across threads must
+/// serialize verify_and_record so duplicate checks and insertion stay atomic.
 pub struct ReplayProtectionStore {
     validity_window_ms: u64,
     max_entries: usize,
@@ -212,5 +216,53 @@ mod tests {
             .verify_and_record(&public_key, b"three", 111, 111, b"c", &third)
             .unwrap();
         assert_eq!(store.len(), 1);
+    }
+
+    #[test]
+    fn externally_synchronized_concurrent_replays_are_accepted_once() {
+        use std::sync::{Arc, Mutex};
+        use std::thread;
+
+        let (secret_key, public_key) = generate_ed25519_keypair();
+        let timestamp = 1_700_000_000_000;
+        let signature = Arc::new(
+            sign_fresh_message(&secret_key, b"concurrent", timestamp, b"payload").unwrap(),
+        );
+        let public_key = Arc::new(public_key);
+        let store = Arc::new(Mutex::new(
+            ReplayProtectionStore::new(300_000, 100).unwrap(),
+        ));
+
+        let handles: Vec<_> = (0..16)
+            .map(|_| {
+                let signature = Arc::clone(&signature);
+                let public_key = Arc::clone(&public_key);
+                let store = Arc::clone(&store);
+                thread::spawn(move || {
+                    store.lock().unwrap().verify_and_record(
+                        &public_key,
+                        b"concurrent",
+                        timestamp,
+                        timestamp,
+                        b"payload",
+                        &signature,
+                    )
+                })
+            })
+            .collect();
+
+        let results: Vec<_> = handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect();
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| **result == Err("signed message replay detected"))
+                .count(),
+            15
+        );
+        assert_eq!(store.lock().unwrap().len(), 1);
     }
 }

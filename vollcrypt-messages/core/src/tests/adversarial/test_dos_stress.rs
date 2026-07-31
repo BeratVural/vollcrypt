@@ -1,4 +1,4 @@
-use rand::{RngCore, rngs::OsRng};
+use rand::{RngCore, SeedableRng, rngs::StdRng};
 use std::collections::HashSet;
 
 use crate::ratchet::{generate_ratchet_keypair, ratchet_srk_receiver};
@@ -15,6 +15,8 @@ fn test_aes_gcm_nonce_collision_probability() {
     let target_collisions = 100;
     let mut total_attempts_to_collision = 0;
 
+    let mut rng = StdRng::seed_from_u64(0x564f_4c4c_4352_5950);
+
     for _ in 0..target_collisions {
         let mut seen = HashSet::new();
         let mut attempts = 0;
@@ -22,7 +24,7 @@ fn test_aes_gcm_nonce_collision_probability() {
             attempts += 1;
             // Generate a random 24-bit value (3 bytes)
             let mut buf = [0u8; 3];
-            OsRng.fill_bytes(&mut buf);
+            rng.fill_bytes(&mut buf);
             let val = ((buf[0] as u32) << 16) | ((buf[1] as u32) << 8) | (buf[2] as u32);
             if !seen.insert(val) {
                 break;

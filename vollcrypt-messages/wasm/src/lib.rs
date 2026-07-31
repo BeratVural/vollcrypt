@@ -817,7 +817,7 @@ impl RatchetKeyPairObj {
         self.public_key.clone()
     }
 
-    /// Computes SRK ratchet using this key pair.
+    /// Computes the sender-side SRK ratchet using this key pair.
     /// secret_key never crosses the WASM boundary.
     #[wasm_bindgen]
     pub fn compute_ratchet(
@@ -826,6 +826,32 @@ impl RatchetKeyPairObj {
         their_ratchet_pub: &[u8],
         chat_id: &[u8],
         ratchet_step: u64,
+    ) -> Result<Vec<u8>, JsValue> {
+        self.compute_ratchet_for_role(current_srk, their_ratchet_pub, chat_id, ratchet_step, true)
+    }
+
+    /// Computes the receiver-side SRK ratchet using this key pair.
+    /// secret_key never crosses the WASM boundary.
+    #[wasm_bindgen]
+    pub fn compute_ratchet_receiver(
+        &self,
+        current_srk: &[u8],
+        their_ratchet_pub: &[u8],
+        chat_id: &[u8],
+        ratchet_step: u64,
+    ) -> Result<Vec<u8>, JsValue> {
+        self.compute_ratchet_for_role(current_srk, their_ratchet_pub, chat_id, ratchet_step, false)
+    }
+}
+
+impl RatchetKeyPairObj {
+    fn compute_ratchet_for_role(
+        &self,
+        current_srk: &[u8],
+        their_ratchet_pub: &[u8],
+        chat_id: &[u8],
+        ratchet_step: u64,
+        is_sender: bool,
     ) -> Result<Vec<u8>, JsValue> {
         if current_srk.len() != 32 || their_ratchet_pub.len() != 32 {
             return Err(JsValue::from_str("Keys must be 32 bytes"));
@@ -838,14 +864,23 @@ impl RatchetKeyPairObj {
         let mut our_secret_arr = [0u8; 32];
         our_secret_arr.copy_from_slice(&self.secret_key);
 
-        // Compute ratchet, then wipe every temporary key on both success and failure.
-        let result = vollcrypt_core::ratchet_srk_sender(
-            &current_srk_arr,
-            &our_secret_arr,
-            &their_pub_arr,
-            chat_id,
-            ratchet_step,
-        );
+        let result = if is_sender {
+            vollcrypt_core::ratchet_srk_sender(
+                &current_srk_arr,
+                &our_secret_arr,
+                &their_pub_arr,
+                chat_id,
+                ratchet_step,
+            )
+        } else {
+            vollcrypt_core::ratchet_srk_receiver(
+                &current_srk_arr,
+                &our_secret_arr,
+                &their_pub_arr,
+                chat_id,
+                ratchet_step,
+            )
+        };
 
         current_srk_arr.zeroize();
         our_secret_arr.zeroize();
@@ -909,15 +944,10 @@ pub fn key_log_create_entry(
     let mut sign_key = [0u8; 32];
     sign_key.copy_from_slice(signing_key);
 
-    let act = match action {
-        1 => vollcrypt_core::key_log::KeyAction::Add,
-        2 => vollcrypt_core::key_log::KeyAction::Update,
-        3 => vollcrypt_core::key_log::KeyAction::Revoke,
-        _ => {
-            sign_key.zeroize();
-            return Err(JsValue::from_str("Invalid action type"));
-        }
-    };
+    let act = vollcrypt_core::key_log::KeyAction::try_from(action).map_err(|_| {
+        sign_key.zeroize();
+        JsValue::from_str("Invalid action type")
+    })?;
 
     let result =
         vollcrypt_core::key_log::create_entry(user_id, &pk, timestamp, &prev_hash, act, &sign_key);

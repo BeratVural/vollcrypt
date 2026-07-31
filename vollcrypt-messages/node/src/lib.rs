@@ -644,7 +644,7 @@ pub fn hybrid_kem_decapsulate(
 pub fn authenticated_kem_encapsulate(
     our_x25519_sk: Uint8Array,
     recipient_x25519_pub: Uint8Array,
-    recipient_mlkem_ek: Uint8Array,
+    recipient_mlkem_pub: Uint8Array,
     sender_identity_sk: Uint8Array,
 ) -> Result<Vec<Buffer>> {
     let mut our_x25519_sk_copy = our_x25519_sk.as_ref().to_vec();
@@ -652,7 +652,7 @@ pub fn authenticated_kem_encapsulate(
     let res = vollcrypt_core::pqc::authenticated_kem_encapsulate(
         &our_x25519_sk_copy,
         recipient_x25519_pub.as_ref(),
-        recipient_mlkem_ek.as_ref(),
+        recipient_mlkem_pub.as_ref(),
         &sender_identity_sk_copy,
     );
     our_x25519_sk_copy.zeroize();
@@ -989,15 +989,10 @@ pub fn key_log_create_entry(
     let mut sign_key = [0u8; 32];
     sign_key.copy_from_slice(signing_key.as_ref());
 
-    let act = match action {
-        1 => vollcrypt_core::key_log::KeyAction::Add,
-        2 => vollcrypt_core::key_log::KeyAction::Update,
-        3 => vollcrypt_core::key_log::KeyAction::Revoke,
-        _ => {
-            sign_key.zeroize();
-            return Err(Error::from_reason("Invalid action type".to_string()));
-        }
-    };
+    let act = vollcrypt_core::key_log::KeyAction::try_from(action).map_err(|_| {
+        sign_key.zeroize();
+        Error::from_reason("Invalid action type".to_string())
+    })?;
 
     let res = vollcrypt_core::key_log::create_entry(
         user_id.as_ref(),

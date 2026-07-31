@@ -93,19 +93,21 @@ console.log(decrypted.toString()); // Hello, Vollcrypt
 
 ```ts
 import init, {
-  generateEd25519Keypair,
-  encryptAesGcm,
-  decryptAesGcm,
+  generate_ed25519_keypair,
+  encrypt_aes_gcm,
+  decrypt_aes_gcm,
 } from '@vollcrypt/messages-wasm';
 
 await init();
 
-const [identitySecret, identityPublic] = generateEd25519Keypair();
+const identity = generate_ed25519_keypair();
+const identitySecret = identity.secret_key;
+const identityPublic = identity.public_key;
 const sessionKey = crypto.getRandomValues(new Uint8Array(32));
-const plaintext  = new TextEncoder().encode('Hello, Vollcrypt');
+const plaintext = new TextEncoder().encode('Hello, Vollcrypt');
 
-const ciphertext = encryptAesGcm(sessionKey, plaintext, null);
-const decrypted  = decryptAesGcm(sessionKey, ciphertext, null);
+const ciphertext = encrypt_aes_gcm(sessionKey, plaintext);
+const decrypted = decrypt_aes_gcm(sessionKey, ciphertext);
 console.log(new TextDecoder().decode(decrypted));
 ```
 

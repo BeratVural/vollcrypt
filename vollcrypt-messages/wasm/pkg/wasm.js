@@ -229,7 +229,7 @@ export class RatchetKeyPairObj {
         wasm.__wbg_ratchetkeypairobj_free(ptr, 0);
     }
     /**
-     * Computes SRK ratchet using this key pair.
+     * Computes the sender-side SRK ratchet using this key pair.
      * secret_key never crosses the WASM boundary.
      * @param {Uint8Array} current_srk
      * @param {Uint8Array} their_ratchet_pub
@@ -245,6 +245,30 @@ export class RatchetKeyPairObj {
         const ptr2 = passArray8ToWasm0(chat_id, wasm.__wbindgen_malloc);
         const len2 = WASM_VECTOR_LEN;
         const ret = wasm.ratchetkeypairobj_compute_ratchet(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ratchet_step);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v4 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v4;
+    }
+    /**
+     * Computes the receiver-side SRK ratchet using this key pair.
+     * secret_key never crosses the WASM boundary.
+     * @param {Uint8Array} current_srk
+     * @param {Uint8Array} their_ratchet_pub
+     * @param {Uint8Array} chat_id
+     * @param {bigint} ratchet_step
+     * @returns {Uint8Array}
+     */
+    compute_ratchet_receiver(current_srk, their_ratchet_pub, chat_id, ratchet_step) {
+        const ptr0 = passArray8ToWasm0(current_srk, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(their_ratchet_pub, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(chat_id, wasm.__wbindgen_malloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.ratchetkeypairobj_compute_ratchet_receiver(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ratchet_step);
         if (ret[3]) {
             throw takeFromExternrefTable0(ret[2]);
         }
