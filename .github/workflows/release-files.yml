@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   # Files Module Releases
@@ -35,9 +36,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Remove wave submodule from Cargo.toml for CI
-        run: python -c "lines = [line for line in open('Cargo.toml') if 'vollcrypt-wave' not in line]; open('Cargo.toml', 'w').write(''.join(lines))"
-
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
@@ -56,7 +54,7 @@ jobs:
           sudo apt-get install -y musl-tools
 
       - name: Install Dependencies
-        run: cd vollcrypt-files/node && npm install
+        run: cd vollcrypt-files/node && npm ci
 
       - name: Build Node
         run: cd vollcrypt-files/node && npx @napi-rs/cli build --platform --release --target ${{ matrix.target }}
@@ -72,6 +70,7 @@ jobs:
     name: Publish @vollcrypt/files-node
     needs: build-and-publish-files-node
     runs-on: ubuntu-latest
+    environment: npm-publish
     steps:
       - uses: actions/checkout@v4
 
@@ -92,18 +91,16 @@ jobs:
         run: ls -la vollcrypt-files/node/vollcrypt-files-node.*.node
 
       - name: Publish to NPM
-        run: cd vollcrypt-files/node && npm publish --access public
+        run: cd vollcrypt-files/node && npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   build-and-publish-files-wasm:
     name: Publish Files WASM Bindings
     runs-on: ubuntu-latest
+    environment: npm-publish
     steps:
       - uses: actions/checkout@v4
-
-      - name: Remove wave submodule from Cargo.toml for CI
-        run: python -c "lines = [line for line in open('Cargo.toml') if 'vollcrypt-wave' not in line]; open('Cargo.toml', 'w').write(''.join(lines))"
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -120,12 +117,12 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Install Dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build WASM
         run: npm run build:files:wasm
 
       - name: Publish to NPM
-        run: cd vollcrypt-files/wasm && npm publish --access public
+        run: cd vollcrypt-files/wasm && npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
