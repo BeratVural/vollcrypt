@@ -1026,7 +1026,7 @@ impl GroupManifest {
 
         let signing_pk = to_hybrid_pubkey(&m_pk_obj.signing_pk, "new_member_pk.signing_pk")?;
 
-        let current_version = self.inner.current_gk_version();
+        let current_version = self.inner.current_gk_version().map_err(to_js_err)?;
         let gk_wrap =
             core_wrap_key_to_recipient(&current_gk_arr, member_id_arr, current_version, &rec_pk)
                 .map_err(to_js_err)?;
@@ -1089,6 +1089,7 @@ impl GroupManifest {
         let members: Vec<Vec<u8>> = self
             .inner
             .current_members()
+            .map_err(to_js_err)?
             .into_iter()
             .map(|m| m.to_vec())
             .collect();
@@ -1096,8 +1097,8 @@ impl GroupManifest {
     }
 
     #[wasm_bindgen(js_name = currentGkVersion)]
-    pub fn current_gk_version(&self) -> u32 {
-        self.inner.current_gk_version()
+    pub fn current_gk_version(&self) -> Result<u32, JsValue> {
+        self.inner.current_gk_version().map_err(to_js_err)
     }
 
     #[wasm_bindgen(js_name = findMemberWrap)]
@@ -1132,8 +1133,10 @@ impl GroupManifest {
     }
 
     #[wasm_bindgen(js_name = isVersionShredded)]
-    pub fn is_version_shredded(&self, gk_version: u32) -> bool {
-        self.inner.is_version_shredded(gk_version)
+    pub fn is_version_shredded(&self, gk_version: u32) -> Result<bool, JsValue> {
+        self.inner
+            .is_version_shredded(gk_version)
+            .map_err(to_js_err)
     }
 }
 

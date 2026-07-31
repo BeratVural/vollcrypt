@@ -174,12 +174,12 @@ export interface InitOutput {
     readonly generateRecipientKeypair: () => [number, number, number];
     readonly generateSalt: () => [number, number];
     readonly groupmanifest_addMember: (a: number, b: number, c: number, d: any, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number];
-    readonly groupmanifest_currentGkVersion: (a: number) => number;
+    readonly groupmanifest_currentGkVersion: (a: number) => [number, number, number];
     readonly groupmanifest_currentMembers: (a: number) => [number, number, number];
     readonly groupmanifest_findMemberWrap: (a: number, b: number, c: number) => [number, number, number];
     readonly groupmanifest_findMemberWrapForVersion: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly groupmanifest_genesis: (a: number, b: number, c: number, d: number, e: number, f: number, g: any, h: number, i: number, j: number, k: number, l: number) => [number, number, number];
-    readonly groupmanifest_isVersionShredded: (a: number, b: number) => number;
+    readonly groupmanifest_isVersionShredded: (a: number, b: number) => [number, number, number];
     readonly groupmanifest_parse: (a: number, b: number) => [number, number, number];
     readonly groupmanifest_removeMember: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly groupmanifest_rotateGroupKey: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];

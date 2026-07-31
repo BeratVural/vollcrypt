@@ -1029,7 +1029,10 @@ impl GroupManifest {
         )?;
 
         // Automatically wrap current GK for new member using the manifest's current GK version
-        let current_version = self.inner.current_gk_version();
+        let current_version = self
+            .inner
+            .current_gk_version()
+            .map_err(|e| Error::from_reason(e.to_string()))?;
         let gk_wrap =
             core_wrap_key_to_recipient(&current_gk_arr, member_id_arr, current_version, &rec_pk)
                 .map_err(|e| Error::from_reason(e.to_string()))?;
@@ -1088,17 +1091,21 @@ impl GroupManifest {
     }
 
     #[napi]
-    pub fn current_members(&self) -> Vec<Buffer> {
-        self.inner
+    pub fn current_members(&self) -> Result<Vec<Buffer>> {
+        Ok(self
+            .inner
             .current_members()
+            .map_err(|e| Error::from_reason(e.to_string()))?
             .into_iter()
             .map(|m| Buffer::from(m.to_vec()))
-            .collect()
+            .collect())
     }
 
     #[napi]
-    pub fn current_gk_version(&self) -> u32 {
-        self.inner.current_gk_version()
+    pub fn current_gk_version(&self) -> Result<u32> {
+        self.inner
+            .current_gk_version()
+            .map_err(|e| Error::from_reason(e.to_string()))
     }
 
     #[napi]
@@ -1127,8 +1134,10 @@ impl GroupManifest {
     }
 
     #[napi]
-    pub fn is_version_shredded(&self, gk_version: u32) -> bool {
-        self.inner.is_version_shredded(gk_version)
+    pub fn is_version_shredded(&self, gk_version: u32) -> Result<bool> {
+        self.inner
+            .is_version_shredded(gk_version)
+            .map_err(|e| Error::from_reason(e.to_string()))
     }
 }
 

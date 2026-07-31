@@ -1773,7 +1773,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
             for _ in 0..20 {
                 let members = {
                     let lock = cm_reader_manifest.read().unwrap();
-                    lock.current_members()
+                    lock.current_members().unwrap()
                 };
                 assert!(!members.is_empty());
                 std::thread::sleep(std::time::Duration::from_millis(1));

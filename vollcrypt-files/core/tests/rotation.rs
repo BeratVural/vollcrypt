@@ -24,12 +24,12 @@ fn rotate_increments_version() {
         founder_gk_wrap,
     );
 
-    assert_eq!(manifest.current_gk_version(), 1);
+    assert_eq!(manifest.current_gk_version().unwrap(), 1);
 
     let ver = manifest.rotate_group_key(&gk2, &admin_sk, 100).unwrap();
 
     assert_eq!(ver, 2);
-    assert_eq!(manifest.current_gk_version(), 2);
+    assert_eq!(manifest.current_gk_version().unwrap(), 2);
     assert_eq!(manifest.operations.len(), 2);
 
     let last_op = &manifest.operations[1];

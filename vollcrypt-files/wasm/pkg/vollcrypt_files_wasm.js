@@ -44,7 +44,10 @@ export class GroupManifest {
      */
     currentGkVersion() {
         const ret = wasm.groupmanifest_currentGkVersion(this.__wbg_ptr);
-        return ret >>> 0;
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
     }
     /**
      * @returns {any}
@@ -116,7 +119,10 @@ export class GroupManifest {
      */
     isVersionShredded(gk_version) {
         const ret = wasm.groupmanifest_isVersionShredded(this.__wbg_ptr, gk_version);
-        return ret !== 0;
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
     }
     /**
      * @param {Uint8Array} bytes

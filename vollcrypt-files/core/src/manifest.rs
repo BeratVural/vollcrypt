@@ -632,7 +632,7 @@ impl GroupManifest {
             return Err(FileFormatError::NotAuthorized);
         }
 
-        let active = self.current_members();
+        let active = self.current_members()?;
         if !active.contains(&member_id) {
             return Err(FileFormatError::MemberNotFound);
         }
@@ -692,60 +692,59 @@ impl GroupManifest {
         }
     }
 
-    /// Evaluates the operation log and returns a list of current active member IDs.
-    pub fn current_members(&self) -> Vec<[u8; 16]> {
+    /// Evaluates the operation log and returns the current active member IDs.
+    /// Any malformed operation fails closed instead of producing partial membership state.
+    pub fn current_members(&self) -> Result<Vec<[u8; 16]>, FileFormatError> {
         let mut members = Vec::new();
         for op_signed in &self.operations {
-            if let Ok(op) = Operation::parse(op_signed.op_type, &op_signed.data, self.version) {
-                match op {
-                    Operation::Genesis { founder_id, .. } => {
-                        if !members.contains(&founder_id) {
-                            members.push(founder_id);
-                        }
+            let op = Operation::parse(op_signed.op_type, &op_signed.data, self.version)?;
+            match op {
+                Operation::Genesis { founder_id, .. } => {
+                    if !members.contains(&founder_id) {
+                        members.push(founder_id);
                     }
-                    Operation::AddMember { member_id, .. } => {
-                        if !members.contains(&member_id) {
-                            members.push(member_id);
-                        }
-                    }
-                    Operation::RemoveMember { member_id } => {
-                        members.retain(|&m| m != member_id);
-                    }
-                    _ => {}
                 }
+                Operation::AddMember { member_id, .. } => {
+                    if !members.contains(&member_id) {
+                        members.push(member_id);
+                    }
+                }
+                Operation::RemoveMember { member_id } => {
+                    members.retain(|&m| m != member_id);
+                }
+                _ => {}
             }
         }
-        members
+        Ok(members)
     }
 
     /// Scans the log in reverse to find a member's key wrap entry, returning an error if they are not active.
     pub fn find_member_wrap(&self, member_id: &[u8; 16]) -> Result<WrapEntry, FileFormatError> {
-        let active = self.current_members();
+        let active = self.current_members()?;
         if !active.contains(member_id) {
             return Err(FileFormatError::MemberNotFound);
         }
 
         for op_signed in self.operations.iter().rev() {
-            if let Ok(op) = Operation::parse(op_signed.op_type, &op_signed.data, self.version) {
-                match op {
-                    Operation::Genesis {
-                        founder_id,
-                        founder_gk_wrap,
-                        ..
-                    } => {
-                        if founder_id == *member_id {
-                            return Ok(founder_gk_wrap);
-                        }
+            let op = Operation::parse(op_signed.op_type, &op_signed.data, self.version)?;
+            match op {
+                Operation::Genesis {
+                    founder_id,
+                    founder_gk_wrap,
+                    ..
+                } => {
+                    if founder_id == *member_id {
+                        return Ok(founder_gk_wrap);
                     }
-                    Operation::AddMember {
-                        member_id: mid,
-                        gk_wrap,
-                        ..
-                    } if mid == *member_id => {
-                        return Ok(gk_wrap);
-                    }
-                    _ => {}
                 }
+                Operation::AddMember {
+                    member_id: mid,
+                    gk_wrap,
+                    ..
+                } if mid == *member_id => {
+                    return Ok(gk_wrap);
+                }
+                _ => {}
             }
         }
 
@@ -753,28 +752,22 @@ impl GroupManifest {
     }
 
     /// Retrieves the current group key version by scanning operations from end to beginning.
-    pub fn current_gk_version(&self) -> u32 {
+    /// Any malformed operation fails closed instead of being skipped.
+    pub fn current_gk_version(&self) -> Result<u32, FileFormatError> {
         for op_signed in self.operations.iter().rev() {
-            if op_signed.op_type == 3 {
-                if let Ok(Operation::RotateKey { new_gk_version, .. }) =
-                    Operation::parse(op_signed.op_type, &op_signed.data, self.version)
-                {
-                    return new_gk_version;
-                }
-            } else if op_signed.op_type == 0 {
-                if let Ok(Operation::Genesis {
-                    founder_gk_wrap, ..
-                }) = Operation::parse(op_signed.op_type, &op_signed.data, self.version)
-                {
-                    match founder_gk_wrap {
-                        WrapEntry::HybridKem { gk_version, .. } => return gk_version,
-                        WrapEntry::GroupWrap { gk_version, .. } => return gk_version,
-                        _ => {}
-                    }
-                }
+            let op = Operation::parse(op_signed.op_type, &op_signed.data, self.version)?;
+            match op {
+                Operation::RotateKey { new_gk_version, .. } => return Ok(new_gk_version),
+                Operation::Genesis {
+                    founder_gk_wrap:
+                        WrapEntry::HybridKem { gk_version, .. }
+                        | WrapEntry::GroupWrap { gk_version, .. },
+                    ..
+                } => return Ok(gk_version),
+                _ => {}
             }
         }
-        1
+        Ok(1)
     }
 
     /// Rotates the group key to a new group key, creating a RotateKey operation.
@@ -792,9 +785,12 @@ impl GroupManifest {
             return Err(FileFormatError::NotAuthorized);
         }
 
-        let new_gk_version = self.current_gk_version() + 1;
+        let new_gk_version = self
+            .current_gk_version()?
+            .checked_add(1)
+            .ok_or(FileFormatError::InvalidManifestChain)?;
         let mut wraps = Vec::new();
-        for member_id in self.current_members() {
+        for member_id in self.current_members()? {
             let member_pk = self.find_member_pk(&member_id)?;
             let wrap = crate::recipient::wrap_key_to_recipient(
                 new_gk,
@@ -859,7 +855,7 @@ impl GroupManifest {
             return Err(FileFormatError::NotAuthorized);
         }
 
-        if self.is_version_shredded(version_to_shred) {
+        if self.is_version_shredded(version_to_shred)? {
             return Err(FileFormatError::AlreadyShredded);
         }
 
@@ -903,65 +899,66 @@ impl GroupManifest {
         member_id: &[u8; 16],
         gk_version: u32,
     ) -> Result<WrapEntry, FileFormatError> {
-        if self.is_version_shredded(gk_version) {
+        if self.is_version_shredded(gk_version)? {
             return Err(FileFormatError::GroupKeyShredded(gk_version));
         }
 
-        // First check RotateKey operations
-        for op_signed in &self.operations {
-            if op_signed.op_type == 3 {
-                if let Ok(Operation::RotateKey {
-                    new_gk_version,
-                    wraps,
-                }) = Operation::parse(op_signed.op_type, &op_signed.data, self.version)
-                {
-                    if new_gk_version == gk_version {
-                        for (mid, wrap) in wraps {
-                            if mid == *member_id {
-                                return Ok(wrap);
-                            }
+        // Parse the full log first so malformed operations cannot be skipped selectively.
+        let operations = self
+            .operations
+            .iter()
+            .map(|signed| Operation::parse(signed.op_type, &signed.data, self.version))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        for op in &operations {
+            if let Operation::RotateKey {
+                new_gk_version,
+                wraps,
+            } = op
+            {
+                if *new_gk_version == gk_version {
+                    for (mid, wrap) in wraps {
+                        if mid == member_id {
+                            return Ok(wrap.clone());
                         }
                     }
                 }
             }
         }
 
-        // Check Genesis and AddMember operations matching version
-        for op_signed in &self.operations {
-            if let Ok(op) = Operation::parse(op_signed.op_type, &op_signed.data, self.version) {
-                match op {
-                    Operation::Genesis {
-                        founder_id,
-                        founder_gk_wrap,
-                        ..
-                    } => {
-                        if founder_id == *member_id {
-                            let ver = match &founder_gk_wrap {
-                                WrapEntry::HybridKem { gk_version: v, .. } => *v,
-                                WrapEntry::GroupWrap { gk_version: v, .. } => *v,
-                                _ => 0,
-                            };
-                            if ver == gk_version {
-                                return Ok(founder_gk_wrap);
-                            }
-                        }
-                    }
-                    Operation::AddMember {
-                        member_id: mid,
-                        gk_wrap,
-                        ..
-                    } if mid == *member_id => {
-                        let ver = match &gk_wrap {
+        for op in operations {
+            match op {
+                Operation::Genesis {
+                    founder_id,
+                    founder_gk_wrap,
+                    ..
+                } => {
+                    if founder_id == *member_id {
+                        let ver = match &founder_gk_wrap {
                             WrapEntry::HybridKem { gk_version: v, .. } => *v,
                             WrapEntry::GroupWrap { gk_version: v, .. } => *v,
                             _ => 0,
                         };
                         if ver == gk_version {
-                            return Ok(gk_wrap);
+                            return Ok(founder_gk_wrap);
                         }
                     }
-                    _ => {}
                 }
+                Operation::AddMember {
+                    member_id: mid,
+                    gk_wrap,
+                    ..
+                } if mid == *member_id => {
+                    let ver = match &gk_wrap {
+                        WrapEntry::HybridKem { gk_version: v, .. } => *v,
+                        WrapEntry::GroupWrap { gk_version: v, .. } => *v,
+                        _ => 0,
+                    };
+                    if ver == gk_version {
+                        return Ok(gk_wrap);
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -969,60 +966,59 @@ impl GroupManifest {
     }
 
     /// Checks if a group key version has been shredded.
-    pub fn is_version_shredded(&self, gk_version: u32) -> bool {
+    /// Any malformed operation fails closed instead of being skipped.
+    pub fn is_version_shredded(&self, gk_version: u32) -> Result<bool, FileFormatError> {
         for op_signed in &self.operations {
-            if op_signed.op_type == 4 {
-                if let Ok(Operation::ShredGroupKey {
-                    shredded_gk_version,
-                    ..
-                }) = Operation::parse(op_signed.op_type, &op_signed.data, self.version)
-                {
-                    if shredded_gk_version == gk_version {
-                        return true;
-                    }
+            let op = Operation::parse(op_signed.op_type, &op_signed.data, self.version)?;
+            if let Operation::ShredGroupKey {
+                shredded_gk_version,
+                ..
+            } = op
+            {
+                if shredded_gk_version == gk_version {
+                    return Ok(true);
                 }
             }
         }
-        false
+        Ok(false)
     }
 
     /// Internal helper to locate the public key of a member.
     fn find_member_pk(&self, member_id: &[u8; 16]) -> Result<RecipientPublicKey, FileFormatError> {
         let mut found_pk = None;
         for op_signed in &self.operations {
-            if let Ok(op) = Operation::parse(op_signed.op_type, &op_signed.data, self.version) {
-                match op {
-                    Operation::Genesis {
-                        founder_id,
-                        founder_x25519_pk,
-                        founder_mlkem_pk,
-                        ..
-                    } => {
-                        if founder_id == *member_id {
-                            found_pk = Some(RecipientPublicKey {
-                                x25519: founder_x25519_pk,
-                                ml_kem: founder_mlkem_pk,
-                            });
-                        }
+            let op = Operation::parse(op_signed.op_type, &op_signed.data, self.version)?;
+            match op {
+                Operation::Genesis {
+                    founder_id,
+                    founder_x25519_pk,
+                    founder_mlkem_pk,
+                    ..
+                } => {
+                    if founder_id == *member_id {
+                        found_pk = Some(RecipientPublicKey {
+                            x25519: founder_x25519_pk,
+                            ml_kem: founder_mlkem_pk,
+                        });
                     }
-                    Operation::AddMember {
-                        member_id: mid,
-                        member_x25519_pk,
-                        member_mlkem_pk,
-                        ..
-                    } => {
-                        if mid == *member_id {
-                            found_pk = Some(RecipientPublicKey {
-                                x25519: member_x25519_pk,
-                                ml_kem: member_mlkem_pk,
-                            });
-                        }
-                    }
-                    Operation::RemoveMember { member_id: mid } if mid == *member_id => {
-                        found_pk = None;
-                    }
-                    _ => {}
                 }
+                Operation::AddMember {
+                    member_id: mid,
+                    member_x25519_pk,
+                    member_mlkem_pk,
+                    ..
+                } => {
+                    if mid == *member_id {
+                        found_pk = Some(RecipientPublicKey {
+                            x25519: member_x25519_pk,
+                            ml_kem: member_mlkem_pk,
+                        });
+                    }
+                }
+                Operation::RemoveMember { member_id: mid } if mid == *member_id => {
+                    found_pk = None;
+                }
+                _ => {}
             }
         }
         found_pk.ok_or(FileFormatError::MemberNotFound)

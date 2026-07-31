@@ -156,7 +156,7 @@ mod tests {
             rec_pk.clone(),
             gk_wrap.clone(),
         );
-        assert_eq!(manifest.current_members().len(), 1);
+        assert_eq!(manifest.current_members().unwrap().len(), 1);
         assert!(manifest.verify().is_ok());
 
         // Add member twice (duplicate handling)
@@ -179,13 +179,13 @@ mod tests {
             gk_wrap.clone(),
         );
         assert!(res_dup.is_ok());
-        let active = manifest.current_members();
+        let active = manifest.current_members().unwrap();
         assert_eq!(active.len(), 2);
 
         // Remove members sequentially until empty
         manifest.remove_member(&admin_sk, member_id).unwrap();
         manifest.remove_member(&admin_sk, founder_id).unwrap();
-        assert!(manifest.current_members().is_empty());
+        assert!(manifest.current_members().unwrap().is_empty());
     }
 
     #[test]
@@ -220,10 +220,10 @@ mod tests {
             }
         }
 
-        assert_eq!(manifest.current_gk_version(), 1001);
-        assert!(manifest.is_version_shredded(500));
-        assert!(manifest.is_version_shredded(999));
-        assert!(!manifest.is_version_shredded(1000));
+        assert_eq!(manifest.current_gk_version().unwrap(), 1001);
+        assert!(manifest.is_version_shredded(500).unwrap());
+        assert!(manifest.is_version_shredded(999).unwrap());
+        assert!(!manifest.is_version_shredded(1000).unwrap());
         assert!(manifest.verify().is_ok());
     }
 

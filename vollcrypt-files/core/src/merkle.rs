@@ -261,9 +261,45 @@ pub fn expected_proof_len(total_leaves: usize) -> usize {
     }
 }
 
-/// Verifies a proof length. Returns `Err` if the proof length is incorrect.
+/// Verifies that a proof length can occur for at least one leaf in the tree.
+/// Use [`check_proof_length_for_leaf`] when the leaf index is known.
 pub fn check_proof_length(total_leaves: usize, proof_len: usize) -> Result<(), FileFormatError> {
-    let expected = expected_proof_len(total_leaves);
+    if total_leaves == 0 {
+        return if proof_len == 0 {
+            Ok(())
+        } else {
+            Err(FileFormatError::InvalidProofLength {
+                expected: 0,
+                got: proof_len,
+            })
+        };
+    }
+
+    if (0..total_leaves)
+        .any(|leaf_index| expected_proof_len_for_leaf(leaf_index, total_leaves) == proof_len)
+    {
+        return Ok(());
+    }
+
+    Err(FileFormatError::InvalidProofLength {
+        expected: expected_proof_len(total_leaves),
+        got: proof_len,
+    })
+}
+
+/// Verifies a proof length for a specific leaf under odd-node promotion.
+pub fn check_proof_length_for_leaf(
+    total_leaves: usize,
+    leaf_index: usize,
+    proof_len: usize,
+) -> Result<(), FileFormatError> {
+    if leaf_index >= total_leaves {
+        return Err(FileFormatError::InvalidProofLength {
+            expected: 0,
+            got: proof_len,
+        });
+    }
+    let expected = expected_proof_len_for_leaf(leaf_index, total_leaves);
     if proof_len != expected {
         return Err(FileFormatError::InvalidProofLength {
             expected,

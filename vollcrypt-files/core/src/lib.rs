@@ -81,10 +81,10 @@ pub use manifest::{
     RollbackCheck, SignedOperation,
 };
 pub use merkle::{
-    bind_root_with_length, check_proof_length, chunk_leaf_hash, chunk_leaf_hash_raw,
-    chunk_leaf_hash_raw_with_algo, chunk_leaf_hash_with_algo, default_hash_algorithm,
-    detect_sha_ni_support, expected_proof_len, verify_merkle_proof, verify_merkle_proof_with_algo,
-    HashAlgorithm, MerkleTree, StreamingMerkle,
+    bind_root_with_length, check_proof_length, check_proof_length_for_leaf, chunk_leaf_hash,
+    chunk_leaf_hash_raw, chunk_leaf_hash_raw_with_algo, chunk_leaf_hash_with_algo,
+    default_hash_algorithm, detect_sha_ni_support, expected_proof_len, verify_merkle_proof,
+    verify_merkle_proof_with_algo, HashAlgorithm, MerkleTree, StreamingMerkle,
 };
 pub use password::{unwrap_dek_with_password, wrap_dek_with_password, KdfChoice};
 pub use pipelined_io::{

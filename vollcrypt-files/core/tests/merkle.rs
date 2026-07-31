@@ -1,6 +1,9 @@
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use sha2::{Digest, Sha256};
-use vollcrypt_files_core::{chunk_leaf_hash, verify_merkle_proof, ChunkEnvelope, MerkleTree};
+use vollcrypt_files_core::{
+    check_proof_length, check_proof_length_for_leaf, chunk_leaf_hash, verify_merkle_proof,
+    ChunkEnvelope, MerkleTree,
+};
 
 #[test]
 fn single_leaf_root_is_leaf() {
@@ -69,6 +72,20 @@ fn odd_leaves_duplication() {
 
     let tree = MerkleTree::from_leaves(vec![l0, l1, l2]);
     assert_eq!(tree.root(), expected_root);
+}
+
+#[test]
+fn proof_length_accounts_for_odd_leaf_promotion() {
+    let leaves = vec![[1u8; 32], [2u8; 32], [3u8; 32]];
+    let tree = MerkleTree::from_leaves(leaves);
+    assert_eq!(tree.proof(0).len(), 2);
+    assert_eq!(tree.proof(2).len(), 1);
+
+    assert!(check_proof_length(3, 1).is_ok());
+    assert!(check_proof_length(3, 2).is_ok());
+    assert!(check_proof_length(3, 3).is_err());
+    assert!(check_proof_length_for_leaf(3, 2, 1).is_ok());
+    assert!(check_proof_length_for_leaf(3, 0, 1).is_err());
 }
 
 #[test]

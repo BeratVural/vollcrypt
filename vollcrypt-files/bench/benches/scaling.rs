@@ -75,7 +75,7 @@ fn bench_group_manifest_scaling(c: &mut Criterion) {
 
         g.bench_with_input(BenchmarkId::new("manifest_size", size), &size, |b, _| {
             b.iter(|| {
-                let active = black_box(&manifest).current_members();
+                let active = black_box(&manifest).current_members().unwrap();
                 let _ = black_box(active);
             });
         });

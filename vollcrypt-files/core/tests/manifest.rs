@@ -25,9 +25,38 @@ fn genesis_only() {
 
     assert_eq!(manifest.group_id, group_id);
     assert_eq!(manifest.operations.len(), 1);
-    assert_eq!(manifest.current_members(), vec![founder_id]);
-    assert_eq!(manifest.current_gk_version(), 0);
+    assert_eq!(manifest.current_members().unwrap(), vec![founder_id]);
+    assert_eq!(manifest.current_gk_version().unwrap(), 0);
     assert!(manifest.verify().is_ok());
+}
+
+#[test]
+fn malformed_operation_fails_all_state_queries_closed() {
+    let (admin_pk, admin_sk) = hybrid_keypair_generate();
+    let (rec_pk, _rec_sk) = generate_recipient_keypair();
+    let group_id = generate_file_id();
+    let founder_id = generate_file_id();
+    let gk = generate_gk();
+    let founder_gk_wrap = wrap_key_to_recipient(&gk, founder_id, 0, &rec_pk).unwrap();
+    let mut manifest = GroupManifest::genesis(
+        group_id,
+        founder_id,
+        &admin_sk,
+        admin_pk,
+        rec_pk,
+        founder_gk_wrap,
+    );
+
+    manifest.operations[0].data.clear();
+    manifest.operations[0].data_len = 0;
+
+    assert!(manifest.current_members().is_err());
+    assert!(manifest.current_gk_version().is_err());
+    assert!(manifest.is_version_shredded(0).is_err());
+    assert!(manifest.find_member_wrap(&founder_id).is_err());
+    assert!(manifest
+        .find_member_wrap_for_version(&founder_id, 0)
+        .is_err());
 }
 
 #[test]
@@ -70,7 +99,7 @@ fn add_two_members() {
         .unwrap();
 
     assert_eq!(manifest.operations.len(), 3);
-    let mut members = manifest.current_members();
+    let mut members = manifest.current_members().unwrap();
     members.sort();
     let mut expected = vec![founder_id, member2_id, member3_id];
     expected.sort();
@@ -106,11 +135,11 @@ fn add_then_remove() {
         .add_member(&admin_sk, member2_id, member2_signing_pk, rec_pk2, gk_wrap2)
         .unwrap();
 
-    assert_eq!(manifest.current_members().len(), 2);
+    assert_eq!(manifest.current_members().unwrap().len(), 2);
 
     manifest.remove_member(&admin_sk, member2_id).unwrap();
 
-    assert_eq!(manifest.current_members(), vec![founder_id]);
+    assert_eq!(manifest.current_members().unwrap(), vec![founder_id]);
     assert!(manifest.verify().is_ok());
 }
 

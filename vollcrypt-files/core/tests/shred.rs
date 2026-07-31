@@ -27,15 +27,15 @@ fn shred_group_key_marks_version() {
 
     manifest.rotate_group_key(&gk2, &admin_sk, 100).unwrap();
 
-    assert!(!manifest.is_version_shredded(1));
-    assert!(!manifest.is_version_shredded(2));
+    assert!(!manifest.is_version_shredded(1).unwrap());
+    assert!(!manifest.is_version_shredded(2).unwrap());
 
     manifest
         .shred_group_key(1, "GDPR Article 17 request", &admin_sk, 150)
         .unwrap();
 
-    assert!(manifest.is_version_shredded(1));
-    assert!(!manifest.is_version_shredded(2));
+    assert!(manifest.is_version_shredded(1).unwrap());
+    assert!(!manifest.is_version_shredded(2).unwrap());
 }
 
 #[test]
