@@ -1,3 +1,6 @@
+use crate::constants::{
+    HYBRID_PUBLIC_KEY_SIZE, ML_DSA_65_PUBLIC_KEY_SIZE, ML_KEM_768_ENCAPSULATION_KEY_SIZE,
+};
 use crate::error::FileFormatError;
 use crate::hybrid_sig::{
     hybrid_sign, hybrid_verify, HybridPublicKey, HybridSecretKey, HybridSignature,
@@ -13,14 +16,14 @@ pub enum Operation {
         founder_id: [u8; 16],
         founder_signing_pk: HybridPublicKey,
         founder_x25519_pk: [u8; 32],
-        founder_mlkem_pk: Box<[u8; 1184]>,
+        founder_mlkem_pk: Box<[u8; ML_KEM_768_ENCAPSULATION_KEY_SIZE]>,
         founder_gk_wrap: WrapEntry,
     },
     AddMember {
         member_id: [u8; 16],
         member_signing_pk: HybridPublicKey,
         member_x25519_pk: [u8; 32],
-        member_mlkem_pk: Box<[u8; 1184]>,
+        member_mlkem_pk: Box<[u8; ML_KEM_768_ENCAPSULATION_KEY_SIZE]>,
         gk_wrap: WrapEntry,
     },
     RemoveMember {
@@ -49,7 +52,12 @@ impl Operation {
             } => {
                 let wrap_bytes = founder_gk_wrap.write();
                 if version == 2 {
-                    let mut out = Vec::with_capacity(16 + 1984 + 32 + 1184 + wrap_bytes.len());
+                    let mut out = Vec::with_capacity(
+                        16 + HYBRID_PUBLIC_KEY_SIZE
+                            + 32
+                            + ML_KEM_768_ENCAPSULATION_KEY_SIZE
+                            + wrap_bytes.len(),
+                    );
                     out.extend_from_slice(founder_id);
                     out.extend_from_slice(&founder_signing_pk.write());
                     out.extend_from_slice(founder_x25519_pk);
@@ -57,7 +65,9 @@ impl Operation {
                     out.extend_from_slice(&wrap_bytes);
                     out
                 } else {
-                    let mut out = Vec::with_capacity(16 + 32 + 32 + 1184 + wrap_bytes.len());
+                    let mut out = Vec::with_capacity(
+                        16 + 32 + 32 + ML_KEM_768_ENCAPSULATION_KEY_SIZE + wrap_bytes.len(),
+                    );
                     out.extend_from_slice(founder_id);
                     out.extend_from_slice(&founder_signing_pk.ed25519);
                     out.extend_from_slice(founder_x25519_pk);
@@ -75,7 +85,12 @@ impl Operation {
             } => {
                 let wrap_bytes = gk_wrap.write();
                 if version == 2 {
-                    let mut out = Vec::with_capacity(16 + 1984 + 32 + 1184 + wrap_bytes.len());
+                    let mut out = Vec::with_capacity(
+                        16 + HYBRID_PUBLIC_KEY_SIZE
+                            + 32
+                            + ML_KEM_768_ENCAPSULATION_KEY_SIZE
+                            + wrap_bytes.len(),
+                    );
                     out.extend_from_slice(member_id);
                     out.extend_from_slice(&member_signing_pk.write());
                     out.extend_from_slice(member_x25519_pk);
@@ -83,7 +98,9 @@ impl Operation {
                     out.extend_from_slice(&wrap_bytes);
                     out
                 } else {
-                    let mut out = Vec::with_capacity(16 + 32 + 32 + 1184 + wrap_bytes.len());
+                    let mut out = Vec::with_capacity(
+                        16 + 32 + 32 + ML_KEM_768_ENCAPSULATION_KEY_SIZE + wrap_bytes.len(),
+                    );
                     out.extend_from_slice(member_id);
                     out.extend_from_slice(&member_signing_pk.ed25519);
                     out.extend_from_slice(member_x25519_pk);
@@ -127,7 +144,8 @@ impl Operation {
         match op_type {
             0 => {
                 if version == 2 {
-                    let min_len = 16 + 1984 + 32 + 1184;
+                    let min_len =
+                        16 + HYBRID_PUBLIC_KEY_SIZE + 32 + ML_KEM_768_ENCAPSULATION_KEY_SIZE;
                     if data.len() < min_len {
                         return Err(FileFormatError::InvalidWrapPayload);
                     }
@@ -139,7 +157,7 @@ impl Operation {
                     let mut founder_x25519_pk = [0u8; 32];
                     founder_x25519_pk.copy_from_slice(&data[2000..2032]);
 
-                    let mut founder_mlkem_pk = Box::new([0u8; 1184]);
+                    let mut founder_mlkem_pk = Box::new([0u8; ML_KEM_768_ENCAPSULATION_KEY_SIZE]);
                     founder_mlkem_pk.copy_from_slice(&data[2032..3216]);
 
                     let (founder_gk_wrap, _) = WrapEntry::parse(&data[3216..])?;
@@ -152,7 +170,7 @@ impl Operation {
                         founder_gk_wrap,
                     })
                 } else {
-                    let min_len = 16 + 32 + 32 + 1184;
+                    let min_len = 16 + 32 + 32 + ML_KEM_768_ENCAPSULATION_KEY_SIZE;
                     if data.len() < min_len {
                         return Err(FileFormatError::InvalidWrapPayload);
                     }
@@ -163,13 +181,13 @@ impl Operation {
                     ed25519.copy_from_slice(&data[16..48]);
                     let founder_signing_pk = HybridPublicKey {
                         ed25519,
-                        mldsa: [0u8; 1952],
+                        mldsa: [0u8; ML_DSA_65_PUBLIC_KEY_SIZE],
                     };
 
                     let mut founder_x25519_pk = [0u8; 32];
                     founder_x25519_pk.copy_from_slice(&data[48..80]);
 
-                    let mut founder_mlkem_pk = Box::new([0u8; 1184]);
+                    let mut founder_mlkem_pk = Box::new([0u8; ML_KEM_768_ENCAPSULATION_KEY_SIZE]);
                     founder_mlkem_pk.copy_from_slice(&data[80..1264]);
 
                     let (founder_gk_wrap, _) = WrapEntry::parse(&data[1264..])?;
@@ -185,7 +203,8 @@ impl Operation {
             }
             1 => {
                 if version == 2 {
-                    let min_len = 16 + 1984 + 32 + 1184;
+                    let min_len =
+                        16 + HYBRID_PUBLIC_KEY_SIZE + 32 + ML_KEM_768_ENCAPSULATION_KEY_SIZE;
                     if data.len() < min_len {
                         return Err(FileFormatError::InvalidWrapPayload);
                     }
@@ -197,7 +216,7 @@ impl Operation {
                     let mut member_x25519_pk = [0u8; 32];
                     member_x25519_pk.copy_from_slice(&data[2000..2032]);
 
-                    let mut member_mlkem_pk = Box::new([0u8; 1184]);
+                    let mut member_mlkem_pk = Box::new([0u8; ML_KEM_768_ENCAPSULATION_KEY_SIZE]);
                     member_mlkem_pk.copy_from_slice(&data[2032..3216]);
 
                     let (gk_wrap, _) = WrapEntry::parse(&data[3216..])?;
@@ -210,7 +229,7 @@ impl Operation {
                         gk_wrap,
                     })
                 } else {
-                    let min_len = 16 + 32 + 32 + 1184;
+                    let min_len = 16 + 32 + 32 + ML_KEM_768_ENCAPSULATION_KEY_SIZE;
                     if data.len() < min_len {
                         return Err(FileFormatError::InvalidWrapPayload);
                     }
@@ -221,13 +240,13 @@ impl Operation {
                     ed25519.copy_from_slice(&data[16..48]);
                     let member_signing_pk = HybridPublicKey {
                         ed25519,
-                        mldsa: [0u8; 1952],
+                        mldsa: [0u8; ML_DSA_65_PUBLIC_KEY_SIZE],
                     };
 
                     let mut member_x25519_pk = [0u8; 32];
                     member_x25519_pk.copy_from_slice(&data[48..80]);
 
-                    let mut member_mlkem_pk = Box::new([0u8; 1184]);
+                    let mut member_mlkem_pk = Box::new([0u8; ML_KEM_768_ENCAPSULATION_KEY_SIZE]);
                     member_mlkem_pk.copy_from_slice(&data[80..1264]);
 
                     let (gk_wrap, _) = WrapEntry::parse(&data[1264..])?;
@@ -331,7 +350,8 @@ impl SignedOperation {
     /// Serializes the operation fields, excluding the signature, for signing or verification.
     pub fn sig_message_for_version(&self, version: u8) -> Vec<u8> {
         if version == 2 {
-            let mut msg = Vec::with_capacity(1 + 32 + 8 + 1984 + 8 + 4 + self.data.len());
+            let mut msg =
+                Vec::with_capacity(1 + 32 + 8 + HYBRID_PUBLIC_KEY_SIZE + 8 + 4 + self.data.len());
             msg.push(self.op_type);
             msg.extend_from_slice(&self.prev_hash);
             msg.extend_from_slice(&self.timestamp.to_be_bytes());
@@ -379,8 +399,9 @@ impl SignedOperation {
     /// Parses a signed operation from a byte buffer.
     pub fn parse(input: &[u8], version: u8) -> Result<(Self, usize), FileFormatError> {
         if version == 2 {
-            if input.len() < 1 + 32 + 8 + 1984 + 8 + 4 {
-                return Err(FileFormatError::TruncatedChunk {
+            if input.len() < 1 + 32 + 8 + HYBRID_PUBLIC_KEY_SIZE + 8 + 4 {
+                return Err(FileFormatError::TruncatedField {
+                    field: "manifest field",
                     expected: 2037,
                     got: input.len(),
                 });
@@ -406,7 +427,8 @@ impl SignedOperation {
 
             let header_and_data_len = 2037 + data_len;
             if input.len() < header_and_data_len {
-                return Err(FileFormatError::TruncatedChunk {
+                return Err(FileFormatError::TruncatedField {
+                    field: "manifest field",
                     expected: header_and_data_len,
                     got: input.len(),
                 });
@@ -434,7 +456,8 @@ impl SignedOperation {
             ))
         } else {
             if input.len() < 1 + 32 + 8 + 32 + 8 + 4 {
-                return Err(FileFormatError::TruncatedChunk {
+                return Err(FileFormatError::TruncatedField {
+                    field: "manifest field",
                     expected: 85,
                     got: input.len(),
                 });
@@ -452,7 +475,7 @@ impl SignedOperation {
             ed_pub.copy_from_slice(&input[41..73]);
             let signer_pubkey = HybridPublicKey {
                 ed25519: ed_pub,
-                mldsa: [0u8; 1952],
+                mldsa: [0u8; ML_DSA_65_PUBLIC_KEY_SIZE],
             };
 
             let mut epoch_bytes = [0u8; 8];
@@ -465,7 +488,8 @@ impl SignedOperation {
 
             let header_and_data_len = 85 + data_len;
             if input.len() < header_and_data_len + 64 {
-                return Err(FileFormatError::TruncatedChunk {
+                return Err(FileFormatError::TruncatedField {
+                    field: "manifest field",
                     expected: header_and_data_len + 64,
                     got: input.len(),
                 });

@@ -63,15 +63,11 @@ pub fn pack_directory(
         .map_err(|e| FileFormatError::IoError(format!("Failed to create archive file: {}", e)))?;
 
     // 1. Write Magic
-    archive_file
-        .write_all(VDA_MAGIC)
-        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+    archive_file.write_all(VDA_MAGIC)?;
 
     // 2. Write Entry Count
     let entry_count = entries.len() as u32;
-    archive_file
-        .write_all(&entry_count.to_be_bytes())
-        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+    archive_file.write_all(&entry_count.to_be_bytes())?;
 
     // 3. Process and Write each entry
     for (abs_path, rel_path, is_dir) in entries {
@@ -79,17 +75,11 @@ pub fn pack_directory(
         let path_len = rel_path_bytes.len() as u32;
 
         // Write path length
-        archive_file
-            .write_all(&path_len.to_be_bytes())
-            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+        archive_file.write_all(&path_len.to_be_bytes())?;
         // Write relative path
-        archive_file
-            .write_all(rel_path_bytes)
-            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+        archive_file.write_all(rel_path_bytes)?;
         // Write is_dir
-        archive_file
-            .write_all(&[if is_dir { 1 } else { 0 }])
-            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+        archive_file.write_all(&[if is_dir { 1 } else { 0 }])?;
 
         if !is_dir {
             // Read file plaintext
@@ -109,21 +99,13 @@ pub fn pack_directory(
             let (ciphertext, tag) = aes256_gcm_encrypt(&file_key, &iv, &[], &plaintext)?;
 
             // Write plaintext size
-            archive_file
-                .write_all(&plaintext_len.to_be_bytes())
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            archive_file.write_all(&plaintext_len.to_be_bytes())?;
             // Write IV
-            archive_file
-                .write_all(&iv)
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            archive_file.write_all(&iv)?;
             // Write tag
-            archive_file
-                .write_all(&tag)
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            archive_file.write_all(&tag)?;
             // Write ciphertext
-            archive_file
-                .write_all(&ciphertext)
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            archive_file.write_all(&ciphertext)?;
         }
     }
 
@@ -240,9 +222,7 @@ pub fn unpack_directory(
 
             // Read ciphertext
             let file_len = archive_file.metadata().map(|m| m.len()).unwrap_or(0);
-            let current_pos = archive_file
-                .stream_position()
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            let current_pos = archive_file.stream_position()?;
             let remaining_bytes = file_len.saturating_sub(current_pos);
             if size as u64 > remaining_bytes {
                 return Err(FileFormatError::IoError(

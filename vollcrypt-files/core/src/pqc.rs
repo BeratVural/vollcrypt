@@ -4,6 +4,10 @@ use rand::rngs::OsRng;
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
 use zeroize::Zeroize;
 
+use crate::constants::{
+    ML_KEM_768_CIPHERTEXT_SIZE, ML_KEM_768_DECAPSULATION_KEY_SIZE,
+    ML_KEM_768_ENCAPSULATION_KEY_SIZE,
+};
 use crate::error::FileFormatError;
 
 /// Generates a new X25519 keypair.
@@ -38,13 +42,16 @@ pub fn x25519_diffie_hellman(
 /// Generates a new ML-KEM-768 keypair.
 ///
 /// Returns `(encapsulation_key_bytes, decapsulation_key_bytes)`.
-pub fn mlkem768_keypair_generate() -> ([u8; 1184], [u8; 2400]) {
+pub fn mlkem768_keypair_generate() -> (
+    [u8; ML_KEM_768_ENCAPSULATION_KEY_SIZE],
+    [u8; ML_KEM_768_DECAPSULATION_KEY_SIZE],
+) {
     let (dk, ek) = MlKem768::generate(&mut OsRng);
 
-    let mut ek_bytes = [0u8; 1184];
+    let mut ek_bytes = [0u8; ML_KEM_768_ENCAPSULATION_KEY_SIZE];
     ek_bytes.copy_from_slice(ek.as_bytes().as_slice());
 
-    let mut dk_bytes = [0u8; 2400];
+    let mut dk_bytes = [0u8; ML_KEM_768_DECAPSULATION_KEY_SIZE];
     dk_bytes.copy_from_slice(dk.as_bytes().as_slice());
 
     (ek_bytes, dk_bytes)
@@ -53,11 +60,13 @@ pub fn mlkem768_keypair_generate() -> ([u8; 1184], [u8; 2400]) {
 /// Encapsulates a shared secret using the recipient's ML-KEM-768 encapsulation key.
 ///
 /// Returns `(shared_secret, ciphertext)`.
-pub fn mlkem768_encapsulate(pk: &[u8; 1184]) -> Result<([u8; 32], [u8; 1088]), FileFormatError> {
+pub fn mlkem768_encapsulate(
+    pk: &[u8; ML_KEM_768_ENCAPSULATION_KEY_SIZE],
+) -> Result<([u8; 32], [u8; ML_KEM_768_CIPHERTEXT_SIZE]), FileFormatError> {
     type EK = <MlKem768 as KemCore>::EncapsulationKey;
 
     let mut shared_secret = [0u8; 32];
-    let mut ciphertext = [0u8; 1088];
+    let mut ciphertext = [0u8; ML_KEM_768_CIPHERTEXT_SIZE];
 
     let ek_array = ml_kem::array::Array::try_from(pk.as_slice())
         .map_err(|_| FileFormatError::WrongRecipientKey)?;
@@ -75,7 +84,10 @@ pub fn mlkem768_encapsulate(pk: &[u8; 1184]) -> Result<([u8; 32], [u8; 1088]), F
 /// Decapsulates an ML-KEM-768 ciphertext using the decapsulation key.
 ///
 /// Returns the 32-byte shared secret.
-pub fn mlkem768_decapsulate(sk: &[u8; 2400], ct: &[u8; 1088]) -> Result<[u8; 32], FileFormatError> {
+pub fn mlkem768_decapsulate(
+    sk: &[u8; ML_KEM_768_DECAPSULATION_KEY_SIZE],
+    ct: &[u8; ML_KEM_768_CIPHERTEXT_SIZE],
+) -> Result<[u8; 32], FileFormatError> {
     type DK = <MlKem768 as KemCore>::DecapsulationKey;
     type CT = ml_kem::Ciphertext<MlKem768>;
 
@@ -100,8 +112,8 @@ mod tests {
 
     #[test]
     fn test_zero_key_decapsulate() {
-        let sk = [0u8; 2400];
-        let ct = [0u8; 1088];
+        let sk = [0u8; ML_KEM_768_DECAPSULATION_KEY_SIZE];
+        let ct = [0u8; ML_KEM_768_CIPHERTEXT_SIZE];
         let res = mlkem768_decapsulate(&sk, &ct);
         println!("Result of zero key decapsulate: {:?}", res);
     }

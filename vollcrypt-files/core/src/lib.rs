@@ -47,7 +47,12 @@ pub use aead::{
 };
 pub use buffer_pool::{BufferPool, PooledBuffer};
 pub use chunk::ChunkEnvelope;
-pub use constants::{DEFAULT_CHUNK_SIZE, FIXED_HEADER_LEN, MAGIC, VERSION};
+pub use constants::{
+    CHUNK_ENVELOPE_OVERHEAD, DEFAULT_CHUNK_SIZE, FIXED_HEADER_LEN, HYBRID_PUBLIC_KEY_SIZE,
+    HYBRID_SECRET_KEY_SIZE, MAGIC, ML_DSA_65_PUBLIC_KEY_SIZE, ML_DSA_65_SECRET_KEY_SIZE,
+    ML_DSA_65_SIGNATURE_SIZE, ML_KEM_768_CIPHERTEXT_SIZE, ML_KEM_768_DECAPSULATION_KEY_SIZE,
+    ML_KEM_768_ENCAPSULATION_KEY_SIZE, VERSION,
+};
 pub use crypt::{
     decrypt_chunk, decrypt_chunk_async, decrypt_chunk_in_place, decrypt_chunk_in_place_async,
     encrypt_chunk, encrypt_chunk_async, encrypt_chunk_in_place, encrypt_chunk_in_place_async,
@@ -80,6 +85,7 @@ pub use manifest::{
     verify_manifest_with_pin_policy, EquivocationResult, FounderAnchor, GroupManifest, Operation,
     RollbackCheck, SignedOperation,
 };
+#[allow(deprecated)]
 pub use merkle::{
     bind_root_with_length, check_proof_length, check_proof_length_for_leaf, chunk_leaf_hash,
     chunk_leaf_hash_raw, chunk_leaf_hash_raw_with_algo, chunk_leaf_hash_with_algo,

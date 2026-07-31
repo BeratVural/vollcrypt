@@ -26,6 +26,13 @@ pub enum FileFormatError {
     #[error("Truncated chunk: expected {expected} bytes, got {got} bytes")]
     TruncatedChunk { expected: usize, got: usize },
 
+    #[error("Truncated {field}: expected {expected} bytes, got {got} bytes")]
+    TruncatedField {
+        field: &'static str,
+        expected: usize,
+        got: usize,
+    },
+
     #[error("Wrap payload length mismatch for type {wrap_type}: expected {expected} bytes, got {got} bytes")]
     WrapPayloadLengthMismatch {
         wrap_type: u8,
@@ -170,4 +177,9 @@ pub enum FileFormatError {
 
     #[error("I/O error: {0}")]
     IoError(String),
+}
+impl From<std::io::Error> for FileFormatError {
+    fn from(error: std::io::Error) -> Self {
+        Self::IoError(error.to_string())
+    }
 }

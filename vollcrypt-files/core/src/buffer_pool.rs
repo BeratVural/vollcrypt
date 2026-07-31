@@ -1,3 +1,4 @@
+use crate::constants::CHUNK_ENVELOPE_OVERHEAD;
 use zeroize::Zeroize;
 
 pub struct PooledBuffer {
@@ -8,7 +9,7 @@ pub struct PooledBuffer {
 impl PooledBuffer {
     pub fn new(chunk_size: usize) -> Self {
         Self {
-            data: vec![0u8; 32 + chunk_size],
+            data: vec![0u8; CHUNK_ENVELOPE_OVERHEAD + chunk_size],
             chunk_size,
         }
     }
@@ -50,19 +51,23 @@ impl PooledBuffer {
     }
 
     pub fn as_tag_slice(&self, len: usize) -> &[u8; 16] {
-        (&self.data[16 + len..32 + len]).try_into().unwrap()
+        (&self.data[16 + len..CHUNK_ENVELOPE_OVERHEAD + len])
+            .try_into()
+            .unwrap()
     }
 
     pub fn as_tag_mut(&mut self, len: usize) -> &mut [u8; 16] {
-        (&mut self.data[16 + len..32 + len]).try_into().unwrap()
+        (&mut self.data[16 + len..CHUNK_ENVELOPE_OVERHEAD + len])
+            .try_into()
+            .unwrap()
     }
 
     pub fn as_envelope_slice(&self, len: usize) -> &[u8] {
-        &self.data[0..32 + len]
+        &self.data[0..CHUNK_ENVELOPE_OVERHEAD + len]
     }
 
     pub fn as_envelope_mut(&mut self, len: usize) -> &mut [u8] {
-        &mut self.data[0..32 + len]
+        &mut self.data[0..CHUNK_ENVELOPE_OVERHEAD + len]
     }
 
     // Pointer accessors for zero-copy WASM bridge
@@ -115,6 +120,23 @@ impl BufferPool {
 
     pub fn return_buffer(&self, mut buffer: PooledBuffer) {
         buffer.zeroize();
-        let _ = self.free_tx.send(buffer);
+        self.free_tx
+            .send(buffer)
+            .expect("buffer pool retains its receiver for its entire lifetime");
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn returned_buffers_are_zeroized_before_reuse() {
+        let pool = BufferPool::new(8, 1);
+        let mut buffer = pool.rent();
+        buffer.as_plaintext_mut(8).fill(0xA5);
+        pool.return_buffer(buffer);
+
+        let reused = pool.rent();
+        assert!(reused.as_envelope_slice(8).iter().all(|byte| *byte == 0));
     }
 }

@@ -6,6 +6,53 @@ use vollcrypt_files_core::{
 };
 
 #[test]
+fn test_pipelined_roundtrip_empty_container() {
+    let plaintext = Vec::new();
+    let dek = generate_dek();
+    let file_id = generate_file_id();
+    let password = b"empty-container-password";
+    let wrap = wrap_dek_with_password(
+        &dek,
+        password,
+        KdfChoice::Pbkdf2 {
+            iterations: 600_000,
+        },
+    )
+    .unwrap();
+
+    let (signer_pk, signer_sk) = hybrid_keypair_generate();
+    let sign_info = PipelinedSignInfo::Plain {
+        signer_pk,
+        signer_sk,
+        key_log_id: [0x55; 32],
+        timestamp: 9_876_543_210,
+    };
+
+    let dest = tempfile::tempfile().unwrap();
+    let header = encrypt_file_pipelined(
+        Cursor::new(plaintext.clone()),
+        dest.try_clone().unwrap(),
+        &dek,
+        &file_id,
+        64,
+        vec![wrap],
+        Mode::Password,
+        2,
+        Some(sign_info),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(header.plaintext_size, 0);
+    assert_eq!(header.merkle_root, [0u8; 32]);
+
+    let mut decrypted = Vec::new();
+    let mut source = dest;
+    source.seek(SeekFrom::Start(0)).unwrap();
+    decrypt_file_pipelined(source, &mut decrypted, &dek, 2).unwrap();
+    assert_eq!(decrypted, plaintext);
+}
+#[test]
 fn test_pipelined_roundtrip_small() {
     let plaintext =
         b"Hello from the parallel pipelined world! This is a simple verification test.".to_vec();

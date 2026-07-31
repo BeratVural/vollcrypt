@@ -1,4 +1,10 @@
+//! Header signing and verification policies.
+//!
+//! Hybrid Ed25519 + ML-DSA signatures bind the canonical header bytes. Sealed
+//! signatures additionally authenticate group metadata through AES-GCM AAD.
+
 use crate::aead::{aes256_gcm_decrypt, aes256_gcm_encrypt};
+use crate::constants::ML_DSA_65_PUBLIC_KEY_SIZE;
 use crate::error::FileFormatError;
 use crate::header::{Header, Mode, SignedMetadata};
 use crate::hybrid_sig::{hybrid_sign, hybrid_verify, HybridPublicKey, HybridSecretKey};
@@ -296,7 +302,7 @@ pub fn verify_header_signature_sealed_policy(
         let mut key_found = false;
         let mut signer_pubkey = HybridPublicKey {
             ed25519: [0u8; 32],
-            mldsa: [0u8; 1952],
+            mldsa: [0u8; ML_DSA_65_PUBLIC_KEY_SIZE],
         };
 
         if let Some(entry) = key_log.lookup_by_entry_hash(&key_log_id) {
@@ -342,7 +348,7 @@ pub fn verify_header_signature_sealed_policy(
         if decrypt_ok && len_ok && sig_ok {
             let signer_pubkey = HybridPublicKey {
                 ed25519: signer_ed_pubkey,
-                mldsa: [0u8; 1952],
+                mldsa: [0u8; ML_DSA_65_PUBLIC_KEY_SIZE],
             };
             Ok(signer_pubkey)
         } else {

@@ -1,3 +1,4 @@
+use crate::constants::CHUNK_ENVELOPE_OVERHEAD;
 use crate::error::FileFormatError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,7 +11,7 @@ pub struct ChunkEnvelope {
 
 impl ChunkEnvelope {
     pub fn parse(input: &[u8], ciphertext_len: usize) -> Result<Self, FileFormatError> {
-        let expected_len = 32 + ciphertext_len;
+        let expected_len = CHUNK_ENVELOPE_OVERHEAD + ciphertext_len;
         if input.len() < expected_len {
             return Err(FileFormatError::TruncatedChunk {
                 expected: expected_len,
@@ -39,7 +40,7 @@ impl ChunkEnvelope {
     }
 
     pub fn write(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(32 + self.ciphertext.len());
+        let mut out = Vec::with_capacity(CHUNK_ENVELOPE_OVERHEAD + self.ciphertext.len());
         out.extend_from_slice(&self.chunk_index.to_be_bytes());
         out.extend_from_slice(&self.iv);
         out.extend_from_slice(&self.ciphertext);
@@ -48,6 +49,6 @@ impl ChunkEnvelope {
     }
 
     pub fn wire_size(ciphertext_len: usize) -> usize {
-        32 + ciphertext_len
+        CHUNK_ENVELOPE_OVERHEAD + ciphertext_len
     }
 }

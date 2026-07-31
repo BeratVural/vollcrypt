@@ -1,4 +1,11 @@
-use crate::constants::{FIXED_HEADER_LEN, MAGIC};
+//! Versioned container header parsing and serialization.
+//!
+//! Parsers validate fixed and variable lengths before slicing. Signed metadata is
+//! part of the authenticated wire format, so field order and widths are stable.
+
+use crate::constants::{
+    FIXED_HEADER_LEN, HYBRID_PUBLIC_KEY_SIZE, MAGIC, ML_DSA_65_PUBLIC_KEY_SIZE,
+};
 use crate::error::FileFormatError;
 use crate::merkle::HashAlgorithm;
 use crate::wrap::WrapEntry;
@@ -78,7 +85,7 @@ impl SignedMetadata {
         match signer_kind {
             0 => {
                 if version == 3 {
-                    let expected = 1 + 8 + 1984 + 32; // 2025
+                    let expected = 1 + 8 + HYBRID_PUBLIC_KEY_SIZE + 32; // 2025
                     if input.len() < expected {
                         return Err(FileFormatError::TruncatedHeader {
                             expected,
@@ -102,7 +109,7 @@ impl SignedMetadata {
                     }
                     let mut ed25519 = [0u8; 32];
                     ed25519.copy_from_slice(&input[9..41]);
-                    let mldsa = [0u8; 1952];
+                    let mldsa = [0u8; ML_DSA_65_PUBLIC_KEY_SIZE];
                     let signer_pubkey = HybridPublicKey { ed25519, mldsa };
                     let mut key_log_id = [0u8; 32];
                     key_log_id.copy_from_slice(&input[41..73]);
@@ -158,7 +165,11 @@ impl SignedMetadata {
                 })
             }
             2 => {
-                let pk_len = if version == 3 { 1984 } else { 32 };
+                let pk_len = if version == 3 {
+                    HYBRID_PUBLIC_KEY_SIZE
+                } else {
+                    32
+                };
                 let min_expected = 1 + 8 + pk_len + 1 + 4;
                 if input.len() < min_expected {
                     return Err(FileFormatError::TruncatedHeader {
@@ -167,13 +178,13 @@ impl SignedMetadata {
                     });
                 }
                 let signer_pubkey = if version == 3 {
-                    HybridPublicKey::parse(&input[9..9 + 1984])?
+                    HybridPublicKey::parse(&input[9..9 + HYBRID_PUBLIC_KEY_SIZE])?
                 } else {
                     let mut ed25519 = [0u8; 32];
                     ed25519.copy_from_slice(&input[9..41]);
                     HybridPublicKey {
                         ed25519,
-                        mldsa: [0u8; 1952],
+                        mldsa: [0u8; ML_DSA_65_PUBLIC_KEY_SIZE],
                     }
                 };
                 let mode_offset = 9 + pk_len;
@@ -210,7 +221,7 @@ impl SignedMetadata {
                 key_log_id,
             } => {
                 if version == 3 {
-                    let mut out = Vec::with_capacity(1 + 8 + 1984 + 32);
+                    let mut out = Vec::with_capacity(1 + 8 + HYBRID_PUBLIC_KEY_SIZE + 32);
                     out.push(0); // signer_kind
                     out.extend_from_slice(&timestamp.to_be_bytes());
                     out.extend_from_slice(&signer_pubkey.write());

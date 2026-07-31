@@ -246,7 +246,10 @@ impl MerkleTree {
 }
 
 /// Helper function to calculate the expected proof length for a given number of leaves.
-/// Deprecated in favor of expected_proof_len_for_leaf but kept for backward compatibility.
+#[deprecated(
+    since = "0.9.1",
+    note = "use expected_proof_len_for_leaf for promotion-aware proof lengths"
+)]
 pub fn expected_proof_len(total_leaves: usize) -> usize {
     if total_leaves <= 1 {
         0
@@ -281,8 +284,12 @@ pub fn check_proof_length(total_leaves: usize, proof_len: usize) -> Result<(), F
         return Ok(());
     }
 
+    let expected = (0..total_leaves)
+        .map(|leaf_index| expected_proof_len_for_leaf(leaf_index, total_leaves))
+        .max()
+        .unwrap_or(0);
     Err(FileFormatError::InvalidProofLength {
-        expected: expected_proof_len(total_leaves),
+        expected,
         got: proof_len,
     })
 }

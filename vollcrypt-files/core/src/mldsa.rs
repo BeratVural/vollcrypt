@@ -1,13 +1,16 @@
+use crate::constants::{
+    ML_DSA_65_PUBLIC_KEY_SIZE, ML_DSA_65_SECRET_KEY_SIZE, ML_DSA_65_SIGNATURE_SIZE,
+};
 use getrandom::SysRng;
 use ml_dsa::signature::{Keypair, Verifier};
 use ml_dsa::{ExpandedSigningKey, Generate, MlDsa65, Signature, SigningKey, VerifyingKey};
 use zeroize::Zeroize;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MlDsa65PublicKey(pub [u8; 1952]);
+pub struct MlDsa65PublicKey(pub [u8; ML_DSA_65_PUBLIC_KEY_SIZE]);
 
 #[derive(Clone)]
-pub struct MlDsa65SecretKey(pub [u8; 4032]);
+pub struct MlDsa65SecretKey(pub [u8; ML_DSA_65_SECRET_KEY_SIZE]);
 
 impl Zeroize for MlDsa65SecretKey {
     fn zeroize(&mut self) {
@@ -22,17 +25,17 @@ impl Drop for MlDsa65SecretKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MlDsa65Signature(pub [u8; 3309]);
+pub struct MlDsa65Signature(pub [u8; ML_DSA_65_SIGNATURE_SIZE]);
 
 pub fn mldsa_keypair_generate() -> (MlDsa65PublicKey, MlDsa65SecretKey) {
     let sk = SigningKey::<MlDsa65>::generate();
     let esk = sk.expanded_key();
     let pk = sk.verifying_key();
 
-    let mut pk_bytes = [0u8; 1952];
+    let mut pk_bytes = [0u8; ML_DSA_65_PUBLIC_KEY_SIZE];
     pk_bytes.copy_from_slice(pk.encode().as_slice());
 
-    let mut sk_bytes = [0u8; 4032];
+    let mut sk_bytes = [0u8; ML_DSA_65_SECRET_KEY_SIZE];
     #[allow(deprecated)]
     sk_bytes.copy_from_slice(esk.to_expanded().as_slice());
 
@@ -50,7 +53,7 @@ pub fn mldsa_sign(sk: &MlDsa65SecretKey, message: &[u8]) -> MlDsa65Signature {
         .sign_randomized(message, &[], &mut rng)
         .expect("ML-DSA signature generation failed");
 
-    let mut sig_bytes = [0u8; 3309];
+    let mut sig_bytes = [0u8; ML_DSA_65_SIGNATURE_SIZE];
     sig_bytes.copy_from_slice(sig.encode().as_slice());
     MlDsa65Signature(sig_bytes)
 }

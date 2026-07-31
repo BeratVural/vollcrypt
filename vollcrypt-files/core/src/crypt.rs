@@ -5,6 +5,25 @@ use crate::chunk::ChunkEnvelope;
 use crate::error::FileFormatError;
 use crate::kdf::derive_chunk_keys;
 
+const CHUNK_AAD_BASE_LEN: usize = 20;
+const CHUNK_AAD_WITH_HEADER_HASH_LEN: usize = 52;
+
+fn build_chunk_aad(
+    file_id: &[u8; 16],
+    chunk_index: u32,
+    header_hash: Option<&[u8; 32]>,
+) -> ([u8; CHUNK_AAD_WITH_HEADER_HASH_LEN], usize) {
+    let mut aad = [0u8; CHUNK_AAD_WITH_HEADER_HASH_LEN];
+    aad[0..16].copy_from_slice(file_id);
+    aad[16..CHUNK_AAD_BASE_LEN].copy_from_slice(&chunk_index.to_be_bytes());
+    if let Some(hash) = header_hash {
+        aad[CHUNK_AAD_BASE_LEN..CHUNK_AAD_WITH_HEADER_HASH_LEN].copy_from_slice(hash);
+        (aad, CHUNK_AAD_WITH_HEADER_HASH_LEN)
+    } else {
+        (aad, CHUNK_AAD_BASE_LEN)
+    }
+}
+
 /// Encrypts a single plaintext chunk and returns a `ChunkEnvelope`.
 ///
 /// * `dek`: The Data Encryption Key (32 bytes).
@@ -22,15 +41,8 @@ pub fn encrypt_chunk(
     let subkey = Zeroizing::new(subkey_raw);
     let iv = crate::random::generate_iv();
 
-    let mut aad = [0u8; 52];
-    aad[0..16].copy_from_slice(file_id);
-    aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
-    let aad_slice = if let Some(hash) = header_hash {
-        aad[20..52].copy_from_slice(hash);
-        &aad[0..52]
-    } else {
-        &aad[0..20]
-    };
+    let (aad, aad_len) = build_chunk_aad(file_id, chunk_index, header_hash);
+    let aad_slice = &aad[..aad_len];
 
     let (ciphertext, tag) = aes256_gcm_encrypt(&subkey, &iv, aad_slice, plaintext)?;
 
@@ -67,15 +79,8 @@ pub fn decrypt_chunk(
     let (subkey_raw, _) = derive_chunk_keys(dek, file_id, chunk_index)?;
     let subkey = Zeroizing::new(subkey_raw);
 
-    let mut aad = [0u8; 52];
-    aad[0..16].copy_from_slice(file_id);
-    aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
-    let aad_slice = if let Some(hash) = header_hash {
-        aad[20..52].copy_from_slice(hash);
-        &aad[0..52]
-    } else {
-        &aad[0..20]
-    };
+    let (aad, aad_len) = build_chunk_aad(file_id, chunk_index, header_hash);
+    let aad_slice = &aad[..aad_len];
 
     // We decrypt using the IV stored in the envelope, not assuming it matches the deterministic IV
     let plaintext = aes256_gcm_decrypt(
@@ -101,15 +106,8 @@ pub async fn encrypt_chunk_async(
     let subkey = zeroize::Zeroizing::new(subkey_raw);
     let iv = crate::random::generate_iv();
 
-    let mut aad = [0u8; 52];
-    aad[0..16].copy_from_slice(file_id);
-    aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
-    let aad_slice = if let Some(hash) = header_hash {
-        aad[20..52].copy_from_slice(hash);
-        &aad[0..52]
-    } else {
-        &aad[0..20]
-    };
+    let (aad, aad_len) = build_chunk_aad(file_id, chunk_index, header_hash);
+    let aad_slice = &aad[..aad_len];
 
     let (ciphertext, tag) =
         crate::aead::aes256_gcm_encrypt_async(&subkey, &iv, aad_slice, plaintext).await?;
@@ -140,15 +138,8 @@ pub async fn decrypt_chunk_async(
     let (subkey_raw, _) = derive_chunk_keys(dek, file_id, chunk_index)?;
     let subkey = zeroize::Zeroizing::new(subkey_raw);
 
-    let mut aad = [0u8; 52];
-    aad[0..16].copy_from_slice(file_id);
-    aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
-    let aad_slice = if let Some(hash) = header_hash {
-        aad[20..52].copy_from_slice(hash);
-        &aad[0..52]
-    } else {
-        &aad[0..20]
-    };
+    let (aad, aad_len) = build_chunk_aad(file_id, chunk_index, header_hash);
+    let aad_slice = &aad[..aad_len];
 
     let plaintext = crate::aead::aes256_gcm_decrypt_async(
         &subkey,
@@ -175,15 +166,8 @@ pub fn encrypt_chunk_in_place(
     let subkey = Zeroizing::new(subkey_raw);
     let iv = crate::random::generate_iv();
 
-    let mut aad = [0u8; 52];
-    aad[0..16].copy_from_slice(file_id);
-    aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
-    let aad_slice = if let Some(hash) = header_hash {
-        aad[20..52].copy_from_slice(hash);
-        &aad[0..52]
-    } else {
-        &aad[0..20]
-    };
+    let (aad, aad_len) = build_chunk_aad(file_id, chunk_index, header_hash);
+    let aad_slice = &aad[..aad_len];
 
     buffer.set_index(chunk_index);
     buffer.set_iv(&iv);
@@ -220,15 +204,8 @@ pub fn decrypt_chunk_in_place(
     let (subkey_raw, _) = derive_chunk_keys(dek, file_id, chunk_index)?;
     let subkey = Zeroizing::new(subkey_raw);
 
-    let mut aad = [0u8; 52];
-    aad[0..16].copy_from_slice(file_id);
-    aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
-    let aad_slice = if let Some(hash) = header_hash {
-        aad[20..52].copy_from_slice(hash);
-        &aad[0..52]
-    } else {
-        &aad[0..20]
-    };
+    let (aad, aad_len) = build_chunk_aad(file_id, chunk_index, header_hash);
+    let aad_slice = &aad[..aad_len];
 
     let iv = *buffer.get_iv();
     let tag = *buffer.as_tag_slice(ciphertext_len);
@@ -257,15 +234,8 @@ pub async fn encrypt_chunk_in_place_async(
     let subkey = Zeroizing::new(subkey_raw);
     let iv = crate::random::generate_iv();
 
-    let mut aad = [0u8; 52];
-    aad[0..16].copy_from_slice(file_id);
-    aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
-    let aad_slice = if let Some(hash) = header_hash {
-        aad[20..52].copy_from_slice(hash);
-        &aad[0..52]
-    } else {
-        &aad[0..20]
-    };
+    let (aad, aad_len) = build_chunk_aad(file_id, chunk_index, header_hash);
+    let aad_slice = &aad[..aad_len];
 
     let mut buffer = buffer;
     buffer.set_index(chunk_index);
@@ -306,15 +276,8 @@ pub async fn decrypt_chunk_in_place_async(
     let (subkey_raw, _) = derive_chunk_keys(dek, file_id, chunk_index)?;
     let subkey = Zeroizing::new(subkey_raw);
 
-    let mut aad = [0u8; 52];
-    aad[0..16].copy_from_slice(file_id);
-    aad[16..20].copy_from_slice(&chunk_index.to_be_bytes());
-    let aad_slice = if let Some(hash) = header_hash {
-        aad[20..52].copy_from_slice(hash);
-        &aad[0..52]
-    } else {
-        &aad[0..20]
-    };
+    let (aad, aad_len) = build_chunk_aad(file_id, chunk_index, header_hash);
+    let aad_slice = &aad[..aad_len];
 
     let iv = *buffer.get_iv();
 

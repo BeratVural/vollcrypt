@@ -50,12 +50,8 @@ pub fn inspect_sealed<R: Read + Seek>(mut reader: R) -> Result<SealedInspection,
         ));
     }
 
-    let _current_pos = reader
-        .stream_position()
-        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
-    let end_pos = reader
-        .seek(SeekFrom::End(0))
-        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+    let _current_pos = reader.stream_position()?;
+    let end_pos = reader.seek(SeekFrom::End(0))?;
     let ciphertext_present = end_pos > header_len as u64;
 
     let (sealed_mode, reason, timestamp) = match &header.signed_metadata {
@@ -102,9 +98,7 @@ pub fn seal_container<R: Read + Seek, W: Write + Seek>(
             Some(SignedMetadata::SovereignSealed { mode, .. }) => *mode,
             _ => 0,
         };
-        let end_pos = source
-            .seek(SeekFrom::End(0))
-            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+        let end_pos = source.seek(SeekFrom::End(0))?;
         let ciphertext_present = end_pos > header_len as u64;
 
         let already_matches = match options.mode {
@@ -113,13 +107,9 @@ pub fn seal_container<R: Read + Seek, W: Write + Seek>(
         };
 
         if already_matches {
-            source
-                .seek(SeekFrom::Start(0))
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
-            dest.seek(SeekFrom::Start(0))
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
-            std::io::copy(&mut source, &mut dest)
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            source.seek(SeekFrom::Start(0))?;
+            dest.seek(SeekFrom::Start(0))?;
+            std::io::copy(&mut source, &mut dest)?;
             return Ok(());
         }
 
@@ -174,17 +164,13 @@ pub fn seal_container<R: Read + Seek, W: Write + Seek>(
 
     // 5. Write rewritten header
     let serialized_header = header.write()?;
-    dest.write_all(&serialized_header)
-        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+    dest.write_all(&serialized_header)?;
 
     // 6. Handle chunks based on mode
     match options.mode {
         SealMode::Seal => {
-            source
-                .seek(SeekFrom::Start(header_len as u64))
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
-            std::io::copy(&mut source, &mut dest)
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            source.seek(SeekFrom::Start(header_len as u64))?;
+            std::io::copy(&mut source, &mut dest)?;
         }
         SealMode::Purge => {
             // Ciphertext purged. Do not copy anything to dest.
@@ -233,28 +219,22 @@ pub fn seal_container_in_place<P: AsRef<Path>>(
         FileFormatError::IoError(format!("Failed to open container for in-place seal: {}", e))
     })?;
 
-    file.seek(SeekFrom::Start(0))
-        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
-    file.write_all(&sealed)
-        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+    file.seek(SeekFrom::Start(0))?;
+    file.write_all(&sealed)?;
 
     if mode == SealMode::Purge && original_len > sealed.len() {
-        file.seek(SeekFrom::Start(sealed.len() as u64))
-            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+        file.seek(SeekFrom::Start(sealed.len() as u64))?;
         let zeros = [0u8; 8192];
         let mut remaining = original_len - sealed.len();
         while remaining > 0 {
             let n = remaining.min(zeros.len());
-            file.write_all(&zeros[..n])
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            file.write_all(&zeros[..n])?;
             remaining -= n;
         }
     }
 
-    file.set_len(sealed.len() as u64)
-        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
-    file.sync_all()
-        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+    file.set_len(sealed.len() as u64)?;
+    file.sync_all()?;
 
     original.zeroize();
     sealed.zeroize();

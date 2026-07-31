@@ -1,3 +1,7 @@
+use crate::constants::{
+    HYBRID_PUBLIC_KEY_SIZE, HYBRID_SECRET_KEY_SIZE, ML_DSA_65_PUBLIC_KEY_SIZE,
+    ML_DSA_65_SECRET_KEY_SIZE, ML_DSA_65_SIGNATURE_SIZE,
+};
 use crate::error::FileFormatError;
 use crate::mldsa::{
     mldsa_keypair_generate, mldsa_sign, mldsa_verify, MlDsa65PublicKey, MlDsa65SecretKey,
@@ -9,7 +13,7 @@ use zeroize::Zeroize;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HybridPublicKey {
     pub ed25519: [u8; 32],
-    pub mldsa: [u8; 1952],
+    pub mldsa: [u8; ML_DSA_65_PUBLIC_KEY_SIZE],
 }
 
 impl subtle::ConstantTimeEq for HybridPublicKey {
@@ -22,7 +26,7 @@ impl subtle::ConstantTimeEq for HybridPublicKey {
 #[derive(Clone)]
 pub struct HybridSecretKey {
     pub ed25519: [u8; 32],
-    pub mldsa: [u8; 4032],
+    pub mldsa: [u8; ML_DSA_65_SECRET_KEY_SIZE],
 }
 
 impl Zeroize for HybridSecretKey {
@@ -108,14 +112,14 @@ pub fn hybrid_verify(
         return false;
     }
 
-    if sig.mldsa.len() != 3309 {
+    if sig.mldsa.len() != ML_DSA_65_SIGNATURE_SIZE {
         return false;
     }
     if sig.mldsa.iter().all(|b| *b == 0) {
         return false;
     }
 
-    let mut mldsa_sig_arr = [0u8; 3309];
+    let mut mldsa_sig_arr = [0u8; ML_DSA_65_SIGNATURE_SIZE];
     mldsa_sig_arr.copy_from_slice(&sig.mldsa);
     let mldsa_sig_wrapped = MlDsa65Signature(mldsa_sig_arr);
     let mldsa_pk_wrapped = MlDsa65PublicKey(pk.mldsa);
@@ -126,23 +130,24 @@ pub fn hybrid_verify(
 
 impl HybridPublicKey {
     pub fn write(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(1984);
+        let mut out = Vec::with_capacity(HYBRID_PUBLIC_KEY_SIZE);
         out.extend_from_slice(&self.ed25519);
         out.extend_from_slice(&self.mldsa);
         out
     }
 
     pub fn parse(input: &[u8]) -> Result<Self, FileFormatError> {
-        if input.len() < 1984 {
-            return Err(FileFormatError::TruncatedChunk {
-                expected: 1984,
+        if input.len() < HYBRID_PUBLIC_KEY_SIZE {
+            return Err(FileFormatError::TruncatedField {
+                field: "hybrid cryptographic field",
+                expected: HYBRID_PUBLIC_KEY_SIZE,
                 got: input.len(),
             });
         }
         let mut ed25519 = [0u8; 32];
         ed25519.copy_from_slice(&input[0..32]);
-        let mut mldsa = [0u8; 1952];
-        mldsa.copy_from_slice(&input[32..1984]);
+        let mut mldsa = [0u8; ML_DSA_65_PUBLIC_KEY_SIZE];
+        mldsa.copy_from_slice(&input[32..HYBRID_PUBLIC_KEY_SIZE]);
         Ok(HybridPublicKey { ed25519, mldsa })
     }
 }
@@ -158,7 +163,8 @@ impl HybridSignature {
 
     pub fn parse(input: &[u8]) -> Result<Self, FileFormatError> {
         if input.len() < 66 {
-            return Err(FileFormatError::TruncatedChunk {
+            return Err(FileFormatError::TruncatedField {
+                field: "hybrid cryptographic field",
                 expected: 66,
                 got: input.len(),
             });
@@ -170,15 +176,16 @@ impl HybridSignature {
         mldsa_len_bytes.copy_from_slice(&input[64..66]);
         let mldsa_len = u16::from_be_bytes(mldsa_len_bytes) as usize;
 
-        if mldsa_len != 3309 {
+        if mldsa_len != ML_DSA_65_SIGNATURE_SIZE {
             return Err(FileFormatError::IntegrityError(format!(
-                "Invalid ML-DSA signature length: expected 3309, got {}",
-                mldsa_len
+                "Invalid ML-DSA signature length: expected {}, got {}",
+                ML_DSA_65_SIGNATURE_SIZE, mldsa_len
             )));
         }
 
         if input.len() < 66 + mldsa_len {
-            return Err(FileFormatError::TruncatedChunk {
+            return Err(FileFormatError::TruncatedField {
+                field: "hybrid cryptographic field",
                 expected: 66 + mldsa_len,
                 got: input.len(),
             });
@@ -191,23 +198,24 @@ impl HybridSignature {
 
 impl HybridSecretKey {
     pub fn write(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(32 + 4032);
+        let mut out = Vec::with_capacity(HYBRID_SECRET_KEY_SIZE);
         out.extend_from_slice(&self.ed25519);
         out.extend_from_slice(&self.mldsa);
         out
     }
 
     pub fn parse(input: &[u8]) -> Result<Self, FileFormatError> {
-        if input.len() < 4064 {
-            return Err(FileFormatError::TruncatedChunk {
-                expected: 4064,
+        if input.len() < HYBRID_SECRET_KEY_SIZE {
+            return Err(FileFormatError::TruncatedField {
+                field: "hybrid cryptographic field",
+                expected: HYBRID_SECRET_KEY_SIZE,
                 got: input.len(),
             });
         }
         let mut ed25519 = [0u8; 32];
         ed25519.copy_from_slice(&input[0..32]);
-        let mut mldsa = [0u8; 4032];
-        mldsa.copy_from_slice(&input[32..4064]);
+        let mut mldsa = [0u8; ML_DSA_65_SECRET_KEY_SIZE];
+        mldsa.copy_from_slice(&input[32..HYBRID_SECRET_KEY_SIZE]);
         Ok(HybridSecretKey { ed25519, mldsa })
     }
 }
@@ -220,7 +228,7 @@ mod tests {
     fn hybrid_verify_rejects_zero_mldsa_public_key() {
         let (mut pk, sk) = hybrid_keypair_generate();
         let sig = hybrid_sign(&sk, &pk, "test-domain", b"ctx", b"payload");
-        pk.mldsa = [0u8; 1952];
+        pk.mldsa = [0u8; ML_DSA_65_PUBLIC_KEY_SIZE];
 
         assert!(!hybrid_verify(&pk, "test-domain", b"ctx", b"payload", &sig));
     }
@@ -229,7 +237,7 @@ mod tests {
     fn hybrid_verify_rejects_zero_mldsa_signature() {
         let (pk, sk) = hybrid_keypair_generate();
         let mut sig = hybrid_sign(&sk, &pk, "test-domain", b"ctx", b"payload");
-        sig.mldsa = vec![0u8; 3309];
+        sig.mldsa = vec![0u8; ML_DSA_65_SIGNATURE_SIZE];
 
         assert!(!hybrid_verify(&pk, "test-domain", b"ctx", b"payload", &sig));
     }

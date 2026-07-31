@@ -1,3 +1,4 @@
+use crate::constants::CHUNK_ENVELOPE_OVERHEAD;
 use crate::error::FileFormatError;
 use crate::header::SignedMetadata;
 use crate::pipelined_io::read_header_from_stream;
@@ -120,7 +121,7 @@ pub fn verify_container<R: Read + Seek>(mut reader: R, policy: &ShieldPolicy) ->
     let total_len = reader.seek(std::io::SeekFrom::End(0)).unwrap_or(0);
     let _ = reader.seek(std::io::SeekFrom::Start(current_pos));
     let max_possible_chunks = if total_len > current_pos {
-        (total_len - current_pos) / 32
+        (total_len - current_pos) / CHUNK_ENVELOPE_OVERHEAD as u64
     } else {
         0
     };
@@ -237,6 +238,9 @@ fn map_format_error_to_report(err: FileFormatError) -> ShieldReport {
         }
         FileFormatError::TruncatedChunk { .. } => {
             ShieldReport::HeaderField("truncated_chunk".to_string())
+        }
+        FileFormatError::TruncatedField { field, .. } => {
+            ShieldReport::HeaderField(format!("truncated_{}", field.replace(' ', "_")))
         }
         FileFormatError::ChunkIndexOutOfOrder { expected, got } => {
             ShieldReport::ChunkIndexMismatch { expected, got }

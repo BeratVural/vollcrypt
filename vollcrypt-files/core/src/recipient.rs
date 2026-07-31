@@ -2,6 +2,10 @@ use sha3::{Digest, Sha3_256};
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
 use zeroize::Zeroizing;
 
+use crate::constants::{
+    ML_KEM_768_CIPHERTEXT_SIZE, ML_KEM_768_DECAPSULATION_KEY_SIZE,
+    ML_KEM_768_ENCAPSULATION_KEY_SIZE,
+};
 use crate::error::FileFormatError;
 use crate::pqc::{
     mlkem768_decapsulate, mlkem768_encapsulate, mlkem768_keypair_generate, x25519_diffie_hellman,
@@ -13,7 +17,7 @@ use crate::wrap::WrapEntry;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecipientPublicKey {
     pub x25519: [u8; 32],
-    pub ml_kem: Box<[u8; 1184]>,
+    pub ml_kem: Box<[u8; ML_KEM_768_ENCAPSULATION_KEY_SIZE]>,
 }
 
 /// Recipient's secret key (X25519 + ML-KEM-768 decapsulation key).
@@ -22,7 +26,7 @@ pub struct RecipientPublicKey {
 #[derive(zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
 pub struct RecipientSecretKey {
     pub x25519: [u8; 32],
-    pub ml_kem: Box<[u8; 2400]>,
+    pub ml_kem: Box<[u8; ML_KEM_768_DECAPSULATION_KEY_SIZE]>,
 }
 
 /// Generates a new recipient keypair.
@@ -122,7 +126,7 @@ pub fn unwrap_key_with_recipient_key(
             mlkem_ciphertext,
             wrapped_dek,
         } => {
-            if mlkem_ciphertext.len() != 1088 {
+            if mlkem_ciphertext.len() != ML_KEM_768_CIPHERTEXT_SIZE {
                 return Err(FileFormatError::InvalidWrapPayload);
             }
 
@@ -131,7 +135,7 @@ pub fn unwrap_key_with_recipient_key(
                 x25519_ephemeral,
             )?);
 
-            let mut ct = Zeroizing::new([0u8; 1088]);
+            let mut ct = Zeroizing::new([0u8; ML_KEM_768_CIPHERTEXT_SIZE]);
             ct.copy_from_slice(mlkem_ciphertext);
             let ss_pq = Zeroizing::new(mlkem768_decapsulate(&recipient_sk.ml_kem, &ct)?);
 

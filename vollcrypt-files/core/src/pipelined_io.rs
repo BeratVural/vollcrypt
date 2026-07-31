@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::thread;
 
 use crate::chunk::ChunkEnvelope;
-use crate::constants::FIXED_HEADER_LEN;
+use crate::constants::{CHUNK_ENVELOPE_OVERHEAD, FIXED_HEADER_LEN, ML_DSA_65_SIGNATURE_SIZE};
 use crate::crypt::{
     decrypt_chunk_async, decrypt_chunk_in_place, encrypt_chunk_async, encrypt_chunk_in_place,
 };
@@ -199,7 +199,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
                 });
                 header.signature = Some(HybridSignature {
                     ed25519: [0u8; 64],
-                    mldsa: vec![0u8; 3309],
+                    mldsa: vec![0u8; ML_DSA_65_SIGNATURE_SIZE],
                 });
             }
             PipelinedSignInfo::Sealed {
@@ -218,7 +218,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
                 });
                 header.signature = Some(HybridSignature {
                     ed25519: [0u8; 64],
-                    mldsa: vec![0u8; 3309],
+                    mldsa: vec![0u8; ML_DSA_65_SIGNATURE_SIZE],
                 });
             }
         }
@@ -232,8 +232,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
     if selected_mode != IoWriteMode::DirectOffset {
         let dest = dest_opt.as_mut().expect("dest must be present");
         let dummy_header = vec![0u8; header_len];
-        dest.write_all(&dummy_header)
-            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+        dest.write_all(&dummy_header)?;
     }
 
     // Setup direct offset if requested
@@ -272,8 +271,8 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
             } else {
                 last_chunk_plaintext_len
             };
-            total_size += (total_chunks - 1) * (32 + chunk_size as u64);
-            total_size += 32 + last_chunk_len as u64;
+            total_size += (total_chunks - 1) * (CHUNK_ENVELOPE_OVERHEAD as u64 + chunk_size as u64);
+            total_size += CHUNK_ENVELOPE_OVERHEAD as u64 + last_chunk_len as u64;
         }
 
         let dest = dest_opt.as_mut().expect("dest must be present");
@@ -285,15 +284,11 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
         })?;
 
         // Preallocate
-        dest_file
-            .set_len(total_size)
-            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+        dest_file.set_len(total_size)?;
 
         // Spawn writers
         for _ in 0..num_workers {
-            let cloned_file = dest_file
-                .try_clone()
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            let cloned_file = dest_file.try_clone()?;
             direct_write_files.push(Some(cloned_file));
         }
     } else {
@@ -347,8 +342,9 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
                     match res {
                         Ok(()) => {
                             if let Some(ref file) = local_file {
-                                let offset =
-                                    header_len as u64 + (idx as u64) * (32 + chunk_size as u64);
+                                let offset = header_len as u64
+                                    + (idx as u64)
+                                        * (CHUNK_ENVELOPE_OVERHEAD as u64 + chunk_size as u64);
                                 if let Err(e) = crate::writer::write_raw_at(
                                     file,
                                     t.buffer.as_envelope_slice(t.plaintext_len),
@@ -607,8 +603,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
         let dest = dest_opt.as_mut().expect("dest must be present");
         let dest_any: &mut dyn std::any::Any = dest;
         if let Some(file) = try_downcast_file(dest_any) {
-            file.sync_all()
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            file.sync_all()?;
         }
     }
 
@@ -669,12 +664,9 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
         }
     } else {
         let dest = dest_opt.as_mut().expect("dest must be present");
-        dest.seek(SeekFrom::Start(0))
-            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
-        dest.write_all(&serialized_header)
-            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
-        dest.seek(SeekFrom::End(0))
-            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+        dest.seek(SeekFrom::Start(0))?;
+        dest.write_all(&serialized_header)?;
+        dest.seek(SeekFrom::End(0))?;
     }
 
     Ok(header)
@@ -691,9 +683,7 @@ pub(crate) fn read_header_from_stream<R: Read>(
 ) -> Result<(Header, usize), FileFormatError> {
     // 1. Read the fixed portion of the header first (80 bytes)
     let mut fixed_buf = [0u8; FIXED_HEADER_LEN];
-    source
-        .read_exact(&mut fixed_buf)
-        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+    source.read_exact(&mut fixed_buf)?;
 
     if fixed_buf[0..8] != crate::constants::MAGIC {
         return Err(FileFormatError::InvalidMagic);
@@ -714,15 +704,11 @@ pub(crate) fn read_header_from_stream<R: Read>(
 
     let mut header_buf = vec![0u8; total_header_len];
     header_buf[0..FIXED_HEADER_LEN].copy_from_slice(&fixed_buf);
-    source
-        .read_exact(&mut header_buf[FIXED_HEADER_LEN..])
-        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+    source.read_exact(&mut header_buf[FIXED_HEADER_LEN..])?;
 
     if version == 2 || version == 3 {
         let mut meta_len_bytes = [0u8; 4];
-        source
-            .read_exact(&mut meta_len_bytes)
-            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+        source.read_exact(&mut meta_len_bytes)?;
         let metadata_len = u32::from_be_bytes(meta_len_bytes) as usize;
         if metadata_len > MAX_STREAM_HEADER_METADATA_LEN {
             return Err(FileFormatError::TruncatedHeader {
@@ -733,14 +719,10 @@ pub(crate) fn read_header_from_stream<R: Read>(
 
         let extra_bytes = if version == 3 {
             let mut meta_bytes = vec![0u8; metadata_len];
-            source
-                .read_exact(&mut meta_bytes)
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            source.read_exact(&mut meta_bytes)?;
 
             let mut sig_header = [0u8; 66];
-            source
-                .read_exact(&mut sig_header)
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            source.read_exact(&mut sig_header)?;
 
             let mldsa_len = u16::from_be_bytes([sig_header[64], sig_header[65]]) as usize;
             if mldsa_len > MAX_STREAM_HEADER_MLDSA_LEN {
@@ -750,9 +732,7 @@ pub(crate) fn read_header_from_stream<R: Read>(
                 });
             }
             let mut mldsa_bytes = vec![0u8; mldsa_len];
-            source
-                .read_exact(&mut mldsa_bytes)
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            source.read_exact(&mut mldsa_bytes)?;
 
             let mut extra = Vec::with_capacity(metadata_len + 66 + mldsa_len);
             extra.extend_from_slice(&meta_bytes);
@@ -761,9 +741,7 @@ pub(crate) fn read_header_from_stream<R: Read>(
             extra
         } else {
             let mut extra_bytes = vec![0u8; metadata_len + 64];
-            source
-                .read_exact(&mut extra_bytes)
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            source.read_exact(&mut extra_bytes)?;
             extra_bytes
         };
 
@@ -910,9 +888,7 @@ fn decrypt_file_pipelined_internal<R: Read + Send + 'static, W: Write>(
             };
 
             let mut buffer = pool_c.rent();
-            source
-                .read_exact(buffer.as_envelope_mut(chunk_plaintext_len))
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            source.read_exact(buffer.as_envelope_mut(chunk_plaintext_len))?;
 
             current_batch.push(DecryptTask {
                 index: idx,
@@ -960,8 +936,7 @@ fn decrypt_file_pipelined_internal<R: Read + Send + 'static, W: Write>(
         }
         while next_expected < pending.len() as u32 {
             if let Some((buf, len, leaf)) = pending[next_expected as usize].take() {
-                dest.write_all(buf.as_plaintext(len))
-                    .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+                dest.write_all(buf.as_plaintext(len))?;
                 total_decrypted_bytes += len as u64;
                 leaf_hashes.push(leaf);
                 pool.return_buffer(buf);
@@ -1127,9 +1102,7 @@ pub fn decrypt_verified_policy<R: Read + Seek + Send + 'static, W: Write>(
     num_workers: usize,
     policy: &crate::shield::ShieldPolicy,
 ) -> Result<Header, FileFormatError> {
-    let payload_start_pos = source
-        .stream_position()
-        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+    let payload_start_pos = source.stream_position()?;
 
     // Call verify_container on the reader by reference
     let report = crate::shield::verify_container(&mut source, policy);
@@ -1138,9 +1111,7 @@ pub fn decrypt_verified_policy<R: Read + Seek + Send + 'static, W: Write>(
     }
 
     // Seek back to the beginning of the payload
-    source
-        .seek(SeekFrom::Start(payload_start_pos))
-        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+    source.seek(SeekFrom::Start(payload_start_pos))?;
 
     // Now read the header again and proceed with internal pipelined decryption
     let (header, _) = read_header_from_stream(&mut source)?;
@@ -1234,7 +1205,7 @@ pub async fn encrypt_file_pipelined_async(
                 });
                 header.signature = Some(HybridSignature {
                     ed25519: [0u8; 64],
-                    mldsa: vec![0u8; 3309],
+                    mldsa: vec![0u8; ML_DSA_65_SIGNATURE_SIZE],
                 });
             }
             PipelinedSignInfo::Sealed {
@@ -1253,7 +1224,7 @@ pub async fn encrypt_file_pipelined_async(
                 });
                 header.signature = Some(HybridSignature {
                     ed25519: [0u8; 64],
-                    mldsa: vec![0u8; 3309],
+                    mldsa: vec![0u8; ML_DSA_65_SIGNATURE_SIZE],
                 });
             }
         }
@@ -1390,7 +1361,7 @@ pub async fn decrypt_file_pipelined_async_policy(
     };
 
     let max_possible_chunks = if ciphertext_bytes.len() > header_len {
-        (ciphertext_bytes.len() - header_len) / 32
+        (ciphertext_bytes.len() - header_len) / CHUNK_ENVELOPE_OVERHEAD
     } else {
         0
     };
@@ -1422,7 +1393,7 @@ pub async fn decrypt_file_pipelined_async_policy(
             } else {
                 chunk_size
             };
-            let envelope_size = 32 + chunk_plaintext_len;
+            let envelope_size = CHUNK_ENVELOPE_OVERHEAD + chunk_plaintext_len;
             if offset + envelope_size > ciphertext_bytes.len() {
                 return Err(FileFormatError::TruncatedChunk {
                     expected: envelope_size,

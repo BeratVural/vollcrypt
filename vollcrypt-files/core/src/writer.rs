@@ -1,4 +1,5 @@
 use crate::chunk::ChunkEnvelope;
+use crate::constants::CHUNK_ENVELOPE_OVERHEAD;
 use crate::error::FileFormatError;
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -36,18 +37,14 @@ impl<W: Write> ChunkWriter for SequentialChunkWriter<W> {
         self.pending.insert(index, envelope.clone());
         while let Some(env) = self.pending.remove(&self.next_expected) {
             let bytes = env.write();
-            self.writer
-                .write_all(&bytes)
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            self.writer.write_all(&bytes)?;
             self.next_expected += 1;
         }
         Ok(())
     }
 
     fn finalize(&mut self) -> Result<(), FileFormatError> {
-        self.writer
-            .flush()
-            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+        self.writer.flush()?;
         if !self.pending.is_empty() {
             return Err(FileFormatError::IoError(
                 "Pending chunks remain in SequentialChunkWriter".to_string(),
@@ -90,9 +87,7 @@ impl<W: Write> ChunkWriter for BatchedChunkWriter<W> {
             for _ in 0..self.batch_size {
                 if let Some(env) = self.pending.remove(&self.next_expected) {
                     let bytes = env.write();
-                    self.writer
-                        .write_all(&bytes)
-                        .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+                    self.writer.write_all(&bytes)?;
                     self.next_expected += 1;
                 }
             }
@@ -103,14 +98,10 @@ impl<W: Write> ChunkWriter for BatchedChunkWriter<W> {
     fn finalize(&mut self) -> Result<(), FileFormatError> {
         while let Some(env) = self.pending.remove(&self.next_expected) {
             let bytes = env.write();
-            self.writer
-                .write_all(&bytes)
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            self.writer.write_all(&bytes)?;
             self.next_expected += 1;
         }
-        self.writer
-            .flush()
-            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+        self.writer.flush()?;
         if !self.pending.is_empty() {
             return Err(FileFormatError::IoError(
                 "Pending chunks remain in BatchedChunkWriter".to_string(),
@@ -139,15 +130,14 @@ impl DirectOffsetChunkWriter {
 impl ChunkWriter for DirectOffsetChunkWriter {
     fn write_chunk(&mut self, index: u32, envelope: &ChunkEnvelope) -> Result<(), FileFormatError> {
         let bytes = envelope.write();
-        let offset = self.header_len + (index as u64) * (32 + self.chunk_size as u64);
+        let offset = self.header_len
+            + (index as u64) * (CHUNK_ENVELOPE_OVERHEAD as u64 + self.chunk_size as u64);
         write_raw_at(&self.file, &bytes, offset)?;
         Ok(())
     }
 
     fn finalize(&mut self) -> Result<(), FileFormatError> {
-        self.file
-            .sync_all()
-            .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+        self.file.sync_all()?;
         Ok(())
     }
 }
@@ -159,9 +149,7 @@ pub fn write_raw_at(file: &std::fs::File, buf: &[u8], offset: u64) -> Result<(),
         let mut buf = buf;
         let mut offset = offset;
         while !buf.is_empty() {
-            let n = file
-                .write_at(buf, offset)
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            let n = file.write_at(buf, offset)?;
             if n == 0 {
                 return Err(FileFormatError::IoError("Write returned 0".to_string()));
             }
@@ -176,9 +164,7 @@ pub fn write_raw_at(file: &std::fs::File, buf: &[u8], offset: u64) -> Result<(),
         let mut buf = buf;
         let mut offset = offset;
         while !buf.is_empty() {
-            let n = file
-                .seek_write(buf, offset)
-                .map_err(|e| FileFormatError::IoError(e.to_string()))?;
+            let n = file.seek_write(buf, offset)?;
             if n == 0 {
                 return Err(FileFormatError::IoError("Write returned 0".to_string()));
             }

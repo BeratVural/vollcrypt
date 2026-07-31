@@ -1,3 +1,9 @@
+//! Append-only device key transparency log.
+//!
+//! Every entry signs its predecessor hash and canonical payload. Parsing is
+//! length-bounded and verification rejects forks, invalid signatures, and reuse.
+
+use crate::constants::HYBRID_PUBLIC_KEY_SIZE;
 use crate::error::FileFormatError;
 use crate::hybrid_sig::{
     hybrid_sign, hybrid_verify, HybridPublicKey, HybridSecretKey, HybridSignature,
@@ -30,7 +36,8 @@ impl KeyLogEntryType {
                 human_label,
             } => {
                 let label_bytes = human_label.as_bytes();
-                let mut out = Vec::with_capacity(16 + 16 + 1984 + 2 + label_bytes.len());
+                let mut out =
+                    Vec::with_capacity(16 + 16 + HYBRID_PUBLIC_KEY_SIZE + 2 + label_bytes.len());
                 out.extend_from_slice(user_id);
                 out.extend_from_slice(device_id);
                 out.extend_from_slice(&device_pubkey.write());
@@ -45,9 +52,10 @@ impl KeyLogEntryType {
     pub fn parse(entry_type_byte: u8, data: &[u8]) -> Result<Self, FileFormatError> {
         match entry_type_byte {
             0 => {
-                if data.len() < 16 + 16 + 1984 + 2 {
-                    return Err(FileFormatError::TruncatedChunk {
-                        expected: 16 + 16 + 1984 + 2,
+                if data.len() < 16 + 16 + HYBRID_PUBLIC_KEY_SIZE + 2 {
+                    return Err(FileFormatError::TruncatedField {
+                        field: "key log field",
+                        expected: 16 + 16 + HYBRID_PUBLIC_KEY_SIZE + 2,
                         got: data.len(),
                     });
                 }
@@ -68,7 +76,8 @@ impl KeyLogEntryType {
                 }
 
                 if data.len() < 2018 + label_len {
-                    return Err(FileFormatError::TruncatedChunk {
+                    return Err(FileFormatError::TruncatedField {
+                        field: "key log field",
                         expected: 2018 + label_len,
                         got: data.len(),
                     });
@@ -87,7 +96,8 @@ impl KeyLogEntryType {
             }
             1 => {
                 if data.len() < 16 {
-                    return Err(FileFormatError::TruncatedChunk {
+                    return Err(FileFormatError::TruncatedField {
+                        field: "key log field",
                         expected: 16,
                         got: data.len(),
                     });
@@ -135,7 +145,8 @@ impl KeyLogEntry {
 
     pub fn parse(input: &[u8]) -> Result<(Self, usize), FileFormatError> {
         if input.len() < 1 + 32 + 8 + 4 {
-            return Err(FileFormatError::TruncatedChunk {
+            return Err(FileFormatError::TruncatedField {
+                field: "key log field",
                 expected: 1 + 32 + 8 + 4,
                 got: input.len(),
             });
@@ -154,7 +165,8 @@ impl KeyLogEntry {
 
         let entry_data_end = 45 + entry_data_len;
         if input.len() < entry_data_end {
-            return Err(FileFormatError::TruncatedChunk {
+            return Err(FileFormatError::TruncatedField {
+                field: "key log field",
                 expected: entry_data_end,
                 got: input.len(),
             });
@@ -416,7 +428,8 @@ impl KeyLog {
             entries_bytes.extend_from_slice(&entry.write());
         }
 
-        let mut out = Vec::with_capacity(8 + 1 + 3 + 1984 + 4 + entries_bytes.len());
+        let mut out =
+            Vec::with_capacity(8 + 1 + 3 + HYBRID_PUBLIC_KEY_SIZE + 4 + entries_bytes.len());
         out.extend_from_slice(b"VOLLKEYL");
         out.push(1); // Version
         out.extend_from_slice(&[0u8; 3]); // Reserved
@@ -427,8 +440,9 @@ impl KeyLog {
     }
 
     pub fn parse(input: &[u8]) -> Result<KeyLog, FileFormatError> {
-        if input.len() < 8 + 1 + 3 + 1984 + 4 {
-            return Err(FileFormatError::TruncatedChunk {
+        if input.len() < 8 + 1 + 3 + HYBRID_PUBLIC_KEY_SIZE + 4 {
+            return Err(FileFormatError::TruncatedField {
+                field: "key log field",
                 expected: 2000,
                 got: input.len(),
             });
@@ -456,7 +470,8 @@ impl KeyLog {
 
         for _ in 0..entry_count {
             if offset >= input.len() {
-                return Err(FileFormatError::TruncatedChunk {
+                return Err(FileFormatError::TruncatedField {
+                    field: "key log field",
                     expected: offset + 1,
                     got: input.len(),
                 });
