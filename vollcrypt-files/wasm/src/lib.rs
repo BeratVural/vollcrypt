@@ -1827,6 +1827,17 @@ pub struct IoWriteMode {
     pub batch_size: Option<u32>,
 }
 
+const MAX_WASM_IN_MEMORY_INPUT_BYTES: usize = 64 * 1024 * 1024;
+
+fn validate_in_memory_input_size(len: usize) -> Result<(), &'static str> {
+    if len > MAX_WASM_IN_MEMORY_INPUT_BYTES {
+        return Err(
+            "Input exceeds the 64 MiB limit for the WASM full-file API; use chunk APIs with application-level range or worker orchestration",
+        );
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 #[wasm_bindgen(js_name = encryptFilePipelinedAsync)]
 pub async fn encrypt_file_pipelined_async_wasm(
@@ -1839,11 +1850,7 @@ pub async fn encrypt_file_pipelined_async_wasm(
     sign_info_val: JsValue,
     write_mode_val: JsValue,
 ) -> Result<JsValue, JsValue> {
-    if plaintext.len() > 500 * 1024 * 1024 {
-        return Err(JsValue::from_str(
-            "Plaintext exceeds 500MB limit for WASM in-memory API to prevent browser OOM",
-        ));
-    }
+    validate_in_memory_input_size(plaintext.len()).map_err(JsValue::from_str)?;
     let dek_arr = to_arr32(dek, "dek")?;
     let file_id_arr = to_arr16(file_id, "file_id")?;
 
@@ -1946,11 +1953,7 @@ pub async fn decrypt_file_pipelined_async_wasm(
     dek: &[u8],
     policy: JsValue,
 ) -> Result<JsValue, JsValue> {
-    if ciphertext.len() > 501 * 1024 * 1024 {
-        return Err(JsValue::from_str(
-            "Ciphertext exceeds 501MB limit for WASM in-memory API to prevent browser OOM",
-        ));
-    }
+    validate_in_memory_input_size(ciphertext.len()).map_err(JsValue::from_str)?;
     let dek_arr = to_arr32(dek, "dek")?;
 
     // Register WasmWebCryptoProvider
@@ -2180,4 +2183,15 @@ pub fn verify_container_wasm(container_bytes: &[u8], policy: JsValue) -> Result<
     let cursor = std::io::Cursor::new(container_bytes);
     let report = vollcrypt_files_core::verify_container(cursor, &core_policy);
     Ok(format!("{:?}", report))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{validate_in_memory_input_size, MAX_WASM_IN_MEMORY_INPUT_BYTES};
+
+    #[test]
+    fn full_file_input_limit_is_checked_without_allocating_input() {
+        assert!(validate_in_memory_input_size(MAX_WASM_IN_MEMORY_INPUT_BYTES).is_ok());
+        assert!(validate_in_memory_input_size(MAX_WASM_IN_MEMORY_INPUT_BYTES + 1).is_err());
+    }
 }

@@ -4,7 +4,7 @@ High-performance, chunk-based End-to-End Encrypted (E2EE) file container engine 
 
 ---
 
-Vollcrypt Files is designed for local file encryption, cloud object storage, and secure shared-file access. It processes large files incrementally without loading them fully into memory, but it is not a real-time network, audio, or video streaming protocol.
+Vollcrypt Files is designed for local file encryption, cloud object storage, and secure shared-file access. The native Rust and Node disk APIs process large files incrementally, but the browser WASM full-file API accepts in-memory `Uint8Array` values and limits each input to 64 MiB. Larger browser files require application-level chunk and range-request orchestration.
 
 This module provides high-performance chunked file encryption, cryptographic access control, and chunk integrity verification for large encrypted file containers.
 
@@ -106,6 +106,8 @@ await decryptFilePipelinedAsync(
 ```
 
 ### WebAssembly (Browser) Integration
+
+The browser exports `encryptFilePipelinedAsync` and `decryptFilePipelinedAsync` are bounded, full-file in-memory calls. They reject inputs larger than 64 MiB before cryptographic processing. Use the chunk APIs from a Web Worker and persist chunks incrementally for larger browser files.
 
 ```javascript
 import init, { generateDek, generateFileId } from "./pkg/vollcrypt_file_wasm.js";
