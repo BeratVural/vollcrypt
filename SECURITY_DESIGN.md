@@ -626,6 +626,10 @@ CI runs all tests on:
 | Formal verification     | Requires significant additional tooling investment    | Medium — mitigated by algorithm standardization                                  |
 | Interoperability        | No reference implementation to test against           | Low for standard primitives; medium for Vollcrypt-specific protocol constructions |
 | Fault injection         | Requires hardware or VM-level tooling                 | Low for software-only deployments                                                 |
+| DAST / protocol abuse   | AppSec runs authenticated DAST against isolated staging for every release candidate and quarterly | Release blocked by any unresolved critical/high result; findings and evidence retained with the release |
+| Load and soak testing   | SRE runs peak-load tests weekly and a minimum 6-hour soak for every release candidate | No integrity failure, unbounded memory growth, leaked connection, or security-control bypass under target concurrency |
+| Independent penetration test | Product Security commissions testing before GA, after material protocol changes, and annually | Critical/high findings remediated and independently retested before production release |
+| Backup restore exercise | SRE performs a quarterly restore from an encrypted backup into an isolated account | Recovery-time and recovery-point objectives met; restored ciphertext, key references, tenant isolation, and audit integrity verified |
 
 ---
 

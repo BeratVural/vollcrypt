@@ -15,6 +15,9 @@ members = [
 exclude = ["vollcrypt-wave"]
 resolver = "2"
 
+[workspace.package]
+license = "GPL-3.0-only OR LicenseRef-Commercial"
+
 [profile.release]
 lto = true
 opt-level = 3

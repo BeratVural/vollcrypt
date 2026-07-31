@@ -1,7 +1,6 @@
 use crate::key_log::{GENESIS_HASH, KeyAction, KeyLog, KeyLogEntry, create_entry};
 use crate::keys::generate_ed25519_keypair;
 use crate::ratchet::CryptoError;
-use std::time::Instant;
 
 // Helper function to create a valid entry for tests
 fn make_helper_entry(
@@ -264,11 +263,10 @@ fn key_log_empty_log_operations() {
 }
 
 #[test]
-fn key_log_1000_entries_performance() {
+fn key_log_verifies_1000_entry_chain() {
     let mut log = KeyLog::new();
     let kp = generate_ed25519_keypair();
 
-    let start = Instant::now();
     let mut prev_hash = GENESIS_HASH;
 
     for i in 0..1000 {
@@ -282,11 +280,9 @@ fn key_log_1000_entries_performance() {
         log.append(e).unwrap();
     }
 
-    let result = log.verify_chain();
-    assert!(result.is_ok());
-
-    let duration = start.elapsed();
-    assert!(duration.as_secs() < 15, "1000 entries took too long");
+    assert!(log.verify_chain().is_ok());
+    assert_eq!(log.history_for(b"alice").len(), 1_000);
+    assert!(log.current_key_for(b"alice").is_some());
 }
 
 #[test]

@@ -3,6 +3,7 @@
   "version": "0.9.1",
   "description": "Cross-platform Rust cryptography core",
   "private": true,
+  "license": "GPL-3.0-only OR LicenseRef-Commercial",
   "workspaces": [
     "db-guard/node",
     "db-proxy"
