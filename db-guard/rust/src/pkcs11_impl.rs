@@ -9,7 +9,7 @@ fn decode_hex(s: &str) -> Result<Vec<u8>, String> {
     if !s.is_ascii() {
         return Err("Hex string contains non-ASCII characters".to_string());
     }
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return Err("Hex string has odd length".to_string());
     }
     let bytes = s.as_bytes();

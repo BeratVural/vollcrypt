@@ -1,3 +1,5 @@
+export { DB_GUARD_CONTRACT_VERSION, SUPPORTED_KEY_VERSIONS, DbGuardContractError, validateDbGuardContract, toPrismaDbGuardOptions, toMongooseDbGuardOptions, toDrizzleDbGuardOptions, toTypeOrmDbGuardOptions } from './contract';
+export type { DbGuardContractV1, DbGuardContractErrorCode, CommonDbGuardSecurityOptions, CryptoRbacConfig } from './contract';
 export { wrapSqliteDatabase, wrapOracleConnection, DbGuardDriverOptions } from './drivers';
 export { KmsProvider, AwsKmsProvider, GcpKmsProvider, VaultKmsProvider, unwrapDekLocal, Pkcs11KmsProvider, resolveKeys, resolveBlindIndexRootSalt, AwsKmsCredentialIdentity, AwsKmsProviderConfig, GcpKmsClientOptions, GcpKmsProviderConfig, DbGuardKeysOptions } from './kms';
 export { computeBlindIndex } from './blind-index';

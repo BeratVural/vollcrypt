@@ -82,6 +82,8 @@ pub fn reset_rust_fail_closed_for_testing() {
     *start = Instant::now();
 }
 
+pub mod contract;
+
 pub mod diesel_impl;
 
 #[cfg(feature = "sea-orm")]

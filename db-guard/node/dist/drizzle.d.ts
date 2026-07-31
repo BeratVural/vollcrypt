@@ -1,18 +1,11 @@
-import { RateLimiterOptions } from './security';
-export interface DrizzleDbGuardOptions {
+import type { CommonDbGuardSecurityOptions } from './contract';
+export interface DrizzleDbGuardOptions extends CommonDbGuardSecurityOptions {
     key: Buffer | Record<string, Buffer>;
     activeKeyVersion?: string;
     blindIndexes?: {
         rootSalt: Buffer;
         allowFrequencyLeakage: true;
     };
-    cryptoRbac?: {
-        roles: Record<string, {
-            decrypt: string[];
-            mask?: Record<string, 'credit_card' | 'email' | 'tc_no' | ((v: any) => any) | string>;
-        }>;
-    };
-    rateLimiter?: RateLimiterOptions;
 }
 export declare const createDrizzleGuard: (options: DrizzleDbGuardOptions) => {
     pgText: (name: string, columnPath?: string) => import("drizzle-orm/pg-core").PgCustomColumnBuilder<{

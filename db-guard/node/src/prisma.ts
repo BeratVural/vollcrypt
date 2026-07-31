@@ -1,9 +1,9 @@
 import type { Prisma as PrismaNamespace } from '@prisma/client';
 import { KmsProvider, resolveKeys, DbGuardKeysOptions } from './kms';
+import type { CommonDbGuardSecurityOptions } from './contract';
 import {
   registerKeysForZeroization,
   decryptWithSecurity,
-  RateLimiterOptions,
   checkPageSize,
   dbGuardContextStore,
   parseCiphertext,
@@ -21,20 +21,15 @@ import {
   validateBlindIndexConfiguration
 } from './security';
 
-export interface PrismaDbGuardOptions extends DbGuardKeysOptions {
+export interface PrismaDbGuardOptions extends DbGuardKeysOptions, CommonDbGuardSecurityOptions {
   models: Record<string, string[]>; // fields to encrypt/decrypt
+  activeKeyVersion?: string;
   blindIndexes?: {
     rootSalt: Buffer;
     allowFrequencyLeakage: true;
     models: Record<string, string[]>; // fields to calculate blind indexes for
   };
-  cryptoRbac?: {
-    roles: Record<string, {
-      decrypt: string[];
-      mask?: Record<string, 'credit_card' | 'email' | 'tc_no' | ((v: any) => any) | string>;
-    }>;
-  };
-  rateLimiter?: RateLimiterOptions;
+
   multiTenant?: {
     cacheTtlMs?: number;
     tenants?: Record<string, { key?: Buffer | Record<string, Buffer>; kms?: any }>;
@@ -81,7 +76,7 @@ export const prismaDbGuard = (options: PrismaDbGuardOptions, resolvedKeys?: Reco
     registerKeysForZeroization(keys);
   }
 
-  const activeVersion = options.kms?.activeKeyVersion || '1';
+  const activeVersion = options.activeKeyVersion || options.kms?.activeKeyVersion || '1';
   const activeKey = keys ? keys[activeVersion] : undefined;
 
   const resolveTenantKeysAndActiveKey = async (tenantId: string | undefined): Promise<{ keys: Record<string, Buffer>; activeKey: Buffer; activeVersion: string }> => {

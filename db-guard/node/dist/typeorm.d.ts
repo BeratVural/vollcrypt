@@ -1,6 +1,6 @@
 import type { InsertEvent, UpdateEvent } from 'typeorm';
-import { RateLimiterOptions } from './security';
-export interface TypeOrmDbGuardOptions {
+import type { CommonDbGuardSecurityOptions } from './contract';
+export interface TypeOrmDbGuardOptions extends CommonDbGuardSecurityOptions {
     key: Buffer | Record<string, Buffer>;
     activeKeyVersion?: string;
     entities: Record<string, string[]>;
@@ -9,13 +9,6 @@ export interface TypeOrmDbGuardOptions {
         allowFrequencyLeakage: true;
         entities: Record<string, string[]>;
     };
-    cryptoRbac?: {
-        roles: Record<string, {
-            decrypt: string[];
-            mask?: Record<string, 'credit_card' | 'email' | 'tc_no' | ((v: any) => any) | string>;
-        }>;
-    };
-    rateLimiter?: RateLimiterOptions;
 }
 export declare function createTypeOrmSubscriber(options: TypeOrmDbGuardOptions): {
     new (): {

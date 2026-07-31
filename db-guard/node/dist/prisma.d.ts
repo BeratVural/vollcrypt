@@ -1,19 +1,13 @@
 import { DbGuardKeysOptions } from './kms';
-import { RateLimiterOptions } from './security';
-export interface PrismaDbGuardOptions extends DbGuardKeysOptions {
+import type { CommonDbGuardSecurityOptions } from './contract';
+export interface PrismaDbGuardOptions extends DbGuardKeysOptions, CommonDbGuardSecurityOptions {
     models: Record<string, string[]>;
+    activeKeyVersion?: string;
     blindIndexes?: {
         rootSalt: Buffer;
         allowFrequencyLeakage: true;
         models: Record<string, string[]>;
     };
-    cryptoRbac?: {
-        roles: Record<string, {
-            decrypt: string[];
-            mask?: Record<string, 'credit_card' | 'email' | 'tc_no' | ((v: any) => any) | string>;
-        }>;
-    };
-    rateLimiter?: RateLimiterOptions;
     multiTenant?: {
         cacheTtlMs?: number;
         tenants?: Record<string, {

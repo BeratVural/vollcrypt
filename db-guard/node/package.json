@@ -12,7 +12,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./prisma": {
+    "./contract": {
+      "types": "./dist/contract.d.ts",
+      "default": "./dist/contract.js"
+    },    "./prisma": {
       "types": "./dist/prisma.d.ts",
       "default": "./dist/prisma.js"
     },

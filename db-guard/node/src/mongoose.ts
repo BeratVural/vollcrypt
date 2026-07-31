@@ -1,5 +1,6 @@
 import type { Schema } from 'mongoose';
 import { resolveKeys } from './kms';
+import type { CommonDbGuardSecurityOptions } from './contract';
 import {
   encryptValue,
   decryptValue,
@@ -8,7 +9,6 @@ import {
   validateBlindIndexConfiguration,
   decryptWithSecurity,
   registerKeysForZeroization,
-  RateLimiterOptions,
   checkPageSize,
   dbGuardContextStore,
   isBreakGlassActive,
@@ -17,7 +17,7 @@ import {
   setCachedKey
 } from './security';
 
-export interface MongooseDbGuardOptions {
+export interface MongooseDbGuardOptions extends CommonDbGuardSecurityOptions {
   key: Buffer | Record<string, Buffer>;
   activeKeyVersion?: string;
   fields: string[];
@@ -27,13 +27,7 @@ export interface MongooseDbGuardOptions {
     fields: string[];
     modelName?: string;
   };
-  cryptoRbac?: {
-    roles: Record<string, {
-      decrypt: string[];
-      mask?: Record<string, 'credit_card' | 'email' | 'tc_no' | ((v: any) => any) | string>;
-    }>;
-  };
-  rateLimiter?: RateLimiterOptions;
+
   multiTenant?: {
     cacheTtlMs?: number;
     tenants?: Record<string, { key?: Buffer | Record<string, Buffer>; kms?: any }>;

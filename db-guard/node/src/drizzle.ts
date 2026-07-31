@@ -1,22 +1,17 @@
 import type { customType as pgCustomTypeType } from 'drizzle-orm/pg-core';
 import type { customType as mysqlCustomTypeType } from 'drizzle-orm/mysql-core';
 import type { customType as sqliteCustomTypeType } from 'drizzle-orm/sqlite-core';
-import { encryptValue, decryptValue, computeBlindIndex, validateBlindIndexConfiguration, registerKeysForZeroization, decryptWithSecurity, RateLimiterOptions } from './security';
+import { encryptValue, decryptValue, computeBlindIndex, validateBlindIndexConfiguration, registerKeysForZeroization, decryptWithSecurity } from './security';
+import type { CommonDbGuardSecurityOptions } from './contract';
 
-export interface DrizzleDbGuardOptions {
+export interface DrizzleDbGuardOptions extends CommonDbGuardSecurityOptions {
   key: Buffer | Record<string, Buffer>;
   activeKeyVersion?: string;
   blindIndexes?: {
     rootSalt: Buffer;
     allowFrequencyLeakage: true;
   };
-  cryptoRbac?: {
-    roles: Record<string, {
-      decrypt: string[];
-      mask?: Record<string, 'credit_card' | 'email' | 'tc_no' | ((v: any) => any) | string>;
-    }>;
-  };
-  rateLimiter?: RateLimiterOptions;
+
 }
 
 function getKeys(options: DrizzleDbGuardOptions) {

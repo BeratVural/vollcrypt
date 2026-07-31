@@ -1,6 +1,6 @@
 import type { Schema } from 'mongoose';
-import { RateLimiterOptions } from './security';
-export interface MongooseDbGuardOptions {
+import type { CommonDbGuardSecurityOptions } from './contract';
+export interface MongooseDbGuardOptions extends CommonDbGuardSecurityOptions {
     key: Buffer | Record<string, Buffer>;
     activeKeyVersion?: string;
     fields: string[];
@@ -10,13 +10,6 @@ export interface MongooseDbGuardOptions {
         fields: string[];
         modelName?: string;
     };
-    cryptoRbac?: {
-        roles: Record<string, {
-            decrypt: string[];
-            mask?: Record<string, 'credit_card' | 'email' | 'tc_no' | ((v: any) => any) | string>;
-        }>;
-    };
-    rateLimiter?: RateLimiterOptions;
     multiTenant?: {
         cacheTtlMs?: number;
         tenants?: Record<string, {

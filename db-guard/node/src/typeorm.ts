@@ -1,7 +1,8 @@
 import type { EntitySubscriberInterface, InsertEvent, UpdateEvent } from 'typeorm';
-import { encryptValue, decryptValue, computeBlindIndex, validateBlindIndexConfiguration, decryptWithSecurity, registerKeysForZeroization, RateLimiterOptions } from './security';
+import { encryptValue, decryptValue, computeBlindIndex, validateBlindIndexConfiguration, decryptWithSecurity, registerKeysForZeroization } from './security';
+import type { CommonDbGuardSecurityOptions } from './contract';
 
-export interface TypeOrmDbGuardOptions {
+export interface TypeOrmDbGuardOptions extends CommonDbGuardSecurityOptions {
   key: Buffer | Record<string, Buffer>;
   activeKeyVersion?: string;
   entities: Record<string, string[]>;
@@ -10,13 +11,7 @@ export interface TypeOrmDbGuardOptions {
     allowFrequencyLeakage: true;
     entities: Record<string, string[]>; // entities and fields to calculate blind indexes for
   };
-  cryptoRbac?: {
-    roles: Record<string, {
-      decrypt: string[];
-      mask?: Record<string, 'credit_card' | 'email' | 'tc_no' | ((v: any) => any) | string>;
-    }>;
-  };
-  rateLimiter?: RateLimiterOptions;
+
 }
 
 function getKeys(options: TypeOrmDbGuardOptions) {

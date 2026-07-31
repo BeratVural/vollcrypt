@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:89926aa8-a307-44d1-9789-e0ef096cd945",
+  "serialNumber": "urn:uuid:fb3cc08f-7d07-486f-9798-6ed6a7c819bc",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-07-31T18:25:40.762Z",
+    "timestamp": "2026-07-31T18:32:52.351Z",
     "tools": [
       {
         "vendor": "Vollcrypt",
@@ -45,6 +45,14 @@
         },
         {
           "alg": "SHA-256",
+          "content": "aae80f0cd8038276ba384cdecc530274f200311a8a6b8104faf92ac01913509a"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "521d1550d8638f7acedcc7f850cbe7565eaf069bcf1d7cbd2cc750f015715f89"
+        },
+        {
+          "alg": "SHA-256",
           "content": "ce12dea69edc5266d2de6d23cce82823203bc75c90cefa77fab866cac9dd6527"
         },
         {
@@ -53,7 +61,7 @@
         },
         {
           "alg": "SHA-256",
-          "content": "e58af84e7602a4a66cd196af30ea59a718944b2a4888657f4faa690772c04375"
+          "content": "df22a02edba4986d941205beed6dfaf03840953c578efad12829a183dabd7283"
         },
         {
           "alg": "SHA-256",
@@ -61,11 +69,11 @@
         },
         {
           "alg": "SHA-256",
-          "content": "e7dd929bbff72365158651618c44d5a571f060d55fdc2b83a73d9aa2954103c6"
+          "content": "76f4637e0590d770cf20b423125e3c2bbd2351279a6920d2b035180368aa1b23"
         },
         {
           "alg": "SHA-256",
-          "content": "8c9bc1044cc2e668b0c111f90baf2923a78554f62f4e17753a1cc8e52e08e06c"
+          "content": "39a9fe47e55aa8166e559022d711020bafb261a51b08e284baa404e25ef49abc"
         },
         {
           "alg": "SHA-256",
@@ -77,7 +85,7 @@
         },
         {
           "alg": "SHA-256",
-          "content": "7489867d2eaec342bea9ac617ff21ffaab90b9bff739f49f87ffc8f0a92dc24f"
+          "content": "a1d1c5bbe6473350bde3a3b235c6b4aa48da6a2d67428520c5047122107a4a88"
         },
         {
           "alg": "SHA-256",
@@ -85,11 +93,11 @@
         },
         {
           "alg": "SHA-256",
-          "content": "2ebfcd7bcaa2eea76d0eeec12454d1e4d909e3a1a99c494fba9cbc78747e7713"
+          "content": "76c2941c237e72be5ca03af75d86af75bf18a0abc1bbf2325b6dddc07a7e9b90"
         },
         {
           "alg": "SHA-256",
-          "content": "568612c84f33e9a5c24d0ef3bce62a89807d5fd6da744494e2aba42aff74110f"
+          "content": "b2ee742cc84cd7e27c33b03619112d1964f480cb2c3cae8e92234a34d67c0d36"
         },
         {
           "alg": "SHA-256",
@@ -101,7 +109,7 @@
         },
         {
           "alg": "SHA-256",
-          "content": "7b477f43c66ba744e8520ba199d8189f59199ec87569e27af2232c58ff6a5835"
+          "content": "29be92dfcdde7adcf5df05c75dde23389e98b7410d4056bc3239769800f88684"
         },
         {
           "alg": "SHA-256",
