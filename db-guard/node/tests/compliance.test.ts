@@ -14,7 +14,9 @@ describe('Compliance Scorecard Generator', () => {
     assert.ok(scorecard.kvkkScore < 100);
     assert.ok(scorecard.pciScore < 100);
     assert.ok(scorecard.failedChecks.length > 0);
-    assert.ok(scorecard.passedChecks.length > 0); // RAM zeroization still passes
+    assert.strictEqual(scorecard.passedChecks.length, 0);
+    assert.ok(scorecard.failedChecks.some(c => c.includes('MEMORY_BOUNDARY')));
+    assert.ok(scorecard.failedChecks.some(c => c.includes('RATE_LIMITER_NOT_CONFIGURED')));
   });
 
   test('auditConfiguration reports acknowledged equality-index leakage honestly', () => {
@@ -63,12 +65,14 @@ describe('Compliance Scorecard Generator', () => {
 
     const scorecard = auditConfiguration(fullConfig);
 
-    assert.strictEqual(scorecard.gdprScore, 100);
+    assert.strictEqual(scorecard.gdprScore, 75);
     assert.strictEqual(scorecard.kvkkScore, 75);
     assert.strictEqual(scorecard.pciScore, 100);
-    assert.strictEqual(scorecard.failedChecks.length, 0);
+    assert.strictEqual(scorecard.failedChecks.length, 2);
     assert.ok(scorecard.passedChecks.some(c => c.includes('BREAK_GLASS_PROTOCOL')));
-    assert.ok(scorecard.passedChecks.some(c => c.includes('POST_QUANTUM_KEM')));
+    assert.ok(scorecard.failedChecks.some(c => c.includes('MEMORY_BOUNDARY')));
+    assert.ok(scorecard.failedChecks.some(c => c.includes('PQC_NOT_IMPLEMENTED')));
+    assert.ok(!scorecard.passedChecks.some(c => c.includes('RAM_ZEROIZATION')));
   });
 
   test('auditConfiguration rejects unacknowledged deterministic blind indexes', () => {
@@ -81,7 +85,7 @@ describe('Compliance Scorecard Generator', () => {
 
     assert.ok(scorecard.failedChecks.some(c => c.includes('BLIND_INDEX_RISK_NOT_ACKNOWLEDGED')));
   });
-  test('generateComplianceHtmlReport produces a beautiful valid HTML document', () => {
+  test('generateComplianceHtmlReport produces a valid configuration scorecard', () => {
     const basicConfig = {
       key: Buffer.alloc(32, 1)
     };
@@ -91,10 +95,12 @@ describe('Compliance Scorecard Generator', () => {
     assert.ok(typeof html === 'string');
     assert.ok(html.includes('<!DOCTYPE html>'));
     assert.ok(html.includes('VOLLCRYPT'));
-    assert.ok(html.includes('GDPR Compliance'));
-    assert.ok(html.includes('KVKK Compliance'));
-    assert.ok(html.includes('PCI-DSS v4.0'));
-    assert.ok(html.includes('Print Compliance PDF Report'));
+    assert.ok(html.includes('GDPR Control Coverage'));
+    assert.ok(html.includes('KVKK Control Coverage'));
+    assert.ok(html.includes('PCI-DSS Control Coverage'));
+    assert.ok(html.includes('Print Configuration Scorecard'));
+    assert.ok(html.includes('Configuration Digest (SHA-256 prefix)'));
+    assert.ok(!html.includes('VOLLSEAL:'));
   });
 });
 

@@ -10,6 +10,7 @@
   },
   "blindIndexes": {
     "rootSalt": "000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f",
+    "allowFrequencyLeakage": true,
     "models": {
       "User": ["email"]
     }
@@ -34,6 +35,5 @@
     "onPageSizeExceeded": "error"
   },
   "breakGlassThreshold": 2,
-  "breakGlassPublicKeys": ["2be3f91a7b204d104b60d3ce756b7555f7c7c437f1470b826d03c877b9349dd8", "1234f91a7b204d104b60d3ce756b7555f7c7c437f1470b826d03c877b9349dd8"],
-  "postQuantumEnabled": true
+  "breakGlassPublicKeys": ["2be3f91a7b204d104b60d3ce756b7555f7c7c437f1470b826d03c877b9349dd8", "1234f91a7b204d104b60d3ce756b7555f7c7c437f1470b826d03c877b9349dd8"]
 }

@@ -34,7 +34,7 @@
     {
       "name": "dist/compliance.js",
       "digest": {
-        "sha256": "bf2eb40505bf2ec8693e19dae816804c9d78af88341d50e02eac5360d8fb7833"
+        "sha256": "402892a69326ef5b898521ca4748773683c6d3dc8a1c840f78084e76e7a020ff"
       }
     },
     {
@@ -238,12 +238,12 @@
     },
     "runDetails": {
       "builder": {
-        "id": "https://vollcrypt.dev/builders/local-hermetic-env"
+        "id": "https://vollcrypt.dev/builders/local-node-build"
       },
       "metadata": {
-        "invocationId": "c13445533a9632ed3a8f68b3e78ef744",
-        "startedOn": "2026-07-31T00:51:04.098Z",
-        "finishedOn": "2026-07-31T00:51:04.099Z"
+        "invocationId": "ee1a488e8a9de4bfa891cabf298bf0f8",
+        "startedOn": "2026-07-31T01:08:30.498Z",
+        "finishedOn": "2026-07-31T01:08:30.499Z"
       }
     }
   }

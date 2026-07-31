@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Vollcrypt Compliance Scorecard</title>
-  <meta name="description" content="Official cryptographic compliance validation report for GDPR, KVKK, and PCI-DSS.">
+  <meta name="description" content="Automated cryptographic configuration scorecard; not a regulatory certification.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -370,16 +370,16 @@
       <div class="header-top">
         <div class="logo-container">
           <h1>VOLLCRYPT</h1>
-          <p>Database Cryptographic Security Scorecard</p>
+          <p>Database Cryptographic Configuration Scorecard</p>
         </div>
         <div class="metadata-box">
-          <p>Scan Timestamp: <strong>2026-06-11 12:15:53 UTC</strong></p>
-          <p>Verification Standard: <strong>CMVP FIPS 140-3</strong></p>
+          <p>Scan Timestamp: <strong>2026-07-31 01:08:37 UTC</strong></p>
+          <p>Verification Scope: <strong>Automated Configuration Checks</strong></p>
           <p>Product Version: <strong>0.1.0</strong></p>
         </div>
       </div>
       <div class="summary-section">
-        <p>This system is configured using AES-256-GCM for field-level encryption, dynamic key routing with automatic RAM zeroization, and secure HKDF-SHA256 blind indexing. Cryptographic validation certifies compliance of the data protection boundaries with GDPR Article 32, KVKK Article 12, and PCI-DSS v4.0 Requirement 3.</p>
+        <p>Automated configuration checks found 2 unmet control(s). This scorecard is not a GDPR, KVKK, PCI-DSS, FIPS, or CMVP certification and must not be presented as one.</p>
       </div>
     </header>
 
@@ -387,33 +387,33 @@
       <section class="score-grid">
         <!-- GDPR Score Card -->
         <div class="score-card">
-          <h2>GDPR Compliance</h2>
+          <h2>GDPR Control Coverage</h2>
           <div class="score-ring">
             <svg>
               <circle class="bg" cx="60" cy="60" r="50"></circle>
-              <circle class="bar" cx="60" cy="60" r="50" style="stroke-dasharray: 314; stroke-dashoffset: 0; stroke: #10B981;"></circle>
+              <circle class="bar" cx="60" cy="60" r="50" style="stroke-dasharray: 314; stroke-dashoffset: 157; stroke: #10B981;"></circle>
             </svg>
-            <div class="score-number">100<span class="score-percent">%</span></div>
+            <div class="score-number">50<span class="score-percent">%</span></div>
           </div>
           <p style="font-size: 0.85rem; color: var(--text-muted);">Article 32 Security requirements</p>
         </div>
 
         <!-- KVKK Score Card -->
         <div class="score-card">
-          <h2>KVKK Compliance</h2>
+          <h2>KVKK Control Coverage</h2>
           <div class="score-ring">
             <svg>
               <circle class="bg" cx="60" cy="60" r="50"></circle>
-              <circle class="bar" cx="60" cy="60" r="50" style="stroke-dasharray: 314; stroke-dashoffset: 0; stroke: #F59E0B;"></circle>
+              <circle class="bar" cx="60" cy="60" r="50" style="stroke-dasharray: 314; stroke-dashoffset: 78.5; stroke: #F59E0B;"></circle>
             </svg>
-            <div class="score-number">100<span class="score-percent">%</span></div>
+            <div class="score-number">75<span class="score-percent">%</span></div>
           </div>
           <p style="font-size: 0.85rem; color: var(--text-muted);">Article 12 Security requirements</p>
         </div>
 
         <!-- PCI-DSS Score Card -->
         <div class="score-card">
-          <h2>PCI-DSS v4.0</h2>
+          <h2>PCI-DSS Control Coverage</h2>
           <div class="score-ring">
             <svg>
               <circle class="bg" cx="60" cy="60" r="50"></circle>
@@ -428,11 +428,11 @@
       <section>
         <div class="section-title">
           <span>Cryptographic Status Checkpoints</span>
-          <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">11 Passed / 0 Recommendations</span>
+          <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">8 Passed / 2 Failed</span>
         </div>
 
         <div class="checks-list">
-          
+
       <div class="check-card passed">
         <div class="status-badge-container">
           <span class="badge passed-badge">PASSED</span>
@@ -442,7 +442,7 @@
           <p>Cryptographic keys are securely delegated to a Cloud KMS Provider (AWS, GCP, or HashiCorp Vault).</p>
         </div>
       </div>
-    
+
       <div class="check-card passed">
         <div class="status-badge-container">
           <span class="badge passed-badge">PASSED</span>
@@ -452,27 +452,17 @@
           <p>Keys are protected using double-envelope encryption with AES-256-KW.</p>
         </div>
       </div>
-    
+
       <div class="check-card passed">
         <div class="status-badge-container">
           <span class="badge passed-badge">PASSED</span>
         </div>
         <div class="check-content">
-          <h3>RAM ZEROIZATION</h3>
-          <p>All active keys and intermediate buffers are zeroized in RAM immediately after use (Anti-Core Dump protection).</p>
+          <h3>BLIND INDEX EQUALITY SEARCH</h3>
+          <p>Keyed deterministic indexes are enabled with explicit acknowledgement that equality frequencies remain visible.</p>
         </div>
       </div>
-    
-      <div class="check-card passed">
-        <div class="status-badge-container">
-          <span class="badge passed-badge">PASSED</span>
-        </div>
-        <div class="check-content">
-          <h3>BLIND INDEXING</h3>
-          <p>Database query translations target secure HKDF-SHA256 blind indexes, preventing raw column decryption leakage.</p>
-        </div>
-      </div>
-    
+
       <div class="check-card passed">
         <div class="status-badge-container">
           <span class="badge passed-badge">PASSED</span>
@@ -482,7 +472,7 @@
           <p>Application roles are cryptographically mapped to decryption permissions. Unauthorized users are blocked.</p>
         </div>
       </div>
-    
+
       <div class="check-card passed">
         <div class="status-badge-container">
           <span class="badge passed-badge">PASSED</span>
@@ -492,27 +482,17 @@
           <p>Masking filters (credit cards, emails, TC numbers) are applied automatically to unauthorized query results.</p>
         </div>
       </div>
-    
-      <div class="check-card passed">
-        <div class="status-badge-container">
-          <span class="badge passed-badge">PASSED</span>
-        </div>
-        <div class="check-content">
-          <h3>CRYPTO AUDIT LOG</h3>
-          <p>Immutable cryptographic SHA-256 hash chains log every decryption event, preventing auditing tampering.</p>
-        </div>
-      </div>
-    
+
       <div class="check-card passed">
         <div class="status-badge-container">
           <span class="badge passed-badge">PASSED</span>
         </div>
         <div class="check-content">
           <h3>FAIL CLOSED RATE LIMITER</h3>
-          <p>Rate limiter is configured to fail-closed, purging all active keys from memory upon scraping detection.</p>
+          <p>The configured limiter rejects further decryptions and clears registered tenant-scoped mutable key buffers when its threshold is exceeded.</p>
         </div>
       </div>
-    
+
       <div class="check-card passed">
         <div class="status-badge-container">
           <span class="badge passed-badge">PASSED</span>
@@ -522,7 +502,7 @@
           <p>Page size checking is active to block massive batch select queries from executing decryptions.</p>
         </div>
       </div>
-    
+
       <div class="check-card passed">
         <div class="status-badge-container">
           <span class="badge passed-badge">PASSED</span>
@@ -532,30 +512,40 @@
           <p>M-of-N Ed25519 signature threshold configuration is active for KMS outage emergency recovery.</p>
         </div>
       </div>
-    
-      <div class="check-card passed">
+
+
+      <div class="check-card failed">
         <div class="status-badge-container">
-          <span class="badge passed-badge">PASSED</span>
+          <span class="badge failed-badge">FAILED</span>
         </div>
         <div class="check-content">
-          <h3>POST QUANTUM KEM</h3>
-          <p>NIST FIPS 203 (ML-KEM) lattice-based algorithms are registered for hybrid key exchange.</p>
+          <h3>MEMORY BOUNDARY</h3>
+          <p>Mutable package-owned buffers use best-effort zeroization, but V8 strings, native crypto allocations, active secrets, and core dumps are not covered.</p>
         </div>
       </div>
-    
-          
+
+      <div class="check-card failed">
+        <div class="status-badge-container">
+          <span class="badge failed-badge">FAILED</span>
+        </div>
+        <div class="check-content">
+          <h3>NO KEYED AUDIT LOG</h3>
+          <p>Audit logging requires both a path and an integrity key of at least 32 bytes.</p>
+        </div>
+      </div>
+
         </div>
       </section>
 
       <div class="btn-container">
-        <button class="print-btn" onclick="window.print()">Print Compliance PDF Report</button>
+        <button class="print-btn" onclick="window.print()">Print Configuration Scorecard</button>
       </div>
     </main>
 
     <footer class="footer-seal">
-      <p>This document constitutes an automated cryptographic verification seal of the database security layer configuration.</p>
-      <p>Verification Signature Hash:</p>
-      <p class="seal-hash">VOLLSEAL:EF8009C03CBA4CD205DFD4B8E2B0D706</p>
+      <p>This document is an automated configuration scorecard and does not constitute regulatory or FIPS certification.</p>
+      <p>Configuration Digest (SHA-256 prefix):</p>
+      <p class="seal-hash">6598E8723DE70DCC1CED3B9A19098AB7</p>
     </footer>
   </div>
 </body>

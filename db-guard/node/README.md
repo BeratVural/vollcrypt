@@ -1,6 +1,6 @@
 # db-guard
 
-Application-level, field-level encryption integrations for ORMs (Prisma, Mongoose, Drizzle, TypeORM, Diesel, SeaORM) powered by FIPS-compliant cryptography.
+Application-level, field-level encryption integrations for ORMs (Prisma, Mongoose, Drizzle, TypeORM, Diesel, SeaORM). This package is not FIPS or CMVP validated.
 
 `db-guard` secures sensitive database columns (SSN, credit card numbers, addresses, personal data) by encrypting them before they hit the database. It prevents data leakage from compromised database dumps, unauthorized database connections, or compromised database administrators (DBAs).
 
@@ -10,14 +10,14 @@ Application-level, field-level encryption integrations for ORMs (Prisma, Mongoos
 
 - **Multi-ORM Support**: Integrations for Node.js (Prisma, Mongoose, Drizzle, TypeORM) and Rust (Diesel, SeaORM).
 - **Dynamic Multi-Tenant Routing**: Dynamically resolves distinct KMS keys or database configurations per request context using AsyncLocalStorage.
-- **Secure Key Cache**: Protects memory from dumps using an ephemeral master key generated randomly at boot. Plaint-text DEKs are wrapped with AES-256-KW and cached with automated TTL eviction and zeroization.
+- **Secure Key Cache**: Wraps cached DEKs with an ephemeral process key, applies TTL eviction, and performs best-effort zeroization of mutable buffers. This does not prevent privileged process-memory inspection.
 - **Schema Evolution & Crypto-Agility**: Features backward-compatible prefixes for smooth algorithm transitions without database downtime.
 - **M-of-N Break-Glass Protocol**: Emergency KMS bypass via threshold Ed25519 signature verification.
-- **Compliance Scorecard CLI**: Built-in CLI scans configuration and outputs compliance scorecards for GDPR Article 32, KVKK Article 12, and PCI-DSS v4.0.
-- **Supply Chain Security (SLSA Level 4)**: Build pipeline automatically compiles CycloneDX SBOM and SLSA Level 4 Provenance files, cryptographically signed with Ed25519.
-- **FIPS 140-3 & Post-Quantum Hybrid Transition**: Conforms to FIPS 140-3 logical and physical boundaries with NIST FIPS 203 (ML-KEM) lattice-based algorithms registered for hybrid key exchange.
-- **Hardened Blind Indexing**: Allows exact-match querying on encrypted columns via HKDF-SHA256 shadow columns, avoiding frequency analysis vulnerabilities.
-- **RAM Security**: Aggressive memory zeroization (null-byte writing) for keys and plaintext buffers in memory.
+- **Configuration Scorecard CLI**: Reports whether selected technical controls are configured. The output is evidence for review, not a GDPR, KVKK, PCI-DSS, FIPS, or CMVP certification.
+- **Supply Chain Artifacts**: Builds generate a CycloneDX SBOM and signed provenance metadata. These repository-generated artifacts are not an independent SLSA Level 4 attestation.
+- **Validation Status**: The package is not FIPS 140-3 validated and does not claim a CMVP certificate. Post-quantum support is a roadmap item for db-guard.
+- **Explicit-Risk Blind Indexing**: Keyed deterministic equality indexes support exact-match queries but reveal equality frequencies and require allowFrequencyLeakage: true.
+- **Memory Hygiene**: Mutable JavaScript buffers created by the package are zeroized on best-effort paths. Immutable V8 strings, native crypto internals, active secrets, and core dumps remain outside that guarantee.
 - **Batch Migration CLI**: Built-in CLI tool to perform chunked shadow database migrations in the background.
 
 ---
@@ -232,29 +232,29 @@ The package includes a dual-purpose CLI tool for database migrations and complia
 Encrypts existing plaintext records in a live database using batch processing:
 
 ```bash
-# Run PostgreSQL migration
+# Store secrets in files supplied by your secret manager with restrictive permissions.
+# The CLI also accepts VOLLCRYPT_DB_GUARD_DB_URL and VOLLCRYPT_DB_GUARD_KEY_HEX.
 npx vollcrypt-db-guard migrate \
   --db-type postgres \
-  --db-url "postgres://user:pass@localhost:5432/db" \
+  --db-url-file /run/secrets/db-url \
   --table users \
   --column credit_card \
-  --key "your_32_byte_hex_key_here" \
+  --key-file /run/secrets/db-guard-key-hex \
   --chunk-size 100 \
   --id-col id
 
-# Run MongoDB migration
+# MongoDB uses the same secret-file inputs.
 npx vollcrypt-db-guard migrate \
   --db-type mongodb \
-  --db-url "mongodb://localhost:27017/db" \
+  --db-url-file /run/secrets/mongo-url \
   --table users \
   --column credit_card \
-  --key "your_32_byte_hex_key_here" \
+  --key-file /run/secrets/db-guard-key-hex \
   --chunk-size 100 \
   --id-col _id
 ```
-
 ### 2. Compliance Scorecard Generator (`compliance`)
-Scans cryptographic configurations and generates an auditor-ready HTML compliance report:
+Scans selected configuration controls and generates a review scorecard. The report is not a certification:
 
 ```bash
 npx vollcrypt-db-guard compliance \
@@ -264,8 +264,8 @@ npx vollcrypt-db-guard compliance \
 
 ---
 
-## Supply Chain & Compliance Verification
+## Supply Chain and Validation Status
 
-Refer to the following standalone validation documentation for formal verification processes:
-- **Supply Chain Artifacts**: Signed CycloneDX SBOM and SLSA Level 4 Provenance are located in `dist/sbom.json` and `dist/provenance.json` post-build.
-- **FIPS 140-3 Boundaries**: Detailed logical boundaries, Approved algorithm registries, and post-quantum hybrid structures are defined in [FIPS_VALIDATION.md](file:///c:/Users/iTopya/Desktop/Project/vollcrypt/db-guard/FIPS_VALIDATION.md).
+- **Generated artifacts**: CycloneDX SBOM and signed provenance metadata are emitted under dist during a build. Verification establishes artifact integrity only; it does not establish an independent SLSA level.
+- **FIPS and PQC status**: See [FIPS_VALIDATION.md](../FIPS_VALIDATION.md). db-guard is not FIPS 140-3 validated, has no CMVP certificate, and must not be represented as certified.
+- **Memory boundary**: Applications with a process-memory or core-dump attacker must add operating-system dump restrictions, least privilege, process isolation, and HSM/KMS-backed key custody. JavaScript code cannot guarantee deterministic erasure of V8 strings or native OpenSSL allocations.

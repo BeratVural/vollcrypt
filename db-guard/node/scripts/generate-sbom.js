@@ -18,7 +18,7 @@ function getFilesRecursively(dir) {
 }
 
 function run() {
-  console.log('Generating Cryptographically Signed SBOM & SLSA Level 4 Provenance...');
+  console.log('Generating CycloneDX SBOM and locally signed provenance metadata...');
 
   const rootDir = path.resolve(__dirname, '..');
   const packageJsonPath = path.join(rootDir, 'package.json');
@@ -55,7 +55,7 @@ function run() {
     }
   }
 
-  // 3. Compute digests of compiled output files (Hermetic boundary validation)
+  // 3. Compute digests of compiled output files
   const buildOutputs = [];
   if (fs.existsSync(distDir)) {
     const files = getFilesRecursively(distDir);
@@ -98,13 +98,7 @@ function run() {
         version: packageJson.version,
         description: packageJson.description,
         hashes: buildOutputs.map(o => ({ alg: 'SHA-256', content: o.hashes.sha256 }))
-      },
-      properties: [
-        {
-          name: 'slsa:buildLevel',
-          value: 'SLSA_Level_4'
-        }
-      ]
+      }
     },
     components: []
   };
@@ -131,7 +125,7 @@ function run() {
     });
   }
 
-  // 5. Construct SLSA Provenance v1.0 Attestation
+  // 5. Construct a provenance statement using the SLSA provenance v1 schema
   const provenance = {
     _type: 'https://in-toto.io/Statement/v1',
     subject: buildOutputs.map(o => ({
@@ -163,7 +157,7 @@ function run() {
       },
       runDetails: {
         builder: {
-          id: 'https://vollcrypt.dev/builders/local-hermetic-env'
+          id: 'https://vollcrypt.dev/builders/local-node-build'
         },
         metadata: {
           invocationId: crypto.randomBytes(16).toString('hex'),
@@ -199,7 +193,7 @@ function run() {
     privateKeyObj = keypair.privateKey;
     
     const pkBytes = keypair.publicKey.export({ type: 'spki', format: 'der' }).subarray(12);
-    console.log(`Generated one-off build public key (verification seal): ${pkBytes.toString('hex').toUpperCase()}`);
+    console.log(`Generated one-off signing public key: ${pkBytes.toString('hex').toUpperCase()}`);
   }
 
   const sbomBuffer = Buffer.from(JSON.stringify(sbom, null, 2), 'utf8');
@@ -215,7 +209,7 @@ function run() {
   fs.writeFileSync(path.join(distDir, 'provenance.json.sig'), provenanceSig);
 
   console.log(`Successfully wrote CycloneDX SBOM to: dist/sbom.json (Signature: dist/sbom.json.sig)`);
-  console.log(`Successfully wrote SLSA Provenance to: dist/provenance.json (Signature: dist/provenance.json.sig)`);
+  console.log(`Successfully wrote provenance statement to: dist/provenance.json (Signature: dist/provenance.json.sig)`);
 }
 
 run();

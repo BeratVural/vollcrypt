@@ -55,9 +55,8 @@ function auditConfiguration(config) {
     else {
         failed.push('NO_ENVELOPE_ENCRYPTION: Direct KMS decryption is used without local Key Encrypting Key (KEK) wrapping. Direct exposure risk.');
     }
-    // Check 3: Active RAM Protection / Zeroization
-    // Node's security layer has global keys to zeroize and ephemeral keys
-    passed.push('RAM_ZEROIZATION: All active keys and intermediate buffers are zeroized in RAM immediately after use (Anti-Core Dump protection).');
+    // Check 3: Runtime memory boundary
+    failed.push('MEMORY_BOUNDARY: Mutable package-owned buffers use best-effort zeroization, but V8 strings, native crypto allocations, active secrets, and core dumps are not covered.');
     // Check 4: Blind Indexing
     const hasBlindIndex = !!config.blindIndexes?.rootSalt && Object.keys(config.blindIndexes?.models || {}).length > 0;
     const blindIndexRiskAccepted = config.blindIndexes?.allowFrequencyLeakage === true;
@@ -105,15 +104,18 @@ function auditConfiguration(config) {
         failed.push('NO_KEYED_AUDIT_LOG: Audit logging requires both a path and an integrity key of at least 32 bytes.');
     }
     // Check 8: Rate Limiting
-    const rateLimitMode = config.rateLimiter?.mode || 'fail_closed';
+    const rateLimitMode = config.rateLimiter?.mode;
     if (rateLimitMode === 'fail_closed') {
-        passed.push('FAIL_CLOSED_RATE_LIMITER: Rate limiter is configured to fail-closed, purging all active keys from memory upon scraping detection.');
+        passed.push('FAIL_CLOSED_RATE_LIMITER: The configured limiter rejects further decryptions and clears registered tenant-scoped mutable key buffers when its threshold is exceeded.');
     }
     else if (rateLimitMode === 'warn') {
-        passed.push('WARN_RATE_LIMITER: Rate limiter warns on scraping but does not clear keys. Minor vulnerability.');
+        passed.push('WARN_RATE_LIMITER: The configured limiter warns on threshold violations but does not block further decryptions.');
+    }
+    else if (rateLimitMode === 'disabled') {
+        failed.push('RATE_LIMITER_DISABLED: Scraping rate limiting is explicitly disabled.');
     }
     else {
-        failed.push('RATE_LIMITER_DISABLED: Scraping rate limit is disabled. Vulnerable to mass data dumping.');
+        failed.push('RATE_LIMITER_NOT_CONFIGURED: No scraping rate limiter mode is configured.');
     }
     // Check 9: Page Size Constraints
     const hasPageLimit = config.rateLimiter?.maxPageSize !== undefined;
@@ -132,18 +134,17 @@ function auditConfiguration(config) {
         failed.push('NO_BREAK_GLASS: No emergency break-glass protocol configured. KMS downtime will trigger system outage.');
     }
     // Check 11: Post-Quantum Cryptography
-    const hasPqc = !!config.postQuantumEnabled;
-    if (hasPqc) {
-        passed.push('POST_QUANTUM_KEM: Hybrid ML-KEM mode is configured. This does not imply FIPS or CMVP validation.');
+    if (config.postQuantumEnabled) {
+        failed.push('PQC_NOT_IMPLEMENTED: postQuantumEnabled was requested, but db-guard does not implement a hybrid ML-KEM data-encryption path.');
     }
     // Compute Scores
-    // GDPR (Article 32): Security of processing (KMS, RBAC, RAM Zeroization, Audit Trail)
+    // GDPR (Article 32): automated configuration coverage for KMS, RBAC, and keyed audit logging.
+    // Runtime memory handling is excluded because JavaScript and native crypto allocations cannot be proven zeroized here.
     let gdprCount = 0;
     if (hasKms)
         gdprCount += 25;
     if (hasRbac)
         gdprCount += 25;
-    gdprCount += 25; // RAM Zeroization always active
     if (hasAuditLog)
         gdprCount += 25;
     // KVKK (Madde 12): Key custody, blind indexing, RBAC, rate limits
@@ -583,7 +584,7 @@ function generateComplianceHtmlReport(config) {
       <div class="header-top">
         <div class="logo-container">
           <h1>VOLLCRYPT</h1>
-          <p>Database Cryptographic Security Scorecard</p>
+          <p>Database Cryptographic Configuration Scorecard</p>
         </div>
         <div class="metadata-box">
           <p>Scan Timestamp: <strong>${dateStr}</strong></p>
@@ -600,7 +601,7 @@ function generateComplianceHtmlReport(config) {
       <section class="score-grid">
         <!-- GDPR Score Card -->
         <div class="score-card">
-          <h2>GDPR Compliance</h2>
+          <h2>GDPR Control Coverage</h2>
           <div class="score-ring">
             <svg>
               <circle class="bg" cx="60" cy="60" r="50"></circle>
@@ -613,7 +614,7 @@ function generateComplianceHtmlReport(config) {
 
         <!-- KVKK Score Card -->
         <div class="score-card">
-          <h2>KVKK Compliance</h2>
+          <h2>KVKK Control Coverage</h2>
           <div class="score-ring">
             <svg>
               <circle class="bg" cx="60" cy="60" r="50"></circle>
@@ -626,7 +627,7 @@ function generateComplianceHtmlReport(config) {
 
         <!-- PCI-DSS Score Card -->
         <div class="score-card">
-          <h2>PCI-DSS v4.0</h2>
+          <h2>PCI-DSS Control Coverage</h2>
           <div class="score-ring">
             <svg>
               <circle class="bg" cx="60" cy="60" r="50"></circle>
@@ -651,17 +652,17 @@ function generateComplianceHtmlReport(config) {
       </section>
 
       <div class="btn-container">
-        <button class="print-btn" onclick="window.print()">Print Compliance PDF Report</button>
+        <button class="print-btn" onclick="window.print()">Print Configuration Scorecard</button>
       </div>
     </main>
 
     <footer class="footer-seal">
       <p>This document is an automated configuration scorecard and does not constitute regulatory or FIPS certification.</p>
-      <p>Verification Signature Hash:</p>
-      <p class="seal-hash">VOLLSEAL:${configHash}</p>
+      <p>Configuration Digest (SHA-256 prefix):</p>
+      <p class="seal-hash">${configHash}</p>
     </footer>
   </div>
 </body>
 </html>
-`;
+`.replace(/[ \t]+$/gm, '');
 }
