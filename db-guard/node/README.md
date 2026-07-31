@@ -187,13 +187,15 @@ We provide several KmsProvider implementations:
 
 Multi-tenant Prisma and Mongoose integrations cache wrapped key material for `multiTenant.cacheTtlMs` (default `120000` ms). A rotation controller must call `invalidateCachedKeys(tenantId, version?)` on every application node before advertising the new key generation. Use a pub/sub rotation event or equivalent deployment control; the in-process cache does not synchronize itself across hosts.
 
+Rate-limit counters and fail-closed state are also process-local. Horizontally scaled deployments must enforce a distributed limit and fail-closed signal at the gateway or orchestration layer; multiplying the same per-process limit across replicas weakens the configured control.
+
 #### Node.js PKCS#11 Configuration Example:
 ```typescript
 import { Pkcs11KmsProvider } from '@vollcrypt/db-guard';
 
 const kmsProvider = new Pkcs11KmsProvider({
   libraryPath: '/usr/local/lib/softhsm/libsofthsm2.so', // Path to vendor PKCS#11 library
-  pin: '123456',                                      // Slot/Token PIN
+  pin: process.env.PKCS11_PIN!,                       // Inject at runtime; never pass on the CLI
   slotId: 0,                                          // Target Slot Index (optional, default: 0)
   keyId: '000102',                                    // Hex-encoded CKA_ID of the AES-256 key in HSM
 });
@@ -201,6 +203,27 @@ const kmsProvider = new Pkcs11KmsProvider({
 // Decrypt wrapped key (DEK) inside HSM
 const decryptedKey = await kmsProvider.decrypt(wrappedKeyBuffer);
 ```
+
+Node PKCS#11 libraries require the PIN as a JavaScript string, so deterministic in-process erasure is not possible. Inject it through a secret manager or protected environment at runtime, exclude it from command-line arguments and config files, disable request/APM capture around provider construction, and isolate the process from core dumps.
+
+Blind-index root salts should also be stored as wrapped KMS/HSM secrets instead of plaintext configuration:
+
+```typescript
+import { resolveBlindIndexRootSalt } from '@vollcrypt/db-guard';
+
+const rootSalt = await resolveBlindIndexRootSalt(kmsProvider, wrappedRootSalt);
+const guard = prismaDbGuard({
+  // ...
+  blindIndexes: {
+    rootSalt,
+    allowFrequencyLeakage: true,
+    models: { User: ['email'] },
+  },
+});
+```
+
+The application owns the returned mutable `rootSalt` buffer and must call `rootSalt.fill(0)` when the adapter is disposed.
+
 
 ### 2. Rust PKCS#11 Support
 

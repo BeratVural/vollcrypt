@@ -830,6 +830,14 @@ function computeBlindIndex(value, rootSalt, columnName, allowFrequencyLeakage) {
 function encryptValue(val, key, version) {
     if (val === null || val === undefined)
         return val;
+    if (!/^[1-9][0-9]{0,5}$/.test(version)) {
+        throw new Error('Vollcrypt Security: Invalid encryption version "' + version + '".');
+    }
+    const algoId = exports.VERSION_ALGORITHMS[version];
+    const encryptor = algoId ? exports.CRYPTO_ALGORITHMS[algoId] : undefined;
+    if (!encryptor) {
+        throw new Error('Vollcrypt Security: Unsupported encryption version "v' + version + '".');
+    }
     const context = exports.dbGuardContextStore.getStore();
     const tId = context?.tenantId || 'global';
     if (key.every(b => b === 0) || getFailClosedStatus(tId)) {
@@ -842,7 +850,7 @@ function encryptValue(val, key, version) {
         if (plaintextBuf.length > exports.MAX_PLAINTEXT_BYTES) {
             throw new Error('Vollcrypt Security: Plaintext exceeds the maximum supported field size.');
         }
-        const encrypted = exports.CRYPTO_ALGORITHMS['1'].encrypt(plaintextBuf, key);
+        const encrypted = encryptor.encrypt(plaintextBuf, key);
         return 'VOLLVALT:v' + version + ':' + encrypted.toString('base64');
     }
     finally {

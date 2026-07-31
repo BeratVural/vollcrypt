@@ -1,6 +1,13 @@
 export interface KmsProvider {
     decrypt(ciphertext: Buffer): Promise<Buffer>;
 }
+/**
+ * Resolves a KMS/HSM-wrapped blind-index root salt.
+ *
+ * The caller owns the returned mutable buffer and must zeroize it when the
+ * adapter is disposed.
+ */
+export declare function resolveBlindIndexRootSalt(provider: KmsProvider, wrappedRootSalt: Buffer): Promise<Buffer>;
 export declare class AwsKmsProvider implements KmsProvider {
     private config;
     constructor(config: {

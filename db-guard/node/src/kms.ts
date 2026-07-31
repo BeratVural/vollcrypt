@@ -4,6 +4,31 @@ export interface KmsProvider {
   decrypt(ciphertext: Buffer): Promise<Buffer>;
 }
 
+/**
+ * Resolves a KMS/HSM-wrapped blind-index root salt.
+ *
+ * The caller owns the returned mutable buffer and must zeroize it when the
+ * adapter is disposed.
+ */
+export async function resolveBlindIndexRootSalt(
+  provider: KmsProvider,
+  wrappedRootSalt: Buffer
+): Promise<Buffer> {
+  if (!Buffer.isBuffer(wrappedRootSalt) || wrappedRootSalt.length === 0) {
+    throw new Error('Wrapped blind-index root salt must be a non-empty Buffer');
+  }
+
+  const rootSalt = await provider.decrypt(wrappedRootSalt);
+  if (!Buffer.isBuffer(rootSalt)) {
+    throw new Error('KMS provider returned a non-Buffer blind-index root salt');
+  }
+  if (rootSalt.length < 32) {
+    rootSalt.fill(0);
+    throw new Error('Decrypted blind-index root salt must be at least 32 bytes');
+  }
+  return rootSalt;
+}
+
 export class AwsKmsProvider implements KmsProvider {
   constructor(private config: { region: string; keyId?: string; credentials?: any }) {}
 

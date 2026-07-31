@@ -1,9 +1,30 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Pkcs11KmsProvider = exports.VaultKmsProvider = exports.GcpKmsProvider = exports.AwsKmsProvider = void 0;
+exports.resolveBlindIndexRootSalt = resolveBlindIndexRootSalt;
 exports.unwrapDekLocal = unwrapDekLocal;
 exports.resolveKeys = resolveKeys;
 const security_1 = require("./security");
+/**
+ * Resolves a KMS/HSM-wrapped blind-index root salt.
+ *
+ * The caller owns the returned mutable buffer and must zeroize it when the
+ * adapter is disposed.
+ */
+async function resolveBlindIndexRootSalt(provider, wrappedRootSalt) {
+    if (!Buffer.isBuffer(wrappedRootSalt) || wrappedRootSalt.length === 0) {
+        throw new Error('Wrapped blind-index root salt must be a non-empty Buffer');
+    }
+    const rootSalt = await provider.decrypt(wrappedRootSalt);
+    if (!Buffer.isBuffer(rootSalt)) {
+        throw new Error('KMS provider returned a non-Buffer blind-index root salt');
+    }
+    if (rootSalt.length < 32) {
+        rootSalt.fill(0);
+        throw new Error('Decrypted blind-index root salt must be at least 32 bytes');
+    }
+    return rootSalt;
+}
 class AwsKmsProvider {
     config;
     constructor(config) {

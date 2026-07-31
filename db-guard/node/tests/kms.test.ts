@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
 import { wrapKey } from '../src/security';
-import { AwsKmsProvider, GcpKmsProvider, VaultKmsProvider, unwrapDekLocal, Pkcs11KmsProvider } from '../src/kms';
+import { AwsKmsProvider, GcpKmsProvider, VaultKmsProvider, unwrapDekLocal, Pkcs11KmsProvider, resolveBlindIndexRootSalt } from '../src/kms';
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -14,6 +14,38 @@ describe('KMS Providers & Envelope Decryption', () => {
     const wrappedDek = wrapKey(kek, dek);
     const unwrapped = unwrapDekLocal(wrappedDek, kek);
     assert.deepStrictEqual(unwrapped, dek);
+  });
+
+  test('blind-index root salt can be resolved from a wrapped KMS secret', async () => {
+    const rootSalt = Buffer.alloc(32, 0x5a);
+    const provider = {
+      async decrypt(ciphertext: Buffer) {
+        assert.deepStrictEqual(ciphertext, Buffer.from('wrapped-root-salt'));
+        return Buffer.from(rootSalt);
+      },
+    };
+
+    const resolved = await resolveBlindIndexRootSalt(
+      provider,
+      Buffer.from('wrapped-root-salt')
+    );
+    assert.deepStrictEqual(resolved, rootSalt);
+    resolved.fill(0);
+  });
+
+  test('weak KMS root salt is rejected and zeroized', async () => {
+    const weakRootSalt = Buffer.alloc(16, 0x5a);
+    const provider = {
+      async decrypt() {
+        return weakRootSalt;
+      },
+    };
+
+    await assert.rejects(
+      resolveBlindIndexRootSalt(provider, Buffer.from('wrapped-root-salt')),
+      /at least 32 bytes/
+    );
+    assert.deepStrictEqual(weakRootSalt, Buffer.alloc(16));
   });
 
   test('AwsKmsProvider calls AWS SDK and returns decrypted bytes', async () => {

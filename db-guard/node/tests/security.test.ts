@@ -341,6 +341,23 @@ describe('Vollcrypt Central Security Modules (Phase 4)', () => {
     }, /Malformed ciphertext format/);
   });
 
+  test('field encryption rejects invalid versions and preserves supported rotation versions', () => {
+    const { decryptValue, encryptValue } = require('../src/security');
+
+    assert.throws(
+      () => encryptValue('secret', key, 'latest'),
+      /Invalid encryption version "latest"/
+    );
+    assert.throws(
+      () => encryptValue('secret', key, '999'),
+      /Unsupported encryption version "v999"/
+    );
+
+    const ciphertext = encryptValue('rotation-secret', key, '2');
+    assert.match(ciphertext, /^VOLLVALT:v2:/);
+    assert.strictEqual(decryptValue(ciphertext, { '2': key }), 'rotation-secret');
+  });
+
   test('ciphertext parser rejects oversized, control-character, and non-canonical inputs', () => {
     const {
       MAX_CIPHERTEXT_STRING_LENGTH,
