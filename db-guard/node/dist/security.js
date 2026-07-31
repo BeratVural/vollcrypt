@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CRYPTO_ALGORITHMS = exports.VERSION_ALGORITHMS = exports.dbGuardContextStore = void 0;
+exports.CRYPTO_ALGORITHMS = exports.VERSION_ALGORITHMS = exports.dbGuardContextStore = exports.MAX_PLAINTEXT_BYTES = exports.MAX_CIPHERTEXT_STRING_LENGTH = void 0;
 exports.wrapKey = wrapKey;
 exports.unwrapKey = unwrapKey;
 exports.calculatePadding = calculatePadding;
@@ -69,6 +69,7 @@ exports.parseCiphertext = parseCiphertext;
 exports.validateBlindIndexConfiguration = validateBlindIndexConfiguration;
 exports.computeBlindIndex = computeBlindIndex;
 exports.encryptValue = encryptValue;
+exports.decryptBufferValue = decryptBufferValue;
 exports.decryptValue = decryptValue;
 exports.rewriteQueryWhere = rewriteQueryWhere;
 exports.addBlindIndexes = addBlindIndexes;
@@ -76,6 +77,8 @@ const async_hooks_1 = require("async_hooks");
 const crypto = __importStar(require("crypto"));
 const fs = __importStar(require("fs"));
 const KEY_WRAP_IV = Buffer.from('A6A6A6A6A6A6A6A6', 'hex');
+exports.MAX_CIPHERTEXT_STRING_LENGTH = 8 * 1024 * 1024;
+exports.MAX_PLAINTEXT_BYTES = 6 * 1024 * 1024;
 function wrapKey(kek, keyToWrap) {
     if (kek.length !== 32) {
         throw new Error('KEK must be exactly 32 bytes');
@@ -124,27 +127,53 @@ function unpadMessageWithLen(padded) {
     return padded.subarray(4, 4 + len);
 }
 function encryptAesGcmPadded(key, plaintext, aad = null) {
+    if (plaintext.length > exports.MAX_PLAINTEXT_BYTES) {
+        throw new Error('Plaintext exceeds the maximum supported field size');
+    }
     const padded = padMessageWithLen(plaintext);
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-    if (aad) {
+    if (aad)
         cipher.setAAD(aad);
+    let updateChunk;
+    let finalChunk;
+    try {
+        updateChunk = cipher.update(padded);
+        finalChunk = cipher.final();
+        const tag = cipher.getAuthTag();
+        return Buffer.concat([iv, updateChunk, finalChunk, tag]);
     }
-    const ciphertext = Buffer.concat([cipher.update(padded), cipher.final()]);
-    const tag = cipher.getAuthTag();
-    return Buffer.concat([iv, ciphertext, tag]);
+    finally {
+        padded.fill(0);
+        updateChunk?.fill(0);
+        finalChunk?.fill(0);
+    }
 }
 function decryptAesGcmPadded(key, encryptedData, aad = null) {
+    if (encryptedData.length < 28 || encryptedData.length > exports.MAX_CIPHERTEXT_STRING_LENGTH) {
+        throw new Error('Ciphertext length is outside the supported field bounds');
+    }
     const iv = encryptedData.subarray(0, 12);
     const tag = encryptedData.subarray(encryptedData.length - 16);
     const ciphertext = encryptedData.subarray(12, encryptedData.length - 16);
     const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
     decipher.setAuthTag(tag);
-    if (aad) {
+    if (aad)
         decipher.setAAD(aad);
+    let updateChunk;
+    let finalChunk;
+    let padded;
+    try {
+        updateChunk = decipher.update(ciphertext);
+        finalChunk = decipher.final();
+        padded = Buffer.concat([updateChunk, finalChunk]);
+        return Buffer.from(unpadMessageWithLen(padded));
     }
-    const padded = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-    return unpadMessageWithLen(padded);
+    finally {
+        updateChunk?.fill(0);
+        finalChunk?.fill(0);
+        padded?.fill(0);
+    }
 }
 function verifySignature(publicKey, message, signature) {
     try {
@@ -165,18 +194,37 @@ function deriveHkdf(ikm, salt, info, keyLen) {
 }
 function generateEd25519Keypair() {
     const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
-    const pkBytes = publicKey.export({ type: 'spki', format: 'der' }).subarray(12);
-    const skBytes = privateKey.export({ type: 'pkcs8', format: 'der' }).subarray(16);
-    return [skBytes, pkBytes];
+    const publicDer = publicKey.export({ type: 'spki', format: 'der' });
+    const privateDer = privateKey.export({ type: 'pkcs8', format: 'der' });
+    try {
+        return [
+            Buffer.from(privateDer.subarray(16)),
+            Buffer.from(publicDer.subarray(12))
+        ];
+    }
+    finally {
+        privateDer.fill(0);
+    }
 }
 function signMessage(secretKey, message) {
+    if (!Buffer.isBuffer(secretKey) || secretKey.length !== 32) {
+        throw new Error('Ed25519 secret key must be a 32-byte Buffer');
+    }
     const pkcs8Header = Buffer.from('302e020100300506032b657004220420', 'hex');
-    const privateKeyObj = crypto.createPrivateKey({
-        key: Buffer.concat([pkcs8Header, secretKey]),
-        format: 'der',
-        type: 'pkcs8'
-    });
-    return crypto.sign(null, message, privateKeyObj);
+    const privateDer = Buffer.alloc(pkcs8Header.length + secretKey.length);
+    pkcs8Header.copy(privateDer);
+    secretKey.copy(privateDer, pkcs8Header.length);
+    try {
+        const privateKeyObj = crypto.createPrivateKey({
+            key: privateDer,
+            format: 'der',
+            type: 'pkcs8'
+        });
+        return crypto.sign(null, message, privateKeyObj);
+    }
+    finally {
+        privateDer.fill(0);
+    }
 }
 // 1. Request Context Store (AsyncLocalStorage)
 exports.dbGuardContextStore = new async_hooks_1.AsyncLocalStorage();
@@ -686,23 +734,40 @@ exports.CRYPTO_ALGORITHMS = {
     }
 };
 function parseCiphertext(stored) {
+    if (typeof stored !== 'string') {
+        throw new Error('Vollcrypt Security: Ciphertext must be a string.');
+    }
+    if (stored.length > exports.MAX_CIPHERTEXT_STRING_LENGTH) {
+        throw new Error('Vollcrypt Security: Ciphertext exceeds the maximum supported field size.');
+    }
+    if (/[\x00-\x1f\x7f]/.test(stored)) {
+        throw new Error('Vollcrypt Security: Ciphertext contains forbidden control characters.');
+    }
     if (!stored.startsWith('VOLLVALT:'))
         return null;
     const content = stored.slice('VOLLVALT:'.length);
-    if (content.startsWith('v')) {
-        const colon = content.indexOf(':');
-        if (colon === -1) {
-            throw new Error("Vollcrypt Security: Malformed ciphertext format.");
-        }
-        const versionPart = content.slice(1, colon);
-        const base64Part = content.slice(colon + 1);
-        const algoId = exports.VERSION_ALGORITHMS[versionPart];
-        if (!algoId) {
-            throw new Error(`Vollcrypt Security: Deprecated or unsupported encryption version "v${versionPart}".`);
-        }
-        return { algoId, version: versionPart, base64Data: base64Part };
+    if (!content.startsWith('v')) {
+        throw new Error('Vollcrypt Security: Legacy unversioned ciphertexts are deprecated and unsupported.');
     }
-    throw new Error("Vollcrypt Security: Legacy unversioned ciphertexts are deprecated and unsupported.");
+    const colon = content.indexOf(':');
+    if (colon === -1) {
+        throw new Error('Vollcrypt Security: Malformed ciphertext format.');
+    }
+    const versionPart = content.slice(1, colon);
+    const base64Part = content.slice(colon + 1);
+    if (!/^[1-9][0-9]{0,5}$/.test(versionPart)) {
+        throw new Error('Vollcrypt Security: Malformed ciphertext version.');
+    }
+    const algoId = exports.VERSION_ALGORITHMS[versionPart];
+    if (!algoId) {
+        throw new Error('Vollcrypt Security: Deprecated or unsupported encryption version "v' + versionPart + '".');
+    }
+    if (base64Part.length === 0 ||
+        base64Part.length % 4 !== 0 ||
+        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(base64Part)) {
+        throw new Error('Vollcrypt Security: Ciphertext payload is not canonical Base64.');
+    }
+    return { algoId, version: versionPart, base64Data: base64Part };
 }
 /**
  * Computes a keyed deterministic equality index.
@@ -741,41 +806,63 @@ function encryptValue(val, key, version) {
     const context = exports.dbGuardContextStore.getStore();
     const tId = context?.tenantId || 'global';
     if (key.every(b => b === 0) || getFailClosedStatus(tId)) {
-        throw new Error(`Vollcrypt Security: Fail-Closed mode is active for tenant "${tId}". Encryption blocked.`);
+        throw new Error('Vollcrypt Security: Fail-Closed mode is active for tenant "' + tId + '". Encryption blocked.');
     }
-    const plaintext = typeof val === 'string' ? val : JSON.stringify(val);
-    const plaintextBuf = Buffer.from(plaintext, 'utf8');
-    const encrypted = exports.CRYPTO_ALGORITHMS['1'].encrypt(plaintextBuf, key);
-    // RAM Security: Zeroize the plaintext buffer immediately
-    plaintextBuf.fill(0);
-    return `VOLLVALT:v${version}:${encrypted.toString('base64')}`;
+    const plaintextBuf = Buffer.isBuffer(val)
+        ? Buffer.from(val)
+        : Buffer.from(typeof val === 'string' ? val : JSON.stringify(val), 'utf8');
+    try {
+        if (plaintextBuf.length > exports.MAX_PLAINTEXT_BYTES) {
+            throw new Error('Vollcrypt Security: Plaintext exceeds the maximum supported field size.');
+        }
+        const encrypted = exports.CRYPTO_ALGORITHMS['1'].encrypt(plaintextBuf, key);
+        return 'VOLLVALT:v' + version + ':' + encrypted.toString('base64');
+    }
+    finally {
+        plaintextBuf.fill(0);
+    }
 }
-function decryptValue(stored, keys) {
-    if (typeof stored !== 'string') {
-        return stored;
-    }
+/**
+ * Decrypts directly to a mutable Buffer and avoids creating an immutable V8 plaintext string.
+ * The caller owns the returned buffer and must zeroize it with fill(0) after use.
+ */
+function decryptBufferValue(stored, keys) {
     const parsed = parseCiphertext(stored);
     if (!parsed) {
-        return stored;
+        throw new Error('Vollcrypt Security: decryptBufferValue accepts encrypted values only.');
     }
     const { algoId, version, base64Data } = parsed;
     const key = keys[version];
     if (!key) {
-        throw new Error(`Decryption key version "${version}" not found in registered keys`);
+        throw new Error('Decryption key version "' + version + '" not found in registered keys');
     }
     if (key.every(b => b === 0)) {
-        throw new Error(`Vollcrypt Security: Decryption blocked. Key version "${version}" is zeroized due to a Fail-Closed event.`);
+        throw new Error('Vollcrypt Security: Decryption blocked. Key version "' + version + '" is zeroized due to a Fail-Closed event.');
     }
+    const encryptedBuf = Buffer.from(base64Data, 'base64');
     try {
-        const encryptedBuf = Buffer.from(base64Data, 'base64');
         const decryptor = exports.CRYPTO_ALGORITHMS[algoId];
         if (!decryptor) {
-            throw new Error(`Unsupported decryption algorithm ID "${algoId}"`);
+            throw new Error('Unsupported decryption algorithm ID "' + algoId + '"');
         }
-        const decrypted = decryptor.decrypt(encryptedBuf, key);
+        return decryptor.decrypt(encryptedBuf, key);
+    }
+    catch (err) {
+        throw new Error('Failed to decrypt field value: ' + err.message);
+    }
+    finally {
+        encryptedBuf.fill(0);
+    }
+}
+function decryptValue(stored, keys) {
+    if (typeof stored !== 'string')
+        return stored;
+    if (!stored.startsWith('VOLLVALT:'))
+        return stored;
+    const decrypted = decryptBufferValue(stored, keys);
+    try {
+        // Compatibility API: V8 strings cannot provide deterministic zeroization.
         const plaintext = decrypted.toString('utf8');
-        // RAM Security: Zeroize the decrypted buffer
-        decrypted.fill(0);
         try {
             return JSON.parse(plaintext);
         }
@@ -783,8 +870,8 @@ function decryptValue(stored, keys) {
             return plaintext;
         }
     }
-    catch (err) {
-        throw new Error(`Failed to decrypt field value: ${err.message}`);
+    finally {
+        decrypted.fill(0);
     }
 }
 function rewriteQueryWhere(where, fields, rootSalt, modelName, allowFrequencyLeakage) {

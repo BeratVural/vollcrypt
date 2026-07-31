@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.generateComplianceHtmlReport = exports.auditConfiguration = exports.decryptValue = exports.encryptValue = exports.maskValue = exports.VERSION_ALGORITHMS = exports.CRYPTO_ALGORITHMS = exports.parseCiphertext = exports.activateBreakGlass = exports.getBreakGlassKey = exports.isBreakGlassActive = exports.deactivateBreakGlass = exports.configureBreakGlass = exports.resetSecureKeyCacheForTesting = exports.setCachedKey = exports.getCachedKey = exports.verifyAuditLogEntries = exports.resetAuditLoggerForTesting = exports.resetFailClosedStatusForTesting = exports.checkPageSize = exports.checkRateLimit = exports.decryptWithSecurity = exports.configureAuditLogger = exports.dbGuardContextStore = exports.computeBlindIndex = exports.resolveKeys = exports.Pkcs11KmsProvider = exports.unwrapDekLocal = exports.VaultKmsProvider = exports.GcpKmsProvider = exports.AwsKmsProvider = exports.wrapOracleConnection = exports.wrapSqliteDatabase = void 0;
+exports.generateComplianceHtmlReport = exports.auditConfiguration = exports.MAX_PLAINTEXT_BYTES = exports.MAX_CIPHERTEXT_STRING_LENGTH = exports.decryptValue = exports.decryptBufferValue = exports.encryptValue = exports.maskValue = exports.VERSION_ALGORITHMS = exports.CRYPTO_ALGORITHMS = exports.parseCiphertext = exports.activateBreakGlass = exports.getBreakGlassKey = exports.isBreakGlassActive = exports.deactivateBreakGlass = exports.configureBreakGlass = exports.resetSecureKeyCacheForTesting = exports.setCachedKey = exports.getCachedKey = exports.verifyAuditLogEntries = exports.resetAuditLoggerForTesting = exports.resetFailClosedStatusForTesting = exports.checkPageSize = exports.checkRateLimit = exports.decryptWithSecurity = exports.configureAuditLogger = exports.dbGuardContextStore = exports.computeBlindIndex = exports.resolveKeys = exports.Pkcs11KmsProvider = exports.unwrapDekLocal = exports.VaultKmsProvider = exports.GcpKmsProvider = exports.AwsKmsProvider = exports.wrapOracleConnection = exports.wrapSqliteDatabase = void 0;
 var drivers_1 = require("./drivers");
 Object.defineProperty(exports, "wrapSqliteDatabase", { enumerable: true, get: function () { return drivers_1.wrapSqliteDatabase; } });
 Object.defineProperty(exports, "wrapOracleConnection", { enumerable: true, get: function () { return drivers_1.wrapOracleConnection; } });
@@ -35,7 +35,10 @@ Object.defineProperty(exports, "CRYPTO_ALGORITHMS", { enumerable: true, get: fun
 Object.defineProperty(exports, "VERSION_ALGORITHMS", { enumerable: true, get: function () { return security_1.VERSION_ALGORITHMS; } });
 Object.defineProperty(exports, "maskValue", { enumerable: true, get: function () { return security_1.maskValue; } });
 Object.defineProperty(exports, "encryptValue", { enumerable: true, get: function () { return security_1.encryptValue; } });
+Object.defineProperty(exports, "decryptBufferValue", { enumerable: true, get: function () { return security_1.decryptBufferValue; } });
 Object.defineProperty(exports, "decryptValue", { enumerable: true, get: function () { return security_1.decryptValue; } });
+Object.defineProperty(exports, "MAX_CIPHERTEXT_STRING_LENGTH", { enumerable: true, get: function () { return security_1.MAX_CIPHERTEXT_STRING_LENGTH; } });
+Object.defineProperty(exports, "MAX_PLAINTEXT_BYTES", { enumerable: true, get: function () { return security_1.MAX_PLAINTEXT_BYTES; } });
 var compliance_1 = require("./compliance");
 Object.defineProperty(exports, "auditConfiguration", { enumerable: true, get: function () { return compliance_1.auditConfiguration; } });
 Object.defineProperty(exports, "generateComplianceHtmlReport", { enumerable: true, get: function () { return compliance_1.generateComplianceHtmlReport; } });

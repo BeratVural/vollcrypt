@@ -322,8 +322,8 @@ describe('Vollcrypt Central Security Modules (Phase 4)', () => {
     const { parseCiphertext } = require('../src/security');
 
     // 1. Valid version passes
-    const valid = parseCiphertext('VOLLVALT:v1:somebase64data');
-    assert.deepStrictEqual(valid, { algoId: '1', version: '1', base64Data: 'somebase64data' });
+    const valid = parseCiphertext('VOLLVALT:v1:c29tZWJhc2U2NGRhdGE=');
+    assert.deepStrictEqual(valid, { algoId: '1', version: '1', base64Data: 'c29tZWJhc2U2NGRhdGE=' });
 
     // 2. Unsupported version throws
     assert.throws(() => {
@@ -339,6 +339,56 @@ describe('Vollcrypt Central Security Modules (Phase 4)', () => {
     assert.throws(() => {
       parseCiphertext('VOLLVALT:v1_nocolon');
     }, /Malformed ciphertext format/);
+  });
+
+  test('ciphertext parser rejects oversized, control-character, and non-canonical inputs', () => {
+    const {
+      MAX_CIPHERTEXT_STRING_LENGTH,
+      parseCiphertext,
+    } = require('../src/security');
+
+    assert.throws(
+      () => parseCiphertext('VOLLVALT:v1:' + 'A'.repeat(MAX_CIPHERTEXT_STRING_LENGTH)),
+      /exceeds the maximum supported field size/
+    );
+    assert.throws(
+      () => parseCiphertext('VOLLVALT:v1:AAAA' + String.fromCharCode(0)),
+      /forbidden control characters/
+    );
+    assert.throws(
+      () => parseCiphertext('VOLLVALT:v1:somebase64data'),
+      /not canonical Base64/
+    );
+  });
+
+  test('mutable Buffer decrypt API avoids a plaintext string conversion', () => {
+    const {
+      decryptBufferValue,
+      encryptValue,
+    } = require('../src/security');
+
+    const plaintext = Buffer.from('buffer-only-secret', 'utf8');
+    const encrypted = encryptValue(plaintext, key, '1');
+    const decrypted = decryptBufferValue(encrypted, { '1': key });
+
+    assert.ok(Buffer.isBuffer(decrypted));
+    assert.deepStrictEqual(decrypted, plaintext);
+    decrypted.fill(0);
+    plaintext.fill(0);
+  });
+
+  test('field encryption rejects plaintext larger than the configured bound', () => {
+    const {
+      encryptValue,
+      MAX_PLAINTEXT_BYTES,
+    } = require('../src/security');
+
+    const oversized = Buffer.alloc(MAX_PLAINTEXT_BYTES + 1, 0x41);
+    assert.throws(
+      () => encryptValue(oversized, key, '1'),
+      /Plaintext exceeds the maximum supported field size/
+    );
+    oversized.fill(0);
   });
 
   test('getCachedKey and setCachedKey prevent delimiter-based cache key collisions', () => {

@@ -1,4 +1,6 @@
 import { AsyncLocalStorage } from 'async_hooks';
+export declare const MAX_CIPHERTEXT_STRING_LENGTH: number;
+export declare const MAX_PLAINTEXT_BYTES: number;
 export declare function wrapKey(kek: Buffer, keyToWrap: Buffer): Buffer;
 export declare function unwrapKey(kek: Buffer, wrappedKey: Buffer): Buffer;
 export declare function calculatePadding(contentLen: number): Buffer;
@@ -100,6 +102,11 @@ export declare function parseCiphertext(stored: string): {
 export declare function validateBlindIndexConfiguration(rootSalt: Buffer, allowFrequencyLeakage: true): void;
 export declare function computeBlindIndex(value: any, rootSalt: Buffer, columnName: string, allowFrequencyLeakage: true): string;
 export declare function encryptValue(val: any, key: Buffer, version: string): string;
+/**
+ * Decrypts directly to a mutable Buffer and avoids creating an immutable V8 plaintext string.
+ * The caller owns the returned buffer and must zeroize it with fill(0) after use.
+ */
+export declare function decryptBufferValue(stored: string, keys: Record<string, Buffer>): Buffer;
 export declare function decryptValue(stored: any, keys: Record<string, Buffer>): any;
 export declare function rewriteQueryWhere(where: any, fields: string[], rootSalt: Buffer, modelName: string, allowFrequencyLeakage: true): void;
 export declare function addBlindIndexes(data: any, fields: string[], rootSalt: Buffer, modelName: string, allowFrequencyLeakage: true): void;
