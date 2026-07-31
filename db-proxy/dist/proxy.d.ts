@@ -75,6 +75,7 @@ export declare class DbProxyServer {
     private gossipSecret;
     private jitSecret;
     private anomalyScorer;
+    private isClusterModeConfigured;
     registerSsoSession(username: string, passcode: string, roles: string[], ttlMs?: number): void;
     registerJitGrant(userId: string, role: string, durationMs: number): void;
     logSiemEvent(event: string, severity: number, username: string, clientIp: string, message: string): void;

@@ -2386,6 +2386,54 @@ test('JIT and gossip contexts reject secret reuse', async () => {
   await assert.rejects(proxy.start(), /must be distinct/);
 });
 
+test('cluster mode rejects process-local authorization and rate-limit controls', async () => {
+  const proxy = new DbProxyServer({
+    port: 20008,
+    dbHost: '127.0.0.1',
+    dbPort: 20002,
+    resolvedKeys: { '1': KEY },
+    gossipPort: 20009,
+    peers: [],
+    config: {
+      users: {},
+      firewall: {
+        gossipSecret: 'cluster-gossip-secret-0123456789abcdef',
+        jitApprovalRequired: true,
+        rateLimits: { maxQueriesPerSecond: 5 },
+      },
+      rateLimiter: { maxDecryptionsPerSecond: 10, mode: 'fail_closed' },
+    },
+  });
+  await assert.rejects(
+    proxy.start(),
+    /process-local security controls: firewall\.jitApprovalRequired, firewall\.rateLimits\.maxQueriesPerSecond, rateLimiter\.maxDecryptionsPerSecond/
+  );
+});
+
+test('cluster mode rejects process-local SSO sessions and JIT grants', () => {
+  const proxy = new DbProxyServer({
+    port: 20010,
+    dbHost: '127.0.0.1',
+    dbPort: 20002,
+    resolvedKeys: { '1': KEY },
+    gossipPort: 20011,
+    peers: [],
+    config: {
+      users: {},
+      firewall: { gossipSecret: 'cluster-gossip-secret-0123456789abcdef' },
+    },
+  });
+
+  assert.throws(
+    () => proxy.registerSsoSession('analyst', 'one-time-code', ['ANALYST']),
+    /process-local SSO sessions/
+  );
+  assert.throws(
+    () => proxy.registerJitGrant('analyst', 'OWNER', 60_000),
+    /process-local JIT grants/
+  );
+});
+
 test('Postgres SSLRequest is refused when no trusted TLS identity is configured', async () => {
   const backendPort = 20006;
   const proxyPort = 20007;

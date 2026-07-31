@@ -151,3 +151,7 @@ For licensing details or commercial purchases, please contact [berat.vural.tr@gm
 | PostgreSQL `server_version` masking | Yes | No | No | No | No |
 
 For MySQL, MongoDB, MSSQL, and Oracle, enabling unsupported `firewall.*` controls such as `jitApprovalRequired`, `anomalyEngine.enabled`, `fingerprinting.enabled`, `rateLimits.maxQueriesPerSecond`, `maxRowsPerQuery`, `temporalConstraints`, or `versionMask` causes startup to throw an error. Use PostgreSQL for the full gateway security pipeline or disable unsupported controls explicitly for alternative drivers.
+
+## Cluster Security State
+
+Cluster gossip synchronizes banned IP addresses and query-fingerprint allowlist entries. SSO sessions, JIT grants, query QPS counters, and decryption rate counters are not synchronized between proxy processes. db-proxy rejects those local controls when cluster mode is configured and rejects local SSO/JIT registration. Put those controls behind a distributed authorization and rate-limit service, or run a single proxy instance.

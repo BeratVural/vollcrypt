@@ -379,7 +379,14 @@ export class DbProxyServer {
   private jitSecret: string = '';
   private anomalyScorer = new QueryAnomalyScorer();
 
+  private isClusterModeConfigured(): boolean {
+    return this.options.gossipPort !== undefined || this.options.peers !== undefined;
+  }
+
   public registerSsoSession(username: string, passcode: string, roles: string[], ttlMs: number = 900000) {
+    if (this.isClusterModeConfigured()) {
+      throw new Error('Cluster mode cannot use process-local SSO sessions; configure a distributed authorization service');
+    }
     this.activeSsoSessions.set(passcode, {
       username,
       expiresAt: Date.now() + ttlMs,
@@ -388,6 +395,9 @@ export class DbProxyServer {
   }
 
   public registerJitGrant(userId: string, role: string, durationMs: number) {
+    if (this.isClusterModeConfigured()) {
+      throw new Error('Cluster mode cannot use process-local JIT grants; configure a distributed authorization service');
+    }
     this.activeJitGrants.set(userId, {
       role,
       expiresAt: Date.now() + durationMs,
@@ -562,13 +572,28 @@ export class DbProxyServer {
 
     const configuredGossipSecret = this.options.config?.firewall?.gossipSecret;
     const configuredJitSecret = this.options.config?.firewall?.jitSecret;
-    const clusteringConfigured = this.options.gossipPort !== undefined || this.options.peers !== undefined;
+    const clusteringConfigured = this.isClusterModeConfigured();
     if (clusteringConfigured) {
       if (!this.options.gossipPort || !this.options.peers) {
         throw new Error('Cluster mode requires both gossipPort and peers');
       }
       if (!configuredGossipSecret || configuredGossipSecret.length < 32) {
         throw new Error('Cluster mode requires firewall.gossipSecret with at least 32 characters');
+      }
+      const processLocalControls: string[] = [];
+      if (this.options.config?.firewall?.jitApprovalRequired) {
+        processLocalControls.push('firewall.jitApprovalRequired');
+      }
+      if (this.options.config?.firewall?.rateLimits?.maxQueriesPerSecond !== undefined) {
+        processLocalControls.push('firewall.rateLimits.maxQueriesPerSecond');
+      }
+      if (this.options.config?.rateLimiter?.maxDecryptionsPerSecond !== undefined) {
+        processLocalControls.push('rateLimiter.maxDecryptionsPerSecond');
+      }
+      if (processLocalControls.length > 0) {
+        throw new Error(
+          `Cluster mode rejects process-local security controls: ${processLocalControls.join(', ')}. Configure a distributed authorization and rate-limit service`
+        );
       }
     }
     if (configuredGossipSecret && configuredJitSecret && configuredGossipSecret === configuredJitSecret) {
