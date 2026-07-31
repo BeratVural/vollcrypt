@@ -64,7 +64,7 @@
     {
       "name": "dist/index.d.ts",
       "digest": {
-        "sha256": "78394c391780a22cf6b57acf7993b6aed9074fe809c1fd56ca2844ebcc4e2c0f"
+        "sha256": "e7dd929bbff72365158651618c44d5a571f060d55fdc2b83a73d9aa2954103c6"
       }
     },
     {
@@ -76,7 +76,7 @@
     {
       "name": "dist/kms.d.ts",
       "digest": {
-        "sha256": "660b2f516a247d2524aebbf982fd7c1317fed8abd98d9f7edddca51d6ab2ca3c"
+        "sha256": "35c58e74cbc5bb5f293d0f4898eee18e21c1b77a2ee00c9204e40dda9e7fce76"
       }
     },
     {
@@ -241,9 +241,9 @@
         "id": "https://vollcrypt.dev/builders/local-node-build"
       },
       "metadata": {
-        "invocationId": "98e8bebbc77d4cd57b8f62774836c944",
-        "startedOn": "2026-07-31T06:44:39.594Z",
-        "finishedOn": "2026-07-31T06:44:39.596Z"
+        "invocationId": "4829aae8a983957ef42e8217a06cbc71",
+        "startedOn": "2026-07-31T06:47:14.152Z",
+        "finishedOn": "2026-07-31T06:47:14.153Z"
       }
     }
   }

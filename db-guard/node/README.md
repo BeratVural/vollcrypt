@@ -185,6 +185,20 @@ We provide several KmsProvider implementations:
 - **VaultKmsProvider**: Resolves keys using HashiCorp Vault.
 - **Pkcs11KmsProvider**: Interacts with physical or virtual HSMs (YubiHSM2, Thales, Nitrokey, SoftHSM2, etc.) using the standard PKCS#11 protocol.
 
+Grant provider identities decrypt-only access to the exact key resource. Do not use project/account-wide KMS administration roles.
+
+AWS KMS policy statement:
+
+```json
+{
+  "Effect": "Allow",
+  "Action": "kms:Decrypt",
+  "Resource": "arn:aws:kms:REGION:ACCOUNT_ID:key/KEY_ID"
+}
+```
+
+For GCP, grant a custom role containing only `cloudkms.cryptoKeyVersions.useToDecrypt` on the required CryptoKey resource. Avoid project-wide `roles/cloudkms.admin` or owner/editor roles.
+
 Multi-tenant Prisma and Mongoose integrations cache wrapped key material for `multiTenant.cacheTtlMs` (default `120000` ms). A rotation controller must call `invalidateCachedKeys(tenantId, version?)` on every application node before advertising the new key generation. Use a pub/sub rotation event or equivalent deployment control; the in-process cache does not synchronize itself across hosts.
 
 Rate-limit counters and fail-closed state are also process-local. Horizontally scaled deployments must enforce a distributed limit and fail-closed signal at the gateway or orchestration layer; multiplying the same per-process limit across replicas weakens the configured control.

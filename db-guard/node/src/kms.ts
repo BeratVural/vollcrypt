@@ -29,8 +29,35 @@ export async function resolveBlindIndexRootSalt(
   return rootSalt;
 }
 
+export interface AwsKmsCredentialIdentity {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken?: string;
+}
+
+export interface AwsKmsProviderConfig {
+  region: string;
+  keyId?: string;
+  credentials?: AwsKmsCredentialIdentity | (() => Promise<AwsKmsCredentialIdentity>);
+}
+
+export interface GcpKmsClientOptions {
+  projectId?: string;
+  keyFilename?: string;
+  apiEndpoint?: string;
+  credentials?: {
+    client_email?: string;
+    private_key?: string;
+  };
+}
+
+export interface GcpKmsProviderConfig {
+  keyName: string;
+  clientOptions?: GcpKmsClientOptions;
+}
+
 export class AwsKmsProvider implements KmsProvider {
-  constructor(private config: { region: string; keyId?: string; credentials?: any }) {}
+  constructor(private config: AwsKmsProviderConfig) {}
 
   async decrypt(ciphertext: Buffer): Promise<Buffer> {
     try {
@@ -52,7 +79,7 @@ export class AwsKmsProvider implements KmsProvider {
 }
 
 export class GcpKmsProvider implements KmsProvider {
-  constructor(private config: { keyName: string; clientOptions?: any }) {}
+  constructor(private config: GcpKmsProviderConfig) {}
 
   async decrypt(ciphertext: Buffer): Promise<Buffer> {
     try {

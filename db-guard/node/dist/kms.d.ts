@@ -8,21 +8,37 @@ export interface KmsProvider {
  * adapter is disposed.
  */
 export declare function resolveBlindIndexRootSalt(provider: KmsProvider, wrappedRootSalt: Buffer): Promise<Buffer>;
+export interface AwsKmsCredentialIdentity {
+    accessKeyId: string;
+    secretAccessKey: string;
+    sessionToken?: string;
+}
+export interface AwsKmsProviderConfig {
+    region: string;
+    keyId?: string;
+    credentials?: AwsKmsCredentialIdentity | (() => Promise<AwsKmsCredentialIdentity>);
+}
+export interface GcpKmsClientOptions {
+    projectId?: string;
+    keyFilename?: string;
+    apiEndpoint?: string;
+    credentials?: {
+        client_email?: string;
+        private_key?: string;
+    };
+}
+export interface GcpKmsProviderConfig {
+    keyName: string;
+    clientOptions?: GcpKmsClientOptions;
+}
 export declare class AwsKmsProvider implements KmsProvider {
     private config;
-    constructor(config: {
-        region: string;
-        keyId?: string;
-        credentials?: any;
-    });
+    constructor(config: AwsKmsProviderConfig);
     decrypt(ciphertext: Buffer): Promise<Buffer>;
 }
 export declare class GcpKmsProvider implements KmsProvider {
     private config;
-    constructor(config: {
-        keyName: string;
-        clientOptions?: any;
-    });
+    constructor(config: GcpKmsProviderConfig);
     decrypt(ciphertext: Buffer): Promise<Buffer>;
 }
 export declare class VaultKmsProvider implements KmsProvider {
