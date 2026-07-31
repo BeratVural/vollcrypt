@@ -46,6 +46,57 @@ jobs:
       - name: Test db-guard
         run: npm test --workspace @vollcrypt/db-guard
 
+  integration:
+    name: Real ORM/database integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vollcrypt
+          POSTGRES_PASSWORD: vollcrypt-test
+          POSTGRES_DB: vollcrypt_guard
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vollcrypt -d vollcrypt_guard"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://vollcrypt:vollcrypt-test@localhost:5432/vollcrypt_guard
+      MONGODB_URI: mongodb://localhost:27017
+      RUN_DB_INTEGRATION: "1"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build db-guard
+        run: npm run build --workspace @vollcrypt/db-guard
+
+      - name: Prepare Prisma test schema
+        run: npm run test:integration:prepare --workspace @vollcrypt/db-guard
+
+      - name: Test real ORM adapters
+        run: npm run test:integration --workspace @vollcrypt/db-guard
   rust:
     name: Test Rust Guard
     runs-on: ubuntu-latest

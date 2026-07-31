@@ -144,7 +144,9 @@
           "version": "0.9.1",
           "scripts": {
             "build": "tsc && node scripts/generate-sbom.js",
-            "test": "node --import tsx --test tests/*.test.ts"
+            "test": "node --import tsx --test tests/*.test.ts",
+            "test:integration:prepare": "prisma generate --schema tests/integration/prisma/schema.prisma && prisma db push --schema tests/integration/prisma/schema.prisma --skip-generate",
+            "test:integration": "node --import tsx --test tests/integration/*.test.ts"
           }
         }
       },
@@ -241,9 +243,9 @@
         "id": "https://vollcrypt.dev/builders/local-node-build"
       },
       "metadata": {
-        "invocationId": "4829aae8a983957ef42e8217a06cbc71",
-        "startedOn": "2026-07-31T06:47:14.152Z",
-        "finishedOn": "2026-07-31T06:47:14.153Z"
+        "invocationId": "9206788f0e59cc331a4a78fcefea8e8a",
+        "startedOn": "2026-07-31T18:25:40.762Z",
+        "finishedOn": "2026-07-31T18:25:40.763Z"
       }
     }
   }
