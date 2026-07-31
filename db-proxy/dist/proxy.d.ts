@@ -89,4 +89,7 @@ export declare class DbProxyServer {
     start(): Promise<void>;
     stop(): Promise<void>;
     private handleConnection;
+    private createPostgresConnectionRuntime;
+    private attachPostgresClientListeners;
+    private attachPostgresBackendListeners;
 }
