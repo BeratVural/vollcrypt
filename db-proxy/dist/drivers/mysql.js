@@ -248,11 +248,15 @@ function handleMysqlConnection(clientSocket, options) {
                     clientSocket.write(errPacket);
                     return; // Halt and prevent forwarding to the backend DB
                 }
+                currentTable = 'default';
+                currentColumns = [];
                 try {
                     currentTable = (0, waf_js_1.extractTableName)(query);
                     currentColumns = (0, waf_js_1.extractProjectionColumns)(query);
                 }
                 catch (e) {
+                    currentTable = 'default';
+                    currentColumns = [];
                     // ignore parsing error, fallback to default
                 }
             }

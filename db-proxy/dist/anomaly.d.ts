@@ -15,6 +15,7 @@ export declare class QueryAnomalyScorer {
     /**
      * Learns a baseline query vector for a user.
      */
+    hasBaseline(username: string): boolean;
     learnBaseline(username: string, sampleQueries: string[]): void;
     /**
      * Evaluates the anomaly threat score of a query for a given user.

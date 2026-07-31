@@ -218,10 +218,14 @@ export function handleOracleConnection(
               clientSocket.write(errPacket);
               return;
             }
+            currentTable = 'default';
+            currentColumns = [];
             try {
               currentTable = extractTableName(query);
               currentColumns = extractProjectionColumns(query);
             } catch (e) {
+              currentTable = 'default';
+              currentColumns = [];
               // ignore parsing error
             }
           }

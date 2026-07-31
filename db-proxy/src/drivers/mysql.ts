@@ -262,10 +262,14 @@ export function handleMysqlConnection(
             clientSocket.write(errPacket);
           return; // Halt and prevent forwarding to the backend DB
         }
+        currentTable = 'default';
+        currentColumns = [];
         try {
           currentTable = extractTableName(query);
           currentColumns = extractProjectionColumns(query);
         } catch (e) {
+          currentTable = 'default';
+          currentColumns = [];
           // ignore parsing error, fallback to default
         }
       }

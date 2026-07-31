@@ -12,6 +12,8 @@ import { serializeDataRow, serializeParameterStatus, parseParameterStatus } from
 import { serializeLengthEncodedString, parseLengthEncodedString } from '../src/drivers/mysql.js';
 import { serializeBson, parseBson } from '../src/drivers/mongo.js';
 import { ensureTenantScopedQuery, extractProjectionColumns, validateQuery } from '../src/waf.js';
+import { scanAndMaskCell } from '../src/dlp.js';
+import { QueryAnomalyScorer } from '../src/anomaly.js';
 
 const KEY = Buffer.alloc(32, 0x01); // Ephemeral test key (32 bytes of 0x01)
 
@@ -1196,7 +1198,8 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       config: {
         users: { postgres: { role: 'OWNER', userId: 'usr-admin' } },
         firewall: {
-          ipBanning: { enabled: true }
+          ipBanning: { enabled: true },
+          gossipSecret: 'cluster-test-secret-0123456789abcdef',
         }
       },
       resolvedKeys: { '1': KEY },
@@ -1212,7 +1215,8 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       config: {
         users: { postgres: { role: 'OWNER', userId: 'usr-admin' } },
         firewall: {
-          ipBanning: { enabled: true }
+          ipBanning: { enabled: true },
+          gossipSecret: 'cluster-test-secret-0123456789abcdef',
         }
       },
       resolvedKeys: { '1': KEY },
@@ -1279,7 +1283,7 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
         users: { postgres: { role: 'OWNER', userId: 'usr-admin' } },
         firewall: {
           ipBanning: { enabled: true },
-          gossipSecret: 'super_secret_cluster_key',
+          gossipSecret: 'cluster-signature-test-secret-0123456789abcdef',
         }
       },
       resolvedKeys: { '1': KEY },
@@ -1572,7 +1576,7 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     await keySplitProxy.stop();
   });
 
-  await t.test('32. AI-Driven Semantic Anomaly Threat Scoring and Blocking', async () => {
+  await t.test('32. Persistent Statistical Query Anomaly Scoring and Blocking', async () => {
     const anomalyOptions: DbProxyOptions = {
       port: PROXY_PORT + 53,
       dbHost: '127.0.0.1',
@@ -1612,9 +1616,9 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     // Highly anomalous query: 'DROP TABLE log_audits CASCADE'
     try {
       await client.query('DROP TABLE log_audits CASCADE');
-      assert.fail('Anomalous query should be blocked by AI anomaly engine');
+      assert.fail('Anomalous query should be blocked by statistical anomaly detection');
     } catch (err: any) {
-      assert.ok(err.message.includes('AI Anomaly'));
+      assert.ok(err.message.includes('statistical anomaly detection'));
     } finally {
       await client.end();
       await anomalyProxy.stop();
@@ -2170,6 +2174,7 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
         users: { postgres: { role: 'OWNER', userId: 'usr-admin' } },
       },
       minResponseTimeMs: 0,
+      tls: { allowEphemeralSelfSigned: true },
     };
     const sslProxy = new DbProxyServer(sslOptions);
     await sslProxy.start();
@@ -2272,6 +2277,101 @@ function createMockAuthDbServer(port: number, passwordExpected: string): net.Ser
 }
 
 
+test('DLP masks payment card numbers with mixed separators', () => {
+  assert.strictEqual(scanAndMaskCell('card=4111.1111/1111_1111'), 'card=4111-XXXX-XXXX-1111');
+});
+
+test('WAF blocks privileged DDL, DCL, and COPY PROGRAM for non-owners', () => {
+  for (const query of [
+    'CREATE EXTENSION file_fdw',
+    'CREATE TABLE secrets (value text)',
+    'GRANT OWNER TO analyst',
+    'REVOKE SELECT ON secrets FROM analyst',
+    "COPY secrets TO PROGRAM 'cat > /tmp/secrets'",
+  ]) {
+    assert.throws(() => validateQuery(query, 'ANALYST'));
+  }
+  assert.doesNotThrow(() => validateQuery('CREATE EXTENSION pgcrypto', 'OWNER'));
+});
+
+test('query anomaly baselines persist per user', () => {
+  const scorer = new QueryAnomalyScorer();
+  assert.strictEqual(scorer.hasBaseline('analyst'), false);
+  scorer.learnBaseline('analyst', ['SELECT id FROM users']);
+  assert.strictEqual(scorer.hasBaseline('analyst'), true);
+  assert.ok(scorer.getAnomalyScore('analyst', 'DROP TABLE users') > 0.5);
+});
+
+test('cluster mode requires a dedicated gossip secret', async () => {
+  const proxy = new DbProxyServer({
+    port: 20003,
+    dbHost: '127.0.0.1',
+    dbPort: 20002,
+    resolvedKeys: { '1': KEY },
+    config: { users: {} },
+    gossipPort: 20004,
+    peers: [],
+  });
+  await assert.rejects(proxy.start(), /gossipSecret/);
+});
+
+test('JIT and gossip contexts reject secret reuse', async () => {
+  const sharedSecret = 'shared-secret-0123456789abcdef0123456789';
+  const proxy = new DbProxyServer({
+    port: 20005,
+    dbHost: '127.0.0.1',
+    dbPort: 20002,
+    resolvedKeys: { '1': KEY },
+    config: {
+      users: {},
+      firewall: { gossipSecret: sharedSecret, jitSecret: sharedSecret },
+    },
+  });
+  await assert.rejects(proxy.start(), /must be distinct/);
+});
+
+test('Postgres SSLRequest is refused when no trusted TLS identity is configured', async () => {
+  const backendPort = 20006;
+  const proxyPort = 20007;
+  const backend = net.createServer(() => undefined);
+  await new Promise<void>((resolve, reject) => {
+    backend.once('error', reject);
+    backend.listen(backendPort, '127.0.0.1', resolve);
+  });
+
+  const proxy = new DbProxyServer({
+    port: proxyPort,
+    dbHost: '127.0.0.1',
+    dbPort: backendPort,
+    resolvedKeys: { '1': KEY },
+    config: { users: {} },
+  });
+
+  try {
+    await proxy.start();
+    const client = net.connect({ host: '127.0.0.1', port: proxyPort });
+    await new Promise<void>((resolve, reject) => {
+      client.once('connect', resolve);
+      client.once('error', reject);
+    });
+    const response = new Promise<Buffer>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Timed out waiting for SSL refusal')), 2_000);
+      client.once('data', (data) => {
+        clearTimeout(timeout);
+        resolve(data);
+      });
+    });
+    const sslRequest = Buffer.alloc(8);
+    sslRequest.writeInt32BE(8, 0);
+    sslRequest.writeInt32BE(80877103, 4);
+    client.write(sslRequest);
+    assert.strictEqual((await response).toString('ascii'), 'N');
+    client.destroy();
+  } finally {
+    await proxy.stop();
+    await new Promise<void>((resolve) => backend.close(() => resolve()));
+  }
+});
 test('WAF blocks MySQL hash-comment UNION SELECT bypass', () => {
   assert.throws(() => {
     validateQuery('SELECT id FROM products WHERE id=1 UNION#x\nSELECT username,password_hash FROM admin_users', 'GUEST');

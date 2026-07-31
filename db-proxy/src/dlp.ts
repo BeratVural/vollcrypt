@@ -3,7 +3,7 @@ import { maskValue } from '@vollcrypt/db-guard';
 export function scanAndMaskCell(val: string): string {
   // Local match regex patterns to prevent overlapping mismatches and concurrency race conditions
   const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
-  const CREDIT_CARD_REGEX = /\b(?:\d[ -]*?){13,19}\b/g;
+  const CREDIT_CARD_REGEX = /\b\d(?:[ \t._\/-]*\d){12,18}\b/g;
   const TC_NO_REGEX = /\b[1-9]\d{10}\b/g;
   const IBAN_REGEX = /\b[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7,26}\b/g;
 

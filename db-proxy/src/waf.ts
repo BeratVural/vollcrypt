@@ -18,9 +18,11 @@ const SQLI_PATTERNS = [
 
 // Dangerous DDL commands
 const DDL_PATTERNS = [
-  /\bdrop\s+(table|database|schema|view|index|user|role)\b/i,
+  /\bcreate\s+(?:or\s+replace\s+)?(?:table|database|schema|view|index|user|role|extension)\b/i,
+  /\bdrop\s+(?:table|database|schema|view|index|user|role|extension)\b/i,
   /\btruncate\s+table\b/i,
-  /\balter\s+(table|database|schema|view|index|user|role)\b/i,
+  /\balter\s+(?:table|database|schema|view|index|user|role|extension)\b/i,
+  /\b(?:grant|revoke)\b/i,
 ];
 
 const DELAY_PATTERNS = [

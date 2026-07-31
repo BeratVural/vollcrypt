@@ -76,7 +76,7 @@ async function showInteractiveMenu(defaults) {
             { key: 'ipBanning', label: 'Gossip IP Banning', enabled: !defaults.noIpBanning },
             { key: 'fipsMode', label: 'Require Active Node/OpenSSL FIPS Mode', enabled: defaults.fipsMode },
             { key: 'jitApprovalRequired', label: 'Just-In-Time Access Approvals', enabled: defaults.jitApprovalRequired },
-            { key: 'anomalyEngine', label: 'AI Semantic Anomaly Engine', enabled: defaults.anomalyEngine }
+            { key: 'anomalyEngine', label: 'Statistical Query Anomaly Detection', enabled: defaults.anomalyEngine }
         ];
         let cursor = 0;
         readline.emitKeypressEvents(process.stdin);
@@ -388,6 +388,7 @@ async function runCli() {
         noIpBanning,
         dbType,
         fipsMode,
+        tls: config.tls,
     };
     const server = new proxy_js_1.DbProxyServer(options);
     console.log(`Starting @vollcrypt/db-proxy on port ${port}...`);
@@ -399,7 +400,7 @@ async function runCli() {
     console.log(`- Distributed Gossip IP Banning: ${!noIpBanning ? 'Enabled' : 'Disabled'}`);
     console.log(`- Require Active Node/OpenSSL FIPS Mode: ${fipsMode ? 'Enabled' : 'Disabled'}`);
     console.log(`- Just-In-Time Access Approvals: ${jitApprovalRequired ? 'Enabled' : 'Disabled'}`);
-    console.log(`- AI Semantic Anomaly Engine: ${anomalyEngine ? 'Enabled' : 'Disabled'}`);
+    console.log(`- Statistical Query Anomaly Detection: ${anomalyEngine ? 'Enabled' : 'Disabled'}`);
     try {
         await server.start();
         console.log('Proxy server is running successfully.');

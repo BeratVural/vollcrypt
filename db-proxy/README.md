@@ -9,8 +9,8 @@ A zero-trust, wire-protocol database cryptographic gateway for PostgreSQL. It tr
 ## Key Features
 
 - **Protocol-Level Interception**: Intercepts PostgreSQL v3.0 wire traffic to inspect backend `DataRow` packets without parsing or modifying complex SQL command dialects.
-- **SSL/TLS Fallback Negotiation**: Auto-refuses database client `SSLRequest` frames by responding with standard protocol fallback indicators, forcing clients to establish unencrypted TCP connections to the local proxy. This eliminates local certificate management overhead.
-- **Built-in Database Firewall (Database WAF / SQLi Protection)**: Scans incoming query packets ('Q' Simple Queries and 'P' Parse Extended Queries) to block SQL Injection signatures and unauthorized DDL operations (DROP, TRUNCATE, ALTER) based on the client's role.
+- **Explicit TLS Trust Configuration**: Loads a persistent certificate and private key from `tls.certPath` and `tls.keyPath`. Without them, PostgreSQL `SSLRequest` is refused; ephemeral self-signed certificates require the explicit development-only `allowEphemeralSelfSigned` opt-in.
+- **Built-in Database Firewall (Database WAF / SQLi Protection)**: Scans incoming query packets (`Q` Simple Queries and `P` Parse Extended Queries) to block SQL injection signatures and unauthorized DDL/DCL operations based on the client's role.
 - **Dynamic Data Loss Prevention (DLP)**: Scans raw, unencrypted database cell responses for PII formats (Credit Cards, Emails, National IDs, and IBANs) and automatically applies masking filters in transit.
 - **Cryptographic Access Control**: Translates query-time column metadata (`RowDescription` packets) to match column tags against RBAC permissions.
 - **PostgreSQL Error Frame Mapping**: Generates authentic PostgreSQL error packets (code `42501` - Insufficient Privilege) when an unauthorized client requests columns they are not permitted to decrypt or performs forbidden SQL commands.
@@ -35,6 +35,10 @@ The proxy is configured via a JSON configuration file (`config.json`). This file
 ```json
 {
   "key": "0101010101010101010101010101010101010101010101010101010101010101",
+  "tls": {
+    "keyPath": "./secrets/proxy-key.pem",
+    "certPath": "./secrets/proxy-cert.pem"
+  },
   "users": {
     "postgres": { "role": "OWNER", "userId": "usr-admin" },
     "analyst_hr": { "role": "HR_ADMIN", "userId": "usr-hr-01" },
@@ -66,6 +70,10 @@ The proxy is configured via a JSON configuration file (`config.json`). This file
   }
 }
 ```
+
+`tls.keyPath` and `tls.certPath` must refer to a persistent certificate issued by a CA trusted by clients. `tls.allowEphemeralSelfSigned` is only for isolated development and tests where clients explicitly disable certificate verification.
+
+Cluster mode requires a dedicated `firewall.gossipSecret` of at least 32 characters. It must differ from `firewall.jitSecret` so cluster authentication and JIT token signing remain separate cryptographic contexts.
 
 ---
 

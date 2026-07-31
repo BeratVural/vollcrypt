@@ -18,6 +18,11 @@ export interface DbProxyOptions {
     xorKeySplitShares?: Buffer[];
     xorKeySplitExpectedShares?: number;
     allowSingleProcessXorKeySplit?: true;
+    tls?: {
+        keyPath?: string;
+        certPath?: string;
+        allowEphemeralSelfSigned?: boolean;
+    };
 }
 /**
  * Serializes a PostgreSQL protocol ErrorResponse ('E') message.
@@ -69,6 +74,7 @@ export declare class DbProxyServer {
     private nodeId;
     private gossipSecret;
     private jitSecret;
+    private anomalyScorer;
     registerSsoSession(username: string, passcode: string, roles: string[], ttlMs?: number): void;
     registerJitGrant(userId: string, role: string, durationMs: number): void;
     logSiemEvent(event: string, severity: number, username: string, clientIp: string, message: string): void;

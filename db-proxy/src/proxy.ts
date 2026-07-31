@@ -35,6 +35,7 @@ import {
 import { validateQuery, generateFingerprint, evaluateThreatScore, rewriteQuery, generateLaplaceNoise, identifyAggregates } from './waf.js';
 import { scanAndMaskCell } from './dlp.js';
 import { reconstructKeyFromXorShares } from './mpc.js';
+import { QueryAnomalyScorer } from './anomaly.js';
 
 export interface DbProxyOptions {
   port: number;
@@ -54,6 +55,11 @@ export interface DbProxyOptions {
   xorKeySplitShares?: Buffer[];
   xorKeySplitExpectedShares?: number;
   allowSingleProcessXorKeySplit?: true;
+  tls?: {
+    keyPath?: string;
+    certPath?: string;
+    allowEphemeralSelfSigned?: boolean;
+  };
 }
 
 /**
@@ -371,6 +377,7 @@ export class DbProxyServer {
   private nodeId = Math.random().toString(36).substring(7);
   private gossipSecret: string = '';
   private jitSecret: string = '';
+  private anomalyScorer = new QueryAnomalyScorer();
 
   public registerSsoSession(username: string, passcode: string, roles: string[], ttlMs: number = 900000) {
     this.activeSsoSessions.set(passcode, {
@@ -535,20 +542,40 @@ export class DbProxyServer {
       );
     }
 
-    try {
+    const tlsConfig = this.options.tls;
+    if ((tlsConfig?.keyPath && !tlsConfig.certPath) || (!tlsConfig?.keyPath && tlsConfig?.certPath)) {
+      throw new Error('TLS requires both tls.keyPath and tls.certPath');
+    }
+    if (tlsConfig?.keyPath && tlsConfig.certPath) {
+      this.sslKey = fs.readFileSync(tlsConfig.keyPath, 'utf8');
+      this.sslCert = fs.readFileSync(tlsConfig.certPath, 'utf8');
+      tls.createSecureContext({ key: this.sslKey, cert: this.sslCert });
+    } else if (tlsConfig?.allowEphemeralSelfSigned === true) {
       const attrs = [{ name: 'commonName', value: 'localhost' }];
       const pems = await selfsigned.generate(attrs);
       this.sslKey = pems.private;
       this.sslCert = pems.cert;
-    } catch (err) {
-      console.error('Failed to generate self-signed SSL/TLS certificate:', err);
+    } else {
+      this.sslKey = '';
+      this.sslCert = '';
     }
 
-    this.gossipSecret = (this.options.config as any)?.firewall?.gossipSecret ||
-                        this.options.config?.firewall?.jitSecret ||
-                        crypto.randomBytes(32).toString('hex');
-    this.jitSecret = this.options.config?.firewall?.jitSecret ||
-                     crypto.randomBytes(32).toString('hex');
+    const configuredGossipSecret = this.options.config?.firewall?.gossipSecret;
+    const configuredJitSecret = this.options.config?.firewall?.jitSecret;
+    const clusteringConfigured = this.options.gossipPort !== undefined || this.options.peers !== undefined;
+    if (clusteringConfigured) {
+      if (!this.options.gossipPort || !this.options.peers) {
+        throw new Error('Cluster mode requires both gossipPort and peers');
+      }
+      if (!configuredGossipSecret || configuredGossipSecret.length < 32) {
+        throw new Error('Cluster mode requires firewall.gossipSecret with at least 32 characters');
+      }
+    }
+    if (configuredGossipSecret && configuredJitSecret && configuredGossipSecret === configuredJitSecret) {
+      throw new Error('firewall.gossipSecret and firewall.jitSecret must be distinct secrets');
+    }
+    this.gossipSecret = configuredGossipSecret || crypto.randomBytes(32).toString('hex');
+    this.jitSecret = configuredJitSecret || crypto.randomBytes(32).toString('hex');
 
     if (this.options.gossipPort && this.options.peers) {
       this.clusterManager = new ClusterManager(
@@ -716,8 +743,11 @@ export class DbProxyServer {
             if (!userContext) {
               // Check if it is an SSLRequest (8 bytes, second 4 bytes code: 80877103)
               if (forwardedMsg.length === 8 && forwardedMsg.readInt32BE(4) === 80877103) {
+                if (!this.sslKey || !this.sslCert) {
+                  socket.write(Buffer.from('N', 'ascii'));
+                  continue;
+                }
                 isSslNegotiated = true;
-                // Respond with 'S' to accept SSL
                 socket.write(Buffer.from('S', 'ascii'));
 
                 // Upgrade socket to TLS
@@ -948,20 +978,20 @@ export class DbProxyServer {
                     }
                   }
 
-                  // AI-Driven Anomaly Threat Scoring
+                  // Persistent per-user statistical query anomaly scoring
                   if (this.options.config?.firewall?.anomalyEngine?.enabled) {
                     const baselineQueries = this.options.config?.firewall?.anomalyEngine?.baselineQueries || [
                       'SELECT * FROM users WHERE id = 1',
                       'SELECT id, username FROM users',
                       'SELECT email FROM users WHERE role = ?',
                     ];
-                    const { QueryAnomalyScorer } = await import('./anomaly.js');
-                    const scorer = new QueryAnomalyScorer();
-                    scorer.learnBaseline(dbGuardContext.userId, baselineQueries);
-                    const score = scorer.getAnomalyScore(dbGuardContext.userId, queryStr);
+                    if (!this.anomalyScorer.hasBaseline(dbGuardContext.userId)) {
+                      this.anomalyScorer.learnBaseline(dbGuardContext.userId, baselineQueries);
+                    }
+                    const score = this.anomalyScorer.getAnomalyScore(dbGuardContext.userId, queryStr);
                     if (score > 0.7) {
-                      this.logSiemEvent('ANOMALY_THREAT_DETECTION', 8, dbGuardContext.userId, socket.remoteAddress || '127.0.0.1', `Semantic anomaly detected with threat score ${score.toFixed(2)}: ${queryStr}`);
-                      throw new Error(`Query blocked by AI Anomaly Threat Detection (Score: ${score.toFixed(2)})`);
+                      this.logSiemEvent('ANOMALY_THREAT_DETECTION', 8, dbGuardContext.userId, socket.remoteAddress || '127.0.0.1', `Statistical query anomaly detected with threat score ${score.toFixed(2)}: ${queryStr}`);
+                      throw new Error(`Query blocked by statistical anomaly detection (Score: ${score.toFixed(2)})`);
                     }
                   }
 

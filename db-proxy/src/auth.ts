@@ -17,6 +17,7 @@ export interface FirewallConfig {
   jitApprovalRequired?: boolean;
   jitWebhookUrl?: string;
   jitSecret?: string;
+  gossipSecret?: string;
   anomalyEngine?: {
     enabled: boolean;
     baselineQueries?: string[];

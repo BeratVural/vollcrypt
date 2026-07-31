@@ -52,6 +52,9 @@ class QueryAnomalyScorer {
     /**
      * Learns a baseline query vector for a user.
      */
+    hasBaseline(username) {
+        return Object.prototype.hasOwnProperty.call(this.userBaselineVectors, username);
+    }
     learnBaseline(username, sampleQueries) {
         const combinedVector = {};
         let totalTokens = 0;
