@@ -39,7 +39,6 @@ exports.decryptBsonObject = decryptBsonObject;
 exports.serializeMongoError = serializeMongoError;
 exports.handleMongoConnection = handleMongoConnection;
 const net = __importStar(require("net"));
-const waf_js_1 = require("../waf.js");
 const db_guard_1 = require("@vollcrypt/db-guard");
 const auth_js_1 = require("../auth.js");
 function mongoCommandHasTenantValue(value, tenantId) {
@@ -361,7 +360,6 @@ function handleMongoConnection(clientSocket, options) {
                         if (payloadStr.includes('dropDatabase') || payloadStr.includes('$where')) {
                             throw new Error('Dangerous command dropDatabase or $where is not allowed');
                         }
-                        (0, waf_js_1.validateQuery)(payloadStr, currentRole);
                     }
                     catch (err) {
                         options.logSiem('WAF_MONGO_BLOCK', 9, `MongoDB WAF violation blocked: ${err.message}`);

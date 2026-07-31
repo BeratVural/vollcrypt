@@ -6,7 +6,8 @@ import * as http from 'http';
 import * as crypto from 'crypto';
 import pg from 'pg';
 import { encryptValue, resetFailClosedStatusForTesting } from '@vollcrypt/db-guard';
-import { DbProxyServer, DbProxyOptions, serializeErrorResponse } from '../src/proxy.js';
+import { ClusterManager, DbProxyServer, DbProxyOptions, FipsStartupError, serializeErrorResponse } from '../src/proxy.js';
+import { reconstructKeyFromXorShares } from '../src/mpc.js';
 import { serializeDataRow, serializeParameterStatus, parseParameterStatus } from '../src/pg-protocol.js';
 import { serializeLengthEncodedString, parseLengthEncodedString } from '../src/drivers/mysql.js';
 import { serializeBson, parseBson } from '../src/drivers/mongo.js';
@@ -744,7 +745,7 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       await client.query("SELECT 1; SELECT * FROM pg_catalog.pg_tables");
       assert.fail('Should have blocked stacked system catalog query');
     } catch (err) {
-      assert.match((err as Error).message, /Semantic SQLi threat detected: query score is 9/);
+      assert.match((err as Error).message, /Multiple SQL statements/);
     }
 
     // timing delays query
@@ -752,7 +753,7 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       await client.query("SELECT pg_sleep(5)");
       assert.fail('Should have blocked sleep statement');
     } catch (err) {
-      assert.match((err as Error).message, /Semantic SQLi threat detected: query score is 8/);
+      assert.match((err as Error).message, /Database delay function/);
     }
 
     // Subquery injection: AND (SELECT ...)
@@ -1557,6 +1558,8 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       dbPort: MOCK_DB_PORT,
       resolvedKeys: {},
       xorKeySplitShares: [share1, share2, share3],
+      xorKeySplitExpectedShares: 3,
+      allowSingleProcessXorKeySplit: true,
       minResponseTimeMs: 0,
     };
     const keySplitProxy = new DbProxyServer(keySplitOptions);
@@ -1712,7 +1715,7 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     mockWebhookServer.close();
   });
 
-  await t.test('34. FIPS 140-3 Compliance Boundary Mode Log Verification', async () => {
+  await t.test('34. FIPS mode fails closed before opening sockets when runtime support is inactive', async () => {
     const fipsOptions: DbProxyOptions = {
       port: PROXY_PORT + 55,
       dbHost: '127.0.0.1',
@@ -1722,12 +1725,20 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
       minResponseTimeMs: 0,
     };
     const fipsProxy = new DbProxyServer(fipsOptions);
-    await fipsProxy.start();
-    await fipsProxy.stop();
 
-    // Check that CEF SIEM log has FIPS_INIT message
-    const logContent = fs.readFileSync('logs/siem.cef', 'utf8');
-    assert.ok(logContent.includes('FIPS_INIT'));
+    if (crypto.getFips() === 1) {
+      await fipsProxy.start();
+      await fipsProxy.stop();
+    } else {
+      await assert.rejects(
+        () => fipsProxy.start(),
+        (error: unknown) =>
+          error instanceof FipsStartupError &&
+          error.code === 'ERR_FIPS_RUNTIME_INACTIVE'
+      );
+      assert.strictEqual((fipsProxy as any).server, null);
+      assert.strictEqual((fipsProxy as any).clusterManager, null);
+    }
   });
 
   await t.test('35. MySQL Transparent Text Row Decryption & Masking', async () => {
@@ -2351,4 +2362,82 @@ test('Postgres driver accepts full firewall controls', () => {
       },
     },
   }));
+});
+test('WAF rejects delay, server-file, stacked-statement, and encoded bypass families', () => {
+  assert.throws(
+    () => validateQuery('SELECT pg_sleep(1)', 'ANALYST'),
+    /delay function/
+  );
+  for (const query of [
+    "SELECT pg_read_file('/etc/passwd')",
+    "SELECT pg_read_binary_file('/etc/passwd')",
+    "SELECT pg_ls_dir('/tmp')",
+    "SELECT lo_import('/tmp/key')",
+  ]) {
+    assert.throws(() => validateQuery(query, 'ANALYST'), /resource access/);
+  }
+  assert.throws(
+    () => validateQuery('SELECT * FROM users; DELETE FROM users', 'OWNER'),
+    /Multiple SQL statements/
+  );
+  assert.throws(
+    () => validateQuery('SELECT 1%253bDELETE FROM users', 'ANALYST'),
+    /Encoded SQL control/
+  );
+  assert.throws(
+    () => validateQuery('SELECT 0x554e494f4e2053454c454354', 'ANALYST'),
+    /Encoded SQL control/
+  );
+  assert.throws(
+    () => validateQuery('SELECT 1 \\u003b DELETE FROM users', 'ANALYST'),
+    /Encoded SQL control/
+  );
+});
+
+test('WAF statement scanner permits semicolons inside literals and comments', () => {
+  assert.doesNotThrow(() => validateQuery("SELECT ';not a statement' AS value;", 'ANALYST'));
+  assert.doesNotThrow(() => validateQuery('SELECT $$;not a statement$$ AS value;', 'ANALYST'));
+  assert.doesNotThrow(() => validateQuery('SELECT 1 /* ; DELETE FROM users */;', 'ANALYST'));
+});
+
+test('single-process XOR key split requires the declared complete share set', () => {
+  const shares = [
+    Buffer.alloc(32, 0x01),
+    Buffer.alloc(32, 0x02),
+    Buffer.alloc(32, 0x03),
+  ];
+  assert.throws(
+    () => reconstructKeyFromXorShares(shares.slice(0, 2), 3),
+    /requires exactly 3 shares/
+  );
+  assert.throws(
+    () => reconstructKeyFromXorShares([Buffer.alloc(16), Buffer.alloc(16)], 2),
+    /32-byte Buffer/
+  );
+  assert.strictEqual(reconstructKeyFromXorShares(shares, 3).length, 32);
+});
+
+test('cluster signatures use canonical JSON and reject immediate replay', () => {
+  const manager = new ClusterManager('node-a', 0, [], 'test-secret', () => {});
+  const timestamp = Date.now();
+  const first = {
+    type: 'BAN_IP' as const,
+    senderId: 'node-b',
+    data: { z: 1, nested: { y: 2, x: 3 }, a: true },
+    timestamp,
+  };
+  const reordered = {
+    type: 'BAN_IP' as const,
+    senderId: 'node-b',
+    data: { a: true, nested: { x: 3, y: 2 }, z: 1 },
+    timestamp,
+  };
+
+  const firstSignature = (manager as any).signMessage(first);
+  const reorderedSignature = (manager as any).signMessage(reordered);
+  assert.strictEqual(firstSignature, reorderedSignature);
+
+  const signed = { ...reordered, signature: firstSignature };
+  assert.strictEqual((manager as any).verifyMessage(signed), true);
+  assert.strictEqual((manager as any).verifyMessage(signed), false);
 });

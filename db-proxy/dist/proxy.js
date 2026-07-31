@@ -36,9 +36,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DbProxyServer = exports.ClusterManager = void 0;
+exports.DbProxyServer = exports.ClusterManager = exports.FipsStartupError = void 0;
 exports.serializeErrorResponse = serializeErrorResponse;
 exports.buildRowDescription = buildRowDescription;
+exports.canonicalizeJson = canonicalizeJson;
 const net = __importStar(require("net"));
 const buffer_1 = require("buffer");
 const fs = __importStar(require("fs"));
@@ -50,6 +51,7 @@ const auth_js_1 = require("./auth.js");
 const db_guard_1 = require("@vollcrypt/db-guard");
 const waf_js_1 = require("./waf.js");
 const dlp_js_1 = require("./dlp.js");
+const mpc_js_1 = require("./mpc.js");
 /**
  * Serializes a PostgreSQL protocol ErrorResponse ('E') message.
  */
@@ -114,6 +116,56 @@ function buildRowDescription(columns) {
     }
     return buf;
 }
+class FipsStartupError extends Error {
+    code = 'ERR_FIPS_RUNTIME_INACTIVE';
+    constructor() {
+        super('FIPS mode was requested, but the active Node.js/OpenSSL runtime is not in FIPS mode');
+        this.name = 'FipsStartupError';
+    }
+}
+exports.FipsStartupError = FipsStartupError;
+function canonicalizeJson(value) {
+    const seen = new WeakSet();
+    const encode = (current) => {
+        if (current === null ||
+            typeof current === 'string' ||
+            typeof current === 'boolean' ||
+            (typeof current === 'number' && Number.isFinite(current))) {
+            const encoded = JSON.stringify(current);
+            if (encoded === undefined)
+                throw new Error('Value cannot be represented as canonical JSON');
+            return encoded;
+        }
+        if (Array.isArray(current)) {
+            if (seen.has(current))
+                throw new Error('Canonical JSON does not support cyclic values');
+            seen.add(current);
+            const encoded = '[' + current.map((item) => encode(item)).join(',') + ']';
+            seen.delete(current);
+            return encoded;
+        }
+        if (typeof current === 'object') {
+            const object = current;
+            const prototype = Object.getPrototypeOf(object);
+            if (prototype !== Object.prototype && prototype !== null) {
+                throw new Error('Canonical JSON only supports plain objects');
+            }
+            if (seen.has(object))
+                throw new Error('Canonical JSON does not support cyclic values');
+            seen.add(object);
+            const entries = Object.keys(object).sort().map((key) => {
+                if (object[key] === undefined) {
+                    throw new Error('Canonical JSON does not support undefined object values');
+                }
+                return JSON.stringify(key) + ':' + encode(object[key]);
+            });
+            seen.delete(object);
+            return '{' + entries.join(',') + '}';
+        }
+        throw new Error('Value cannot be represented as canonical JSON');
+    };
+    return encode(value);
+}
 class ClusterManager {
     nodeId;
     gossipPort;
@@ -122,6 +174,7 @@ class ClusterManager {
     onMessage;
     server = null;
     peerSockets = new Map();
+    acceptedSignatures = new Map();
     constructor(nodeId, gossipPort, peers, gossipSecret, onMessage) {
         this.nodeId = nodeId;
         this.gossipPort = gossipPort;
@@ -130,7 +183,7 @@ class ClusterManager {
         this.onMessage = onMessage;
     }
     signMessage(msg) {
-        const payload = JSON.stringify({
+        const payload = canonicalizeJson({
             type: msg.type,
             senderId: msg.senderId,
             data: msg.data,
@@ -139,11 +192,14 @@ class ClusterManager {
         return crypto.createHmac('sha256', this.gossipSecret).update(payload).digest('hex');
     }
     verifyMessage(msg) {
-        if (!msg.signature || !msg.timestamp)
+        if (typeof msg.signature !== 'string' ||
+            !/^[0-9a-f]{64}$/i.test(msg.signature) ||
+            !Number.isSafeInteger(msg.timestamp) ||
+            typeof msg.senderId !== 'string') {
             return false;
-        // Replay protection: check if timestamp is within 5 seconds
-        const age = Math.abs(Date.now() - msg.timestamp);
-        if (age > 5000)
+        }
+        const now = Date.now();
+        if (Math.abs(now - msg.timestamp) > 5000)
             return false;
         const unsignedMsg = {
             type: msg.type,
@@ -151,15 +207,24 @@ class ClusterManager {
             data: msg.data,
             timestamp: msg.timestamp
         };
-        const expectedSignature = this.signMessage(unsignedMsg);
         try {
-            const expectedBuf = buffer_1.Buffer.from(expectedSignature, 'hex');
+            const expectedBuf = buffer_1.Buffer.from(this.signMessage(unsignedMsg), 'hex');
             const actualBuf = buffer_1.Buffer.from(msg.signature, 'hex');
-            if (expectedBuf.length !== actualBuf.length)
+            if (expectedBuf.length !== actualBuf.length ||
+                !crypto.timingSafeEqual(expectedBuf, actualBuf)) {
                 return false;
-            return crypto.timingSafeEqual(expectedBuf, actualBuf);
+            }
+            for (const [key, expiresAt] of this.acceptedSignatures) {
+                if (expiresAt <= now)
+                    this.acceptedSignatures.delete(key);
+            }
+            const replayKey = msg.senderId + ':' + msg.signature;
+            if (this.acceptedSignatures.has(replayKey))
+                return false;
+            this.acceptedSignatures.set(replayKey, now + 5000);
+            return true;
         }
-        catch (err) {
+        catch {
             return false;
         }
     }
@@ -394,6 +459,28 @@ class DbProxyServer {
         }
     }
     async start() {
+        if (this.options.fipsMode) {
+            let fipsActive = false;
+            try {
+                fipsActive = typeof crypto.getFips === 'function' && crypto.getFips() === 1;
+            }
+            catch {
+                fipsActive = false;
+            }
+            if (!fipsActive) {
+                throw new FipsStartupError();
+            }
+            this.logSiemEvent('FIPS_INIT', 1, 'system', '127.0.0.1', 'Node.js/OpenSSL FIPS mode is active. Deployment validation remains the operator responsibility.');
+        }
+        if (this.options.xorKeySplitShares !== undefined) {
+            if (this.options.allowSingleProcessXorKeySplit !== true) {
+                throw new Error('Single-process XOR key split is n-of-n compatibility behavior, not MPC; explicit acknowledgement is required');
+            }
+            const reconstructedKey = (0, mpc_js_1.reconstructKeyFromXorShares)(this.options.xorKeySplitShares, this.options.xorKeySplitExpectedShares);
+            this.options.resolvedKeys['1']?.fill(0);
+            this.options.resolvedKeys['1'] = reconstructedKey;
+            this.logSiemEvent('XOR_KEY_SPLIT_INIT', 1, 'system', '127.0.0.1', 'Decryption key reconstructed from the explicitly configured number of single-process n-of-n XOR shares.');
+        }
         try {
             const attrs = [{ name: 'commonName', value: 'localhost' }];
             const pems = await selfsigned_1.default.generate(attrs);
@@ -411,23 +498,6 @@ class DbProxyServer {
         if (this.options.gossipPort && this.options.peers) {
             this.clusterManager = new ClusterManager(this.nodeId, this.options.gossipPort, this.options.peers, this.gossipSecret, (msg) => this.handleClusterMessage(msg));
             await this.clusterManager.start();
-        }
-        if (this.options.fipsMode) {
-            const crypto = await import('crypto');
-            let isFips = false;
-            try {
-                isFips = crypto.getFips?.() || false;
-            }
-            catch {
-                isFips = false;
-            }
-            this.logSiemEvent('FIPS_INIT', 1, 'system', '127.0.0.1', `FIPS 140-3 boundary compliance enabled. FIPS status: ${isFips}`);
-        }
-        if (this.options.xorKeySplitShares && this.options.xorKeySplitShares.length >= 2) {
-            const { reconstructKeyFromXorShares } = await import('./mpc.js');
-            const reconstructedKey = reconstructKeyFromXorShares(this.options.xorKeySplitShares);
-            this.options.resolvedKeys['1'] = reconstructedKey;
-            this.logSiemEvent('XOR_KEY_SPLIT_INIT', 1, 'system', '127.0.0.1', 'Decryption key reconstructed using single-process n-of-n XOR key-split shares.');
         }
         return new Promise((resolve, reject) => {
             this.server = net.createServer((clientSocket) => {

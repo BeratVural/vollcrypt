@@ -33,25 +33,202 @@ const DDL_PATTERNS = [
     /\btruncate\s+table\b/i,
     /\balter\s+(table|database|schema|view|index|user|role)\b/i,
 ];
+const DELAY_PATTERNS = [
+    /\bpg_sleep\s*\(/i,
+    /\b(?:sleep|benchmark)\s*\(/i,
+    /\bwaitfor\s+delay\b/i,
+    /\bdbms_lock\s*\.\s*sleep\s*\(/i,
+];
+const SERVER_RESOURCE_PATTERNS = [
+    /\bpg_(?:read_file|read_binary_file|ls_dir|stat_file)\s*\(/i,
+    /\b(?:lo_import|lo_export)\s*\(/i,
+    /\bcopy\b[\s\S]*\bprogram\b/i,
+    /\bload_file\s*\(/i,
+    /\b(?:xp_cmdshell|openrowset)\b/i,
+    /\butl_file\s*\./i,
+];
+function scanSql(query) {
+    let normalized = '';
+    let statement = '';
+    const statements = [];
+    let state = 'normal';
+    let blockDepth = 0;
+    let dollarTag = '';
+    const append = (value) => {
+        normalized += value;
+        statement += value;
+    };
+    for (let i = 0; i < query.length; i++) {
+        const char = query[i];
+        const next = query[i + 1];
+        if (state === 'line') {
+            if (char === '\n' || char === '\r') {
+                append(' ');
+                state = 'normal';
+            }
+            continue;
+        }
+        if (state === 'block') {
+            if (char === '/' && next === '*') {
+                blockDepth++;
+                i++;
+            }
+            else if (char === '*' && next === '/') {
+                blockDepth--;
+                i++;
+                if (blockDepth === 0) {
+                    append(' ');
+                    state = 'normal';
+                }
+            }
+            continue;
+        }
+        if (state === 'dollar') {
+            if (query.startsWith(dollarTag, i)) {
+                append(dollarTag);
+                i += dollarTag.length - 1;
+                state = 'normal';
+            }
+            else {
+                append(char);
+            }
+            continue;
+        }
+        if (state === 'single') {
+            append(char);
+            if (char === "'" && next === "'") {
+                append(next);
+                i++;
+            }
+            else if (char === "'") {
+                state = 'normal';
+            }
+            continue;
+        }
+        if (state === 'double' || state === 'backtick') {
+            append(char);
+            const delimiter = state === 'double' ? '"' : String.fromCharCode(96);
+            if (char === delimiter && next === delimiter) {
+                append(next);
+                i++;
+            }
+            else if (char === delimiter) {
+                state = 'normal';
+            }
+            continue;
+        }
+        if (state === 'bracket') {
+            append(char);
+            if (char === ']' && next === ']') {
+                append(next);
+                i++;
+            }
+            else if (char === ']') {
+                state = 'normal';
+            }
+            continue;
+        }
+        if ((char === '-' && next === '-') || char === '#') {
+            state = 'line';
+            if (char === '-')
+                i++;
+            continue;
+        }
+        if (char === '/' && next === '*') {
+            state = 'block';
+            blockDepth = 1;
+            i++;
+            continue;
+        }
+        if (char === "'")
+            state = 'single';
+        else if (char === '"')
+            state = 'double';
+        else if (char === String.fromCharCode(96))
+            state = 'backtick';
+        else if (char === '[')
+            state = 'bracket';
+        else if (char === '$') {
+            const match = /^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/.exec(query.slice(i));
+            if (match) {
+                dollarTag = match[0];
+                append(dollarTag);
+                i += dollarTag.length - 1;
+                state = 'dollar';
+                continue;
+            }
+        }
+        if (char === ';') {
+            if (statement.trim())
+                statements.push(statement.trim());
+            normalized += ';';
+            statement = '';
+        }
+        else {
+            append(char);
+        }
+    }
+    if (statement.trim())
+        statements.push(statement.trim());
+    return {
+        normalized: normalized.replace(/\s+/g, ' ').trim(),
+        statements,
+        unterminated: state !== 'normal' && state !== 'line',
+    };
+}
+function containsEncodedSqlControl(query) {
+    if (/%(?:25)*(?:00|22|26|27|2d|2f|3b|3d|5c)/i.test(query))
+        return true;
+    if (/\\u(?:0000|0022|0026|0027|002d|002f|003b|003d|005c)/i.test(query))
+        return true;
+    for (const match of query.matchAll(/\b0x([0-9a-f]{8,})\b/gi)) {
+        if (match[1].length % 2 !== 0)
+            continue;
+        const decoded = Buffer.from(match[1], 'hex').toString('ascii');
+        if (/\b(?:union|select|insert|update|delete|drop|alter|truncate|exec|execute)\b/i.test(decoded)) {
+            return true;
+        }
+    }
+    return false;
+}
 /**
  * Normalizes SQL queries by stripping comments and collapsing delimiters.
  * Prevents WAF bypasses using comment delimiters (e.g. DROP comments block TABLE).
  */
 function normalizeQuery(query) {
-    // 1. Remove multiline comments
-    let cleaned = query.replace(/\/\*[\s\S]*?\*\//g, ' ');
-    // 2. Remove single line comments, including MySQL '#' comments
-    cleaned = cleaned.replace(/--.*$/gm, ' ');
-    cleaned = cleaned.replace(/#.*$/gm, ' ');
-    // 3. Collapse multiple whitespaces to single spaces
-    return cleaned.replace(/\s+/g, ' ').trim();
+    return scanSql(query).normalized;
 }
 /**
  * Validates a SQL query string against security profiles.
  * Throws an Error if a security policy violation is detected.
  */
 function validateQuery(query, role) {
-    const normalized = normalizeQuery(query);
+    if (typeof query !== 'string' || query.includes('\0')) {
+        throw new Error('Malformed SQL input: expected a NUL-free string');
+    }
+    const scan = scanSql(query);
+    const normalized = scan.normalized;
+    if (scan.unterminated) {
+        throw new Error('Malformed SQL input: unterminated quote or comment');
+    }
+    if (scan.statements.length > 1) {
+        throw new Error('Multiple SQL statements are not permitted');
+    }
+    if (containsEncodedSqlControl(query)) {
+        throw new Error('Encoded SQL control sequence detected');
+    }
+    for (const pattern of DELAY_PATTERNS) {
+        if (pattern.test(normalized)) {
+            throw new Error('Database delay function is not permitted: ' + pattern.toString());
+        }
+    }
+    if (role !== 'OWNER') {
+        for (const pattern of SERVER_RESOURCE_PATTERNS) {
+            if (pattern.test(normalized)) {
+                throw new Error('Server-side file, program, or external resource access is not permitted for role "' + role + '"');
+            }
+        }
+    }
     // 1. Check for SQL Injection signatures
     for (const pattern of SQLI_PATTERNS) {
         if (pattern.test(normalized)) {

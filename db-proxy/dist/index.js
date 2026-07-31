@@ -74,7 +74,7 @@ async function showInteractiveMenu(defaults) {
             { key: 'dlp', label: 'PII DLP Scanning', enabled: !defaults.noDlp },
             { key: 'waf', label: 'Database WAF Filters', enabled: !defaults.noWaf },
             { key: 'ipBanning', label: 'Gossip IP Banning', enabled: !defaults.noIpBanning },
-            { key: 'fipsMode', label: 'FIPS 140-3 Boundary Compliance', enabled: defaults.fipsMode },
+            { key: 'fipsMode', label: 'Require Active Node/OpenSSL FIPS Mode', enabled: defaults.fipsMode },
             { key: 'jitApprovalRequired', label: 'Just-In-Time Access Approvals', enabled: defaults.jitApprovalRequired },
             { key: 'anomalyEngine', label: 'AI Semantic Anomaly Engine', enabled: defaults.anomalyEngine }
         ];
@@ -397,7 +397,7 @@ async function runCli() {
     console.log(`- PII DLP Scanner: ${!noDlp ? 'Enabled' : 'Disabled'}`);
     console.log(`- WAF Security Engine: ${!noWaf ? 'Enabled' : 'Disabled'}`);
     console.log(`- Distributed Gossip IP Banning: ${!noIpBanning ? 'Enabled' : 'Disabled'}`);
-    console.log(`- FIPS 140-3 Compliance: ${fipsMode ? 'Enabled' : 'Disabled'}`);
+    console.log(`- Require Active Node/OpenSSL FIPS Mode: ${fipsMode ? 'Enabled' : 'Disabled'}`);
     console.log(`- Just-In-Time Access Approvals: ${jitApprovalRequired ? 'Enabled' : 'Disabled'}`);
     console.log(`- AI Semantic Anomaly Engine: ${anomalyEngine ? 'Enabled' : 'Disabled'}`);
     try {

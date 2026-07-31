@@ -16,6 +16,8 @@ export interface DbProxyOptions {
     dbType?: 'postgres' | 'mysql' | 'mongodb' | 'mssql' | 'oracle';
     fipsMode?: boolean;
     xorKeySplitShares?: Buffer[];
+    xorKeySplitExpectedShares?: number;
+    allowSingleProcessXorKeySplit?: true;
 }
 /**
  * Serializes a PostgreSQL protocol ErrorResponse ('E') message.
@@ -25,6 +27,11 @@ export declare function serializeErrorResponse(message: string, code?: string): 
  * Helper to serialize RowDescription ('T') packet.
  */
 export declare function buildRowDescription(columns: string[]): Buffer;
+export declare class FipsStartupError extends Error {
+    readonly code = "ERR_FIPS_RUNTIME_INACTIVE";
+    constructor();
+}
+export declare function canonicalizeJson(value: unknown): string;
 export interface ClusterMessage {
     type: 'HEARTBEAT' | 'BAN_IP' | 'ALLOWLIST_FP' | 'DECRYPTION_USAGE';
     senderId: string;
@@ -40,6 +47,7 @@ export declare class ClusterManager {
     private onMessage;
     private server;
     private peerSockets;
+    private acceptedSignatures;
     constructor(nodeId: string, gossipPort: number, peers: string[], gossipSecret: string, onMessage: (msg: ClusterMessage) => void);
     private signMessage;
     private verifyMessage;

@@ -1,5 +1,4 @@
 import * as net from 'net';
-import { validateQuery } from '../waf.js';
 import { decryptValue, decryptWithSecurity, dbGuardContextStore } from '@vollcrypt/db-guard';
 import { getRbacConfig, resolveUserContext } from '../auth.js';
 
@@ -367,7 +366,6 @@ export function handleMongoConnection(
             if (payloadStr.includes('dropDatabase') || payloadStr.includes('$where')) {
               throw new Error('Dangerous command dropDatabase or $where is not allowed');
             }
-            validateQuery(payloadStr, currentRole);
           } catch (err: any) {
             options.logSiem('WAF_MONGO_BLOCK', 9, `MongoDB WAF violation blocked: ${err.message}`);
             const errPacket = serializeMongoError(err.message, 13);

@@ -34,6 +34,7 @@ import {
 } from '@vollcrypt/db-guard';
 import { validateQuery, generateFingerprint, evaluateThreatScore, rewriteQuery, generateLaplaceNoise, identifyAggregates } from './waf.js';
 import { scanAndMaskCell } from './dlp.js';
+import { reconstructKeyFromXorShares } from './mpc.js';
 
 export interface DbProxyOptions {
   port: number;
@@ -51,6 +52,8 @@ export interface DbProxyOptions {
   dbType?: 'postgres' | 'mysql' | 'mongodb' | 'mssql' | 'oracle';
   fipsMode?: boolean;
   xorKeySplitShares?: Buffer[];
+  xorKeySplitExpectedShares?: number;
+  allowSingleProcessXorKeySplit?: true;
 }
 
 /**
@@ -124,6 +127,62 @@ export function buildRowDescription(columns: string[]): Buffer {
   return buf;
 }
 
+export class FipsStartupError extends Error {
+  readonly code = 'ERR_FIPS_RUNTIME_INACTIVE';
+
+  constructor() {
+    super('FIPS mode was requested, but the active Node.js/OpenSSL runtime is not in FIPS mode');
+    this.name = 'FipsStartupError';
+  }
+}
+
+export function canonicalizeJson(value: unknown): string {
+  const seen = new WeakSet<object>();
+
+  const encode = (current: unknown): string => {
+    if (
+      current === null ||
+      typeof current === 'string' ||
+      typeof current === 'boolean' ||
+      (typeof current === 'number' && Number.isFinite(current))
+    ) {
+      const encoded = JSON.stringify(current);
+      if (encoded === undefined) throw new Error('Value cannot be represented as canonical JSON');
+      return encoded;
+    }
+
+    if (Array.isArray(current)) {
+      if (seen.has(current)) throw new Error('Canonical JSON does not support cyclic values');
+      seen.add(current);
+      const encoded = '[' + current.map((item) => encode(item)).join(',') + ']';
+      seen.delete(current);
+      return encoded;
+    }
+
+    if (typeof current === 'object') {
+      const object = current as Record<string, unknown>;
+      const prototype = Object.getPrototypeOf(object);
+      if (prototype !== Object.prototype && prototype !== null) {
+        throw new Error('Canonical JSON only supports plain objects');
+      }
+      if (seen.has(object)) throw new Error('Canonical JSON does not support cyclic values');
+      seen.add(object);
+      const entries = Object.keys(object).sort().map((key) => {
+        if (object[key] === undefined) {
+          throw new Error('Canonical JSON does not support undefined object values');
+        }
+        return JSON.stringify(key) + ':' + encode(object[key]);
+      });
+      seen.delete(object);
+      return '{' + entries.join(',') + '}';
+    }
+
+    throw new Error('Value cannot be represented as canonical JSON');
+  };
+
+  return encode(value);
+}
+
 export interface ClusterMessage {
   type: 'HEARTBEAT' | 'BAN_IP' | 'ALLOWLIST_FP' | 'DECRYPTION_USAGE';
   senderId: string;
@@ -135,6 +194,7 @@ export interface ClusterMessage {
 export class ClusterManager {
   private server: net.Server | null = null;
   private peerSockets = new Map<string, net.Socket>();
+  private acceptedSignatures = new Map<string, number>();
   
   constructor(
     private nodeId: string,
@@ -145,7 +205,7 @@ export class ClusterManager {
   ) {}
 
   private signMessage(msg: Omit<ClusterMessage, 'signature'>): string {
-    const payload = JSON.stringify({
+    const payload = canonicalizeJson({
       type: msg.type,
       senderId: msg.senderId,
       data: msg.data,
@@ -155,11 +215,17 @@ export class ClusterManager {
   }
 
   private verifyMessage(msg: ClusterMessage): boolean {
-    if (!msg.signature || !msg.timestamp) return false;
+    if (
+      typeof msg.signature !== 'string' ||
+      !/^[0-9a-f]{64}$/i.test(msg.signature) ||
+      !Number.isSafeInteger(msg.timestamp) ||
+      typeof msg.senderId !== 'string'
+    ) {
+      return false;
+    }
 
-    // Replay protection: check if timestamp is within 5 seconds
-    const age = Math.abs(Date.now() - msg.timestamp);
-    if (age > 5000) return false;
+    const now = Date.now();
+    if (Math.abs(now - msg.timestamp!) > 5000) return false;
 
     const unsignedMsg = {
       type: msg.type,
@@ -167,14 +233,25 @@ export class ClusterManager {
       data: msg.data,
       timestamp: msg.timestamp
     };
-    const expectedSignature = this.signMessage(unsignedMsg);
 
     try {
-      const expectedBuf = Buffer.from(expectedSignature, 'hex');
+      const expectedBuf = Buffer.from(this.signMessage(unsignedMsg), 'hex');
       const actualBuf = Buffer.from(msg.signature, 'hex');
-      if (expectedBuf.length !== actualBuf.length) return false;
-      return crypto.timingSafeEqual(expectedBuf, actualBuf);
-    } catch (err) {
+      if (
+        expectedBuf.length !== actualBuf.length ||
+        !crypto.timingSafeEqual(expectedBuf, actualBuf)
+      ) {
+        return false;
+      }
+
+      for (const [key, expiresAt] of this.acceptedSignatures) {
+        if (expiresAt <= now) this.acceptedSignatures.delete(key);
+      }
+      const replayKey = msg.senderId + ':' + msg.signature;
+      if (this.acceptedSignatures.has(replayKey)) return false;
+      this.acceptedSignatures.set(replayKey, now + 5000);
+      return true;
+    } catch {
       return false;
     }
   }
@@ -418,6 +495,46 @@ export class DbProxyServer {
   }
 
   public async start(): Promise<void> {
+    if (this.options.fipsMode) {
+      let fipsActive = false;
+      try {
+        fipsActive = typeof crypto.getFips === 'function' && crypto.getFips() === 1;
+      } catch {
+        fipsActive = false;
+      }
+      if (!fipsActive) {
+        throw new FipsStartupError();
+      }
+      this.logSiemEvent(
+        'FIPS_INIT',
+        1,
+        'system',
+        '127.0.0.1',
+        'Node.js/OpenSSL FIPS mode is active. Deployment validation remains the operator responsibility.'
+      );
+    }
+
+    if (this.options.xorKeySplitShares !== undefined) {
+      if (this.options.allowSingleProcessXorKeySplit !== true) {
+        throw new Error(
+          'Single-process XOR key split is n-of-n compatibility behavior, not MPC; explicit acknowledgement is required'
+        );
+      }
+      const reconstructedKey = reconstructKeyFromXorShares(
+        this.options.xorKeySplitShares,
+        this.options.xorKeySplitExpectedShares as number
+      );
+      this.options.resolvedKeys['1']?.fill(0);
+      this.options.resolvedKeys['1'] = reconstructedKey;
+      this.logSiemEvent(
+        'XOR_KEY_SPLIT_INIT',
+        1,
+        'system',
+        '127.0.0.1',
+        'Decryption key reconstructed from the explicitly configured number of single-process n-of-n XOR shares.'
+      );
+    }
+
     try {
       const attrs = [{ name: 'commonName', value: 'localhost' }];
       const pems = await selfsigned.generate(attrs);
@@ -427,10 +544,10 @@ export class DbProxyServer {
       console.error('Failed to generate self-signed SSL/TLS certificate:', err);
     }
 
-    this.gossipSecret = (this.options.config as any)?.firewall?.gossipSecret || 
-                        this.options.config?.firewall?.jitSecret || 
+    this.gossipSecret = (this.options.config as any)?.firewall?.gossipSecret ||
+                        this.options.config?.firewall?.jitSecret ||
                         crypto.randomBytes(32).toString('hex');
-    this.jitSecret = this.options.config?.firewall?.jitSecret || 
+    this.jitSecret = this.options.config?.firewall?.jitSecret ||
                      crypto.randomBytes(32).toString('hex');
 
     if (this.options.gossipPort && this.options.peers) {
@@ -442,24 +559,6 @@ export class DbProxyServer {
         (msg) => this.handleClusterMessage(msg)
       );
       await this.clusterManager.start();
-    }
-
-    if (this.options.fipsMode) {
-      const crypto = await import('crypto');
-      let isFips = false;
-      try {
-        isFips = (crypto as any).getFips?.() || false;
-      } catch {
-        isFips = false;
-      }
-      this.logSiemEvent('FIPS_INIT', 1, 'system', '127.0.0.1', `FIPS 140-3 boundary compliance enabled. FIPS status: ${isFips}`);
-    }
-
-    if (this.options.xorKeySplitShares && this.options.xorKeySplitShares.length >= 2) {
-      const { reconstructKeyFromXorShares } = await import('./mpc.js');
-      const reconstructedKey = reconstructKeyFromXorShares(this.options.xorKeySplitShares);
-      this.options.resolvedKeys['1'] = reconstructedKey;
-      this.logSiemEvent('XOR_KEY_SPLIT_INIT', 1, 'system', '127.0.0.1', 'Decryption key reconstructed using single-process n-of-n XOR key-split shares.');
     }
 
     return new Promise((resolve, reject) => {
