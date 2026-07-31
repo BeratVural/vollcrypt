@@ -1760,10 +1760,23 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     mysqlMockRow[3] = 2; // sequence ID
     payload.copy(mysqlMockRow, 4);
 
+    const mysqlBackendQueries: string[] = [];
     const mockMysqlServer = net.createServer((socket) => {
+      let pending = Buffer.alloc(0);
       socket.on('data', (data) => {
-        if (data.length === 4 && data.readInt32BE(0) === 0) {
-          socket.write(mysqlMockRow);
+        pending = Buffer.concat([pending, data]);
+        while (pending.length >= 4) {
+          const packetLength = pending.readUIntLE(0, 3) + 4;
+          if (pending.length < packetLength) return;
+          const packet = pending.subarray(0, packetLength);
+          pending = pending.subarray(packetLength);
+          if (packet.length >= 5 && packet[4] === 0x03) {
+            const query = packet.toString('utf8', 5);
+            mysqlBackendQueries.push(query);
+            if (query === 'SELECT public, secret FROM default') {
+              socket.write(mysqlMockRow);
+            }
+          }
         }
       });
     });
@@ -1781,7 +1794,7 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
         cryptoRbac: {
           roles: {
             OWNER: {
-              decrypt: ['default.col_0', 'default.col_1', 'default.col_2'],
+              decrypt: ['default.secret'],
             },
           },
         },
@@ -1804,7 +1817,13 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     await new Promise((resolve) => setTimeout(resolve, 50)); // let it parse
 
     const responsePromise = new Promise<Buffer>((resolve) => client.once('data', resolve));
-    client.write(Buffer.from([0, 0, 0, 0])); // trigger response
+    const mysqlQuery = Buffer.from('SELECT public, secret FROM default', 'utf8');
+    const mysqlQueryPacket = Buffer.alloc(5 + mysqlQuery.length);
+    mysqlQueryPacket.writeUIntLE(mysqlQuery.length + 1, 0, 3);
+    mysqlQueryPacket[3] = 0;
+    mysqlQueryPacket[4] = 0x03;
+    mysqlQuery.copy(mysqlQueryPacket, 5);
+    client.write(mysqlQueryPacket);
 
     const res = await responsePromise;
     client.end();
@@ -1816,6 +1835,7 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     assert.strictEqual(parsed1.value, 'public');
     const parsed2 = parseLengthEncodedString(res, parsed1.nextOffset);
     assert.strictEqual(parsed2.value, 'supersecret_mysql');
+    assert.deepStrictEqual(mysqlBackendQueries, ['SELECT public, secret FROM default']);
   });
 
   await t.test('36. MongoDB Recursive BSON Key Decryption', async () => {
@@ -1842,10 +1862,23 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     mongoMockMsg[20] = 0x00;
     bsonBuf.copy(mongoMockMsg, 21);
 
+    const mongoBackendCommands: any[] = [];
     const mockMongoServer = net.createServer((socket) => {
+      let pending = Buffer.alloc(0);
       socket.on('data', (data) => {
-        if (data.length === 4 && data.readInt32BE(0) === 0) {
-          socket.write(mongoMockMsg);
+        pending = Buffer.concat([pending, data]);
+        while (pending.length >= 16) {
+          const messageLength = pending.readInt32LE(0);
+          if (messageLength < 16 || pending.length < messageLength) return;
+          const message = pending.subarray(0, messageLength);
+          pending = pending.subarray(messageLength);
+          if (message.readInt32LE(12) === 2013 && message.length >= 21 && message[20] === 0x00) {
+            const command = parseBson(message, 21).value;
+            mongoBackendCommands.push(command);
+            if (command.find === 'default') {
+              socket.write(mongoMockMsg);
+            }
+          }
         }
       });
     });
@@ -1895,7 +1928,16 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     await new Promise((resolve) => setTimeout(resolve, 50)); // let it parse
 
     const responsePromise = new Promise<Buffer>((resolve) => client.once('data', resolve));
-    client.write(Buffer.from([0, 0, 0, 0])); // trigger response
+    const findBson = serializeBson({ find: 'default', filter: {} });
+    const findMessage = Buffer.alloc(21 + findBson.length);
+    findMessage.writeInt32LE(findMessage.length, 0);
+    findMessage.writeInt32LE(1_000, 4);
+    findMessage.writeInt32LE(0, 8);
+    findMessage.writeInt32LE(2013, 12);
+    findMessage.writeInt32LE(0, 16);
+    findMessage[20] = 0x00;
+    findBson.copy(findMessage, 21);
+    client.write(findMessage);
 
     const res = await responsePromise;
     client.end();
@@ -1908,6 +1950,7 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     const parsed = parseBson(res, 21);
     assert.strictEqual(parsed.value.nested.secret, 'mongoSecret');
     assert.strictEqual(parsed.value.nested.arr[0].secretItem, 'mongoSecret');
+    assert.strictEqual(mongoBackendCommands.at(-1)?.find, 'default');
   });
 
 
@@ -1929,20 +1972,23 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     const after = Buffer.from(' padding\0', 'utf16le');
     const mssqlMockRow = Buffer.concat([before, encValBuf1, mid, encValBuf2, after]);
 
+    const mssqlBackendQueries: string[] = [];
     const mockMssqlServer = net.createServer((socket) => {
       let pending = Buffer.alloc(0);
       socket.on('data', (data) => {
         pending = Buffer.concat([pending, data]);
-
-        if (pending.length >= 8 && pending[0] === 0x10) {
-          const loginLength = pending.readUInt16BE(2);
-          if (pending.length < loginLength) return;
-          pending = pending.subarray(loginLength);
-        }
-
-        if (pending.length >= 4 && pending.readInt32BE(0) === 0) {
-          pending = pending.subarray(4);
-          socket.write(mssqlMockRow);
+        while (pending.length >= 8) {
+          const packetLength = pending.readUInt16BE(2);
+          if (packetLength < 8 || pending.length < packetLength) return;
+          const packet = pending.subarray(0, packetLength);
+          pending = pending.subarray(packetLength);
+          if (packet[0] === 0x01) {
+            const query = packet.toString('utf16le', 8);
+            mssqlBackendQueries.push(query);
+            if (query === 'SELECT column FROM default') {
+              socket.write(mssqlMockRow);
+            }
+          }
         }
       });
     });
@@ -1993,7 +2039,13 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
         resolve(data);
       });
     });
-    client.write(Buffer.from([0, 0, 0, 0])); // trigger response
+    const safeMssqlQuery = Buffer.from('SELECT column FROM default', 'utf16le');
+    const safeMssqlRequest = Buffer.alloc(8 + safeMssqlQuery.length);
+    safeMssqlRequest[0] = 0x01;
+    safeMssqlRequest[1] = 0x01;
+    safeMssqlRequest.writeUInt16BE(safeMssqlRequest.length, 2);
+    safeMssqlQuery.copy(safeMssqlRequest, 8);
+    client.write(safeMssqlRequest);
 
     const res = await responsePromise;
     client.end();
@@ -2038,6 +2090,7 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
 
     assert.strictEqual(wafRes[0], 0x04); // response header type
     assert.ok(wafRes.includes(Buffer.from('SQL Injection', 'utf16le')));
+    assert.deepStrictEqual(mssqlBackendQueries, ['SELECT column FROM default']);
   });
 
   await t.test('38. Oracle TNS 12 Batch Query Interception, Decryption & WAF Block', async (t) => {
@@ -2060,20 +2113,23 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     const oracleMockRow = Buffer.concat([before, encValBuf1, mid, encValBuf2, after]);
     oracleMockRow.writeUInt16BE(oracleMockRow.length, 0); // length BE
 
+    const oracleBackendQueries: string[] = [];
     const mockOracleServer = net.createServer((socket) => {
       let pending = Buffer.alloc(0);
       socket.on('data', (data) => {
         pending = Buffer.concat([pending, data]);
-
-        if (pending.length >= 8 && pending[4] === 0x01) {
-          const connectLength = pending.readUInt16BE(0);
-          if (pending.length < connectLength) return;
-          pending = pending.subarray(connectLength);
-        }
-
-        if (pending.length >= 4 && pending.readInt32BE(0) === 0) {
-          pending = pending.subarray(4);
-          socket.write(oracleMockRow);
+        while (pending.length >= 8) {
+          const packetLength = pending.readUInt16BE(0);
+          if (packetLength < 8 || pending.length < packetLength) return;
+          const packet = pending.subarray(0, packetLength);
+          pending = pending.subarray(packetLength);
+          if (packet[4] === 0x06) {
+            const query = packet.toString('ascii', 8);
+            oracleBackendQueries.push(query);
+            if (query === 'SELECT column FROM default') {
+              socket.write(oracleMockRow);
+            }
+          }
         }
       });
     });
@@ -2121,7 +2177,12 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
         resolve(data);
       });
     });
-    client.write(Buffer.from([0, 0, 0, 0])); // trigger response
+    const safeOracleQuery = Buffer.from('SELECT column FROM default', 'ascii');
+    const safeOracleRequest = Buffer.alloc(8 + safeOracleQuery.length);
+    safeOracleRequest.writeUInt16BE(safeOracleRequest.length, 0);
+    safeOracleRequest[4] = 0x06;
+    safeOracleQuery.copy(safeOracleRequest, 8);
+    client.write(safeOracleRequest);
 
     const res = await responsePromise;
     client.end();
@@ -2165,6 +2226,7 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
 
     assert.strictEqual(wafRes[4], 0x04); // response Refuse type
     assert.ok(wafRes.includes(Buffer.from('SQL Injection', 'ascii')));
+    assert.deepStrictEqual(oracleBackendQueries, ['SELECT column FROM default']);
   });
 
   await t.test('39. Proxy-Client SSL/TLS secure connection negotiation and communications', async () => {
