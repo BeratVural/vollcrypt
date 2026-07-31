@@ -20,6 +20,14 @@ use crate::writer::IoWriteMode;
 const MAX_STREAM_HEADER_VARIABLE_LEN: usize = 16 * 1024;
 const MAX_STREAM_HEADER_METADATA_LEN: usize = 16 * 1024;
 const MAX_STREAM_HEADER_MLDSA_LEN: usize = 8 * 1024;
+const MAX_CHUNK_SIZE: usize = 16 * 1024 * 1024;
+
+fn validate_chunk_size(chunk_size: usize) -> Result<(), FileFormatError> {
+    if chunk_size == 0 || chunk_size > MAX_CHUNK_SIZE {
+        return Err(FileFormatError::InvalidChunkSize(chunk_size));
+    }
+    Ok(())
+}
 
 /// Signature/signing details to apply to the header after encryption is complete.
 #[derive(Clone)]
@@ -147,6 +155,7 @@ fn encrypt_file_pipelined_inner<R: Read + Send + 'static, W: Write + Seek + Send
     write_mode: Option<IoWriteMode>,
     is_direct: &mut bool,
 ) -> Result<Header, FileFormatError> {
+    validate_chunk_size(chunk_size)?;
     if num_workers == 0 {
         return Err(FileFormatError::IoError(
             "num_workers must be greater than 0".to_string(),
@@ -1194,6 +1203,7 @@ pub async fn encrypt_file_pipelined_async(
     mode: Mode,
     sign_info: Option<PipelinedSignInfo>,
 ) -> Result<(Header, Vec<u8>), FileFormatError> {
+    validate_chunk_size(chunk_size)?;
     let hash_algo = crate::merkle::default_hash_algorithm();
     let mut header = Header {
         version: if sign_info.is_some() { 3 } else { 1 },

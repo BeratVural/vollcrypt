@@ -27,14 +27,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Remove wave submodule from Cargo.toml for CI
-        run: python -c "lines = [line for line in open('Cargo.toml') if 'vollcrypt-wave' not in line]; open('Cargo.toml', 'w').write(''.join(lines))"
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Run Core Tests
         run: cargo test -p vollcrypt-files-core
+
+  test-supporting-crates:
+    name: Test Files Supporting Crates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Test adversarial and stress crates
+        run: cargo test -p vollcrypt-files-adversarial -p vollcrypt-files-stress
+
+      - name: Lint all Files targets
+        run: cargo clippy -p vollcrypt-files-core -p vollcrypt-files-node -p vollcrypt-files-wasm -p vollcrypt-files-bench -p vollcrypt-files-adversarial -p vollcrypt-files-stress --all-targets -- -D warnings
 
   build-node:
     name: Build Node Bindings
@@ -42,9 +57,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Remove wave submodule from Cargo.toml for CI
-        run: python -c "lines = [line for line in open('Cargo.toml') if 'vollcrypt-wave' not in line]; open('Cargo.toml', 'w').write(''.join(lines))"
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -69,9 +81,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Remove wave submodule from Cargo.toml for CI
-        run: python -c "lines = [line for line in open('Cargo.toml') if 'vollcrypt-wave' not in line]; open('Cargo.toml', 'w').write(''.join(lines))"
 
       - name: Install Node.js
         uses: actions/setup-node@v4

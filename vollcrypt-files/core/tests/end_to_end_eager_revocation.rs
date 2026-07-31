@@ -58,7 +58,7 @@ fn eager_revocation_full_flow() {
     let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext, None).unwrap();
     let leaf = chunk_leaf_hash(&envelope);
     let merkle_root = MerkleTree::from_leaves(vec![leaf]).root();
-    let old_group_wrap = wrap_dek_for_group(&dek, group_id, 1, &gk1);
+    let old_group_wrap = wrap_dek_for_group(&dek, group_id, 1, &gk1).unwrap();
 
     let mut header = Header {
         version: VERSION,

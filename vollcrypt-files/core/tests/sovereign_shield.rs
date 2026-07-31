@@ -34,8 +34,14 @@ fn test_sovereign_seal_v1_v2_v3() {
     let plaintext = b"Hello, this is a sovereign sealing test.";
 
     let password = b"seal-password";
-    let wrap =
-        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+    let wrap = wrap_dek_with_password(
+        &dek,
+        password,
+        KdfChoice::Pbkdf2 {
+            iterations: 600_000,
+        },
+    )
+    .unwrap();
 
     // --- V1 Container ---
     let dest_encrypt = tempfile().unwrap();
@@ -140,8 +146,14 @@ fn test_sovereign_purge() {
     let plaintext = b"Sensitive content to be crypto-shredded.";
 
     let password = b"seal-password";
-    let wrap =
-        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+    let wrap = wrap_dek_with_password(
+        &dek,
+        password,
+        KdfChoice::Pbkdf2 {
+            iterations: 600_000,
+        },
+    )
+    .unwrap();
 
     let dest_encrypt = tempfile().unwrap();
     encrypt_file_pipelined(
@@ -212,8 +224,14 @@ fn test_sovereign_purge_in_place_truncates_source_container() {
     let plaintext = vec![0x5A; 32 * 1024];
 
     let password = b"seal-password";
-    let wrap =
-        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+    let wrap = wrap_dek_with_password(
+        &dek,
+        password,
+        KdfChoice::Pbkdf2 {
+            iterations: 600_000,
+        },
+    )
+    .unwrap();
 
     let source = NamedTempFile::new().unwrap();
     encrypt_file_pipelined(
@@ -265,8 +283,14 @@ fn test_idempotency_double_sealing() {
     let plaintext = b"Double seal test.";
 
     let password = b"seal-password";
-    let wrap =
-        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+    let wrap = wrap_dek_with_password(
+        &dek,
+        password,
+        KdfChoice::Pbkdf2 {
+            iterations: 600_000,
+        },
+    )
+    .unwrap();
 
     let dest_encrypt = tempfile().unwrap();
     encrypt_file_pipelined(
@@ -326,8 +350,14 @@ fn test_shield_verified_vs_streaming() {
     let plaintext = vec![0u8; 8192];
 
     let password = b"seal-password";
-    let wrap =
-        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+    let wrap = wrap_dek_with_password(
+        &dek,
+        password,
+        KdfChoice::Pbkdf2 {
+            iterations: 600_000,
+        },
+    )
+    .unwrap();
 
     let dest_encrypt = tempfile().unwrap();
     encrypt_file_pipelined(
@@ -392,8 +422,14 @@ fn test_tamper_shield() {
     let plaintext = b"Tamper shield test.";
 
     let password = b"seal-password";
-    let wrap =
-        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+    let wrap = wrap_dek_with_password(
+        &dek,
+        password,
+        KdfChoice::Pbkdf2 {
+            iterations: 600_000,
+        },
+    )
+    .unwrap();
 
     let (signer_pk, signer_sk) = hybrid_keypair_generate();
     let key_log_id = generate_dek();
@@ -447,8 +483,14 @@ fn test_seal_then_purge_removes_existing_ciphertext() {
     let plaintext = vec![0xA5; 32 * 1024];
 
     let password = b"seal-password";
-    let wrap =
-        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+    let wrap = wrap_dek_with_password(
+        &dek,
+        password,
+        KdfChoice::Pbkdf2 {
+            iterations: 600_000,
+        },
+    )
+    .unwrap();
 
     let encrypted = tempfile().unwrap();
     encrypt_file_pipelined(

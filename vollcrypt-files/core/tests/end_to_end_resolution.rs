@@ -144,13 +144,8 @@ fn resolution_after_device_revoke() {
     let mut header = create_test_header();
     sign_header_plain(&mut header, &device_pk, &device_sk, key_log_id, 200).unwrap();
 
-    // Resolution should still succeed (signature verifies, device info is looked up)
-    // but device_was_active should be false!
-    let sender_info =
-        resolve_sender(&header, &keylog, None, VerificationPolicy::RequireSigned).unwrap();
-    assert_eq!(sender_info.user_id, user_id);
-    assert_eq!(sender_info.signer_pubkey, device_pk);
-    assert!(!sender_info.device_was_active);
+    let result = resolve_sender(&header, &keylog, None, VerificationPolicy::RequireSigned);
+    assert!(matches!(result, Err(FileFormatError::DeviceNotActive)));
 }
 
 #[test]

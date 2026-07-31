@@ -45,6 +45,9 @@ pub enum FileFormatError {
     #[error("Wrong password / AES-KW verification failed")]
     WrongPassword,
 
+    #[error("AES-KW key wrapping failed")]
+    KeyWrapFailed,
+
     #[error("Wrong wrap type for password mode")]
     WrongWrapType,
 
@@ -128,6 +131,15 @@ pub enum FileFormatError {
 
     #[error("Device already revoked")]
     DeviceAlreadyRevoked,
+
+    #[error("Device already registered")]
+    DeviceAlreadyRegistered,
+
+    #[error("Device was not active at the signed timestamp")]
+    DeviceNotActive,
+
+    #[error("Invalid chunk size: {0} bytes")]
+    InvalidChunkSize(usize),
 
     #[error("Key log entry not found")]
     KeyLogEntryNotFound,

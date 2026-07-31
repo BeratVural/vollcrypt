@@ -87,7 +87,7 @@ fn bench_pure_vs_hybrid(c: &mut Criterion) {
             let hk = hkdf::Hkdf::<sha2::Sha256>::new(None, &ss);
             let mut kek = [0u8; 32];
             let _ = hk.expand(&info, &mut kek);
-            let wrapped_dek = vollcrypt_files_core::keywrap::aes256_kw_wrap(&kek, &key);
+            let wrapped_dek = vollcrypt_files_core::keywrap::aes256_kw_wrap(&kek, &key).unwrap();
             let _ = black_box(wrapped_dek);
         });
     });

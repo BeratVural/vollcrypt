@@ -84,14 +84,14 @@ mod tests {
             merkle_root: [0u8; 32],
             hash_algorithm: HashAlgorithm::Sha256,
             wraps: vec![WrapEntry::PasswordPbkdf2 {
-                iterations: 1000,
+                iterations: 600_000,
                 salt: [0u8; 16],
                 wrapped_dek: [0u8; 40],
             }],
             signed_metadata: None,
             signature: None,
         };
-        let serialized_valid = header_valid.write();
+        let serialized_valid = header_valid.write().unwrap();
         let (parsed, len) = Header::parse(&serialized_valid).unwrap();
         assert_eq!(parsed.chunk_size, 16_777_216);
         assert_eq!(len, serialized_valid.len());
@@ -107,14 +107,14 @@ mod tests {
             merkle_root: [0u8; 32],
             hash_algorithm: HashAlgorithm::Sha256,
             wraps: vec![WrapEntry::PasswordPbkdf2 {
-                iterations: 1000,
+                iterations: 600_000,
                 salt: [0u8; 16],
                 wrapped_dek: [0u8; 40],
             }],
             signed_metadata: None,
             signature: None,
         };
-        let serialized_invalid = header_invalid.write();
+        let serialized_invalid = header_invalid.write().unwrap();
         assert!(Header::parse(&serialized_invalid).is_err());
 
         // Header with chunk_size = 4 GB (maximum u32, exceeds limit)
@@ -128,14 +128,14 @@ mod tests {
             merkle_root: [0u8; 32],
             hash_algorithm: HashAlgorithm::Sha256,
             wraps: vec![WrapEntry::PasswordPbkdf2 {
-                iterations: 1000,
+                iterations: 600_000,
                 salt: [0u8; 16],
                 wrapped_dek: [0u8; 40],
             }],
             signed_metadata: None,
             signature: None,
         };
-        let serialized_max = header_max.write();
+        let serialized_max = header_max.write().unwrap();
         assert!(Header::parse(&serialized_max).is_err());
     }
 
@@ -206,9 +206,9 @@ mod tests {
         );
 
         // 1000 Rotations and some shredding in between to test mixed valid/shredded versions
-        for version in 2..=1001 {
+        for version in 2u32..=1001 {
             let mut new_gk = [0u8; 32];
-            new_gk[0..4].copy_from_slice(&(version as u32).to_be_bytes());
+            new_gk[0..4].copy_from_slice(&version.to_be_bytes());
             manifest
                 .rotate_group_key(&new_gk, &admin_sk, version as u64)
                 .unwrap();
@@ -244,14 +244,14 @@ mod tests {
             signed_metadata: None,
             signature: None,
         };
-        let serialized_0 = header_0.write();
+        let serialized_0 = header_0.write().unwrap();
         let (parsed_0, _) = Header::parse(&serialized_0).unwrap();
         assert_eq!(parsed_0.wraps.len(), 0);
 
         // Header with 255 wraps (maximum supported by 1-byte wrap count limit)
         let wraps_255 = vec![
             WrapEntry::PasswordPbkdf2 {
-                iterations: 1000,
+                iterations: 600_000,
                 salt: [0u8; 16],
                 wrapped_dek: [0u8; 40],
             };
@@ -270,19 +270,19 @@ mod tests {
             signed_metadata: None,
             signature: None,
         };
-        let serialized_255 = header_255.write();
+        let serialized_255 = header_255.write().unwrap();
         let (parsed_255, _) = Header::parse(&serialized_255).unwrap();
         assert_eq!(parsed_255.wraps.len(), 255);
 
         // Mixed wraps in the same header
         let mixed_wraps = vec![
             WrapEntry::PasswordPbkdf2 {
-                iterations: 1000,
+                iterations: 600_000,
                 salt: [1u8; 16],
                 wrapped_dek: [1u8; 40],
             },
             WrapEntry::PasswordArgon2id {
-                m_cost: 4096,
+                m_cost: 19_456,
                 t_cost: 3,
                 p_cost: 1,
                 salt: [2u8; 16],
@@ -307,7 +307,7 @@ mod tests {
             signed_metadata: None,
             signature: None,
         };
-        let serialized_mixed = header_mixed.write();
+        let serialized_mixed = header_mixed.write().unwrap();
         let (parsed_mixed, _) = Header::parse(&serialized_mixed).unwrap();
         assert_eq!(parsed_mixed.wraps.len(), 3);
         assert!(matches!(
@@ -343,7 +343,7 @@ mod tests {
             merkle_root: [0u8; 32],
             hash_algorithm: HashAlgorithm::Sha256,
             wraps: vec![WrapEntry::PasswordPbkdf2 {
-                iterations: 1000,
+                iterations: 600_000,
                 salt: [0u8; 16],
                 wrapped_dek: [0u8; 40],
             }],

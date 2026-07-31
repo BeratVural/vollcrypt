@@ -17,8 +17,14 @@ fn encrypt_decrypt_small_file_pbkdf2() {
     let leaf = chunk_leaf_hash(&envelope);
     let merkle_root = MerkleTree::from_leaves(vec![leaf]).root();
 
-    let wrap =
-        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 10_000 }).unwrap();
+    let wrap = wrap_dek_with_password(
+        &dek,
+        password,
+        KdfChoice::Pbkdf2 {
+            iterations: 600_000,
+        },
+    )
+    .unwrap();
 
     let header = Header {
         version: VERSION,

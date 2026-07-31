@@ -12,7 +12,7 @@ fn rewrap_updates_gk_version() {
     let old_gk = generate_gk();
     let new_gk = generate_gk();
 
-    let old_wrap = wrap_dek_for_group(&dek, group_id, 1, &old_gk);
+    let old_wrap = wrap_dek_for_group(&dek, group_id, 1, &old_gk).unwrap();
 
     let mut header = Header {
         version: VERSION,
@@ -66,7 +66,7 @@ fn rewrap_preserves_dek() {
         plaintext_size: plaintext.len() as u64,
         merkle_root: [0xaa; 32],
         hash_algorithm: HashAlgorithm::Sha256,
-        wraps: vec![wrap_dek_for_group(&dek, group_id, 1, &old_gk)],
+        wraps: vec![wrap_dek_for_group(&dek, group_id, 1, &old_gk).unwrap()],
         signed_metadata: None,
         signature: None,
     };
@@ -105,7 +105,7 @@ fn rewrap_wrong_old_gk_fails() {
         plaintext_size: 1000,
         merkle_root: [0xaa; 32],
         hash_algorithm: HashAlgorithm::Sha256,
-        wraps: vec![wrap_dek_for_group(&dek, generate_file_id(), 1, &old_gk)],
+        wraps: vec![wrap_dek_for_group(&dek, generate_file_id(), 1, &old_gk).unwrap()],
         signed_metadata: None,
         signature: None,
     };
@@ -124,7 +124,7 @@ fn rewrap_skips_non_group_wraps() {
     let password = b"skip-password-wrap-1";
     let pw_wrap =
         wrap_dek_with_password(&dek, password, KdfChoice::argon2id_interactive()).unwrap();
-    let grp_wrap = wrap_dek_for_group(&dek, group_id, 1, &old_gk);
+    let grp_wrap = wrap_dek_for_group(&dek, group_id, 1, &old_gk).unwrap();
 
     let mut header = Header {
         version: VERSION,

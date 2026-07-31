@@ -112,6 +112,56 @@ fn double_revoke_fails() {
 }
 
 #[test]
+fn duplicate_device_registration_is_rejected() {
+    let (auth_pk, auth_sk) = hybrid_keypair_generate();
+    let mut keylog = KeyLog::new(auth_pk);
+    let user_id = generate_file_id();
+    let device_id = generate_file_id();
+    let (device_pk, _) = hybrid_keypair_generate();
+
+    keylog
+        .register_device(
+            user_id,
+            device_id,
+            device_pk.clone(),
+            "Primary",
+            &auth_sk,
+            100,
+        )
+        .unwrap();
+    let result = keylog.register_device(user_id, device_id, device_pk, "Duplicate", &auth_sk, 200);
+
+    assert!(matches!(
+        result,
+        Err(FileFormatError::DeviceAlreadyRegistered)
+    ));
+}
+
+#[test]
+fn revoked_device_cannot_be_registered_again() {
+    let (auth_pk, auth_sk) = hybrid_keypair_generate();
+    let mut keylog = KeyLog::new(auth_pk);
+    let user_id = generate_file_id();
+    let device_id = generate_file_id();
+    let (device_pk, _) = hybrid_keypair_generate();
+
+    keylog
+        .register_device(
+            user_id,
+            device_id,
+            device_pk.clone(),
+            "Primary",
+            &auth_sk,
+            100,
+        )
+        .unwrap();
+    keylog.revoke_device(device_id, &auth_sk, 200).unwrap();
+    let result = keylog.register_device(user_id, device_id, device_pk, "Reused", &auth_sk, 300);
+
+    assert!(matches!(result, Err(FileFormatError::DeviceAlreadyRevoked)));
+}
+
+#[test]
 fn unauthorized_signer_breaks_verify() {
     let (auth_pk, _auth_sk) = hybrid_keypair_generate();
     let (_wrong_pk, wrong_sk) = hybrid_keypair_generate();

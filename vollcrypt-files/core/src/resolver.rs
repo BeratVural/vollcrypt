@@ -58,6 +58,9 @@ pub fn resolve_sender(
         }
 
         let device_was_active = key_log.device_was_active_at(device_id, timestamp);
+        if !device_was_active {
+            return Err(FileFormatError::DeviceNotActive);
+        }
 
         Ok(SenderInfo {
             signer_pubkey,

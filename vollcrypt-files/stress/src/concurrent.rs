@@ -136,8 +136,8 @@ mod tests {
             handles.push(thread::spawn(move || {
                 let password = format!("SecurePasswordStr{}", i);
                 let salt = [i as u8; 16];
-                // Argon2id preset: m=16384 (16 MB), t=2, p=2
-                let res = derive_kek_argon2id(password.as_bytes(), &salt, 16384, 2, 2).unwrap();
+                // Argon2id minimum preset: m=19456 (19 MiB), t=2, p=2
+                let res = derive_kek_argon2id(password.as_bytes(), &salt, 19_456, 2, 2).unwrap();
                 assert_ne!(res, [0u8; 32]);
             }));
         }

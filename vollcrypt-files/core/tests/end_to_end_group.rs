@@ -62,7 +62,7 @@ fn encrypt_decrypt_three_members() {
     let merkle_root = MerkleTree::from_leaves(vec![leaf]).root();
 
     // Wrap DEK with GK
-    let group_wrap = wrap_dek_for_group(&dek, group_id, 0, &gk);
+    let group_wrap = wrap_dek_for_group(&dek, group_id, 0, &gk).unwrap();
 
     let header = Header {
         version: VERSION,
@@ -184,7 +184,7 @@ fn removed_member_lazy_still_works() {
     let envelope = encrypt_chunk(&dek, &file_id, 0, &plaintext, None).unwrap();
     let leaf = chunk_leaf_hash(&envelope);
     let merkle_root = MerkleTree::from_leaves(vec![leaf]).root();
-    let group_wrap = wrap_dek_for_group(&dek, group_id, 0, &gk);
+    let group_wrap = wrap_dek_for_group(&dek, group_id, 0, &gk).unwrap();
     let header = Header {
         version: VERSION,
         mode: Mode::Group,

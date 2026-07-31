@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use rand::{Rng, RngCore};
+    use rand::RngCore;
     use vollcrypt_files_core::*;
 
     #[test]
@@ -84,7 +84,7 @@ mod tests {
             merkle_root: [9u8; 32],
             hash_algorithm: HashAlgorithm::Sha256,
             wraps: vec![WrapEntry::PasswordPbkdf2 {
-                iterations: 1000,
+                iterations: 600_000,
                 salt: [0u8; 16],
                 wrapped_dek: [0u8; 40],
             }],
@@ -247,7 +247,7 @@ mod tests {
             merkle_root: [0u8; 32],
             hash_algorithm: HashAlgorithm::Sha256,
             wraps: vec![WrapEntry::PasswordPbkdf2 {
-                iterations: 1000,
+                iterations: 600_000,
                 salt: [0u8; 16],
                 wrapped_dek: [0u8; 40],
             }],

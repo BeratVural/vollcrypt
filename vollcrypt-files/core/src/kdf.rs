@@ -2,6 +2,11 @@ use crate::error::FileFormatError;
 use hkdf::Hkdf;
 use sha2::Sha256;
 
+pub const MIN_PBKDF2_ITERATIONS: u32 = 600_000;
+pub const MAX_PBKDF2_ITERATIONS: u32 = 5_000_000;
+pub const MIN_ARGON2_MEMORY_KIB: u32 = 19_456;
+pub const MIN_ARGON2_TIME_COST: u32 = 2;
+
 #[cfg(test)]
 thread_local! {
     pub static INJECT_KDF_ERROR: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -46,13 +51,13 @@ pub fn derive_chunk_subkey(
 /// * `salt`: The 16-byte KDF salt.
 /// * `iterations`: The number of PBKDF2 iterations.
 ///
-/// If iterations is 0, it debug_asserts in debug mode and is forced to 1 in production mode.
+/// Rejects iteration counts outside the supported safety range.
 pub fn derive_kek_pbkdf2(
     password: &[u8],
     salt: &[u8; 16],
     iterations: u32,
 ) -> Result<[u8; 32], FileFormatError> {
-    if !(1_000..=5_000_000).contains(&iterations) {
+    if !(MIN_PBKDF2_ITERATIONS..=MAX_PBKDF2_ITERATIONS).contains(&iterations) {
         return Err(FileFormatError::KdfParameterOutOfRange(format!(
             "PBKDF2 iterations out of safety bounds: {}",
             iterations
@@ -82,10 +87,13 @@ pub fn derive_kek_argon2id(
 ) -> Result<[u8; 32], crate::error::FileFormatError> {
     use argon2::{Algorithm, Argon2, Params, Version};
 
-    if !(8..=262144).contains(&m_cost) || !(1..=5).contains(&t_cost) || !(1..=8).contains(&p_cost) {
+    if !(MIN_ARGON2_MEMORY_KIB..=262_144).contains(&m_cost)
+        || !(MIN_ARGON2_TIME_COST..=5).contains(&t_cost)
+        || !(1..=8).contains(&p_cost)
+    {
         return Err(crate::error::FileFormatError::KdfParameterOutOfRange(
             format!(
-                "Argon2 parameters exceed safety limits: m_cost={}, t_cost={}, p_cost={}",
+                "Argon2 parameters outside safety limits: m_cost={}, t_cost={}, p_cost={}",
                 m_cost, t_cost, p_cost
             ),
         ));

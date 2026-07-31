@@ -699,7 +699,8 @@ pub fn wrap_dek_for_group(
     let gk_arr = to_arr32(gk.as_ref(), "gk")?;
 
     let entry =
-        vollcrypt_files_core::wrap_dek_for_group(&dek_arr, group_id_arr, gk_version, &gk_arr);
+        vollcrypt_files_core::wrap_dek_for_group(&dek_arr, group_id_arr, gk_version, &gk_arr)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
     Ok(wrap_entry_to_napi(entry))
 }
 
@@ -753,7 +754,7 @@ pub fn wrap_dek_with_threshold(
 
     let shares = core_shares
         .iter()
-        .map(|s| vollcrypt_files_core::encode_share(s))
+        .map(vollcrypt_files_core::encode_share)
         .collect();
 
     Ok(WrapThresholdResult {
@@ -2109,6 +2110,7 @@ pub fn napi_verify_container(path: String, policy: NapiShieldPolicy) -> Result<S
     Ok(format!("{:?}", report))
 }
 
+#[allow(clippy::too_many_arguments)]
 #[napi]
 pub fn encrypt_file_pipelined_async(
     source_path: String,

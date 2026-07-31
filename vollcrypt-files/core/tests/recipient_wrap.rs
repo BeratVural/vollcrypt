@@ -157,7 +157,7 @@ fn tampered_gk_version_fails() {
 #[test]
 fn wrong_wrap_type_returns_error() {
     let password_wrap = WrapEntry::PasswordPbkdf2 {
-        iterations: 10_000,
+        iterations: 600_000,
         salt: [0x11; 16],
         wrapped_dek: [0x22; 40],
     };

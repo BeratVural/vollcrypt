@@ -60,17 +60,45 @@ fn wrong_password_fails_argon2id() {
 }
 
 #[test]
-fn low_iteration_pbkdf2_works() {
+fn weak_pbkdf2_iterations_are_rejected() {
     let dek = generate_dek();
     let password = b"my-secure-password";
 
-    let wrap =
-        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
-    let unwrapped = unwrap_dek_with_password(&wrap, password).unwrap();
+    let result = wrap_dek_with_password(
+        &dek,
+        password,
+        KdfChoice::Pbkdf2 {
+            iterations: 599_999,
+        },
+    );
 
-    assert_eq!(dek, unwrapped);
+    assert!(matches!(
+        result,
+        Err(FileFormatError::KdfParameterOutOfRange(_))
+    ));
 }
 
+#[test]
+fn weak_argon2_params_are_rejected() {
+    let dek = generate_dek();
+    let password = b"my-secure-password";
+
+    for (m_cost, t_cost) in [(19_455, 2), (19_456, 1)] {
+        let result = wrap_dek_with_password(
+            &dek,
+            password,
+            KdfChoice::Argon2id {
+                m_cost,
+                t_cost,
+                p_cost: 1,
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(FileFormatError::KdfParameterOutOfRange(_))
+        ));
+    }
+}
 #[test]
 fn invalid_argon2_params_error() {
     let dek = generate_dek();

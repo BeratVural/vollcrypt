@@ -451,7 +451,7 @@ fn run_sweep_chunk_size(hw: &hwinfo::HwInfo) {
     let chunk_sizes = [
         ("4 KB", 4 * 1024),
         ("64 KB", 64 * 1024),
-        ("1 MB", 1 * 1024 * 1024),
+        ("1 MB", 1024 * 1024),
         ("4 MB", 4 * 1024 * 1024),
         ("8 MB", 8 * 1024 * 1024),
         ("16 MB", 16 * 1024 * 1024),
@@ -513,7 +513,7 @@ fn run_sweep_workers(hw: &hwinfo::HwInfo) {
     println!("| --- | --- | --- | --- |");
 
     let size_bytes = 256 * 1024 * 1024;
-    let chunk_size = 1 * 1024 * 1024;
+    let chunk_size = 1024 * 1024;
     let dek = [0u8; 32];
     let file_id = [0u8; 16];
 
@@ -582,8 +582,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     println!("Running full performance and security benchmark suite...");
 
     let detected_cpu_name = get_clean_cpu_name(&hw.cpu_brand);
-    let device_subdir =
-        std::env::var("VOLLCRYPT_BENCH_DEVICE").unwrap_or_else(|_| detected_cpu_name);
+    let device_subdir = std::env::var("VOLLCRYPT_BENCH_DEVICE").unwrap_or(detected_cpu_name);
     let reports_dir = if device_subdir.is_empty() {
         std::path::PathBuf::from("vollcrypt-files/reports")
     } else {
@@ -749,12 +748,12 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     let mut kw_wrap_runs = Vec::new();
     for _ in 0..50 {
         let start = Instant::now();
-        let _res = aes256_kw_wrap(&dek, &dek);
+        let _res = aes256_kw_wrap(&dek, &dek).unwrap();
         kw_wrap_runs.push(start.elapsed().as_secs_f64() * 1_000_000.0);
     }
     let (kw_wrap_med, kw_wrap_p99, _kw_wrap_std) = stats(&kw_wrap_runs);
 
-    let wrapped = aes256_kw_wrap(&dek, &dek);
+    let wrapped = aes256_kw_wrap(&dek, &dek).unwrap();
     let mut kw_unwrap_runs = Vec::new();
     for _ in 0..50 {
         let start = Instant::now();
@@ -840,7 +839,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         merkle_root: [0u8; 32],
         hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![WrapEntry::PasswordPbkdf2 {
-            iterations: 1000,
+            iterations: 600_000,
             salt: [0u8; 16],
             wrapped_dek: [0u8; 40],
         }],
@@ -970,7 +969,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     // 3. KDF Benchmarks
     println!("Running KDF benchmarks...");
     let mut kdf_rows = Vec::new();
-    let pbkdf2_iters = [10_000, 100_000, 600_000];
+    let pbkdf2_iters = [600_000, 900_000, 1_200_000];
     for &iters in &pbkdf2_iters {
         let mut runs = Vec::new();
         for _ in 0..3 {
@@ -1069,7 +1068,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         let hk = hkdf::Hkdf::<sha2::Sha256>::new(None, &ss);
         let mut kek = [0u8; 32];
         let _ = hk.expand(&info, &mut kek);
-        let _wrapped_dek = aes256_kw_wrap(&kek, &dek);
+        let _wrapped_dek = aes256_kw_wrap(&kek, &dek).unwrap();
         pure_wrap_runs.push(start.elapsed().as_secs_f64() * 1000.0);
     }
     let (pure_med, _, _) = stats(&pure_wrap_runs);
@@ -1465,7 +1464,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     }
 
     println!("Running dynamic Tag Forgery Resistance test...");
-    let mut tf_env = encrypt_chunk(&dek, &file_id, 0, &vec![0u8; 100], None).unwrap();
+    let mut tf_env = encrypt_chunk(&dek, &file_id, 0, &[0u8; 100], None).unwrap();
     let tf_attempts = 100_000;
     let mut tf_successful = 0;
     let mut tf_rng = rand::thread_rng();
@@ -1487,7 +1486,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         merkle_root: [9u8; 32],
         hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![WrapEntry::PasswordPbkdf2 {
-            iterations: 1000,
+            iterations: 600_000,
             salt: [0u8; 16],
             wrapped_dek: [0u8; 40],
         }],
@@ -1567,7 +1566,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
     println!("Running dynamic Timing Side Channel benchmark...");
     let correct_kek = [0u8; 32];
     let incorrect_kek = [1u8; 32];
-    let kw_wrapped = aes256_kw_wrap(&correct_kek, &dek);
+    let kw_wrapped = aes256_kw_wrap(&correct_kek, &dek).unwrap();
 
     let _ = aes256_kw_unwrap(&correct_kek, &kw_wrapped);
     let _ = aes256_kw_unwrap(&incorrect_kek, &kw_wrapped);
@@ -1659,7 +1658,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         merkle_root: [0u8; 32],
         hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![WrapEntry::PasswordPbkdf2 {
-            iterations: 1000,
+            iterations: 600_000,
             salt: [0u8; 16],
             wrapped_dek: [0u8; 40],
         }],
@@ -1798,7 +1797,7 @@ fn run_full_suite(hw: hwinfo::HwInfo) {
         kdf_handles.push(std::thread::spawn(move || {
             let password = format!("SecurePasswordStr{}", i);
             let salt = [i as u8; 16];
-            let res = derive_kek_argon2id(password.as_bytes(), &salt, 16384, 2, 2).unwrap();
+            let res = derive_kek_argon2id(password.as_bytes(), &salt, 19_456, 2, 2).unwrap();
             assert_ne!(res, [0u8; 32]);
         }));
     }
@@ -2070,7 +2069,7 @@ fn run_main(args: Vec<String>) {
         let chunk_size = if p == "max" {
             4 * 1024 * 1024
         } else {
-            1 * 1024 * 1024
+            1024 * 1024
         };
         let workers = if p == "max" {
             hw.cpu_cores_physical

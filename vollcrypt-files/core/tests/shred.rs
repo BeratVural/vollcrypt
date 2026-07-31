@@ -106,8 +106,8 @@ fn crypto_shred_header_empties_wraps() {
         merkle_root: [0x77; 32],
         hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![
-            wrap_dek_for_group(&generate_dek(), generate_file_id(), 1, &generate_gk()),
-            wrap_dek_for_group(&generate_dek(), generate_file_id(), 2, &generate_gk()),
+            wrap_dek_for_group(&generate_dek(), generate_file_id(), 1, &generate_gk()).unwrap(),
+            wrap_dek_for_group(&generate_dek(), generate_file_id(), 2, &generate_gk()).unwrap(),
         ],
         signed_metadata: None,
         signature: None,
@@ -134,7 +134,7 @@ fn decrypt_fails_after_file_shred() {
     let leaf = chunk_leaf_hash(&envelope);
     let merkle_root = MerkleTree::from_leaves(vec![leaf]).root();
 
-    let group_wrap = wrap_dek_for_group(&dek, generate_file_id(), 1, &generate_gk());
+    let group_wrap = wrap_dek_for_group(&dek, generate_file_id(), 1, &generate_gk()).unwrap();
 
     let mut header = Header {
         version: VERSION,

@@ -5,8 +5,8 @@ fn bench_pbkdf2(c: &mut Criterion) {
     let password = b"SuperSecureMasterPassword123!";
     let salt = [0u8; 16];
 
-    // iterations: 10k, 100k, 600k (default is 600k for high security, but we keep runs fast using 10k, 100k, 300k, 600k)
-    let pbkdf2_iterations = [10_000, 100_000, 300_000, 600_000];
+    // Accepted PBKDF2 safety range starts at 600k iterations.
+    let pbkdf2_iterations = [600_000, 900_000, 1_200_000];
 
     let mut g = c.benchmark_group("pbkdf2_latency");
     for &iters in &pbkdf2_iterations {

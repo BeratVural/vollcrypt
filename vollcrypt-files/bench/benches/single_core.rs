@@ -103,12 +103,12 @@ fn bench_hkdf_subkey(c: &mut Criterion) {
 fn bench_aes_kw(c: &mut Criterion) {
     let kek = [0u8; 32];
     let dek = [0u8; 32];
-    let wrapped = aes256_kw_wrap(&kek, &dek);
+    let wrapped = aes256_kw_wrap(&kek, &dek).unwrap();
 
     let mut g = c.benchmark_group("aes_kw_wrap_unwrap");
     g.bench_function("wrap", |b| {
         b.iter(|| {
-            let res = aes256_kw_wrap(black_box(&kek), black_box(&dek));
+            let res = aes256_kw_wrap(black_box(&kek), black_box(&dek)).unwrap();
             let _ = black_box(res);
         });
     });
@@ -154,7 +154,7 @@ fn bench_header_ops(c: &mut Criterion) {
         merkle_root: [0u8; 32],
         hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![WrapEntry::PasswordPbkdf2 {
-            iterations: 1000,
+            iterations: 600_000,
             salt: [0u8; 16],
             wrapped_dek: [0u8; 40],
         }],
@@ -175,7 +175,7 @@ fn bench_header_ops(c: &mut Criterion) {
         hash_algorithm: HashAlgorithm::Sha256,
         wraps: vec![
             WrapEntry::PasswordPbkdf2 {
-                iterations: 1000,
+                iterations: 600_000,
                 salt: [0u8; 16],
                 wrapped_dek: [0u8; 40],
             };

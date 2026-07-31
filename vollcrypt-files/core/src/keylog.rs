@@ -221,6 +221,22 @@ impl KeyLog {
         if human_label.len() > 256 {
             return Err(FileFormatError::LabelTooLong);
         }
+        for existing in self.entries.iter().rev() {
+            match &existing.entry {
+                KeyLogEntryType::DeviceRevoke {
+                    device_id: existing_id,
+                } if *existing_id == device_id => {
+                    return Err(FileFormatError::DeviceAlreadyRevoked);
+                }
+                KeyLogEntryType::DeviceRegister {
+                    device_id: existing_id,
+                    ..
+                } if *existing_id == device_id => {
+                    return Err(FileFormatError::DeviceAlreadyRegistered);
+                }
+                _ => {}
+            }
+        }
         let entry_type = KeyLogEntryType::DeviceRegister {
             user_id,
             device_id,

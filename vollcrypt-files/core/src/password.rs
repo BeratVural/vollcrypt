@@ -58,7 +58,7 @@ pub fn wrap_dek_with_password(
     let entry = match kdf {
         KdfChoice::Pbkdf2 { iterations } => {
             let mut kek = derive_kek_pbkdf2(password, &salt, iterations)?;
-            let wrapped_dek = aes256_kw_wrap(&kek, dek);
+            let wrapped_dek = aes256_kw_wrap(&kek, dek)?;
             kek.zeroize();
 
             WrapEntry::PasswordPbkdf2 {
@@ -73,7 +73,7 @@ pub fn wrap_dek_with_password(
             p_cost,
         } => {
             let mut kek = derive_kek_argon2id(password, &salt, m_cost, t_cost, p_cost)?;
-            let wrapped_dek = aes256_kw_wrap(&kek, dek);
+            let wrapped_dek = aes256_kw_wrap(&kek, dek)?;
             kek.zeroize();
 
             WrapEntry::PasswordArgon2id {

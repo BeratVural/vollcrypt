@@ -41,8 +41,8 @@ fn test_password_wrapping() {
     let kdf = KdfChoice {
         kind: "Argon2id".to_string(),
         rounds: None,
-        m_cost: Some(16384),
-        t_cost: Some(1),
+        m_cost: Some(19_456),
+        t_cost: Some(2),
         p_cost: Some(1),
         salt: None,
     };
@@ -90,7 +90,7 @@ async fn test_async_pipelined_roundtrip() {
     let password = "SuperSecretPassword123!";
     let kdf = KdfChoice {
         kind: "Pbkdf2".to_string(),
-        rounds: Some(1000),
+        rounds: Some(600_000),
         m_cost: None,
         t_cost: None,
         p_cost: None,

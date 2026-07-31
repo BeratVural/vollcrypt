@@ -3,16 +3,16 @@ use std::process::{Command, Stdio};
 use std::time::Instant;
 
 use vollcrypt_files_core::{
-    decrypt_file_pipelined, decrypt_file_pipelined_with_policy, decrypt_streaming_online,
-    decrypt_verified, encrypt_file_pipelined, generate_dek, generate_file_id, generate_gk,
-    generate_recipient_keypair, hybrid_keypair_generate, hybrid_sign, hybrid_verify,
-    pipelined_io::PipelinedSignInfo, rewrap_dek_in_header, sign_header_plain, sign_header_sealed,
-    unwrap_dek_with_group_key, unwrap_dek_with_password, unwrap_key_with_recipient_key,
-    verify_header_signature_plain, verify_header_signature_plain_policy,
-    verify_header_signature_sealed, verify_manifest_with_pin, wrap_dek_for_group,
-    wrap_dek_with_password, wrap_key_to_recipient, CipherId, FileFormatError, FounderAnchor,
-    GroupManifest, HashAlgorithm, Header, HybridPublicKey, HybridSignature, KdfChoice, KeyLog,
-    MerkleTree, Mode, RollbackCheck, SignedMetadata, VerificationPolicy, WrapEntry,
+    decrypt_file_pipelined, decrypt_file_pipelined_with_policy, encrypt_file_pipelined,
+    generate_dek, generate_file_id, generate_gk, generate_recipient_keypair,
+    hybrid_keypair_generate, hybrid_sign, hybrid_verify, pipelined_io::PipelinedSignInfo,
+    rewrap_dek_in_header, sign_header_plain, sign_header_sealed, unwrap_dek_with_group_key,
+    unwrap_dek_with_password, unwrap_key_with_recipient_key, verify_header_signature_plain,
+    verify_header_signature_plain_policy, verify_header_signature_sealed, verify_manifest_with_pin,
+    wrap_dek_for_group, wrap_dek_with_password, wrap_key_to_recipient, CipherId, FileFormatError,
+    FounderAnchor, GroupManifest, HashAlgorithm, Header, HybridPublicKey, HybridSignature,
+    KdfChoice, KeyLog, MerkleTree, Mode, RollbackCheck, SignedMetadata, VerificationPolicy,
+    WrapEntry,
 };
 
 fn main() {
@@ -106,18 +106,18 @@ fn run_adversarial_suite() {
             // Raw SHA-256 of the leaf fields without prefix:
             let mut hasher = Sha256::new();
             hasher.update(chunk_index.to_be_bytes());
-            hasher.update(&iv);
+            hasher.update(iv);
             hasher.update(ciphertext);
-            hasher.update(&tag);
+            hasher.update(tag);
             let no_prefix_hash: [u8; 32] = hasher.finalize().into();
 
             // Raw SHA-256 of leaf fields with 0x00 prefix:
             let mut hasher = Sha256::new();
-            hasher.update(&[0x00]);
+            hasher.update([0x00]);
             hasher.update(chunk_index.to_be_bytes());
-            hasher.update(&iv);
+            hasher.update(iv);
             hasher.update(ciphertext);
-            hasher.update(&tag);
+            hasher.update(tag);
             let leaf_prefix_hash: [u8; 32] = hasher.finalize().into();
 
             if leaf_hash == leaf_prefix_hash && leaf_hash != no_prefix_hash {
@@ -643,7 +643,7 @@ fn run_adversarial_suite() {
             let new_gk = generate_gk();
             let file_id = generate_file_id();
 
-            let wrap = wrap_dek_for_group(&dek, [1u8; 16], 1, &old_gk);
+            let wrap = wrap_dek_for_group(&dek, [1u8; 16], 1, &old_gk).unwrap();
             let mut header = Header {
                 version: 1,
                 mode: Mode::Group,
@@ -1370,7 +1370,7 @@ fn run_adversarial_suite() {
                 .unwrap();
 
             let dummy_wrap = WrapEntry::PasswordPbkdf2 {
-                iterations: 1000,
+                iterations: 600_000,
                 salt: [0u8; 16],
                 wrapped_dek: [0u8; 40],
             };
@@ -1485,7 +1485,7 @@ fn run_adversarial_suite() {
                 .unwrap();
 
             let dummy_wrap = WrapEntry::PasswordPbkdf2 {
-                iterations: 1000,
+                iterations: 600_000,
                 salt: [0u8; 16],
                 wrapped_dek: [0u8; 40],
             };
@@ -1626,7 +1626,7 @@ fn run_adversarial_suite() {
                 merkle_root: [0u8; 32],
                 hash_algorithm: HashAlgorithm::Sha256,
                 wraps: vec![WrapEntry::PasswordPbkdf2 {
-                    iterations: 1000,
+                    iterations: 600_000,
                     salt: [0u8; 16],
                     wrapped_dek: [0u8; 40],
                 }],
@@ -1676,9 +1676,14 @@ fn run_adversarial_suite() {
             let plaintext = b"Adversarial sealed container test.";
 
             let password = b"seal-password";
-            let wrap =
-                wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 })
-                    .unwrap();
+            let wrap = wrap_dek_with_password(
+                &dek,
+                password,
+                KdfChoice::Pbkdf2 {
+                    iterations: 600_000,
+                },
+            )
+            .unwrap();
 
             let dest_encrypt = tempfile::tempfile().unwrap();
             encrypt_file_pipelined(
@@ -1760,9 +1765,14 @@ fn run_adversarial_suite() {
             };
 
             let password = b"seal-password";
-            let wrap =
-                wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 })
-                    .unwrap();
+            let wrap = wrap_dek_with_password(
+                &dek,
+                password,
+                KdfChoice::Pbkdf2 {
+                    iterations: 600_000,
+                },
+            )
+            .unwrap();
 
             let dest_encrypt = tempfile::tempfile().unwrap();
             encrypt_file_pipelined(
@@ -1848,7 +1858,7 @@ fn run_adversarial_suite() {
             let plaintext = vec![0u8; 8192];
 
             let password = b"seal-password";
-            let wrap = wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+            let wrap = wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 600_000 }).unwrap();
 
             let dest_encrypt = tempfile::tempfile().unwrap();
             encrypt_file_pipelined(
@@ -1974,7 +1984,7 @@ fn run_adversarial_suite() {
         for finding in &findings {
             report.push_str(&format!("* ⚠ **{}**\n", finding));
         }
-        report.push_str("\n");
+        report.push('\n');
     }
 
     // Design Limitations
@@ -1985,7 +1995,7 @@ fn run_adversarial_suite() {
         for footgun in &footguns {
             report.push_str(&format!("* ◷ **{}**\n", footgun));
         }
-        report.push_str("\n");
+        report.push('\n');
     }
 
     // Recommendations
@@ -2003,7 +2013,7 @@ fn run_adversarial_suite() {
         #[cfg(target_os = "windows")]
         {
             if let Ok(output) = std::process::Command::new("wmic")
-                .args(&["cpu", "get", "name"])
+                .args(["cpu", "get", "name"])
                 .output()
             {
                 let out = String::from_utf8_lossy(&output.stdout);
@@ -2064,8 +2074,7 @@ fn run_adversarial_suite() {
     report_dir.pop(); // move up from "adversarial" to "vollcrypt-files"
     report_dir.push("reports");
     let detected_cpu_name = get_clean_cpu_name(&detect_cpu_brand());
-    let device_subdir =
-        std::env::var("VOLLCRYPT_BENCH_DEVICE").unwrap_or_else(|_| detected_cpu_name);
+    let device_subdir = std::env::var("VOLLCRYPT_BENCH_DEVICE").unwrap_or(detected_cpu_name);
     if !device_subdir.is_empty() {
         report_dir.push(device_subdir);
     }
@@ -2142,10 +2151,7 @@ fn run_test<F>(
             "◷ Bound/Footgun"
         } else if expected == "— Gap-Analysis" {
             "— Gap-Analysis"
-        } else if expected.starts_with("◷ Detectable") {
-            footguns.push(name.to_string());
-            expected
-        } else if expected.starts_with("◷ Documented") {
+        } else if expected.starts_with("◷ Detectable") || expected.starts_with("◷ Documented") {
             footguns.push(name.to_string());
             expected
         } else {

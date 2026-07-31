@@ -67,7 +67,7 @@ fn detect_gpu_brand() -> String {
     #[cfg(target_os = "windows")]
     {
         if let Ok(output) = std::process::Command::new("powershell")
-            .args(&[
+            .args([
                 "-NoProfile",
                 "-Command",
                 "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name",
@@ -80,7 +80,7 @@ fn detect_gpu_brand() -> String {
             }
         }
         if let Ok(output) = std::process::Command::new("wmic")
-            .args(&["path", "win32_VideoController", "get", "name"])
+            .args(["path", "win32_VideoController", "get", "name"])
             .output()
         {
             let gpu_out = String::from_utf8_lossy(&output.stdout);
@@ -97,7 +97,7 @@ fn detect_gpu_brand() -> String {
     #[cfg(target_os = "linux")]
     {
         if let Ok(output) = std::process::Command::new("sh")
-            .args(&["-c", "lspci | grep -i vga"])
+            .args(["-c", "lspci | grep -i vga"])
             .output()
         {
             let lspci_out = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -109,7 +109,7 @@ fn detect_gpu_brand() -> String {
     #[cfg(target_os = "macos")]
     {
         if let Ok(output) = std::process::Command::new("system_profiler")
-            .args(&["SPDisplaysDataType"])
+            .args(["SPDisplaysDataType"])
             .output()
         {
             let sp_out = String::from_utf8_lossy(&output.stdout);

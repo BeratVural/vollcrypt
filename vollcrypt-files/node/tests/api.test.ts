@@ -17,6 +17,32 @@ test('random generation parameters', () => {
   assert.strictEqual(gk.length, 32);
 });
 
+test('weak password KDF parameters are rejected', () => {
+  const dek = api.generateDek();
+  const salt = api.generateSalt();
+
+  assert.throws(
+    () =>
+      api.wrapDekWithPassword(dek, 'password', {
+        kind: 'Pbkdf2',
+        rounds: 599_999,
+        salt,
+      }),
+    /KDF parameter out of range/
+  );
+  assert.throws(
+    () =>
+      api.wrapDekWithPassword(dek, 'password', {
+        kind: 'Argon2id',
+        mCost: 19_455,
+        tCost: 2,
+        pCost: 1,
+        salt,
+      }),
+    /KDF parameter out of range/
+  );
+});
+
 test('password mode roundtrip', () => {
   const dek = api.generateDek();
   const fileId = api.generateFileId();
@@ -29,7 +55,7 @@ test('password mode roundtrip', () => {
   // Wrap DEK
   const kdf = {
     kind: 'Pbkdf2',
-    rounds: 1000,
+    rounds: 600_000,
     salt: api.generateSalt(),
     mCost: undefined,
     tCost: undefined,
@@ -51,7 +77,7 @@ test('wrong password fails', () => {
   const dek = api.generateDek();
   const kdf = {
     kind: 'Pbkdf2',
-    rounds: 1000,
+    rounds: 600_000,
     salt: api.generateSalt(),
     mCost: undefined,
     tCost: undefined,
@@ -70,7 +96,7 @@ test('async password unwrap roundtrip', async () => {
     kind: 'Argon2id',
     rounds: undefined,
     salt: api.generateSalt(),
-    mCost: 1024,
+    mCost: 19_456,
     tCost: 2,
     pCost: 1,
   };
@@ -249,7 +275,7 @@ test('crypto shred file header', () => {
   const dek = api.generateDek();
   const kdf = {
     kind: 'Pbkdf2',
-    rounds: 1000,
+    rounds: 600_000,
     salt: api.generateSalt(),
     mCost: undefined,
     tCost: undefined,
@@ -409,7 +435,7 @@ test('pipelined file encryption and decryption roundtrip', async () => {
   // Wrap DEK
   const kdf = {
     kind: 'Pbkdf2',
-    rounds: 1000,
+    rounds: 600_000,
     salt: api.generateSalt(),
     mCost: undefined,
     tCost: undefined,
@@ -475,7 +501,7 @@ test('pipelined file encryption with signing', async () => {
 
   const kdf = {
     kind: 'Pbkdf2',
-    rounds: 1000,
+    rounds: 600_000,
     salt: api.generateSalt(),
     mCost: undefined,
     tCost: undefined,

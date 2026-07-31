@@ -20,14 +20,14 @@ pub fn wrap_dek_for_group(
     group_id: [u8; 16],
     gk_version: u32,
     gk: &[u8; 32],
-) -> WrapEntry {
-    let wrapped_dek = crate::keywrap::aes256_kw_wrap(gk, dek);
+) -> Result<WrapEntry, FileFormatError> {
+    let wrapped_dek = crate::keywrap::aes256_kw_wrap(gk, dek)?;
 
-    WrapEntry::GroupWrap {
+    Ok(WrapEntry::GroupWrap {
         group_id,
         gk_version,
         wrapped_dek,
-    }
+    })
 }
 
 /// Unwraps the DEK from a `WrapEntry::GroupWrap` using the Group Key (GK).
@@ -73,7 +73,7 @@ pub fn rewrap_dek_in_header(
                     e
                 }
             })?;
-            let new_wrapped = crate::keywrap::aes256_kw_wrap(new_gk, &dek);
+            let new_wrapped = crate::keywrap::aes256_kw_wrap(new_gk, &dek)?;
             dek.zeroize();
 
             *gk_version = new_gk_version;

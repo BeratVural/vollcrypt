@@ -1,6 +1,6 @@
 use sha3::{Digest, Sha3_256};
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 use crate::error::FileFormatError;
 use crate::pqc::{
@@ -84,25 +84,21 @@ pub fn wrap_key_to_recipient(
     gk_version: u32,
     recipient_pk: &RecipientPublicKey,
 ) -> Result<WrapEntry, FileFormatError> {
-    let (eph_pk, mut eph_sk) = x25519_keypair_generate();
-    let mut ss_classical = x25519_diffie_hellman(&eph_sk, &recipient_pk.x25519)?;
-    let (mut ss_pq, mlkem_ct) = mlkem768_encapsulate(&recipient_pk.ml_kem)?;
+    let (eph_pk, eph_sk) = x25519_keypair_generate();
+    let eph_sk = Zeroizing::new(eph_sk);
+    let ss_classical = Zeroizing::new(x25519_diffie_hellman(&eph_sk, &recipient_pk.x25519)?);
+    let (ss_pq, mlkem_ct) = mlkem768_encapsulate(&recipient_pk.ml_kem)?;
+    let ss_pq = Zeroizing::new(ss_pq);
 
-    let mut kek = hybrid_kek_derive(
+    let kek = Zeroizing::new(hybrid_kek_derive(
         &ss_classical,
         &ss_pq,
         &eph_pk,
         &recipient_pk.x25519,
         &recipient_id,
         gk_version,
-    );
-    let wrapped_dek = crate::keywrap::aes256_kw_wrap(&kek, key);
-
-    // Securely zeroize all intermediate key materials
-    eph_sk.zeroize();
-    ss_classical.zeroize();
-    ss_pq.zeroize();
-    kek.zeroize();
+    ));
+    let wrapped_dek = crate::keywrap::aes256_kw_wrap(&kek, key)?;
 
     Ok(WrapEntry::HybridKem {
         recipient_id,
@@ -130,41 +126,35 @@ pub fn unwrap_key_with_recipient_key(
                 return Err(FileFormatError::InvalidWrapPayload);
             }
 
-            let mut ss_classical = x25519_diffie_hellman(&recipient_sk.x25519, x25519_ephemeral)?;
+            let ss_classical = Zeroizing::new(x25519_diffie_hellman(
+                &recipient_sk.x25519,
+                x25519_ephemeral,
+            )?);
 
-            let mut ct = [0u8; 1088];
+            let mut ct = Zeroizing::new([0u8; 1088]);
             ct.copy_from_slice(mlkem_ciphertext);
-            let mut ss_pq = mlkem768_decapsulate(&recipient_sk.ml_kem, &ct)?;
+            let ss_pq = Zeroizing::new(mlkem768_decapsulate(&recipient_sk.ml_kem, &ct)?);
 
-            // Derive recipient static public key from secret key
             let secret = StaticSecret::from(recipient_sk.x25519);
             let public = X25519PublicKey::from(&secret);
             let pk_x25519 = public.to_bytes();
 
-            let mut kek = hybrid_kek_derive(
+            let kek = Zeroizing::new(hybrid_kek_derive(
                 &ss_classical,
                 &ss_pq,
                 x25519_ephemeral,
                 &pk_x25519,
                 recipient_id,
                 *gk_version,
-            );
+            ));
 
-            // Wrap aes256_kw_unwrap result to map WrongPassword to WrongRecipientKey
-            let dek_res = crate::keywrap::aes256_kw_unwrap(&kek, wrapped_dek).map_err(|e| {
+            crate::keywrap::aes256_kw_unwrap(&kek, wrapped_dek).map_err(|e| {
                 if matches!(e, FileFormatError::WrongPassword) {
                     FileFormatError::WrongRecipientKey
                 } else {
                     e
                 }
-            });
-
-            // Securely zeroize all intermediate key materials
-            ss_classical.zeroize();
-            ss_pq.zeroize();
-            kek.zeroize();
-
-            dek_res
+            })
         }
         WrapEntry::PasswordPbkdf2 { .. }
         | WrapEntry::PasswordArgon2id { .. }

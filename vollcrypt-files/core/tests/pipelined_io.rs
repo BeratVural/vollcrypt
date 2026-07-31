@@ -14,8 +14,14 @@ fn test_pipelined_roundtrip_small() {
     let chunk_size = 16; // Very small chunk size to trigger multiple chunks
 
     let password = b"pipeline-password";
-    let wrap =
-        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+    let wrap = wrap_dek_with_password(
+        &dek,
+        password,
+        KdfChoice::Pbkdf2 {
+            iterations: 600_000,
+        },
+    )
+    .unwrap();
 
     let (signer_pk, signer_sk) = hybrid_keypair_generate();
     let sign_info = PipelinedSignInfo::Plain {
@@ -68,8 +74,14 @@ fn test_pipelined_roundtrip_large() {
     let chunk_size = 256 * 1024; // 256 KB chunks
 
     let password = b"pipeline-password-large";
-    let wrap =
-        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+    let wrap = wrap_dek_with_password(
+        &dek,
+        password,
+        KdfChoice::Pbkdf2 {
+            iterations: 600_000,
+        },
+    )
+    .unwrap();
 
     let (signer_pk, signer_sk) = hybrid_keypair_generate();
     let sign_info = PipelinedSignInfo::Plain {
@@ -119,8 +131,14 @@ fn test_pipelined_signed_header_plain() {
     let chunk_size = 100;
 
     let password = b"password";
-    let wrap =
-        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+    let wrap = wrap_dek_with_password(
+        &dek,
+        password,
+        KdfChoice::Pbkdf2 {
+            iterations: 600_000,
+        },
+    )
+    .unwrap();
 
     let (signer_pk, signer_sk) = hybrid_keypair_generate();
     let sign_info = PipelinedSignInfo::Plain {
@@ -172,8 +190,14 @@ fn test_pipelined_tampered_chunk_rejected() {
     let chunk_size = 128;
 
     let password = b"tamper-pass";
-    let wrap =
-        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+    let wrap = wrap_dek_with_password(
+        &dek,
+        password,
+        KdfChoice::Pbkdf2 {
+            iterations: 600_000,
+        },
+    )
+    .unwrap();
 
     let (signer_pk, signer_sk) = hybrid_keypair_generate();
     let sign_info = PipelinedSignInfo::Plain {
@@ -234,7 +258,9 @@ fn test_pipelined_wrong_password_fails() {
     let wrap = wrap_dek_with_password(
         &dek,
         correct_password,
-        KdfChoice::Pbkdf2 { iterations: 1000 },
+        KdfChoice::Pbkdf2 {
+            iterations: 600_000,
+        },
     )
     .unwrap();
 
@@ -270,8 +296,14 @@ fn test_pipelined_write_modes_equivalence() {
     let chunk_size = 4096; // 4 KB chunks
 
     let password = b"equivalence-password";
-    let wrap =
-        wrap_dek_with_password(&dek, password, KdfChoice::Pbkdf2 { iterations: 1000 }).unwrap();
+    let wrap = wrap_dek_with_password(
+        &dek,
+        password,
+        KdfChoice::Pbkdf2 {
+            iterations: 600_000,
+        },
+    )
+    .unwrap();
 
     let mut src_file = tempfile::tempfile().unwrap();
     src_file.write_all(&plaintext).unwrap();
@@ -506,4 +538,29 @@ fn test_pipelined_roundtrip_no_wraps() {
     }
     assert!(decrypt_res.is_ok());
     assert_eq!(decrypted, plaintext);
+}
+#[test]
+fn encrypt_rejects_zero_and_oversized_chunk_sizes() {
+    let dek = generate_dek();
+    let file_id = generate_file_id();
+
+    for invalid_size in [0, 16 * 1024 * 1024 + 1] {
+        let dest = tempfile::tempfile().unwrap();
+        let result = encrypt_file_pipelined(
+            Cursor::new(vec![1u8; 32]),
+            dest,
+            &dek,
+            &file_id,
+            invalid_size,
+            vec![],
+            Mode::Password,
+            1,
+            None,
+            None,
+        );
+        assert!(matches!(
+            result,
+            Err(FileFormatError::InvalidChunkSize(size)) if size == invalid_size
+        ));
+    }
 }

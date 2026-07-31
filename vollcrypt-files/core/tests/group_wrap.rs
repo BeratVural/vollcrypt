@@ -10,7 +10,7 @@ fn group_wrap_roundtrip() {
     let gk_version = 42;
     let gk = generate_gk();
 
-    let wrap = wrap_dek_for_group(&dek, group_id, gk_version, &gk);
+    let wrap = wrap_dek_for_group(&dek, group_id, gk_version, &gk).unwrap();
 
     // Verify it is indeed GroupWrap and has correct fields
     if let WrapEntry::GroupWrap {
@@ -38,7 +38,7 @@ fn wrong_gk_fails_group_unwrap() {
     let gk = generate_gk();
     let wrong_gk = generate_gk();
 
-    let wrap = wrap_dek_for_group(&dek, group_id, gk_version, &gk);
+    let wrap = wrap_dek_for_group(&dek, group_id, gk_version, &gk).unwrap();
 
     // Unwrapping with wrong GK should fail
     let res = unwrap_dek_with_group_key(&wrap, &wrong_gk);
@@ -48,7 +48,7 @@ fn wrong_gk_fails_group_unwrap() {
 #[test]
 fn group_wrap_wrong_wrap_type() {
     let password_wrap = WrapEntry::PasswordPbkdf2 {
-        iterations: 10_000,
+        iterations: 600_000,
         salt: [0xaa; 16],
         wrapped_dek: [0xbb; 40],
     };

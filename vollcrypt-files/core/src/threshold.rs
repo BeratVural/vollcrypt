@@ -311,7 +311,7 @@ pub fn wrap_dek_with_threshold(
     let (share_set_id, shares) = split_tms(&tms, t, n)?;
 
     let mut kek = derive_threshold_kek(&tms, file_id, &share_set_id, t, n, cipher_suite_id)?;
-    let wrapped_dek = aes256_kw_wrap(&kek, dek);
+    let wrapped_dek = aes256_kw_wrap(&kek, dek)?;
 
     tms.zeroize();
     kek.zeroize();

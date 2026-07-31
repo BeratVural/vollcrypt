@@ -699,7 +699,8 @@ pub fn wrap_dek_for_group(
     let gk_arr = to_arr32(gk, "gk")?;
 
     let entry =
-        vollcrypt_files_core::wrap_dek_for_group(&dek_arr, group_id_arr, gk_version, &gk_arr);
+        vollcrypt_files_core::wrap_dek_for_group(&dek_arr, group_id_arr, gk_version, &gk_arr)
+            .map_err(to_js_err)?;
     let ser_entry = wrap_entry_to_serde(entry);
     serde_wasm_bindgen::to_value(&ser_entry).map_err(to_js_err)
 }
@@ -756,7 +757,7 @@ pub fn wrap_dek_with_threshold(
             let wrap = wrap_entry_to_serde(core_wrap);
             let shares = core_shares
                 .iter()
-                .map(|s| vollcrypt_files_core::encode_share(s))
+                .map(vollcrypt_files_core::encode_share)
                 .collect();
             let res = WrapThresholdResult { wrap, shares };
             serde_wasm_bindgen::to_value(&res).map_err(to_js_err)
@@ -1448,9 +1449,9 @@ impl HeaderClass {
     pub fn write(header: JsValue) -> Result<Vec<u8>, JsValue> {
         let obj: HeaderObj = serde_wasm_bindgen::from_value(header).map_err(to_js_err)?;
         let core_header = serde_to_header(obj)?;
-        Ok(core_header
+        core_header
             .write()
-            .map_err(|e| JsValue::from_str(&e.to_string()))?)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }
 
@@ -1499,9 +1500,9 @@ pub fn crypto_shred_header(header_bytes: &[u8]) -> Result<Vec<u8>, JsValue> {
     let (mut header, _) = vollcrypt_files_core::Header::parse(header_bytes).map_err(to_js_err)?;
 
     vollcrypt_files_core::crypto_shred_header(&mut header);
-    Ok(header
+    header
         .write()
-        .map_err(|e| JsValue::from_str(&e.to_string()))?)
+        .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 // ==================== Signature Plain / Sealed ====================
@@ -1823,6 +1824,7 @@ pub struct IoWriteMode {
     pub batch_size: Option<u32>,
 }
 
+#[allow(clippy::too_many_arguments)]
 #[wasm_bindgen(js_name = encryptFilePipelinedAsync)]
 pub async fn encrypt_file_pipelined_async_wasm(
     plaintext: &[u8],
