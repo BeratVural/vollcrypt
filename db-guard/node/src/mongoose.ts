@@ -35,6 +35,7 @@ export interface MongooseDbGuardOptions {
   };
   rateLimiter?: RateLimiterOptions;
   multiTenant?: {
+    cacheTtlMs?: number;
     tenants?: Record<string, { key?: Buffer | Record<string, Buffer>; kms?: any }>;
     getTenantConfig?: (tenantId: string) => Promise<{ key?: Buffer | Record<string, Buffer>; kms?: any } | undefined>;
   };
@@ -130,7 +131,7 @@ export function mongooseDbGuard(schema: Schema, options: MongooseDbGuardOptions)
       }
 
       for (const [ver, keyBuf] of Object.entries(resolvedTenantKeys)) {
-        setCachedKey(tId, ver, keyBuf);
+        setCachedKey(tId, ver, keyBuf, options.multiTenant?.cacheTtlMs);
       }
 
       return { keys: resolvedTenantKeys, activeKey: tActiveKey, activeVersion: tActiveVersion };

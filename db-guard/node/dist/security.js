@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CRYPTO_ALGORITHMS = exports.VERSION_ALGORITHMS = exports.dbGuardContextStore = exports.MAX_PLAINTEXT_BYTES = exports.MAX_CIPHERTEXT_STRING_LENGTH = void 0;
+exports.CRYPTO_ALGORITHMS = exports.VERSION_ALGORITHMS = exports.DEFAULT_KEY_CACHE_TTL_MS = exports.dbGuardContextStore = exports.MAX_PLAINTEXT_BYTES = exports.MAX_CIPHERTEXT_STRING_LENGTH = void 0;
 exports.wrapKey = wrapKey;
 exports.unwrapKey = unwrapKey;
 exports.calculatePadding = calculatePadding;
@@ -48,6 +48,7 @@ exports.signMessage = signMessage;
 exports.maskValue = maskValue;
 exports.getCachedKey = getCachedKey;
 exports.setCachedKey = setCachedKey;
+exports.invalidateCachedKeys = invalidateCachedKeys;
 exports.resetSecureKeyCacheForTesting = resetSecureKeyCacheForTesting;
 exports.configureBreakGlass = configureBreakGlass;
 exports.deactivateBreakGlass = deactivateBreakGlass;
@@ -270,6 +271,7 @@ const tenantFailClosed = new Map();
 const tenantKeys = new Map();
 const tenantRateLimitStates = new Map();
 const secureKeyCache = new Map();
+exports.DEFAULT_KEY_CACHE_TTL_MS = 120_000;
 function getCachedKey(tenantId, version) {
     const cacheKey = JSON.stringify([tenantId || 'global', version]);
     const entry = secureKeyCache.get(cacheKey);
@@ -287,7 +289,10 @@ function getCachedKey(tenantId, version) {
         return undefined;
     }
 }
-function setCachedKey(tenantId, version, plaintextKey, ttlMs = 120000) {
+function setCachedKey(tenantId, version, plaintextKey, ttlMs = exports.DEFAULT_KEY_CACHE_TTL_MS) {
+    if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0) {
+        throw new Error('Key cache TTL must be a positive integer in milliseconds');
+    }
     const cacheKey = JSON.stringify([tenantId || 'global', version]);
     const existing = secureKeyCache.get(cacheKey);
     if (existing) {
@@ -298,6 +303,28 @@ function setCachedKey(tenantId, version, plaintextKey, ttlMs = 120000) {
         wrappedKey: wrapped,
         expiresAt: Date.now() + ttlMs
     });
+}
+function invalidateCachedKeys(tenantId, version) {
+    const normalizedTenant = tenantId || 'global';
+    let invalidated = 0;
+    for (const [cacheKey, entry] of secureKeyCache.entries()) {
+        try {
+            const parsed = JSON.parse(cacheKey);
+            if (Array.isArray(parsed) &&
+                parsed[0] === normalizedTenant &&
+                (version === undefined || parsed[1] === version)) {
+                entry.wrappedKey.fill(0);
+                secureKeyCache.delete(cacheKey);
+                invalidated++;
+            }
+        }
+        catch {
+            entry.wrappedKey.fill(0);
+            secureKeyCache.delete(cacheKey);
+            invalidated++;
+        }
+    }
+    return invalidated;
 }
 // Background cleanup worker (scans every 30s)
 const cacheCleanupInterval = setInterval(() => {

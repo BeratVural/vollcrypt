@@ -18,6 +18,7 @@ export interface MongooseDbGuardOptions {
     };
     rateLimiter?: RateLimiterOptions;
     multiTenant?: {
+        cacheTtlMs?: number;
         tenants?: Record<string, {
             key?: Buffer | Record<string, Buffer>;
             kms?: any;

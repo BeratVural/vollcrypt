@@ -36,6 +36,7 @@ export interface PrismaDbGuardOptions extends DbGuardKeysOptions {
   };
   rateLimiter?: RateLimiterOptions;
   multiTenant?: {
+    cacheTtlMs?: number;
     tenants?: Record<string, { key?: Buffer | Record<string, Buffer>; kms?: any }>;
     getTenantConfig?: (tenantId: string) => Promise<{ key?: Buffer | Record<string, Buffer>; kms?: any } | undefined>;
   };
@@ -147,7 +148,7 @@ export const prismaDbGuard = (options: PrismaDbGuardOptions, resolvedKeys?: Reco
     }
 
     for (const [ver, keyBuf] of Object.entries(resolvedTenantKeys)) {
-      setCachedKey(tId, ver, keyBuf);
+      setCachedKey(tId, ver, keyBuf, options.multiTenant?.cacheTtlMs);
     }
 
     return { keys: resolvedTenantKeys, activeKey: tActiveKey, activeVersion: tActiveVersion };

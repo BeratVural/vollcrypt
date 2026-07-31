@@ -185,6 +185,8 @@ We provide several KmsProvider implementations:
 - **VaultKmsProvider**: Resolves keys using HashiCorp Vault.
 - **Pkcs11KmsProvider**: Interacts with physical or virtual HSMs (YubiHSM2, Thales, Nitrokey, SoftHSM2, etc.) using the standard PKCS#11 protocol.
 
+Multi-tenant Prisma and Mongoose integrations cache wrapped key material for `multiTenant.cacheTtlMs` (default `120000` ms). A rotation controller must call `invalidateCachedKeys(tenantId, version?)` on every application node before advertising the new key generation. Use a pub/sub rotation event or equivalent deployment control; the in-process cache does not synchronize itself across hosts.
+
 #### Node.js PKCS#11 Configuration Example:
 ```typescript
 import { Pkcs11KmsProvider } from '@vollcrypt/db-guard';

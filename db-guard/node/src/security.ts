@@ -246,12 +246,13 @@ interface RateLimitState {
 }
 const tenantRateLimitStates = new Map<string, RateLimitState>();
 
-// Cache store mapping `${tenantId || 'global'}:${version}` to wrapped DEK and expiration
+// Cache store maps the structured tenant/version tuple to a wrapped DEK and expiration.
 interface CacheEntry {
   wrappedKey: Buffer;
   expiresAt: number;
 }
 const secureKeyCache = new Map<string, CacheEntry>();
+export const DEFAULT_KEY_CACHE_TTL_MS = 120_000;
 
 export function getCachedKey(tenantId: string | undefined, version: string): Buffer | undefined {
   const cacheKey = JSON.stringify([tenantId || 'global', version]);
@@ -269,7 +270,15 @@ export function getCachedKey(tenantId: string | undefined, version: string): Buf
   }
 }
 
-export function setCachedKey(tenantId: string | undefined, version: string, plaintextKey: Buffer, ttlMs: number = 120000) {
+export function setCachedKey(
+  tenantId: string | undefined,
+  version: string,
+  plaintextKey: Buffer,
+  ttlMs: number = DEFAULT_KEY_CACHE_TTL_MS
+) {
+  if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0) {
+    throw new Error('Key cache TTL must be a positive integer in milliseconds');
+  }
   const cacheKey = JSON.stringify([tenantId || 'global', version]);
   const existing = secureKeyCache.get(cacheKey);
   if (existing) {
@@ -281,6 +290,30 @@ export function setCachedKey(tenantId: string | undefined, version: string, plai
     wrappedKey: wrapped,
     expiresAt: Date.now() + ttlMs
   });
+}
+
+export function invalidateCachedKeys(tenantId: string | undefined, version?: string): number {
+  const normalizedTenant = tenantId || 'global';
+  let invalidated = 0;
+  for (const [cacheKey, entry] of secureKeyCache.entries()) {
+    try {
+      const parsed = JSON.parse(cacheKey);
+      if (
+        Array.isArray(parsed) &&
+        parsed[0] === normalizedTenant &&
+        (version === undefined || parsed[1] === version)
+      ) {
+        entry.wrappedKey.fill(0);
+        secureKeyCache.delete(cacheKey);
+        invalidated++;
+      }
+    } catch {
+      entry.wrappedKey.fill(0);
+      secureKeyCache.delete(cacheKey);
+      invalidated++;
+    }
+  }
+  return invalidated;
 }
 
 // Background cleanup worker (scans every 30s)

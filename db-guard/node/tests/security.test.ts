@@ -391,6 +391,31 @@ describe('Vollcrypt Central Security Modules (Phase 4)', () => {
     oversized.fill(0);
   });
 
+  test('cache invalidation removes and zeroizes tenant key generations', () => {
+    const {
+      getCachedKey,
+      setCachedKey,
+      invalidateCachedKeys,
+      resetSecureKeyCacheForTesting,
+    } = require('../src/security');
+
+    resetSecureKeyCacheForTesting();
+    setCachedKey('tenant-a', '1', Buffer.alloc(32, 0x11));
+    setCachedKey('tenant-a', '2', Buffer.alloc(32, 0x22));
+    setCachedKey('tenant-b', '1', Buffer.alloc(32, 0x33));
+
+    assert.strictEqual(invalidateCachedKeys('tenant-a', '1'), 1);
+    assert.strictEqual(getCachedKey('tenant-a', '1'), undefined);
+    assert.ok(getCachedKey('tenant-a', '2'));
+    assert.ok(getCachedKey('tenant-b', '1'));
+
+    assert.strictEqual(invalidateCachedKeys('tenant-a'), 1);
+    assert.strictEqual(getCachedKey('tenant-a', '2'), undefined);
+    assert.ok(getCachedKey('tenant-b', '1'));
+    assert.throws(() => setCachedKey('tenant-a', '3', Buffer.alloc(32), 0), /positive integer/);
+    resetSecureKeyCacheForTesting();
+  });
+
   test('getCachedKey and setCachedKey prevent delimiter-based cache key collisions', () => {
     const { getCachedKey, setCachedKey, resetSecureKeyCacheForTesting } = require('../src/security');
 

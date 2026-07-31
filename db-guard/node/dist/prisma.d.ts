@@ -15,6 +15,7 @@ export interface PrismaDbGuardOptions extends DbGuardKeysOptions {
     };
     rateLimiter?: RateLimiterOptions;
     multiTenant?: {
+        cacheTtlMs?: number;
         tenants?: Record<string, {
             key?: Buffer | Record<string, Buffer>;
             kms?: any;

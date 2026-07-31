@@ -33,8 +33,10 @@ export interface RateLimiterOptions {
     maxPageSize?: number;
     onPageSizeExceeded?: 'warn' | 'error' | 'bypass';
 }
+export declare const DEFAULT_KEY_CACHE_TTL_MS = 120000;
 export declare function getCachedKey(tenantId: string | undefined, version: string): Buffer | undefined;
 export declare function setCachedKey(tenantId: string | undefined, version: string, plaintextKey: Buffer, ttlMs?: number): void;
+export declare function invalidateCachedKeys(tenantId: string | undefined, version?: string): number;
 export declare function resetSecureKeyCacheForTesting(): void;
 export declare function configureBreakGlass(options: {
     threshold: number;

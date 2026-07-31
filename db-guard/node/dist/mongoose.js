@@ -76,7 +76,7 @@ function mongooseDbGuard(schema, options) {
                 throw new Error(`Vollcrypt Security: Active key version "${tActiveVersion}" not found for tenantId "${tId}".`);
             }
             for (const [ver, keyBuf] of Object.entries(resolvedTenantKeys)) {
-                (0, security_1.setCachedKey)(tId, ver, keyBuf);
+                (0, security_1.setCachedKey)(tId, ver, keyBuf, options.multiTenant?.cacheTtlMs);
             }
             return { keys: resolvedTenantKeys, activeKey: tActiveKey, activeVersion: tActiveVersion };
         };
