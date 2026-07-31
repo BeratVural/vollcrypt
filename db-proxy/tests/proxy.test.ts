@@ -8,9 +8,10 @@ import pg from 'pg';
 import { encryptValue, resetFailClosedStatusForTesting } from '@vollcrypt/db-guard';
 import { ClusterManager, DbProxyServer, DbProxyOptions, FipsStartupError, serializeErrorResponse } from '../src/proxy.js';
 import { reconstructKeyFromXorShares } from '../src/mpc.js';
-import { serializeDataRow, serializeParameterStatus, parseParameterStatus } from '../src/pg-protocol.js';
+import { PostgresStreamParser, serializeDataRow, serializeParameterStatus, parseParameterStatus } from '../src/pg-protocol.js';
 import { serializeLengthEncodedString, parseLengthEncodedString } from '../src/drivers/mysql.js';
 import { serializeBson, parseBson } from '../src/drivers/mongo.js';
+import { parseLogin7Username } from '../src/drivers/mssql.js';
 import { ensureTenantScopedQuery, extractProjectionColumns, validateQuery } from '../src/waf.js';
 import { scanAndMaskCell } from '../src/dlp.js';
 import { QueryAnomalyScorer } from '../src/anomaly.js';
@@ -1974,12 +1975,14 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     await new Promise((resolve) => client.on('connect', resolve));
 
     // Send mock TDS Login7 packet to authenticate as 'postgres'
-    const loginPacket = Buffer.alloc(100);
+    const loginPacket = Buffer.alloc(118);
     loginPacket[0] = 0x10; // packet type
-    loginPacket.writeUInt16BE(100, 2); // packet length
-    loginPacket.writeUInt16LE(50, 44); // userNameOffset
-    loginPacket.writeUInt16LE(8, 46); // userNameLen (8 characters 'postgres')
-    loginPacket.write('postgres', 58, 'utf16le');
+    loginPacket.writeUInt16BE(loginPacket.length, 2);
+    loginPacket.writeUInt32LE(loginPacket.length - 8, 8); // LOGIN7 body length
+    loginPacket.writeUInt16LE(94, 44); // ibHostName marks variable data start
+    loginPacket.writeUInt16LE(94, 48); // ibUserName, relative to LOGIN7 body
+    loginPacket.writeUInt16LE(8, 50); // cchUserName
+    loginPacket.write('postgres', 102, 'utf16le');
     client.write(loginPacket);
     await new Promise((resolve) => setTimeout(resolve, 50)); // let it parse
 
@@ -2199,6 +2202,26 @@ test('Database Protocol Proxy E2E Interception Suite', async (t) => {
     await sslProxy.stop();
   });
 
+  await t.test('40. Concurrent PostgreSQL clients keep protocol state isolated', async () => {
+    const results = await Promise.all(Array.from({ length: 8 }, async (_, index) => {
+      const client = new pg.Client({
+        host: '127.0.0.1',
+        port: PROXY_PORT,
+        user: index % 2 === 0 ? 'analyst_hr' : 'analyst_marketing',
+        database: 'testdb',
+      });
+      await client.connect();
+      try {
+        return await client.query('SELECT * FROM users');
+      } finally {
+        await client.end();
+      }
+    }));
+
+    assert.strictEqual(results.length, 8);
+    for (const result of results) assert.strictEqual(result.rows.length, 1);
+  });
+
   // Clean up servers
   await proxy.stop();
   mockDb.close();
@@ -2276,6 +2299,39 @@ function createMockAuthDbServer(port: number, passwordExpected: string): net.Ser
   return server;
 }
 
+
+test('Postgres stream parser handles byte-fragmented and coalesced frames', () => {
+  const sslRequest = Buffer.alloc(8);
+  sslRequest.writeInt32BE(8, 0);
+  sslRequest.writeInt32BE(80877103, 4);
+  const query = Buffer.from([0x51, 0, 0, 0, 5, 0]);
+  const wire = Buffer.concat([sslRequest, query]);
+  const parser = new PostgresStreamParser();
+  const frames: Buffer[] = [];
+  for (const byte of wire) frames.push(...parser.append(Buffer.from([byte])));
+  assert.deepStrictEqual(frames, [sslRequest, query]);
+
+  const invalid = new PostgresStreamParser();
+  assert.throws(
+    () => invalid.append(Buffer.from([0x51, 0x7f, 0xff, 0xff, 0xff])),
+    /Invalid PostgreSQL message length/
+  );
+});
+
+test('LOGIN7 parser uses MS-TDS body-relative username offsets', () => {
+  const packet = Buffer.alloc(118);
+  packet[0] = 0x10;
+  packet.writeUInt16BE(packet.length, 2);
+  packet.writeUInt32LE(packet.length - 8, 8);
+  packet.writeUInt16LE(94, 44);
+  packet.writeUInt16LE(94, 48);
+  packet.writeUInt16LE(8, 50);
+  packet.write('postgres', 102, 'utf16le');
+  assert.strictEqual(parseLogin7Username(packet), 'postgres');
+
+  packet.writeUInt16LE(200, 48);
+  assert.strictEqual(parseLogin7Username(packet), null);
+});
 
 test('DLP masks payment card numbers with mixed separators', () => {
   assert.strictEqual(scanAndMaskCell('card=4111.1111/1111_1111'), 'card=4111-XXXX-XXXX-1111');

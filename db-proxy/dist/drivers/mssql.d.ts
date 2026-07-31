@@ -4,6 +4,8 @@ export declare function serializeMssqlError(message: string, code?: number): Buf
  * Intercepts and decrypts VOLLVALT: values inside TDS 7.4 response streams.
  */
 export declare function decryptMssqlResponse(packet: Buffer, keys: Record<string, Buffer>, role?: string, userId?: string, tenantId?: string, config?: any, modelName?: string, columns?: string[]): Buffer;
+/** Parses ibUserName/cchUserName from an MS-TDS LOGIN7 packet. */
+export declare function parseLogin7Username(packet: Buffer): string | null;
 export declare function handleMssqlConnection(clientSocket: net.Socket, options: {
     dbHost: string;
     dbPort: number;

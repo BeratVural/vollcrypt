@@ -29,7 +29,11 @@ export declare function serializeDataRow(values: (Buffer | null)[]): Buffer;
  * Buffer-based stream chunk framer that outputs complete PostgreSQL messages.
  */
 export declare class PostgresStreamParser {
-    private buffer;
+    private chunks;
+    private bufferedBytes;
+    private byteAt;
+    private int32At;
+    private consume;
     append(data: Buffer): Buffer[];
 }
 export interface ParameterStatus {

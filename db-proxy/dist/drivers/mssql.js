@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.serializeMssqlError = serializeMssqlError;
 exports.decryptMssqlResponse = decryptMssqlResponse;
+exports.parseLogin7Username = parseLogin7Username;
 exports.handleMssqlConnection = handleMssqlConnection;
 const net = __importStar(require("net"));
 const waf_js_1 = require("../waf.js");
@@ -137,6 +138,31 @@ function decryptMssqlResponse(packet, keys, role = 'GUEST', userId = 'guest-user
     }
     return newPacket;
 }
+/** Parses ibUserName/cchUserName from an MS-TDS LOGIN7 packet. */
+function parseLogin7Username(packet) {
+    const tdsHeaderLength = 8;
+    const login7UserOffsetField = tdsHeaderLength + 40;
+    const login7UserLengthField = tdsHeaderLength + 42;
+    if (packet.length < login7UserLengthField + 2 || packet[0] !== 0x10)
+        return null;
+    const packetLength = packet.readUInt16BE(2);
+    if (packetLength < login7UserLengthField + 2 || packetLength > packet.length)
+        return null;
+    const login7Length = packet.readUInt32LE(tdsHeaderLength);
+    if (login7Length < 44 || login7Length + tdsHeaderLength > packetLength)
+        return null;
+    const userOffset = packet.readUInt16LE(login7UserOffsetField);
+    const userLength = packet.readUInt16LE(login7UserLengthField);
+    if (userLength === 0)
+        return null;
+    if (userLength > 128)
+        return null;
+    const start = tdsHeaderLength + userOffset;
+    const end = start + userLength * 2;
+    if (start < login7UserLengthField + 2 || end > tdsHeaderLength + login7Length)
+        return null;
+    return packet.toString('utf16le', start, end);
+}
 function handleMssqlConnection(clientSocket, options) {
     let connected = false;
     const queue = [];
@@ -175,27 +201,14 @@ function handleMssqlConnection(clientSocket, options) {
     clientSocket.on('data', (data) => {
         if (data.length > 8) {
             const type = data[0];
-            // Parse Login7 packet (type 0x10) to find username offset and length
-            if (type === 0x10 && data.length >= 50) {
-                try {
-                    // Offsets for Login7 fields relative to the start of the payload (TDS header is 8 bytes)
-                    // Username length and offset are specified in bytes 36-39 of Login7 body (offset 44-47 of packet)
-                    const userNameOffset = data.readUInt16LE(44);
-                    const userNameLen = data.readUInt16LE(46); // number of characters
-                    let start = 8 + userNameOffset;
-                    if (start + userNameLen * 2 > data.length) {
-                        start = userNameOffset;
-                    }
-                    if (userNameLen > 0 && start + userNameLen * 2 <= data.length) {
-                        const username = data.toString('utf16le', start, start + userNameLen * 2);
-                        const userContext = (0, auth_js_1.resolveUserContext)(username, options.config);
-                        currentUserId = userContext.userId;
-                        currentRole = userContext.role;
-                        currentTenantId = userContext.tenantId;
-                    }
-                }
-                catch (e) {
-                    // Ignore parser errors
+            // LOGIN7 offsets are relative to the LOGIN7 body, after the 8-byte TDS packet header.
+            if (type === 0x10) {
+                const username = parseLogin7Username(data);
+                if (username !== null) {
+                    const userContext = (0, auth_js_1.resolveUserContext)(username, options.config);
+                    currentUserId = userContext.userId;
+                    currentRole = userContext.role;
+                    currentTenantId = userContext.tenantId;
                 }
             }
             if (type === 0x01 || type === 0x03) { // SQL Batch or RPC

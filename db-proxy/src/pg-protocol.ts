@@ -155,47 +155,72 @@ export function serializeDataRow(values: (Buffer | null)[]): Buffer {
  * Buffer-based stream chunk framer that outputs complete PostgreSQL messages.
  */
 export class PostgresStreamParser {
-  private buffer: Buffer = Buffer.alloc(0);
+  private chunks: Buffer[] = [];
+  private bufferedBytes = 0;
+
+  private byteAt(offset: number): number {
+    for (const chunk of this.chunks) {
+      if (offset < chunk.length) return chunk[offset];
+      offset -= chunk.length;
+    }
+    throw new RangeError('PostgreSQL parser offset exceeds buffered data');
+  }
+
+  private int32At(offset: number): number {
+    return (
+      (this.byteAt(offset) << 24) |
+      (this.byteAt(offset + 1) << 16) |
+      (this.byteAt(offset + 2) << 8) |
+      this.byteAt(offset + 3)
+    );
+  }
+
+  private consume(length: number): Buffer {
+    const first = this.chunks[0];
+    if (first.length >= length) {
+      const message = first.subarray(0, length);
+      if (first.length === length) this.chunks.shift();
+      else this.chunks[0] = first.subarray(length);
+      this.bufferedBytes -= length;
+      return message;
+    }
+
+    const message = Buffer.allocUnsafe(length);
+    let written = 0;
+    while (written < length) {
+      const chunk = this.chunks[0];
+      const take = Math.min(chunk.length, length - written);
+      chunk.copy(message, written, 0, take);
+      written += take;
+      if (take === chunk.length) this.chunks.shift();
+      else this.chunks[0] = chunk.subarray(take);
+    }
+    this.bufferedBytes -= length;
+    return message;
+  }
 
   public append(data: Buffer): Buffer[] {
-    this.buffer = Buffer.concat([this.buffer, data]);
+    if (data.length > 0) {
+      this.chunks.push(data);
+      this.bufferedBytes += data.length;
+    }
     const messages: Buffer[] = [];
 
-    while (true) {
-      if (this.buffer.length === 0) {
-        break;
+    while (this.bufferedBytes > 0) {
+      const startupMessage = this.byteAt(0) === 0;
+      const headerLength = startupMessage ? 4 : 5;
+      if (this.bufferedBytes < headerLength) break;
+
+      const declaredLength = this.int32At(startupMessage ? 0 : 1);
+      const maxLength = startupMessage ? 1024 * 1024 : 100 * 1024 * 1024;
+      if (declaredLength <= 0 || declaredLength > maxLength) {
+        const kind = startupMessage ? 'startup message' : 'message';
+        throw new Error(`Invalid PostgreSQL ${kind} length: ${declaredLength}`);
       }
 
-      const firstByte = this.buffer[0];
-      if (firstByte === 0) {
-        // StartupMessage or SSLRequest (length is first 4 bytes)
-        if (this.buffer.length < 4) {
-          break;
-        }
-        const len = this.buffer.readInt32BE(0);
-        if (len <= 0 || len > 1024 * 1024) {
-          throw new Error(`Invalid PostgreSQL startup message length: ${len}`);
-        }
-        if (this.buffer.length < len) {
-          break;
-        }
-        messages.push(this.buffer.subarray(0, len));
-        this.buffer = this.buffer.subarray(len);
-      } else {
-        // Standard Message (1 byte type + 4 bytes length)
-        if (this.buffer.length < 5) {
-          break;
-        }
-        const len = this.buffer.readInt32BE(1);
-        if (len <= 0 || len > 100 * 1024 * 1024) {
-          throw new Error(`Invalid PostgreSQL message length: ${len}`);
-        }
-        if (this.buffer.length < 1 + len) {
-          break;
-        }
-        messages.push(this.buffer.subarray(0, 1 + len));
-        this.buffer = this.buffer.subarray(1 + len);
-      }
+      const frameLength = startupMessage ? declaredLength : 1 + declaredLength;
+      if (this.bufferedBytes < frameLength) break;
+      messages.push(this.consume(frameLength));
     }
 
     return messages;
