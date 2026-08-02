@@ -62,7 +62,7 @@ jobs:
         run: cd vollcrypt-messages/node && npx @napi-rs/cli build --platform --release --target ${{ matrix.target }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: messages-bindings-${{ matrix.target }}
           path: vollcrypt-messages/node/vollcrypt.*.node
@@ -82,7 +82,7 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: vollcrypt-messages/node/
           pattern: messages-bindings-*
@@ -104,7 +104,7 @@ jobs:
           npm pack --pack-destination ../../dist-packages
 
       - name: Upload npm package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: messages-node-npm-package
           path: dist-packages/*.tgz
@@ -157,7 +157,7 @@ jobs:
           npm pack --pack-destination ../../dist-packages
 
       - name: Upload npm package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: messages-wasm-npm-package
           path: dist-packages/*.tgz
@@ -187,7 +187,7 @@ jobs:
           package-manager-cache: false
 
       - name: Download npm package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: messages-node-npm-package
           path: dist-packages
@@ -209,7 +209,7 @@ jobs:
           package-manager-cache: false
 
       - name: Download npm package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: messages-wasm-npm-package
           path: dist-packages
