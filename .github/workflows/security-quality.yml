@@ -73,6 +73,9 @@ jobs:
           node scripts/generate-cargo-sbom.js vollcrypt-messages/node/Cargo.toml vollcrypt-messages/node/package.json ${{ runner.temp }}/messages-node-sbom.json
           node scripts/generate-cargo-sbom.js vollcrypt-messages/wasm/Cargo.toml vollcrypt-messages/wasm/package.json ${{ runner.temp }}/messages-wasm-sbom.json
 
+      - name: Test release SBOM compatibility
+        run: node --test scripts/tests/generate-cargo-sbom.test.js
+
   codeql:
     name: CodeQL analysis
     runs-on: ubuntu-latest

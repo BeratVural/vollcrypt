@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 const [manifestPathArg, packageJsonPathArg, outputPathArg] = process.argv.slice(2);
@@ -104,6 +105,7 @@ const dependencies = [
 const sbom = {
   bomFormat: 'CycloneDX',
   specVersion: '1.5',
+  serialNumber: `urn:uuid:${crypto.randomUUID()}`,
   version: 1,
   metadata: {
     component: {
