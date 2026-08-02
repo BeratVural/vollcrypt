@@ -1,5 +1,6 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert';
+import { DB_GUARD_ERROR_PREFIX, DbGuardError, dbGuardError } from '../src/errors';
 import { dbGuardContextStore, configureAuditLogger, decryptWithSecurity, resetFailClosedStatusForTesting, resetAuditLoggerForTesting, verifyAuditLogEntries, AuditLogEntry } from '../src/index';
 
 describe('Vollcrypt Central Security Modules (Phase 4)', () => {
@@ -10,6 +11,13 @@ describe('Vollcrypt Central Security Modules (Phase 4)', () => {
     resetAuditLoggerForTesting();
   });
 
+  test('DB Guard errors expose one stable type and prefix', () => {
+    const error = dbGuardError('Vollcrypt Security: legacy detail');
+
+    assert.ok(error instanceof DbGuardError);
+    assert.strictEqual(error.name, 'DbGuardError');
+    assert.strictEqual(error.message, DB_GUARD_ERROR_PREFIX + ' legacy detail');
+  });
   test('dbGuardContextStore manages request context roles and ids', () => {
     dbGuardContextStore.run({ role: 'ADMIN', userId: 'user_123' }, () => {
       const store = dbGuardContextStore.getStore();
@@ -243,7 +251,8 @@ describe('Vollcrypt Central Security Modules (Phase 4)', () => {
     
     resetFailClosedStatusForTesting();
     
-    const originalBuffer = Buffer.from('my-sensitive-key-data-32-bytes');
+    const originalBuffer = Buffer.alloc(32, 0x51);
+    const originalSnapshot = Buffer.from(originalBuffer);
     const resolvedKeys = { '1': originalBuffer };
     
     const options = {
@@ -259,8 +268,8 @@ describe('Vollcrypt Central Security Modules (Phase 4)', () => {
     }, /Fail-Closed mode triggered/);
     
     // Assert that the original buffer passed to prismaDbGuard was NOT zeroed
-    assert.notDeepStrictEqual(originalBuffer, Buffer.alloc(30, 0));
-    assert.strictEqual(originalBuffer.toString(), 'my-sensitive-key-data-32-bytes');
+    assert.notDeepStrictEqual(originalBuffer, Buffer.alloc(32, 0));
+    assert.deepStrictEqual(originalBuffer, originalSnapshot);
   });
 
   test('encryptValue throws an explicit error when key is zeroed or fail-closed is active', () => {
@@ -315,6 +324,63 @@ describe('Vollcrypt Central Security Modules (Phase 4)', () => {
     // 2. Tenant-b should NOT be fail-closed and should decrypt successfully
     dbGuardContextStore.run({ tenantId: 'tenant-b' }, () => {
       assert.strictEqual(decryptWithSecurity('VOLLVALT:v1:b64', mockDecryptRawFn, 'User', 'email', '1', options), 'plaintext');
+    });
+  });
+
+  test('Distributed rate limiter shares one authoritative tenant budget', () => {
+    const { checkRateLimit } = require('../src/security');
+    const counts = new Map<string, number>();
+    const failed = new Set<string>();
+    const coordinator = {
+      isFailClosed(tenantId: string) {
+        return failed.has(tenantId);
+      },
+      consume(tenantId: string, _nowMs: number, limit: number) {
+        const count = (counts.get(tenantId) || 0) + 1;
+        counts.set(tenantId, count);
+        return { count, exceeded: count > limit };
+      },
+      markFailClosed(tenantId: string) {
+        failed.add(tenantId);
+      }
+    };
+
+    dbGuardContextStore.run({ tenantId: 'shared-tenant' }, () => {
+      checkRateLimit({ maxDecryptionsPerSecond: 2, coordinator });
+      checkRateLimit({ maxDecryptionsPerSecond: 2, coordinator });
+      assert.throws(
+        () => checkRateLimit({ maxDecryptionsPerSecond: 2, coordinator }),
+        /Fail-Closed mode triggered for tenant "shared-tenant"/
+      );
+    });
+
+    assert.strictEqual(counts.get('shared-tenant'), 3);
+    assert.ok(failed.has('shared-tenant'));
+  });
+
+  test('Coordinator failure defaults to local fail-closed even if marking also fails', () => {
+    const { checkRateLimit } = require('../src/security');
+    const coordinator = {
+      isFailClosed() {
+        throw new Error('coordinator unavailable');
+      },
+      consume() {
+        throw new Error('coordinator unavailable');
+      },
+      markFailClosed() {
+        throw new Error('coordinator unavailable');
+      }
+    };
+
+    dbGuardContextStore.run({ tenantId: 'unavailable-tenant' }, () => {
+      assert.throws(
+        () => checkRateLimit({ coordinator }),
+        /Fail-Closed mode triggered for tenant "unavailable-tenant"/
+      );
+      assert.throws(
+        () => checkRateLimit(),
+        /Fail-Closed mode triggered for tenant "unavailable-tenant"/
+      );
     });
   });
 

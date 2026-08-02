@@ -1,5 +1,6 @@
 import type { Schema } from 'mongoose';
 import type { CommonDbGuardSecurityOptions } from './contract';
+import { MultiTenantKeyOptions } from './tenant';
 export interface MongooseDbGuardOptions extends CommonDbGuardSecurityOptions {
     key: Buffer | Record<string, Buffer>;
     activeKeyVersion?: string;
@@ -10,16 +11,9 @@ export interface MongooseDbGuardOptions extends CommonDbGuardSecurityOptions {
         fields: string[];
         modelName?: string;
     };
-    multiTenant?: {
-        cacheTtlMs?: number;
-        tenants?: Record<string, {
-            key?: Buffer | Record<string, Buffer>;
-            kms?: any;
-        }>;
-        getTenantConfig?: (tenantId: string) => Promise<{
-            key?: Buffer | Record<string, Buffer>;
-            kms?: any;
-        } | undefined>;
-    };
+    multiTenant?: MultiTenantKeyOptions;
 }
+/**
+ * Installs fail-closed encryption, blind-index, and decryption hooks on a Mongoose schema.
+ */
 export declare function mongooseDbGuard(schema: Schema, options: MongooseDbGuardOptions): void;

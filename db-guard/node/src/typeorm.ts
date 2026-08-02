@@ -1,6 +1,8 @@
+import { dbGuardError } from './errors';
 import type { EntitySubscriberInterface, InsertEvent, UpdateEvent } from 'typeorm';
 import { encryptValue, decryptValue, computeBlindIndex, validateBlindIndexConfiguration, decryptWithSecurity, registerKeysForZeroization } from './security';
 import type { CommonDbGuardSecurityOptions } from './contract';
+import { normalizeKeys } from './keys';
 
 export interface TypeOrmDbGuardOptions extends CommonDbGuardSecurityOptions {
   key: Buffer | Record<string, Buffer>;
@@ -14,24 +16,9 @@ export interface TypeOrmDbGuardOptions extends CommonDbGuardSecurityOptions {
 
 }
 
-function getKeys(options: TypeOrmDbGuardOptions) {
-  let keys: Record<string, Buffer>;
-  let activeVersion: string;
-
-  if (Buffer.isBuffer(options.key)) {
-    keys = { '1': Buffer.from(options.key) };
-    activeVersion = '1';
-  } else {
-    keys = {};
-    for (const [v, k] of Object.entries(options.key)) {
-      keys[v] = Buffer.from(k);
-    }
-    activeVersion = options.activeKeyVersion || Object.keys(keys)[0];
-  }
-
-  return { keys, activeVersion };
-}
-
+/**
+ * Creates a TypeORM subscriber that encrypts configured fields before writes and decrypts after loads.
+ */
 export function createTypeOrmSubscriber(options: TypeOrmDbGuardOptions) {
   if (options.blindIndexes) {
     validateBlindIndexConfiguration(
@@ -40,12 +27,7 @@ export function createTypeOrmSubscriber(options: TypeOrmDbGuardOptions) {
     );
   }
   const { EventSubscriber } = require('typeorm');
-  const { keys, activeVersion } = getKeys(options);
-  const activeKey = keys[activeVersion];
-
-  if (!activeKey) {
-    throw new Error(`Active encryption key version "${activeVersion}" is not present in the key map.`);
-  }
+  const { keys, activeVersion, activeKey } = normalizeKeys(options.key, options.activeKeyVersion);
 
   registerKeysForZeroization(keys);
 
@@ -124,7 +106,7 @@ export function createTypeOrmSubscriber(options: TypeOrmDbGuardOptions) {
                 options
               );
             } catch (err) {
-              throw new Error(`TypeORM db-guard failed to decrypt field "${field}": ${(err as Error).message}`);
+              throw dbGuardError(`TypeORM db-guard failed to decrypt field "${field}": ${(err as Error).message}`);
             }
           }
         }

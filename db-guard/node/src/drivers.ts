@@ -1,34 +1,12 @@
-import { decryptWithSecurity, registerKeysForZeroization, RateLimiterOptions, encryptValue, decryptValue } from './security.js';
+import { dbGuardError } from './errors';
+import { decryptWithSecurity, registerKeysForZeroization, encryptValue, decryptValue } from './security';
+import { normalizeKeys } from './keys';
+import type { CommonDbGuardSecurityOptions } from './contract';
 
-export interface DbGuardDriverOptions {
+export interface DbGuardDriverOptions extends CommonDbGuardSecurityOptions {
   key: Buffer | Record<string, Buffer>;
   activeKeyVersion?: string;
   entities: Record<string, string[]>; // table/entity -> encrypted columns
-  cryptoRbac?: {
-    roles: Record<string, {
-      decrypt: string[];
-      mask?: Record<string, 'credit_card' | 'email' | 'tc_no' | ((v: any) => any) | string>;
-    }>;
-  };
-  rateLimiter?: RateLimiterOptions;
-  allowUnrestrictedDecrypt?: boolean;
-}
-
-function getKeys(options: DbGuardDriverOptions) {
-  let keys: Record<string, Buffer> = {};
-  let activeVersion: string;
-
-  if (Buffer.isBuffer(options.key)) {
-    keys = { '1': Buffer.from(options.key) };
-    activeVersion = '1';
-  } else {
-    for (const [v, k] of Object.entries(options.key)) {
-      keys[v] = Buffer.from(k);
-    }
-    activeVersion = options.activeKeyVersion || Object.keys(keys)[0];
-  }
-
-  return { keys, activeVersion };
 }
 
 function cleanIdentifier(identifier: string): string {
@@ -106,7 +84,7 @@ function assertEncryptedWritesUseParameters(
   if (parsed.assignments) {
     for (const field of fieldsToEncrypt) {
       if (parsed.assignments[field] !== undefined && !isSqlParameterExpression(parsed.assignments[field])) {
-        throw new Error(`Vollcrypt Security: encrypted field ${parsed.table}.${field} must be written using a bind parameter, not a SQL literal or expression.`);
+        throw dbGuardError(`Vollcrypt DbGuard: encrypted field ${parsed.table}.${field} must be written using a bind parameter, not a SQL literal or expression.`);
       }
     }
   }
@@ -167,9 +145,11 @@ function decryptRow(
   return row;
 }
 
+/**
+ * Wraps a SQLite-compatible database and enforces parameterized encrypted writes.
+ */
 export function wrapSqliteDatabase(db: any, options: DbGuardDriverOptions): any {
-  const { keys, activeVersion } = getKeys(options);
-  const activeKey = keys[activeVersion];
+  const { keys, activeVersion, activeKey } = normalizeKeys(options.key, options.activeKeyVersion);
   registerKeysForZeroization(keys);
 
   const originalPrepare = db.prepare;
@@ -177,7 +157,7 @@ export function wrapSqliteDatabase(db: any, options: DbGuardDriverOptions): any 
     const statement = originalPrepare.call(this, sql, ...args);
     const parsed = getParamColumns(sql);
     if (!parsed && hasEncryptedTargets(options) && /\b(insert|update)\b/i.test(sql)) {
-      throw new Error('Vollcrypt Security: SQL write statement could not be parsed for encrypted fields. Refusing plaintext write.');
+      throw dbGuardError('Vollcrypt DbGuard: SQL write statement could not be parsed for encrypted fields. Refusing plaintext write.');
     }
     assertEncryptedWritesUseParameters(sql, parsed, options);
 
@@ -261,16 +241,18 @@ export function wrapSqliteDatabase(db: any, options: DbGuardDriverOptions): any 
   return db;
 }
 
+/**
+ * Wraps an Oracle connection and encrypts configured bind values before execution.
+ */
 export function wrapOracleConnection(connection: any, options: DbGuardDriverOptions): any {
-  const { keys, activeVersion } = getKeys(options);
-  const activeKey = keys[activeVersion];
+  const { keys, activeVersion, activeKey } = normalizeKeys(options.key, options.activeKeyVersion);
   registerKeysForZeroization(keys);
 
   const originalExecute = connection.execute;
   connection.execute = async function (sql: string, bindParams: any = {}, execOptions: any = {}, ...args: any[]) {
     const parsed = getParamColumns(sql);
     if (!parsed && hasEncryptedTargets(options) && /\b(insert|update)\b/i.test(sql)) {
-      throw new Error('Vollcrypt Security: SQL write statement could not be parsed for encrypted fields. Refusing plaintext write.');
+      throw dbGuardError('Vollcrypt DbGuard: SQL write statement could not be parsed for encrypted fields. Refusing plaintext write.');
     }
     assertEncryptedWritesUseParameters(sql, parsed, options);
     let processedBinds = bindParams;

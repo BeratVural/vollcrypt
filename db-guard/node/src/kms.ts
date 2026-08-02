@@ -1,3 +1,4 @@
+import { dbGuardError } from './errors';
 import { unwrapKey } from './security';
 
 export interface KmsProvider {
@@ -15,16 +16,16 @@ export async function resolveBlindIndexRootSalt(
   wrappedRootSalt: Buffer
 ): Promise<Buffer> {
   if (!Buffer.isBuffer(wrappedRootSalt) || wrappedRootSalt.length === 0) {
-    throw new Error('Wrapped blind-index root salt must be a non-empty Buffer');
+    throw dbGuardError('Wrapped blind-index root salt must be a non-empty Buffer');
   }
 
   const rootSalt = await provider.decrypt(wrappedRootSalt);
   if (!Buffer.isBuffer(rootSalt)) {
-    throw new Error('KMS provider returned a non-Buffer blind-index root salt');
+    throw dbGuardError('KMS provider returned a non-Buffer blind-index root salt');
   }
   if (rootSalt.length < 32) {
     rootSalt.fill(0);
-    throw new Error('Decrypted blind-index root salt must be at least 32 bytes');
+    throw dbGuardError('Decrypted blind-index root salt must be at least 32 bytes');
   }
   return rootSalt;
 }
@@ -69,11 +70,11 @@ export class AwsKmsProvider implements KmsProvider {
       });
       const res = await client.send(command);
       if (!res.Plaintext) {
-        throw new Error('AWS KMS returned empty plaintext');
+        throw dbGuardError('AWS KMS returned empty plaintext');
       }
       return Buffer.from(res.Plaintext);
     } catch (err) {
-      throw new Error(`AWS KMS decryption failed: ${(err as Error).message}`);
+      throw dbGuardError(`AWS KMS decryption failed: ${(err as Error).message}`);
     }
   }
 }
@@ -90,11 +91,11 @@ export class GcpKmsProvider implements KmsProvider {
         ciphertext: ciphertext,
       });
       if (!res.plaintext) {
-        throw new Error('GCP KMS returned empty plaintext');
+        throw dbGuardError('GCP KMS returned empty plaintext');
       }
       return Buffer.from(res.plaintext);
     } catch (err) {
-      throw new Error(`GCP KMS decryption failed: ${(err as Error).message}`);
+      throw dbGuardError(`GCP KMS decryption failed: ${(err as Error).message}`);
     }
   }
 }
@@ -118,12 +119,12 @@ export class VaultKmsProvider implements KmsProvider {
       });
 
       if (!res.data || !res.data.plaintext) {
-        throw new Error('HashiCorp Vault returned empty plaintext');
+        throw dbGuardError('HashiCorp Vault returned empty plaintext');
       }
 
       return Buffer.from(res.data.plaintext, 'base64');
     } catch (err) {
-      throw new Error(`HashiCorp Vault decryption failed: ${(err as Error).message}`);
+      throw dbGuardError(`HashiCorp Vault decryption failed: ${(err as Error).message}`);
     }
   }
 }
@@ -135,22 +136,28 @@ export function unwrapDekLocal(wrappedDek: Buffer, unwrappedKek: Buffer): Buffer
   try {
     return unwrapKey(unwrappedKek, wrappedDek);
   } catch (err) {
-    throw new Error(`Local AES-KW DEK unwrap failed: ${(err as Error).message}`);
+    throw dbGuardError(`Local AES-KW DEK unwrap failed: ${(err as Error).message}`);
   }
 }
 
+export type Pkcs11PinProvider = () => Buffer;
+
+export interface Pkcs11KmsProviderConfig {
+  libraryPath: string;
+  /**
+   * Returns a fresh mutable PIN buffer for one login attempt.
+   * The provider zeroizes the returned buffer immediately after C_Login.
+   */
+  pin: Pkcs11PinProvider;
+  slotId?: number;
+  keyId: string; // Hex string of the AES key ID in the HSM
+}
+
 /**
- * On-Premises HSM Provider using the standard PKCS#11 protocol
+ * On-Premises HSM Provider using the standard PKCS#11 protocol.
  */
 export class Pkcs11KmsProvider implements KmsProvider {
-  constructor(
-    private config: {
-      libraryPath: string;
-      pin: string;
-      slotId?: number;
-      keyId: string; // Hex string of the AES key ID in the HSM
-    }
-  ) {}
+  constructor(private config: Pkcs11KmsProviderConfig) {}
 
   async decrypt(ciphertext: Buffer): Promise<Buffer> {
     try {
@@ -170,11 +177,19 @@ export class Pkcs11KmsProvider implements KmsProvider {
       const slots = pkcs11.C_GetSlotList(true);
       const slotIndex = this.config.slotId !== undefined ? this.config.slotId : 0;
       if (!slots || slots.length <= slotIndex) {
-        throw new Error(`PKCS#11 slot index ${slotIndex} not found or slot list is empty.`);
+        throw dbGuardError(`PKCS#11 slot index ${slotIndex} not found or slot list is empty.`);
       }
       
       const session = pkcs11.C_OpenSession(slots[slotIndex], pkcs11js.CKF_SERIAL_SESSION | pkcs11js.CKF_RW_SESSION);
-      pkcs11.C_Login(session, pkcs11js.CKU_USER, this.config.pin);
+      const pin = this.config.pin();
+      if (!Buffer.isBuffer(pin) || pin.length === 0) {
+        throw dbGuardError('PKCS#11 PIN provider must return a non-empty Buffer.');
+      }
+      try {
+        pkcs11.C_Login(session, pkcs11js.CKU_USER, pin.toString('utf8'));
+      } finally {
+        pin.fill(0);
+      }
       
       try {
         const keyIdBuf = Buffer.from(this.config.keyId, 'hex');
@@ -187,13 +202,13 @@ export class Pkcs11KmsProvider implements KmsProvider {
         pkcs11.C_FindObjectsFinal(session);
         
         if (!objects || objects.length === 0) {
-          throw new Error(`Secret key with ID ${this.config.keyId} not found in HSM.`);
+          throw dbGuardError(`Secret key with ID ${this.config.keyId} not found in HSM.`);
         }
         
         const keyHandle = objects[0];
         
         if (!pkcs11js.CKM_AES_KEY_WRAP_PAD) {
-          throw new Error('PKCS#11 module does not expose CKM_AES_KEY_WRAP_PAD; refusing unauthenticated CBC unwrap.');
+          throw dbGuardError('PKCS#11 module does not expose CKM_AES_KEY_WRAP_PAD; refusing unauthenticated CBC unwrap.');
         }
 
         pkcs11.C_DecryptInit(session, {
@@ -207,7 +222,7 @@ export class Pkcs11KmsProvider implements KmsProvider {
         pkcs11.C_CloseSession(session);
       }
     } catch (err) {
-      throw new Error(`PKCS#11 HSM decryption failed: ${(err as Error).message}`);
+      throw dbGuardError(`PKCS#11 HSM decryption failed: ${(err as Error).message}`);
     }
   }
 }
@@ -261,7 +276,7 @@ export async function resolveKeys(options: DbGuardKeysOptions): Promise<Record<s
       }
     }
   } else {
-    throw new Error("Either 'key' or 'kms' configuration must be provided.");
+    throw dbGuardError("Either 'key' or 'kms' configuration must be provided.");
   }
 
   return rawKeys;

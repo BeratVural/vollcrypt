@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { dbGuardError } from './errors';
 import { encryptValue, decryptValue } from './security';
 
 type MigrationDirection = 'up' | 'down';
@@ -21,7 +22,7 @@ export function parsePositiveIntegerOption(value: string | undefined, fallback: 
   if (value === undefined) return fallback;
   const parsed = Number.parseInt(value, 10);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    throw new Error(`${label} must be a positive integer.`);
+    throw dbGuardError(`${label} must be a positive integer.`);
   }
   return parsed;
 }
@@ -29,14 +30,14 @@ export function parsePositiveIntegerOption(value: string | undefined, fallback: 
 export function parseMigrationDirection(value: string | undefined): MigrationDirection {
   const direction = value || 'up';
   if (direction !== 'up' && direction !== 'down') {
-    throw new Error(`--direction must be 'up' or 'down'.`);
+    throw dbGuardError(`--direction must be 'up' or 'down'.`);
   }
   return direction;
 }
 
 export function assertSafeIdentifier(identifier: string, label: string): string {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
-    throw new Error(`${label} must be a simple SQL/Mongo identifier matching [A-Za-z_][A-Za-z0-9_]*.`);
+    throw dbGuardError(`${label} must be a simple SQL/Mongo identifier matching [A-Za-z_][A-Za-z0-9_]*.`);
   }
   return identifier;
 }
@@ -117,14 +118,14 @@ function readSecretFile(filePath: string, label: string): string {
   const path = require('path');
   const fullPath = path.resolve(filePath);
   if (!fs.existsSync(fullPath)) {
-    throw new Error(`${label} file not found at ${fullPath}`);
+    throw dbGuardError(`${label} file not found at ${fullPath}`);
   }
   return fs.readFileSync(fullPath, 'utf8').trim();
 }
 
 function getRequiredSecret(options: Record<string, string>, envName: string, fileOption: string, label: string): string {
   if (options[label]) {
-    throw new Error(`--${label} is not allowed because it exposes secrets in process lists. Use ${envName} or --${fileOption}.`);
+    throw dbGuardError(`--${label} is not allowed because it exposes secrets in process lists. Use ${envName} or --${fileOption}.`);
   }
   if (process.env[envName]) {
     return process.env[envName]!.trim();
@@ -132,7 +133,7 @@ function getRequiredSecret(options: Record<string, string>, envName: string, fil
   if (options[fileOption]) {
     return readSecretFile(options[fileOption], label);
   }
-  throw new Error(`Missing ${label}. Set ${envName} or pass --${fileOption} <path>.`);
+  throw dbGuardError(`Missing ${label}. Set ${envName} or pass --${fileOption} <path>.`);
 }
 
 function printProgressBar(current: number, total: number) {

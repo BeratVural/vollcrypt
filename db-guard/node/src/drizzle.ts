@@ -1,8 +1,10 @@
+import { dbGuardError } from './errors';
 import type { customType as pgCustomTypeType } from 'drizzle-orm/pg-core';
 import type { customType as mysqlCustomTypeType } from 'drizzle-orm/mysql-core';
 import type { customType as sqliteCustomTypeType } from 'drizzle-orm/sqlite-core';
 import { encryptValue, decryptValue, computeBlindIndex, validateBlindIndexConfiguration, registerKeysForZeroization, decryptWithSecurity } from './security';
 import type { CommonDbGuardSecurityOptions } from './contract';
+import { normalizeKeys } from './keys';
 
 export interface DrizzleDbGuardOptions extends CommonDbGuardSecurityOptions {
   key: Buffer | Record<string, Buffer>;
@@ -14,24 +16,9 @@ export interface DrizzleDbGuardOptions extends CommonDbGuardSecurityOptions {
 
 }
 
-function getKeys(options: DrizzleDbGuardOptions) {
-  let keys: Record<string, Buffer>;
-  let activeVersion: string;
-
-  if (Buffer.isBuffer(options.key)) {
-    keys = { '1': Buffer.from(options.key) };
-    activeVersion = '1';
-  } else {
-    keys = {};
-    for (const [v, k] of Object.entries(options.key)) {
-      keys[v] = Buffer.from(k);
-    }
-    activeVersion = options.activeKeyVersion || Object.keys(keys)[0];
-  }
-
-  return { keys, activeVersion };
-}
-
+/**
+ * Creates encrypted and blind-index Drizzle custom column types for supported SQL dialects.
+ */
 export const createDrizzleGuard = (options: DrizzleDbGuardOptions) => {
   if (options.blindIndexes) {
     validateBlindIndexConfiguration(
@@ -43,12 +30,7 @@ export const createDrizzleGuard = (options: DrizzleDbGuardOptions) => {
   const mysqlCustomType = require('drizzle-orm/mysql-core').customType as typeof mysqlCustomTypeType;
   const sqliteCustomType = require('drizzle-orm/sqlite-core').customType as typeof sqliteCustomTypeType;
 
-  const { keys, activeVersion } = getKeys(options);
-  const activeKey = keys[activeVersion];
-
-  if (!activeKey) {
-    throw new Error(`Active encryption key version "${activeVersion}" is not present in the key map.`);
-  }
+  const { keys, activeVersion, activeKey } = normalizeKeys(options.key, options.activeKeyVersion);
 
   registerKeysForZeroization(keys);
 
@@ -127,7 +109,7 @@ export const createDrizzleGuard = (options: DrizzleDbGuardOptions) => {
       },
       toDriver(value: any): string {
         if (!rootSalt) {
-          throw new Error('Blind index root salt is not configured in Drizzle guard options.');
+          throw dbGuardError('Blind index root salt is not configured in Drizzle guard options.');
         }
         return computeBlindIndex(value, rootSalt, columnName, options.blindIndexes!.allowFrequencyLeakage);
       },
@@ -142,7 +124,7 @@ export const createDrizzleGuard = (options: DrizzleDbGuardOptions) => {
       },
       toDriver(value: any): string {
         if (!rootSalt) {
-          throw new Error('Blind index root salt is not configured in Drizzle guard options.');
+          throw dbGuardError('Blind index root salt is not configured in Drizzle guard options.');
         }
         return computeBlindIndex(value, rootSalt, columnName, options.blindIndexes!.allowFrequencyLeakage);
       },
@@ -157,7 +139,7 @@ export const createDrizzleGuard = (options: DrizzleDbGuardOptions) => {
       },
       toDriver(value: any): string {
         if (!rootSalt) {
-          throw new Error('Blind index root salt is not configured in Drizzle guard options.');
+          throw dbGuardError('Blind index root salt is not configured in Drizzle guard options.');
         }
         return computeBlindIndex(value, rootSalt, columnName, options.blindIndexes!.allowFrequencyLeakage);
       },

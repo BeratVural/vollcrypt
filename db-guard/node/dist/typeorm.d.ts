@@ -10,6 +10,9 @@ export interface TypeOrmDbGuardOptions extends CommonDbGuardSecurityOptions {
         entities: Record<string, string[]>;
     };
 }
+/**
+ * Creates a TypeORM subscriber that encrypts configured fields before writes and decrypts after loads.
+ */
 export declare function createTypeOrmSubscriber(options: TypeOrmDbGuardOptions): {
     new (): {
         listenTo(): ObjectConstructor;

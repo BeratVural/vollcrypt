@@ -6,6 +6,16 @@ use std::sync::RwLock;
 use std::time::Instant;
 use zeroize::Zeroize;
 
+pub const DB_GUARD_ERROR_PREFIX: &str = "Vollcrypt DbGuard:";
+pub type DbGuardResult<T> = Result<T, String>;
+
+fn db_guard_error(message: &str) -> String {
+    let detail = message
+        .strip_prefix(DB_GUARD_ERROR_PREFIX)
+        .unwrap_or(message)
+        .trim_start();
+    format!("{DB_GUARD_ERROR_PREFIX} {detail}")
+}
 #[derive(Clone, Debug)]
 pub struct UserContext {
     pub role: Option<String>,
@@ -37,9 +47,11 @@ pub fn set_max_decrypt_rate(rate: usize) {
     MAX_DECRYPT_RATE.store(rate, Ordering::SeqCst);
 }
 
-pub fn check_rust_rate_limit() -> Result<(), &'static str> {
+pub fn check_rust_rate_limit() -> DbGuardResult<()> {
     if IS_FAIL_CLOSED.load(Ordering::SeqCst) {
-        return Err("Vollcrypt Security: Fail-Closed mode is active. Decryption blocked.");
+        return Err(db_guard_error(
+            "Vollcrypt DbGuard: Fail-Closed mode is active. Decryption blocked.",
+        ));
     }
 
     let limit = MAX_DECRYPT_RATE.load(Ordering::SeqCst);
@@ -66,7 +78,7 @@ pub fn check_rust_rate_limit() -> Result<(), &'static str> {
             key.zeroize();
         }
         reg.active_version = None;
-        return Err("Vollcrypt Security: Decryption rate limit exceeded. Fail-Closed mode triggered. Keys zeroized.");
+        return Err(db_guard_error("Vollcrypt DbGuard: Decryption rate limit exceeded. Fail-Closed mode triggered. Keys zeroized."));
     }
 
     Ok(())
@@ -83,6 +95,7 @@ pub fn reset_rust_fail_closed_for_testing() {
 }
 
 pub mod contract;
+mod secure_string;
 
 pub mod diesel_impl;
 
@@ -121,7 +134,7 @@ pub fn set_key(version: &str, key: &[u8]) {
 }
 
 /// Sets the active key version to be used for new encryptions.
-pub fn set_active_version(version: &str) -> Result<(), &'static str> {
+pub fn set_active_version(version: &str) -> DbGuardResult<()> {
     let mut reg = match REGISTRY.write() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
@@ -130,7 +143,7 @@ pub fn set_active_version(version: &str) -> Result<(), &'static str> {
         reg.active_version = Some(version.to_string());
         Ok(())
     } else {
-        Err("Key version not found in registry")
+        Err(db_guard_error("Key version not found in registry"))
     }
 }
 
@@ -168,8 +181,9 @@ pub fn clear_registry() {
 
 /// Helper to encrypt data with the active key.
 /// Prefixes ciphertext with "VOLLVALT:v{version}:base64_ciphertext"
-pub fn encrypt_field(plaintext: &[u8]) -> Result<String, &'static str> {
-    let (version, key) = get_active_key().ok_or("Active key not set in registry")?;
+pub fn encrypt_field(plaintext: &[u8]) -> DbGuardResult<String> {
+    let (version, key) =
+        get_active_key().ok_or_else(|| db_guard_error("Active key not set in registry"))?;
     let key = zeroize::Zeroizing::new(key);
     let padded = pad_message_with_len(plaintext);
     let ciphertext = encrypt_aes256gcm(&key, &padded)?;
@@ -182,7 +196,7 @@ pub fn encrypt_field(plaintext: &[u8]) -> Result<String, &'static str> {
 /// Helper to decrypt data.
 /// Parses the "VOLLVALT:v{version}:base64_ciphertext" format and decrypts.
 /// If the "VOLLVALT:" prefix is missing, it falls back to raw string bytes (dual-read).
-pub fn decrypt_field(stored_val: &str) -> Result<Vec<u8>, &'static str> {
+pub fn decrypt_field(stored_val: &str) -> DbGuardResult<Vec<u8>> {
     if !stored_val.starts_with("VOLLVALT:") {
         // Dual-Read Fallback: Value is not encrypted. Return the raw bytes as is.
         return Ok(stored_val.as_bytes().to_vec());
@@ -192,21 +206,24 @@ pub fn decrypt_field(stored_val: &str) -> Result<Vec<u8>, &'static str> {
 
     let payload = &stored_val["VOLLVALT:".len()..];
     if !payload.starts_with('v') {
-        return Err("Invalid stored ciphertext format: missing version prefix after magic bytes");
+        return Err(db_guard_error(
+            "Invalid stored ciphertext format: missing version prefix after magic bytes",
+        ));
     }
     let colon_pos = payload
         .find(':')
-        .ok_or("Invalid stored ciphertext format: missing colon divider")?;
+        .ok_or_else(|| db_guard_error("Invalid stored ciphertext format: missing colon divider"))?;
     let version = &payload[1..colon_pos];
     let b64_ciphertext = &payload[colon_pos + 1..];
 
-    let key = get_key(version).ok_or("Decryption key version not found in registry")?;
+    let key = get_key(version)
+        .ok_or_else(|| db_guard_error("Decryption key version not found in registry"))?;
     let key = zeroize::Zeroizing::new(key);
 
     use base64::Engine;
     let ciphertext = base64::engine::general_purpose::STANDARD
         .decode(b64_ciphertext)
-        .map_err(|_| "Failed to decode base64 ciphertext")?;
+        .map_err(|_| db_guard_error("Failed to decode base64 ciphertext"))?;
 
     let plaintext = decrypt_aes256gcm(&key, &ciphertext)?;
     unpad_message_with_len(&plaintext)
@@ -220,7 +237,7 @@ pub fn compute_blind_index(
     value: &str,
     root_salt: &[u8],
     column_name: &str,
-) -> Result<String, &'static str> {
+) -> DbGuardResult<String> {
     // 1. Derive column-specific key using HKDF-SHA256
     let mut derived_column_key = derive_hkdf(root_salt, None, Some(column_name.as_bytes()), 32)?;
 
@@ -273,20 +290,20 @@ fn pad_message_with_len(content: &[u8]) -> Vec<u8> {
     padded
 }
 
-fn unpad_message_with_len(padded: &[u8]) -> Result<Vec<u8>, &'static str> {
+fn unpad_message_with_len(padded: &[u8]) -> DbGuardResult<Vec<u8>> {
     if padded.len() < 4 {
-        return Err("Padded message too short");
+        return Err(db_guard_error("Padded message too short"));
     }
     let len = u32::from_be_bytes([padded[0], padded[1], padded[2], padded[3]]) as usize;
     if len > padded.len() - 4 {
-        return Err("Invalid padded message length");
+        return Err(db_guard_error("Invalid padded message length"));
     }
     Ok(padded[4..4 + len].to_vec())
 }
 
-fn encrypt_aes256gcm(key: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, &'static str> {
+fn encrypt_aes256gcm(key: &[u8], plaintext: &[u8]) -> DbGuardResult<Vec<u8>> {
     if key.len() != 32 {
-        return Err("Invalid AES key length, must be 32 bytes");
+        return Err(db_guard_error("Invalid AES key length, must be 32 bytes"));
     }
     use aes_gcm::{
         aead::{Aead, KeyInit, Payload},
@@ -297,7 +314,8 @@ fn encrypt_aes256gcm(key: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, &'static s
     let mut nonce_bytes = [0u8; 12];
     OsRng.fill_bytes(&mut nonce_bytes);
 
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "Failed to create AES cipher")?;
+    let cipher = Aes256Gcm::new_from_slice(key)
+        .map_err(|_| db_guard_error("Failed to create AES cipher"))?;
     let nonce = Nonce::from_slice(&nonce_bytes);
     let payload = Payload {
         msg: plaintext,
@@ -305,7 +323,7 @@ fn encrypt_aes256gcm(key: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, &'static s
     };
     let ciphertext = cipher
         .encrypt(nonce, payload)
-        .map_err(|_| "Encryption failed")?;
+        .map_err(|_| db_guard_error("Encryption failed"))?;
 
     let mut result = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
     result.extend_from_slice(&nonce_bytes);
@@ -313,12 +331,12 @@ fn encrypt_aes256gcm(key: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, &'static s
     Ok(result)
 }
 
-fn decrypt_aes256gcm(key: &[u8], encrypted_data: &[u8]) -> Result<Vec<u8>, &'static str> {
+fn decrypt_aes256gcm(key: &[u8], encrypted_data: &[u8]) -> DbGuardResult<Vec<u8>> {
     if key.len() != 32 {
-        return Err("Invalid AES key length, must be 32 bytes");
+        return Err(db_guard_error("Invalid AES key length, must be 32 bytes"));
     }
     if encrypted_data.len() < 12 {
-        return Err("Encrypted data too short, missing nonce");
+        return Err(db_guard_error("Encrypted data too short, missing nonce"));
     }
     use aes_gcm::{
         aead::{Aead, KeyInit, Payload},
@@ -326,7 +344,8 @@ fn decrypt_aes256gcm(key: &[u8], encrypted_data: &[u8]) -> Result<Vec<u8>, &'sta
     };
 
     let (nonce_bytes, ciphertext) = encrypted_data.split_at(12);
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "Failed to create AES cipher")?;
+    let cipher = Aes256Gcm::new_from_slice(key)
+        .map_err(|_| db_guard_error("Failed to create AES cipher"))?;
     let nonce = Nonce::from_slice(nonce_bytes);
     let payload = Payload {
         msg: ciphertext,
@@ -334,7 +353,7 @@ fn decrypt_aes256gcm(key: &[u8], encrypted_data: &[u8]) -> Result<Vec<u8>, &'sta
     };
     let plaintext = cipher
         .decrypt(nonce, payload)
-        .map_err(|_| "Decryption failed or MAC mismatch")?;
+        .map_err(|_| db_guard_error("Decryption failed or MAC mismatch"))?;
     Ok(plaintext)
 }
 
@@ -343,13 +362,13 @@ fn derive_hkdf(
     salt: Option<&[u8]>,
     info: Option<&[u8]>,
     key_len: usize,
-) -> Result<Vec<u8>, &'static str> {
+) -> DbGuardResult<Vec<u8>> {
     use hkdf::Hkdf;
     use sha2::Sha256;
 
     let hk = Hkdf::<Sha256>::new(salt, ikm);
     let mut okm = vec![0u8; key_len];
     hk.expand(info.unwrap_or(b""), &mut okm)
-        .map_err(|_| "HKDF expansion failed")?;
+        .map_err(|_| db_guard_error("HKDF expansion failed"))?;
     Ok(okm)
 }

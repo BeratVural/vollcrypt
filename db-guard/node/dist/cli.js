@@ -10,6 +10,7 @@ exports.migratePostgresWithClient = migratePostgresWithClient;
 exports.migratePostgres = migratePostgres;
 exports.migrateMongoCollection = migrateMongoCollection;
 exports.migrateMongo = migrateMongo;
+const errors_1 = require("./errors");
 const security_1 = require("./security");
 exports.DEFAULT_MIGRATION_OPTIONS = {
     direction: 'up',
@@ -22,20 +23,20 @@ function parsePositiveIntegerOption(value, fallback, label) {
         return fallback;
     const parsed = Number.parseInt(value, 10);
     if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-        throw new Error(`${label} must be a positive integer.`);
+        throw (0, errors_1.dbGuardError)(`${label} must be a positive integer.`);
     }
     return parsed;
 }
 function parseMigrationDirection(value) {
     const direction = value || 'up';
     if (direction !== 'up' && direction !== 'down') {
-        throw new Error(`--direction must be 'up' or 'down'.`);
+        throw (0, errors_1.dbGuardError)(`--direction must be 'up' or 'down'.`);
     }
     return direction;
 }
 function assertSafeIdentifier(identifier, label) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
-        throw new Error(`${label} must be a simple SQL/Mongo identifier matching [A-Za-z_][A-Za-z0-9_]*.`);
+        throw (0, errors_1.dbGuardError)(`${label} must be a simple SQL/Mongo identifier matching [A-Za-z_][A-Za-z0-9_]*.`);
     }
     return identifier;
 }
@@ -101,13 +102,13 @@ function readSecretFile(filePath, label) {
     const path = require('path');
     const fullPath = path.resolve(filePath);
     if (!fs.existsSync(fullPath)) {
-        throw new Error(`${label} file not found at ${fullPath}`);
+        throw (0, errors_1.dbGuardError)(`${label} file not found at ${fullPath}`);
     }
     return fs.readFileSync(fullPath, 'utf8').trim();
 }
 function getRequiredSecret(options, envName, fileOption, label) {
     if (options[label]) {
-        throw new Error(`--${label} is not allowed because it exposes secrets in process lists. Use ${envName} or --${fileOption}.`);
+        throw (0, errors_1.dbGuardError)(`--${label} is not allowed because it exposes secrets in process lists. Use ${envName} or --${fileOption}.`);
     }
     if (process.env[envName]) {
         return process.env[envName].trim();
@@ -115,7 +116,7 @@ function getRequiredSecret(options, envName, fileOption, label) {
     if (options[fileOption]) {
         return readSecretFile(options[fileOption], label);
     }
-    throw new Error(`Missing ${label}. Set ${envName} or pass --${fileOption} <path>.`);
+    throw (0, errors_1.dbGuardError)(`Missing ${label}. Set ${envName} or pass --${fileOption} <path>.`);
 }
 function printProgressBar(current, total) {
     const percentage = Math.min(100, Math.floor((current / total) * 100));

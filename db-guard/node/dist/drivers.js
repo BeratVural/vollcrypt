@@ -2,22 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.wrapSqliteDatabase = wrapSqliteDatabase;
 exports.wrapOracleConnection = wrapOracleConnection;
-const security_js_1 = require("./security.js");
-function getKeys(options) {
-    let keys = {};
-    let activeVersion;
-    if (Buffer.isBuffer(options.key)) {
-        keys = { '1': Buffer.from(options.key) };
-        activeVersion = '1';
-    }
-    else {
-        for (const [v, k] of Object.entries(options.key)) {
-            keys[v] = Buffer.from(k);
-        }
-        activeVersion = options.activeKeyVersion || Object.keys(keys)[0];
-    }
-    return { keys, activeVersion };
-}
+const errors_1 = require("./errors");
+const security_1 = require("./security");
+const keys_1 = require("./keys");
 function cleanIdentifier(identifier) {
     if (!identifier)
         return identifier;
@@ -83,7 +70,7 @@ function assertEncryptedWritesUseParameters(sql, parsed, options) {
     if (parsed.assignments) {
         for (const field of fieldsToEncrypt) {
             if (parsed.assignments[field] !== undefined && !isSqlParameterExpression(parsed.assignments[field])) {
-                throw new Error(`Vollcrypt Security: encrypted field ${parsed.table}.${field} must be written using a bind parameter, not a SQL literal or expression.`);
+                throw (0, errors_1.dbGuardError)(`Vollcrypt DbGuard: encrypted field ${parsed.table}.${field} must be written using a bind parameter, not a SQL literal or expression.`);
             }
         }
     }
@@ -99,7 +86,7 @@ function decryptRow(row, table, keys, options) {
                 const val = row[i];
                 if (typeof val === 'string' && val.startsWith('VOLLVALT:')) {
                     try {
-                        cloned[i] = (0, security_js_1.decryptWithSecurity)(val, (v) => (0, security_js_1.decryptValue)(v, keys), table, `column_${i}`, undefined, options);
+                        cloned[i] = (0, security_1.decryptWithSecurity)(val, (v) => (0, security_1.decryptValue)(v, keys), table, `column_${i}`, undefined, options);
                     }
                     catch (err) {
                         throw err;
@@ -113,7 +100,7 @@ function decryptRow(row, table, keys, options) {
             for (const [key, val] of Object.entries(row)) {
                 if (typeof val === 'string' && val.startsWith('VOLLVALT:')) {
                     try {
-                        cloned[key] = (0, security_js_1.decryptWithSecurity)(val, (v) => (0, security_js_1.decryptValue)(v, keys), table, key, row.id || row._id, options);
+                        cloned[key] = (0, security_1.decryptWithSecurity)(val, (v) => (0, security_1.decryptValue)(v, keys), table, key, row.id || row._id, options);
                     }
                     catch (err) {
                         throw err;
@@ -125,16 +112,18 @@ function decryptRow(row, table, keys, options) {
     }
     return row;
 }
+/**
+ * Wraps a SQLite-compatible database and enforces parameterized encrypted writes.
+ */
 function wrapSqliteDatabase(db, options) {
-    const { keys, activeVersion } = getKeys(options);
-    const activeKey = keys[activeVersion];
-    (0, security_js_1.registerKeysForZeroization)(keys);
+    const { keys, activeVersion, activeKey } = (0, keys_1.normalizeKeys)(options.key, options.activeKeyVersion);
+    (0, security_1.registerKeysForZeroization)(keys);
     const originalPrepare = db.prepare;
     db.prepare = function (sql, ...args) {
         const statement = originalPrepare.call(this, sql, ...args);
         const parsed = getParamColumns(sql);
         if (!parsed && hasEncryptedTargets(options) && /\b(insert|update)\b/i.test(sql)) {
-            throw new Error('Vollcrypt Security: SQL write statement could not be parsed for encrypted fields. Refusing plaintext write.');
+            throw (0, errors_1.dbGuardError)('Vollcrypt DbGuard: SQL write statement could not be parsed for encrypted fields. Refusing plaintext write.');
         }
         assertEncryptedWritesUseParameters(sql, parsed, options);
         // Helper to encrypt query input parameters
@@ -151,7 +140,7 @@ function wrapSqliteDatabase(db, options) {
                 const arrayParams = params[0].map((param, index) => {
                     const colName = columns[index];
                     if (colName && fieldsToEncrypt.includes(colName)) {
-                        return (0, security_js_1.encryptValue)(param, activeKey, activeVersion);
+                        return (0, security_1.encryptValue)(param, activeKey, activeVersion);
                     }
                     return param;
                 });
@@ -164,7 +153,7 @@ function wrapSqliteDatabase(db, options) {
                     // Strip prefix character (@, :, $) if present
                     const cleanKey = key.replace(/^[@:$]/, '');
                     if (fieldsToEncrypt.includes(cleanKey)) {
-                        obj[key] = (0, security_js_1.encryptValue)(val, activeKey, activeVersion);
+                        obj[key] = (0, security_1.encryptValue)(val, activeKey, activeVersion);
                     }
                 }
                 return [obj];
@@ -173,7 +162,7 @@ function wrapSqliteDatabase(db, options) {
             return params.map((param, index) => {
                 const colName = columns[index];
                 if (colName && fieldsToEncrypt.includes(colName)) {
-                    return (0, security_js_1.encryptValue)(param, activeKey, activeVersion);
+                    return (0, security_1.encryptValue)(param, activeKey, activeVersion);
                 }
                 return param;
             });
@@ -212,15 +201,17 @@ function wrapSqliteDatabase(db, options) {
     };
     return db;
 }
+/**
+ * Wraps an Oracle connection and encrypts configured bind values before execution.
+ */
 function wrapOracleConnection(connection, options) {
-    const { keys, activeVersion } = getKeys(options);
-    const activeKey = keys[activeVersion];
-    (0, security_js_1.registerKeysForZeroization)(keys);
+    const { keys, activeVersion, activeKey } = (0, keys_1.normalizeKeys)(options.key, options.activeKeyVersion);
+    (0, security_1.registerKeysForZeroization)(keys);
     const originalExecute = connection.execute;
     connection.execute = async function (sql, bindParams = {}, execOptions = {}, ...args) {
         const parsed = getParamColumns(sql);
         if (!parsed && hasEncryptedTargets(options) && /\b(insert|update)\b/i.test(sql)) {
-            throw new Error('Vollcrypt Security: SQL write statement could not be parsed for encrypted fields. Refusing plaintext write.');
+            throw (0, errors_1.dbGuardError)('Vollcrypt DbGuard: SQL write statement could not be parsed for encrypted fields. Refusing plaintext write.');
         }
         assertEncryptedWritesUseParameters(sql, parsed, options);
         let processedBinds = bindParams;
@@ -233,7 +224,7 @@ function wrapOracleConnection(connection, options) {
                     processedBinds = bindParams.map((param, index) => {
                         const colName = columns[index];
                         if (colName && fieldsToEncrypt.includes(colName)) {
-                            return (0, security_js_1.encryptValue)(param, activeKey, activeVersion);
+                            return (0, security_1.encryptValue)(param, activeKey, activeVersion);
                         }
                         return param;
                     });
@@ -242,7 +233,7 @@ function wrapOracleConnection(connection, options) {
                     processedBinds = { ...bindParams };
                     for (const field of fieldsToEncrypt) {
                         if (processedBinds[field] !== undefined && processedBinds[field] !== null) {
-                            processedBinds[field] = (0, security_js_1.encryptValue)(processedBinds[field], activeKey, activeVersion);
+                            processedBinds[field] = (0, security_1.encryptValue)(processedBinds[field], activeKey, activeVersion);
                         }
                     }
                 }

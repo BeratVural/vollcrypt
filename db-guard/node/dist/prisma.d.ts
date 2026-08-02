@@ -1,5 +1,6 @@
-import { DbGuardKeysOptions } from './kms';
+import type { DbGuardKeysOptions } from './kms';
 import type { CommonDbGuardSecurityOptions } from './contract';
+import { MultiTenantKeyOptions } from './tenant';
 export interface PrismaDbGuardOptions extends DbGuardKeysOptions, CommonDbGuardSecurityOptions {
     models: Record<string, string[]>;
     activeKeyVersion?: string;
@@ -8,17 +9,7 @@ export interface PrismaDbGuardOptions extends DbGuardKeysOptions, CommonDbGuardS
         allowFrequencyLeakage: true;
         models: Record<string, string[]>;
     };
-    multiTenant?: {
-        cacheTtlMs?: number;
-        tenants?: Record<string, {
-            key?: Buffer | Record<string, Buffer>;
-            kms?: any;
-        }>;
-        getTenantConfig?: (tenantId: string) => Promise<{
-            key?: Buffer | Record<string, Buffer>;
-            kms?: any;
-        } | undefined>;
-    };
+    multiTenant?: MultiTenantKeyOptions;
 }
 /**
  * Prisma DbGuard Extension Factory

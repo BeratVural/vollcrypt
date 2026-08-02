@@ -133,6 +133,7 @@ describe('KMS Providers & Envelope Decryption', () => {
     let loggedIn = false;
     let sessionOpened = false;
     let decryptInitialized = false;
+    let issuedPin: Buffer | undefined;
 
     Module._load = function (request: string, parent: any, isMain: boolean) {
       if (request === 'pkcs11js') {
@@ -195,7 +196,10 @@ describe('KMS Providers & Envelope Decryption', () => {
 
     const provider = new Pkcs11KmsProvider({
       libraryPath: 'mock-hsm-lib.so',
-      pin: '123456',
+      pin: () => {
+        issuedPin = Buffer.from('123456', 'utf8');
+        return issuedPin;
+      },
       slotId: 0,
       keyId: '000102'
     });
@@ -207,6 +211,7 @@ describe('KMS Providers & Envelope Decryption', () => {
     assert.ok(sessionOpened);
     assert.ok(loggedIn);
     assert.ok(decryptInitialized);
+    assert.deepStrictEqual(issuedPin, Buffer.alloc(6));
     assert.strictEqual(decrypted.toString('utf8'), 'mock-hsm-decrypted');
 
     Module._load = originalLoad;

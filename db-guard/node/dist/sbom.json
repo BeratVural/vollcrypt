@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:fb3cc08f-7d07-486f-9798-6ed6a7c819bc",
+  "serialNumber": "urn:uuid:cbb45f37-1520-4f7b-bec3-4e2266783558",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-07-31T18:32:52.351Z",
+    "timestamp": "2026-08-02T19:20:46.815Z",
     "tools": [
       {
         "vendor": "Vollcrypt",
@@ -13,10 +13,10 @@
       }
     ],
     "component": {
-      "bomRef": "pkg:npm/@vollcrypt/db-guard@0.9.1",
+      "bomRef": "pkg:npm/@vollcrypt/db-guard@1.0.0",
       "type": "library",
       "name": "@vollcrypt/db-guard",
-      "version": "0.9.1",
+      "version": "1.0.0",
       "description": "Database field-level encryption integrations for Vollcrypt (Prisma, Mongoose, Drizzle, TypeORM)",
       "hashes": [
         {
@@ -33,7 +33,7 @@
         },
         {
           "alg": "SHA-256",
-          "content": "1c2540378aa0b5a1332294f006dbb3fe83c1220401d2fc2a3c34baf2e93603ef"
+          "content": "3b2a80fb2d95c163e39c5d5b25fd2a87b6a596d9a66738678a95d7573e28e815"
         },
         {
           "alg": "SHA-256",
@@ -53,67 +53,91 @@
         },
         {
           "alg": "SHA-256",
-          "content": "ce12dea69edc5266d2de6d23cce82823203bc75c90cefa77fab866cac9dd6527"
+          "content": "5bae0d4d137e3159c2803b4ab8bffdc1dac91565f4f84cbd961925895a957d23"
         },
         {
           "alg": "SHA-256",
-          "content": "d93279ca7c4d10fc6bc23e84c23d370a10d7f7e5fbfabfe091076b5caf93cbb6"
+          "content": "2ef06c5b45d702a55db11808d2de3bb7a85afa5d2767b1d47860a85b62011896"
         },
         {
           "alg": "SHA-256",
-          "content": "df22a02edba4986d941205beed6dfaf03840953c578efad12829a183dabd7283"
+          "content": "0bc1af87e4bebe481f6fd51f798d98bb0f6e891cc1c3d30df8e58422cf0fd1dd"
         },
         {
           "alg": "SHA-256",
-          "content": "fba648d74dab1d9ee5f6ea25a107e18f7a9bd21a844d6b5d66edba50e7a56feb"
+          "content": "6b872532791a5b2bee7c1e558d1f70d54446b1c4545286de464c08c2cde1e2e2"
         },
         {
           "alg": "SHA-256",
-          "content": "76f4637e0590d770cf20b423125e3c2bbd2351279a6920d2b035180368aa1b23"
+          "content": "8b449e3c321daa3b444cb78ed1bebb551bdc99033ec89a22f479336b76150b57"
         },
         {
           "alg": "SHA-256",
-          "content": "39a9fe47e55aa8166e559022d711020bafb261a51b08e284baa404e25ef49abc"
+          "content": "2c246c3aef6a739fd10d8d02ce212133a07eedb9fdb2900507c62aed576604a8"
         },
         {
           "alg": "SHA-256",
-          "content": "35c58e74cbc5bb5f293d0f4898eee18e21c1b77a2ee00c9204e40dda9e7fce76"
+          "content": "9530d9061de306fb4c5c5c046db2bbf98702a4a294a16e55c69ef79cdb4a08b7"
         },
         {
           "alg": "SHA-256",
-          "content": "bc6d3bbc6c41c972775f497c4cae8fbb95ac00b44a06588705d4fd2beda8d8b8"
+          "content": "b1bf1b7b7cc4ea1c209457d687895171c1740dd62901834688acbe7a6735bc6d"
         },
         {
           "alg": "SHA-256",
-          "content": "a1d1c5bbe6473350bde3a3b235c6b4aa48da6a2d67428520c5047122107a4a88"
+          "content": "176542c3da81fa12a5fb605dc4bf9a3e1f70827155531990df5028512a4ffd6b"
         },
         {
           "alg": "SHA-256",
-          "content": "37011ec98054826f8cd2fcc5c60ca220a3d1383beb06bdddb472fbfd157d0fa6"
+          "content": "e79f4988bbd393e15f87fdf805a2363e5cb34f2cb22eb2274da219e68570d7ac"
         },
         {
           "alg": "SHA-256",
-          "content": "76c2941c237e72be5ca03af75d86af75bf18a0abc1bbf2325b6dddc07a7e9b90"
+          "content": "5683169de2b76c7b659bd059cfb397db509ab4c9cc30293f0c5909cd829b9b11"
         },
         {
           "alg": "SHA-256",
-          "content": "b2ee742cc84cd7e27c33b03619112d1964f480cb2c3cae8e92234a34d67c0d36"
+          "content": "f7b66113d22cf40b80533ba2ee7b983ec7e02a105867330a7fdb3f0eb1a14328"
         },
         {
           "alg": "SHA-256",
-          "content": "18054f4c30e58a345457c2a24170132b09eca0e1f704184ba09a184643de8e98"
+          "content": "83476c92763a9b73848bfb78162c43b507fa8fdc9019c01ac6dc5bdf702c7c96"
         },
         {
           "alg": "SHA-256",
-          "content": "c526e6f43c5a564e87c67343be7498fd101520b9d3f761bddbd16785cf40104a"
+          "content": "5c167d07335f96c2a3663ba3b14a692b7e6d28f809de80baafd533a02e95e78d"
         },
         {
           "alg": "SHA-256",
-          "content": "29be92dfcdde7adcf5df05c75dde23389e98b7410d4056bc3239769800f88684"
+          "content": "5f87e83608fee7502c1199c0a75cdd641acc2b018880a417086e71b6f9dd9029"
         },
         {
           "alg": "SHA-256",
-          "content": "5fab63dd8aa7ecf97ff7fe9d24577847bebdadc3a99820e821fa23dee1fcb937"
+          "content": "7df8192bd2e920671860df3a01d7d896c6ba791c76c41d57d04b64bb4ed219eb"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "5283a5294a94a486ebaf1895a49001f9334f0f2b2c32e61c69a90df40f4327eb"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "d7c625594c966fb0e32ee6e53a85a19069ef2733bb6ccf2901ea945a89256840"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "6d91ba498a50abca78b3c18ab531dd556f71ff69b39e7459b6630858547178e8"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "5763065054fa247970b2bfec00f7297b34905ff23ddccf8343467ada78086d34"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "931152cc1ac3b44ab8310fe3dd1bda679f42e6793b00a91e9b515fd25e60b523"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "cfad8bba580a2ba700c11638105f968aa0377d350f4f1b1c6743b6d158909a4a"
         }
       ]
     }

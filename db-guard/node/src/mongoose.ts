@@ -1,6 +1,9 @@
+import { dbGuardError } from './errors';
 import type { Schema } from 'mongoose';
-import { resolveKeys } from './kms';
+
 import type { CommonDbGuardSecurityOptions } from './contract';
+import { normalizeKeys } from './keys';
+import { createTenantKeyResolver, MultiTenantKeyOptions } from './tenant';
 import {
   encryptValue,
   decryptValue,
@@ -11,10 +14,7 @@ import {
   registerKeysForZeroization,
   checkPageSize,
   dbGuardContextStore,
-  isBreakGlassActive,
-  getBreakGlassKey,
-  getCachedKey,
-  setCachedKey
+
 } from './security';
 
 export interface MongooseDbGuardOptions extends CommonDbGuardSecurityOptions {
@@ -28,13 +28,12 @@ export interface MongooseDbGuardOptions extends CommonDbGuardSecurityOptions {
     modelName?: string;
   };
 
-  multiTenant?: {
-    cacheTtlMs?: number;
-    tenants?: Record<string, { key?: Buffer | Record<string, Buffer>; kms?: any }>;
-    getTenantConfig?: (tenantId: string) => Promise<{ key?: Buffer | Record<string, Buffer>; kms?: any } | undefined>;
-  };
+  multiTenant?: MultiTenantKeyOptions;
 }
 
+/**
+ * Installs fail-closed encryption, blind-index, and decryption hooks on a Mongoose schema.
+ */
 export function mongooseDbGuard(schema: Schema, options: MongooseDbGuardOptions) {
   if (options.blindIndexes) {
     validateBlindIndexConfiguration(
@@ -44,95 +43,16 @@ export function mongooseDbGuard(schema: Schema, options: MongooseDbGuardOptions)
   }
   const { fields } = options;
 
-  let keys: Record<string, Buffer> = {};
-  let activeVersion: string;
-
-  if (Buffer.isBuffer(options.key)) {
-    keys = { '1': Buffer.from(options.key) };
-    activeVersion = '1';
-  } else {
-    for (const [v, k] of Object.entries(options.key)) {
-      keys[v] = Buffer.from(k as Buffer);
-    }
-    activeVersion = options.activeKeyVersion || Object.keys(keys)[0];
-  }
-
+  const { keys, activeVersion, activeKey } = normalizeKeys(
+    options.key,
+    options.activeKeyVersion
+  );
   registerKeysForZeroization(keys);
-
-  const activeKey = keys[activeVersion];
-  if (!activeKey) {
-    throw new Error(`Active encryption key version "${activeVersion}" is not present in the key map.`);
-  }
-
-  const resolveTenantKeysAndActiveKeySyncOrAsync = (tenantId: string | undefined): { keys: Record<string, Buffer>; activeKey: Buffer; activeVersion: string } | Promise<{ keys: Record<string, Buffer>; activeKey: Buffer; activeVersion: string }> => {
-    if (isBreakGlassActive()) {
-      const bgKey = getBreakGlassKey();
-      if (bgKey) {
-        return { keys: { '1': bgKey }, activeKey: bgKey, activeVersion: '1' };
-      }
-    }
-
-    if (options.multiTenant && !tenantId) {
-      throw new Error("Vollcrypt Security: tenantId must be provided in multi-tenant mode.");
-    }
-
-    if (!options.multiTenant) {
-      return { keys, activeKey, activeVersion };
-    }
-
-    const tId = tenantId!;
-
-    // Check Secure TTL Cache
-    const cachedActiveKey = getCachedKey(tId, activeVersion);
-    if (cachedActiveKey) {
-      return { keys: { [activeVersion]: cachedActiveKey }, activeKey: cachedActiveKey, activeVersion };
-    }
-
-    // Cache miss: resolve configuration (this part is async)
-    const resolveAsync = async () => {
-      const multiTenant = options.multiTenant;
-      if (!multiTenant) {
-        throw new Error(`Vollcrypt Security: Multi-tenant configuration is not defined.`);
-      }
-      let tenantConfig: { key?: Buffer | Record<string, Buffer>; kms?: any } | undefined;
-      if (multiTenant.tenants) {
-        tenantConfig = multiTenant.tenants[tId];
-      } else if (multiTenant.getTenantConfig) {
-        tenantConfig = await multiTenant.getTenantConfig(tId);
-      }
-
-      if (!tenantConfig) {
-        throw new Error(`Vollcrypt Security: Configuration not found for tenantId "${tId}".`);
-      }
-
-      const resolvedTenantKeysRaw = await resolveKeys({
-        ...options,
-        key: tenantConfig.key,
-        kms: tenantConfig.kms
-      } as any);
-      
-      const resolvedTenantKeys: Record<string, Buffer> = {};
-      for (const [v, k] of Object.entries(resolvedTenantKeysRaw)) {
-        resolvedTenantKeys[v] = Buffer.from(k);
-      }
-
-      registerKeysForZeroization(resolvedTenantKeys, tId);
-
-      const tActiveVersion = tenantConfig.kms?.activeKeyVersion || '1';
-      const tActiveKey = resolvedTenantKeys[tActiveVersion];
-      if (!tActiveKey) {
-        throw new Error(`Vollcrypt Security: Active key version "${tActiveVersion}" not found for tenantId "${tId}".`);
-      }
-
-      for (const [ver, keyBuf] of Object.entries(resolvedTenantKeys)) {
-        setCachedKey(tId, ver, keyBuf, options.multiTenant?.cacheTtlMs);
-      }
-
-      return { keys: resolvedTenantKeys, activeKey: tActiveKey, activeVersion: tActiveVersion };
-    };
-
-    return resolveAsync();
-  };
+  const resolveTenantKeysAndActiveKeySyncOrAsync = createTenantKeyResolver(options, {
+    keys,
+    activeKey,
+    activeVersion
+  });
 
   // Pre-save document middleware (handles document.save(), Model.create())
   schema.pre('save', function (next) {
@@ -300,7 +220,7 @@ export function mongooseDbGuard(schema: Schema, options: MongooseDbGuardOptions)
             options
           );
         } catch (err) {
-          throw new Error(`Mongoose db-guard failed to decrypt field "${field}": ${(err as Error).message}`);
+          throw dbGuardError(`Mongoose db-guard failed to decrypt field "${field}": ${(err as Error).message}`);
         }
       }
     }

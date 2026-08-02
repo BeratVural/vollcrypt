@@ -1,23 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createDrizzleGuard = void 0;
+const errors_1 = require("./errors");
 const security_1 = require("./security");
-function getKeys(options) {
-    let keys;
-    let activeVersion;
-    if (Buffer.isBuffer(options.key)) {
-        keys = { '1': Buffer.from(options.key) };
-        activeVersion = '1';
-    }
-    else {
-        keys = {};
-        for (const [v, k] of Object.entries(options.key)) {
-            keys[v] = Buffer.from(k);
-        }
-        activeVersion = options.activeKeyVersion || Object.keys(keys)[0];
-    }
-    return { keys, activeVersion };
-}
+const keys_1 = require("./keys");
+/**
+ * Creates encrypted and blind-index Drizzle custom column types for supported SQL dialects.
+ */
 const createDrizzleGuard = (options) => {
     if (options.blindIndexes) {
         (0, security_1.validateBlindIndexConfiguration)(options.blindIndexes.rootSalt, options.blindIndexes.allowFrequencyLeakage);
@@ -25,11 +14,7 @@ const createDrizzleGuard = (options) => {
     const pgCustomType = require('drizzle-orm/pg-core').customType;
     const mysqlCustomType = require('drizzle-orm/mysql-core').customType;
     const sqliteCustomType = require('drizzle-orm/sqlite-core').customType;
-    const { keys, activeVersion } = getKeys(options);
-    const activeKey = keys[activeVersion];
-    if (!activeKey) {
-        throw new Error(`Active encryption key version "${activeVersion}" is not present in the key map.`);
-    }
+    const { keys, activeVersion, activeKey } = (0, keys_1.normalizeKeys)(options.key, options.activeKeyVersion);
     (0, security_1.registerKeysForZeroization)(keys);
     const rootSalt = options.blindIndexes?.rootSalt;
     return {
@@ -81,7 +66,7 @@ const createDrizzleGuard = (options) => {
             },
             toDriver(value) {
                 if (!rootSalt) {
-                    throw new Error('Blind index root salt is not configured in Drizzle guard options.');
+                    throw (0, errors_1.dbGuardError)('Blind index root salt is not configured in Drizzle guard options.');
                 }
                 return (0, security_1.computeBlindIndex)(value, rootSalt, columnName, options.blindIndexes.allowFrequencyLeakage);
             },
@@ -95,7 +80,7 @@ const createDrizzleGuard = (options) => {
             },
             toDriver(value) {
                 if (!rootSalt) {
-                    throw new Error('Blind index root salt is not configured in Drizzle guard options.');
+                    throw (0, errors_1.dbGuardError)('Blind index root salt is not configured in Drizzle guard options.');
                 }
                 return (0, security_1.computeBlindIndex)(value, rootSalt, columnName, options.blindIndexes.allowFrequencyLeakage);
             },
@@ -109,7 +94,7 @@ const createDrizzleGuard = (options) => {
             },
             toDriver(value) {
                 if (!rootSalt) {
-                    throw new Error('Blind index root salt is not configured in Drizzle guard options.');
+                    throw (0, errors_1.dbGuardError)('Blind index root salt is not configured in Drizzle guard options.');
                 }
                 return (0, security_1.computeBlindIndex)(value, rootSalt, columnName, options.blindIndexes.allowFrequencyLeakage);
             },

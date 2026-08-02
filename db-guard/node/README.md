@@ -209,7 +209,7 @@ import { Pkcs11KmsProvider } from '@vollcrypt/db-guard';
 
 const kmsProvider = new Pkcs11KmsProvider({
   libraryPath: '/usr/local/lib/softhsm/libsofthsm2.so', // Path to vendor PKCS#11 library
-  pin: process.env.PKCS11_PIN!,                       // Inject at runtime; never pass on the CLI
+  pin: () => Buffer.from(process.env.PKCS11_PIN!, 'utf8'), // Fresh buffer is zeroized after login
   slotId: 0,                                          // Target Slot Index (optional, default: 0)
   keyId: '000102',                                    // Hex-encoded CKA_ID of the AES-256 key in HSM
 });

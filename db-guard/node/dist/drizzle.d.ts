@@ -7,6 +7,9 @@ export interface DrizzleDbGuardOptions extends CommonDbGuardSecurityOptions {
         allowFrequencyLeakage: true;
     };
 }
+/**
+ * Creates encrypted and blind-index Drizzle custom column types for supported SQL dialects.
+ */
 export declare const createDrizzleGuard: (options: DrizzleDbGuardOptions) => {
     pgText: (name: string, columnPath?: string) => import("drizzle-orm/pg-core").PgCustomColumnBuilder<{
         name: string;

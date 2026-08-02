@@ -54,17 +54,23 @@ export declare class VaultKmsProvider implements KmsProvider {
  * Local Envelope Decryption wrapper using AES-256-Key-Wrap (AES-KW)
  */
 export declare function unwrapDekLocal(wrappedDek: Buffer, unwrappedKek: Buffer): Buffer;
+export type Pkcs11PinProvider = () => Buffer;
+export interface Pkcs11KmsProviderConfig {
+    libraryPath: string;
+    /**
+     * Returns a fresh mutable PIN buffer for one login attempt.
+     * The provider zeroizes the returned buffer immediately after C_Login.
+     */
+    pin: Pkcs11PinProvider;
+    slotId?: number;
+    keyId: string;
+}
 /**
- * On-Premises HSM Provider using the standard PKCS#11 protocol
+ * On-Premises HSM Provider using the standard PKCS#11 protocol.
  */
 export declare class Pkcs11KmsProvider implements KmsProvider {
     private config;
-    constructor(config: {
-        libraryPath: string;
-        pin: string;
-        slotId?: number;
-        keyId: string;
-    });
+    constructor(config: Pkcs11KmsProviderConfig);
     decrypt(ciphertext: Buffer): Promise<Buffer>;
 }
 export interface DbGuardKeysOptions {

@@ -1,7 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.resolveKeys = exports.addBlindIndexes = exports.rewriteQueryWhere = exports.decryptValue = exports.encryptValue = exports.prismaDbGuard = void 0;
-const kms_1 = require("./kms");
+const errors_1 = require("./errors");
+const keys_1 = require("./keys");
+const tenant_1 = require("./tenant");
 const security_1 = require("./security");
 /**
  * Prisma DbGuard Extension Factory
@@ -12,95 +14,20 @@ const prismaDbGuard = (options, resolvedKeys) => {
     if (options.blindIndexes) {
         (0, security_1.validateBlindIndexConfiguration)(options.blindIndexes.rootSalt, options.blindIndexes.allowFrequencyLeakage);
     }
-    let keys = resolvedKeys;
-    if (!keys) {
-        if (options.key) {
-            if (Buffer.isBuffer(options.key)) {
-                keys = { '1': Buffer.from(options.key) };
-            }
-            else {
-                keys = {};
-                for (const [v, k] of Object.entries(options.key)) {
-                    keys[v] = Buffer.from(k);
-                }
-            }
-        }
-        else if (options.kms || options.multiTenant) {
-            // Keys might be resolved dynamically per tenant, or resolved later
-        }
-        else {
-            throw new Error("Resolved keys must be provided as the second argument when using KMS.");
-        }
-    }
-    if (keys) {
-        const clonedKeys = {};
-        for (const [v, k] of Object.entries(keys)) {
-            clonedKeys[v] = Buffer.from(k);
-        }
-        keys = clonedKeys;
+    let keys;
+    let activeVersion = options.activeKeyVersion || options.kms?.activeKeyVersion || '1';
+    const initialKeys = resolvedKeys ?? options.key;
+    if (initialKeys) {
+        const normalized = (0, keys_1.normalizeKeys)(initialKeys, activeVersion);
+        keys = normalized.keys;
+        activeVersion = normalized.activeVersion;
         (0, security_1.registerKeysForZeroization)(keys);
     }
-    const activeVersion = options.activeKeyVersion || options.kms?.activeKeyVersion || '1';
-    const activeKey = keys ? keys[activeVersion] : undefined;
-    const resolveTenantKeysAndActiveKey = async (tenantId) => {
-        if (options.multiTenant && tenantId && (0, security_1.isBreakGlassActive)(tenantId)) {
-            const bgKey = (0, security_1.getBreakGlassKey)(tenantId);
-            if (bgKey) {
-                return { keys: { '1': bgKey }, activeKey: bgKey, activeVersion: '1' };
-            }
-        }
-        else if (!options.multiTenant && (0, security_1.isBreakGlassActive)()) {
-            const bgKey = (0, security_1.getBreakGlassKey)();
-            if (bgKey) {
-                return { keys: { '1': bgKey }, activeKey: bgKey, activeVersion: '1' };
-            }
-        }
-        if (options.multiTenant && !tenantId) {
-            throw new Error("Vollcrypt Security: tenantId must be provided in multi-tenant mode.");
-        }
-        if (!options.multiTenant) {
-            if (!keys || !activeKey) {
-                throw new Error("Vollcrypt Security: Global keys are not resolved.");
-            }
-            return { keys, activeKey, activeVersion };
-        }
-        const tId = tenantId;
-        // Check Secure TTL Cache
-        const cachedActiveKey = (0, security_1.getCachedKey)(tId, activeVersion);
-        if (cachedActiveKey) {
-            return { keys: { [activeVersion]: cachedActiveKey }, activeKey: cachedActiveKey, activeVersion };
-        }
-        // Cache miss: resolve configuration
-        let tenantConfig;
-        if (options.multiTenant.tenants) {
-            tenantConfig = options.multiTenant.tenants[tId];
-        }
-        else if (options.multiTenant.getTenantConfig) {
-            tenantConfig = await options.multiTenant.getTenantConfig(tId);
-        }
-        if (!tenantConfig) {
-            throw new Error(`Vollcrypt Security: Configuration not found for tenantId "${tId}".`);
-        }
-        const resolvedTenantKeysRaw = await (0, kms_1.resolveKeys)({
-            ...options,
-            key: tenantConfig.key,
-            kms: tenantConfig.kms
-        });
-        const resolvedTenantKeys = {};
-        for (const [v, k] of Object.entries(resolvedTenantKeysRaw)) {
-            resolvedTenantKeys[v] = Buffer.from(k);
-        }
-        (0, security_1.registerKeysForZeroization)(resolvedTenantKeys, tId);
-        const tActiveVersion = tenantConfig.kms?.activeKeyVersion || '1';
-        const tActiveKey = resolvedTenantKeys[tActiveVersion];
-        if (!tActiveKey) {
-            throw new Error(`Vollcrypt Security: Active key version "${tActiveVersion}" not found for tenantId "${tId}".`);
-        }
-        for (const [ver, keyBuf] of Object.entries(resolvedTenantKeys)) {
-            (0, security_1.setCachedKey)(tId, ver, keyBuf, options.multiTenant?.cacheTtlMs);
-        }
-        return { keys: resolvedTenantKeys, activeKey: tActiveKey, activeVersion: tActiveVersion };
-    };
+    else if (!options.kms && !options.multiTenant) {
+        throw (0, errors_1.dbGuardError)('Resolved keys must be provided as the second argument when using KMS.');
+    }
+    const activeKey = keys?.[activeVersion];
+    const resolveTenantKeysAndActiveKey = (0, tenant_1.createTenantKeyResolver)(options, keys && activeKey ? { keys, activeKey, activeVersion } : undefined);
     const encryptPayload = (modelName, data, encKey, encVer) => {
         const fieldsToEncrypt = options.models[modelName];
         if (!fieldsToEncrypt || !data || typeof data !== 'object')
@@ -263,5 +190,5 @@ Object.defineProperty(exports, "encryptValue", { enumerable: true, get: function
 Object.defineProperty(exports, "decryptValue", { enumerable: true, get: function () { return security_2.decryptValue; } });
 Object.defineProperty(exports, "rewriteQueryWhere", { enumerable: true, get: function () { return security_2.rewriteQueryWhere; } });
 Object.defineProperty(exports, "addBlindIndexes", { enumerable: true, get: function () { return security_2.addBlindIndexes; } });
-var kms_2 = require("./kms");
-Object.defineProperty(exports, "resolveKeys", { enumerable: true, get: function () { return kms_2.resolveKeys; } });
+var kms_1 = require("./kms");
+Object.defineProperty(exports, "resolveKeys", { enumerable: true, get: function () { return kms_1.resolveKeys; } });

@@ -35,33 +35,18 @@ var __runInitializers = (this && this.__runInitializers) || function (thisArg, i
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createTypeOrmSubscriber = createTypeOrmSubscriber;
+const errors_1 = require("./errors");
 const security_1 = require("./security");
-function getKeys(options) {
-    let keys;
-    let activeVersion;
-    if (Buffer.isBuffer(options.key)) {
-        keys = { '1': Buffer.from(options.key) };
-        activeVersion = '1';
-    }
-    else {
-        keys = {};
-        for (const [v, k] of Object.entries(options.key)) {
-            keys[v] = Buffer.from(k);
-        }
-        activeVersion = options.activeKeyVersion || Object.keys(keys)[0];
-    }
-    return { keys, activeVersion };
-}
+const keys_1 = require("./keys");
+/**
+ * Creates a TypeORM subscriber that encrypts configured fields before writes and decrypts after loads.
+ */
 function createTypeOrmSubscriber(options) {
     if (options.blindIndexes) {
         (0, security_1.validateBlindIndexConfiguration)(options.blindIndexes.rootSalt, options.blindIndexes.allowFrequencyLeakage);
     }
     const { EventSubscriber } = require('typeorm');
-    const { keys, activeVersion } = getKeys(options);
-    const activeKey = keys[activeVersion];
-    if (!activeKey) {
-        throw new Error(`Active encryption key version "${activeVersion}" is not present in the key map.`);
-    }
+    const { keys, activeVersion, activeKey } = (0, keys_1.normalizeKeys)(options.key, options.activeKeyVersion);
     (0, security_1.registerKeysForZeroization)(keys);
     let VollcryptDbGuardSubscriber = (() => {
         let _classDecorators = [EventSubscriber()];
@@ -140,7 +125,7 @@ function createTypeOrmSubscriber(options) {
                                 entity[field] = (0, security_1.decryptWithSecurity)(entity[field], (val) => (0, security_1.decryptValue)(val, keys), entityName, field, entity.id || entity._id, options);
                             }
                             catch (err) {
-                                throw new Error(`TypeORM db-guard failed to decrypt field "${field}": ${err.message}`);
+                                throw (0, errors_1.dbGuardError)(`TypeORM db-guard failed to decrypt field "${field}": ${err.message}`);
                             }
                         }
                     }
