@@ -2031,8 +2031,6 @@ struct SecurePreviewSession {
     data: Vec<u8>,
     dek: [u8; 32],
     is_folder: bool,
-    mime_type: String,
-    filename: String,
     files: Vec<VdaEntryInfo>,
 }
 
@@ -2419,8 +2417,6 @@ pub async fn secure_preview_init(
             data,
             dek,
             is_folder,
-            mime_type: mime_type.clone(),
-            filename: clean_filename.clone(),
             files,
         };
 
