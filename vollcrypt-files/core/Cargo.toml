@@ -10,7 +10,7 @@ rand = "0.8"
 argon2 = "0.5"
 aes-gcm = "0.10"
 hkdf = "0.12"
-sha2 = "0.10"
+sha2 = "0.11"
 sha3 = "0.10"
 blake3 = "1"
 zeroize = { version = "1", features = ["zeroize_derive"] }
