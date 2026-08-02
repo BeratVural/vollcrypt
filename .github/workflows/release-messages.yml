@@ -193,7 +193,7 @@ jobs:
           path: dist-packages
 
       - name: Publish with npm provenance
-        run: npm publish dist-packages/*.tgz --access public --provenance
+        run: npm publish ./dist-packages/*.tgz --access public --provenance
 
   publish-messages-wasm:
     name: Publish @vollcrypt/messages-wasm
@@ -215,4 +215,4 @@ jobs:
           path: dist-packages
 
       - name: Publish with npm provenance
-        run: npm publish dist-packages/*.tgz --access public --provenance
+        run: npm publish ./dist-packages/*.tgz --access public --provenance

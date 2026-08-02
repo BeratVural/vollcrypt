@@ -76,7 +76,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: db-proxy
-        run: npm ci
+        run: npm ci --workspaces=false
 
       - name: Test
         working-directory: db-proxy
@@ -88,7 +88,7 @@ jobs:
 
       - name: Generate CycloneDX SBOM
         working-directory: db-proxy
-        run: npm sbom --sbom-format cyclonedx --omit=dev > sbom.cdx.json
+        run: npm sbom --workspaces=false --sbom-format cyclonedx --omit=dev > sbom.cdx.json
 
       - name: Create npm package
         run: |
@@ -133,7 +133,7 @@ jobs:
           path: dist-packages
 
       - name: Publish with npm provenance
-        run: npm publish dist-packages/*.tgz --access public --provenance
+        run: npm publish ./dist-packages/*.tgz --access public --provenance
 
   publish-db-proxy:
     name: Publish @vollcrypt/db-proxy
@@ -157,4 +157,4 @@ jobs:
           path: dist-packages
 
       - name: Publish with npm provenance
-        run: npm publish dist-packages/*.tgz --access public --provenance
+        run: npm publish ./dist-packages/*.tgz --access public --provenance
