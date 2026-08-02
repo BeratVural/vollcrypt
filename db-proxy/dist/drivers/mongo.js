@@ -33,14 +33,15 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.decryptBsonObject = void 0;
 exports.parseBson = parseBson;
 exports.serializeBson = serializeBson;
-exports.decryptBsonObject = decryptBsonObject;
+exports.decryptMongoResponse = decryptMongoResponse;
 exports.serializeMongoError = serializeMongoError;
 exports.handleMongoConnection = handleMongoConnection;
 const net = __importStar(require("net"));
-const db_guard_1 = require("@vollcrypt/db-guard");
 const auth_js_1 = require("../auth.js");
+const common_js_1 = require("./common.js");
 function mongoCommandHasTenantValue(value, tenantId) {
     if (!value || typeof value !== 'object')
         return false;
@@ -69,6 +70,7 @@ function ensureTenantScopedMongoCommand(commandDoc, tenantId) {
         throw new Error('Tenant isolation required: MongoDB command must include tenant_id or tenantId matching this connection');
     }
 }
+/** Parses one BSON document and returns its next byte offset. */
 function parseBson(buf, offset = 0) {
     const size = buf.readInt32LE(offset);
     const end = offset + size;
@@ -131,6 +133,7 @@ function parseBson(buf, offset = 0) {
     }
     return { value: obj, nextOffset: end };
 }
+/** Serializes a JavaScript document into BSON bytes. */
 function serializeBson(obj) {
     const buffers = [];
     for (const [key, val] of Object.entries(obj)) {
@@ -187,42 +190,29 @@ function serializeBson(obj) {
     sizeBuf.writeInt32LE(elements.length + 5, 0);
     return Buffer.concat([sizeBuf, elements, Buffer.from([0x00])]);
 }
-function decryptBsonObject(obj, keys, role = 'GUEST', userId = 'guest-user', tenantId, config, depth = 0, collectionName = 'default') {
-    if (depth > 5)
-        return obj; // Prevent stack overflows
-    if (obj === null || obj === undefined)
-        return obj;
-    if (Array.isArray(obj)) {
-        return obj.map((item) => decryptBsonObject(item, keys, role, userId, tenantId, config, depth + 1, collectionName));
-    }
-    if (typeof obj === 'object' && !Buffer.isBuffer(obj)) {
-        const copy = {};
-        for (const [k, v] of Object.entries(obj)) {
-            if (typeof v === 'string' && v.startsWith('VOLLVALT:')) {
-                try {
-                    copy[k] = db_guard_1.dbGuardContextStore.run({
-                        role,
-                        userId,
-                        tenantId,
-                        maxDecryptionsPerSecond: config?.rateLimiter?.maxDecryptionsPerSecond,
-                        rateLimiterMode: config?.rateLimiter?.mode,
-                    }, () => (0, db_guard_1.decryptWithSecurity)(v, (cipherText) => (0, db_guard_1.decryptValue)(cipherText, keys), collectionName, k, undefined, {
-                        cryptoRbac: (0, auth_js_1.getRbacConfig)(config),
-                        rateLimiter: config?.rateLimiter,
-                    }));
-                }
-                catch (err) {
-                    throw err;
-                }
-            }
-            else {
-                copy[k] = decryptBsonObject(v, keys, role, userId, tenantId, config, depth + 1, collectionName);
-            }
-        }
-        return copy;
-    }
-    return obj;
+/** Decrypts encrypted values in a MongoDB response document. */
+function decryptMongoResponse(obj, keys, role = 'GUEST', userId = 'guest-user', tenantId, config, collectionName = 'default') {
+    return decryptMongoValue(obj, { keys, role, userId, tenantId, config }, collectionName, 0);
 }
+function decryptMongoValue(value, context, collectionName, depth) {
+    if (depth > 5 || value === null || value === undefined)
+        return value;
+    if (Array.isArray(value)) {
+        return value.map((item) => decryptMongoValue(item, context, collectionName, depth + 1));
+    }
+    if (typeof value !== 'object' || Buffer.isBuffer(value))
+        return value;
+    const copy = {};
+    for (const [field, nested] of Object.entries(value)) {
+        copy[field] = typeof nested === 'string' && nested.startsWith('VOLLVALT:')
+            ? (0, common_js_1.decryptDriverValue)(nested, collectionName, field, context)
+            : decryptMongoValue(nested, context, collectionName, depth + 1);
+    }
+    return copy;
+}
+/** @deprecated Use decryptMongoResponse. */
+exports.decryptBsonObject = decryptMongoResponse;
+/** Serializes a MongoDB OP_MSG authorization error. */
 function serializeMongoError(message, code = 13) {
     const okName = Buffer.from('ok\0', 'ascii');
     const okVal = Buffer.alloc(8);
@@ -252,12 +242,11 @@ function serializeMongoError(message, code = 13) {
     header[20] = 0x00;
     return Buffer.concat([header, bsonDoc]);
 }
+/** Proxies one MongoDB connection with command filtering and decryption. */
 function handleMongoConnection(clientSocket, options) {
     let connected = false;
     const queue = [];
-    let currentRole = options.role;
-    let currentUserId = options.role === 'OWNER' ? 'usr-admin' : 'guest-user';
-    let currentTenantId;
+    let currentUser = (0, common_js_1.createInitialUserContext)(options.role);
     let currentCollection = 'default';
     const backendSocket = net.connect({
         host: options.dbHost,
@@ -281,7 +270,7 @@ function handleMongoConnection(clientSocket, options) {
                     if (sectionType === 0x00) {
                         const bsonOffset = 21;
                         const { value: parsedDoc } = parseBson(data, bsonOffset);
-                        const decryptedDoc = decryptBsonObject(parsedDoc, options.resolvedKeys, currentRole, currentUserId, currentTenantId, options.config, 0, currentCollection);
+                        const decryptedDoc = decryptMongoResponse(parsedDoc, options.resolvedKeys, currentUser.role, currentUser.userId, currentUser.tenantId, options.config, currentCollection);
                         const newBson = serializeBson(decryptedDoc);
                         const newMsg = Buffer.alloc(21 + newBson.length);
                         newMsg.writeInt32LE(newMsg.length, 0);
@@ -336,14 +325,11 @@ function handleMongoConnection(clientSocket, options) {
                                     const match = payloadStr.match(/\bn=([^,]+)/);
                                     if (match && match[1]) {
                                         const username = match[1];
-                                        const userContext = (0, auth_js_1.resolveUserContext)(username, options.config);
-                                        currentUserId = userContext.userId;
-                                        currentRole = userContext.role;
-                                        currentTenantId = userContext.tenantId;
+                                        currentUser = (0, auth_js_1.resolveUserContext)(username, options.config);
                                     }
                                 }
                             }
-                            ensureTenantScopedMongoCommand(commandDoc, currentTenantId);
+                            ensureTenantScopedMongoCommand(commandDoc, currentUser.tenantId);
                         }
                         catch (e) {
                             const msg = e.message || 'MongoDB request parsing failed';

@@ -33,15 +33,17 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.decryptMysqlRow = void 0;
 exports.serializeMysqlError = serializeMysqlError;
 exports.parseLengthEncodedString = parseLengthEncodedString;
 exports.serializeLengthEncodedString = serializeLengthEncodedString;
-exports.decryptMysqlRow = decryptMysqlRow;
+exports.decryptMysqlResponse = decryptMysqlResponse;
 exports.handleMysqlConnection = handleMysqlConnection;
 const net = __importStar(require("net"));
 const waf_js_1 = require("../waf.js");
-const db_guard_1 = require("@vollcrypt/db-guard");
 const auth_js_1 = require("../auth.js");
+const common_js_1 = require("./common.js");
+/** Serializes a MySQL protocol error packet. */
 function serializeMysqlError(message, code = 1142, sqlState = '42000') {
     const msgBuf = Buffer.from(message, 'utf8');
     const body = Buffer.alloc(9 + msgBuf.length);
@@ -55,6 +57,7 @@ function serializeMysqlError(message, code = 1142, sqlState = '42000') {
     header[3] = 1; // Sequence ID
     return Buffer.concat([header, body]);
 }
+/** Parses one MySQL length-encoded string from a packet. */
 function parseLengthEncodedString(buf, offset) {
     if (offset >= buf.length) {
         return { value: null, nextOffset: offset };
@@ -86,6 +89,7 @@ function parseLengthEncodedString(buf, offset) {
     const value = buf.toString('utf8', nextOffset, nextOffset + len);
     return { value, nextOffset: nextOffset + len };
 }
+/** Serializes one value using the MySQL length-encoded string format. */
 function serializeLengthEncodedString(value) {
     if (value === null) {
         return Buffer.from([0xfb]);
@@ -113,7 +117,8 @@ function serializeLengthEncodedString(value) {
     }
     return Buffer.concat([lenBuf, strBuf]);
 }
-function decryptMysqlRow(packet, keys, role = 'GUEST', userId = 'guest-user', tenantId, config, modelName = 'default', columns = []) {
+/** Decrypts encrypted cells in a MySQL text-row response packet. */
+function decryptMysqlResponse(packet, keys, role = 'GUEST', userId = 'guest-user', tenantId, config, modelName = 'default', columns = []) {
     if (packet.length < 5)
         return packet;
     const payloadLen = packet.readUIntLE(0, 3);
@@ -139,23 +144,8 @@ function decryptMysqlRow(packet, keys, role = 'GUEST', userId = 'guest-user', te
         if (cell && cell.startsWith('VOLLVALT:')) {
             modified = true;
             try {
-                let fieldName = columns[idx] || `col_${idx}`;
-                let model = modelName;
-                if (fieldName.includes('.')) {
-                    const parts = fieldName.split('.');
-                    fieldName = parts[parts.length - 1];
-                    model = parts[0] === 'u' || parts[0] === 't' ? modelName : parts[0];
-                }
-                const val = db_guard_1.dbGuardContextStore.run({
-                    role,
-                    userId,
-                    tenantId,
-                    maxDecryptionsPerSecond: config?.rateLimiter?.maxDecryptionsPerSecond,
-                    rateLimiterMode: config?.rateLimiter?.mode,
-                }, () => (0, db_guard_1.decryptWithSecurity)(cell, (cipherText) => (0, db_guard_1.decryptValue)(cipherText, keys), model, fieldName, undefined, {
-                    cryptoRbac: (0, auth_js_1.getRbacConfig)(config),
-                    rateLimiter: config?.rateLimiter,
-                }));
+                const { field, model } = (0, common_js_1.resolveProjectedField)(columns[idx], modelName, `col_${idx}`);
+                const val = (0, common_js_1.decryptDriverValue)(cell, model, field, { keys, role, userId, tenantId, config });
                 idx++;
                 return val;
             }
@@ -175,12 +165,13 @@ function decryptMysqlRow(packet, keys, role = 'GUEST', userId = 'guest-user', te
     header[3] = seqId;
     return Buffer.concat([header, newPayload]);
 }
+/** @deprecated Use decryptMysqlResponse. */
+exports.decryptMysqlRow = decryptMysqlResponse;
+/** Proxies one MySQL client connection with WAF and response decryption. */
 function handleMysqlConnection(clientSocket, options) {
     let connected = false;
     const queue = [];
-    let currentRole = options.role;
-    let currentUserId = options.role === 'OWNER' ? 'usr-admin' : 'guest-user';
-    let currentTenantId;
+    let currentUser = (0, common_js_1.createInitialUserContext)(options.role);
     let currentTable = 'default';
     let currentColumns = [];
     const backendSocket = net.connect({
@@ -199,7 +190,7 @@ function handleMysqlConnection(clientSocket, options) {
         // Attempt decryption on MySQL response rows
         let processedData = data;
         try {
-            processedData = decryptMysqlRow(data, options.resolvedKeys, currentRole, currentUserId, currentTenantId, options.config, currentTable, currentColumns);
+            processedData = decryptMysqlResponse(data, options.resolvedKeys, currentUser.role, currentUser.userId, currentUser.tenantId, options.config, currentTable, currentColumns);
         }
         catch (err) {
             options.logSiem('MYSQL_DECRYPT_ERROR', 8, `MySQL decryption error: ${err.message}`);
@@ -228,19 +219,16 @@ function handleMysqlConnection(clientSocket, options) {
                 }
                 if (usernameEnd > 36 && usernameEnd < data.length) {
                     const username = data.toString('utf8', 36, usernameEnd);
-                    const userContext = (0, auth_js_1.resolveUserContext)(username, options.config);
-                    currentUserId = userContext.userId;
-                    currentRole = userContext.role;
-                    currentTenantId = userContext.tenantId;
+                    currentUser = (0, auth_js_1.resolveUserContext)(username, options.config);
                 }
             }
             if (command === 0x03 || command === 0x16) { // COM_QUERY or COM_STMT_PREPARE
                 const query = data.toString('utf8', 5, 4 + packetLen);
                 try {
                     if (!options.noWaf) {
-                        (0, waf_js_1.validateQuery)(query, currentRole);
+                        (0, waf_js_1.validateQuery)(query, currentUser.role);
                     }
-                    (0, waf_js_1.ensureTenantScopedQuery)(query, currentTenantId);
+                    (0, waf_js_1.ensureTenantScopedQuery)(query, currentUser.tenantId);
                 }
                 catch (err) {
                     options.logSiem('WAF_MYSQL_BLOCK', 9, `MySQL WAF violation blocked: ${err.message}`);

@@ -142,6 +142,7 @@ export class FipsStartupError extends Error {
   }
 }
 
+/** Serializes a JSON-compatible value with deterministic object key ordering. */
 export function canonicalizeJson(value: unknown): string {
   const seen = new WeakSet<object>();
 
@@ -197,6 +198,7 @@ export interface ClusterMessage {
   signature?: string;
 }
 
+/** Authenticated gossip transport for DB Proxy cluster events. */
 export class ClusterManager {
   private server: net.Server | null = null;
   private peerSockets = new Map<string, net.Socket>();
@@ -262,6 +264,7 @@ export class ClusterManager {
     }
   }
 
+  /** Starts the authenticated gossip listener and heartbeat loop. */
   public async start(): Promise<void> {
     if (!this.gossipPort) return;
 
@@ -310,6 +313,7 @@ export class ClusterManager {
     }, 1000);
   }
 
+  /** Signs and broadcasts a cluster message to configured peers. */
   public broadcast(msg: ClusterMessage) {
     if (!msg.timestamp) {
       msg.timestamp = Date.now();
@@ -340,6 +344,7 @@ export class ClusterManager {
     }
   }
 
+  /** Stops gossip I/O and destroys all peer sockets. */
   public stop() {
     if (this.server) {
       this.server.close();
@@ -392,6 +397,7 @@ interface PostgresConnectionRuntime {
   activeClientSocket: net.Socket | tls.TLSSocket;
   clientIp: string;
 }
+/** Multi-protocol database proxy enforcing Vollcrypt security controls. */
 export class DbProxyServer {
   private server: net.Server | null = null;
   private activeConnections = new Set<net.Socket>();
@@ -411,6 +417,7 @@ export class DbProxyServer {
     return this.options.gossipPort !== undefined || this.options.peers !== undefined;
   }
 
+  /** Registers a process-local SSO session when cluster mode is disabled. */
   public registerSsoSession(username: string, passcode: string, roles: string[], ttlMs: number = 900000) {
     if (this.isClusterModeConfigured()) {
       throw new Error('Cluster mode cannot use process-local SSO sessions; configure a distributed authorization service');
@@ -422,6 +429,7 @@ export class DbProxyServer {
     });
   }
 
+  /** Registers a temporary process-local JIT role grant. */
   public registerJitGrant(userId: string, role: string, durationMs: number) {
     if (this.isClusterModeConfigured()) {
       throw new Error('Cluster mode cannot use process-local JIT grants; configure a distributed authorization service');
@@ -432,6 +440,7 @@ export class DbProxyServer {
     });
   }
 
+  /** Writes a redacted CEF event to the configured SIEM log. */
   public logSiemEvent(event: string, severity: number, username: string, clientIp: string, message: string) {
     const timestamp = new Date().toISOString();
     const cleanIp = sanitizeCef(clientIp);
@@ -449,6 +458,7 @@ export class DbProxyServer {
     }
   }
 
+  /** Closes tenant-scoped or global connections and zeroizes global keys. */
   public triggerFailClosed(tenantId?: string) {
     if (tenantId) {
       this.logSiemEvent('FAIL_CLOSED_TRIGGERED', 10, 'system', '127.0.0.1', `Tenant-scoped fail-closed triggered for tenant ${tenantId}. Closing only matching active connections.`);
@@ -539,6 +549,7 @@ export class DbProxyServer {
     }
   }
 
+  /** Validates runtime security prerequisites and starts the proxy listener. */
   public async start(): Promise<void> {
     if (this.options.fipsMode) {
       let fipsActive = false;
@@ -727,6 +738,7 @@ export class DbProxyServer {
     });
   }
 
+  /** Stops listeners, cluster transport, and active connections. */
   public stop(): Promise<void> {
     return new Promise((resolve) => {
       for (const socket of this.activeConnections) {
@@ -1135,7 +1147,7 @@ export class DbProxyServer {
                 this.logSiemEvent('WAF_BLOCK', 8, runtime.originalUsername || 'guest', socket.remoteAddress || '127.0.0.1', violationMsg);
 
                 // Add to local ban list and broadcast to cluster if enabled
-                const ipBanEnabled = (this.options.config as any)?.firewall?.ipBanning?.enabled;
+                const ipBanEnabled = this.options.config?.firewall?.ipBanning?.enabled;
                 if (ipBanEnabled) {
                   const bannedClientIp = socket.remoteAddress || '127.0.0.1';
                   this.bannedIps.add(bannedClientIp);
@@ -1287,7 +1299,7 @@ export class DbProxyServer {
                         undefined,
                         {
                           cryptoRbac: getRbacConfig(this.options.config),
-                          rateLimiter: (this.options.config as any)?.rateLimiter,
+                          rateLimiter: this.options.config?.rateLimiter,
                         }
                       );
                     }

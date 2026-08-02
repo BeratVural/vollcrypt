@@ -167,6 +167,7 @@ function canonicalizeJson(value) {
     };
     return encode(value);
 }
+/** Authenticated gossip transport for DB Proxy cluster events. */
 class ClusterManager {
     nodeId;
     gossipPort;
@@ -229,6 +230,7 @@ class ClusterManager {
             return false;
         }
     }
+    /** Starts the authenticated gossip listener and heartbeat loop. */
     async start() {
         if (!this.gossipPort)
             return;
@@ -276,6 +278,7 @@ class ClusterManager {
             });
         }, 1000);
     }
+    /** Signs and broadcasts a cluster message to configured peers. */
     broadcast(msg) {
         if (!msg.timestamp) {
             msg.timestamp = Date.now();
@@ -307,6 +310,7 @@ class ClusterManager {
             }
         }
     }
+    /** Stops gossip I/O and destroys all peer sockets. */
     stop() {
         if (this.server) {
             this.server.close();
@@ -329,6 +333,7 @@ function redactLogMessage(str) {
 function sanitizeCef(str) {
     return str.replace(/[\r\n]/g, ' ').replace(/\|/g, '\\|').replace(/\\/g, '\\\\');
 }
+/** Multi-protocol database proxy enforcing Vollcrypt security controls. */
 class DbProxyServer {
     options;
     server = null;
@@ -346,6 +351,7 @@ class DbProxyServer {
     isClusterModeConfigured() {
         return this.options.gossipPort !== undefined || this.options.peers !== undefined;
     }
+    /** Registers a process-local SSO session when cluster mode is disabled. */
     registerSsoSession(username, passcode, roles, ttlMs = 900000) {
         if (this.isClusterModeConfigured()) {
             throw new Error('Cluster mode cannot use process-local SSO sessions; configure a distributed authorization service');
@@ -356,6 +362,7 @@ class DbProxyServer {
             roles,
         });
     }
+    /** Registers a temporary process-local JIT role grant. */
     registerJitGrant(userId, role, durationMs) {
         if (this.isClusterModeConfigured()) {
             throw new Error('Cluster mode cannot use process-local JIT grants; configure a distributed authorization service');
@@ -365,6 +372,7 @@ class DbProxyServer {
             expiresAt: Date.now() + durationMs,
         });
     }
+    /** Writes a redacted CEF event to the configured SIEM log. */
     logSiemEvent(event, severity, username, clientIp, message) {
         const timestamp = new Date().toISOString();
         const cleanIp = sanitizeCef(clientIp);
@@ -382,6 +390,7 @@ class DbProxyServer {
             console.error('Failed to write SIEM CEF log:', err);
         }
     }
+    /** Closes tenant-scoped or global connections and zeroizes global keys. */
     triggerFailClosed(tenantId) {
         if (tenantId) {
             this.logSiemEvent('FAIL_CLOSED_TRIGGERED', 10, 'system', '127.0.0.1', `Tenant-scoped fail-closed triggered for tenant ${tenantId}. Closing only matching active connections.`);
@@ -469,6 +478,7 @@ class DbProxyServer {
             }
         }
     }
+    /** Validates runtime security prerequisites and starts the proxy listener. */
     async start() {
         if (this.options.fipsMode) {
             let fipsActive = false;
@@ -622,6 +632,7 @@ class DbProxyServer {
             });
         });
     }
+    /** Stops listeners, cluster transport, and active connections. */
     stop() {
         return new Promise((resolve) => {
             for (const socket of this.activeConnections) {

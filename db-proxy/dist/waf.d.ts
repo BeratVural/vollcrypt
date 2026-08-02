@@ -1,6 +1,4 @@
-/**
- * Database Web Application Firewall (WAF) & SQLi protection rules.
- */
+import type { ProxyConfig } from './auth.js';
 /**
  * Normalizes SQL queries by stripping comments and collapsing delimiters.
  * Prevents WAF bypasses using comment delimiters (e.g. DROP comments block TABLE).
@@ -20,16 +18,13 @@ export declare function generateFingerprint(query: string): string;
  */
 export declare function evaluateThreatScore(query: string): number;
 /**
- * Rewrites SQL queries to inject RLS tenant isolation and database-level masking rules.
- */
-/**
  * Tokenizes SQL query string to isolate strings and symbols.
  */
 export declare function tokenizeSql(sql: string): string[];
 /**
  * Rewrites SQL queries to inject RLS tenant isolation and database-level masking rules.
  */
-export declare function rewriteQuery(sql: string, role: string, tenantId: string | undefined, config: any): string;
+export declare function rewriteQuery(sql: string, role: string, tenantId: string | undefined, config: ProxyConfig | undefined): string;
 /**
  * Enforces fail-closed tenant scoping for non-PostgreSQL drivers.
  */
@@ -38,6 +33,9 @@ export declare function ensureTenantScopedQuery(sql: string, tenantId: string | 
  * Generates Laplace noise for Differential Privacy.
  */
 export declare function generateLaplaceNoise(scale: number): number;
+/** Identifies aggregate positions in a SQL projection. */
 export declare function identifyAggregates(sql: string): boolean[];
+/** Extracts source projection columns for field-level RBAC mapping. */
 export declare function extractProjectionColumns(sql: string): string[];
+/** Extracts the primary source table from a SQL statement. */
 export declare function extractTableName(sql: string): string;

@@ -1,5 +1,6 @@
 import { DbProxyServer, DbProxyOptions } from './proxy.js';
-import { resolveKeys } from '@vollcrypt/db-guard';
+import { resolveKeys, type DbGuardKeysOptions } from '@vollcrypt/db-guard';
+import type { ProxyConfig } from './auth.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
@@ -7,6 +8,12 @@ import * as readline from 'readline';
 export * from './pg-protocol.js';
 export * from './auth.js';
 export * from './proxy.js';
+
+interface CliProxyConfig extends ProxyConfig {
+  key?: string;
+  kms?: DbGuardKeysOptions['kms'];
+  tls?: DbProxyOptions['tls'];
+}
 
 // CLI entry point detection
 function isMain(): boolean {
@@ -252,7 +259,12 @@ async function runCli() {
     } else if (args[i] === '--no-anomaly') {
       anomalyEngine = false;
     } else if (args[i] === '--db-type' && args[i + 1]) {
-      dbType = args[i + 1] as any;
+      const requestedDbType = args[i + 1];
+      const supportedDbTypes = ['postgres', 'mysql', 'mongodb', 'mssql', 'oracle'] as const;
+      if (!supportedDbTypes.includes(requestedDbType as typeof supportedDbTypes[number])) {
+        throw new Error(`Unsupported --db-type "${requestedDbType}"`);
+      }
+      dbType = requestedDbType as typeof supportedDbTypes[number];
       i++;
     } else if (args[i] === '--gossip-port' && args[i + 1]) {
       gossipPort = parseInt(args[i + 1], 10);
@@ -305,11 +317,16 @@ async function runCli() {
   }
 
   // Load config JSON if provided
-  let config: any = undefined;
+  let config: CliProxyConfig | undefined;
   if (configPath) {
     const fullPath = path.resolve(configPath);
     if (fs.existsSync(fullPath)) {
-      config = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+      const parsedConfig: unknown = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+      if (!parsedConfig || typeof parsedConfig !== 'object' || Array.isArray(parsedConfig)) {
+        throw new Error('Proxy config must be a JSON object');
+      }
+      config = parsedConfig as CliProxyConfig;
+      config.users ??= {};
     }
   }
 
@@ -319,11 +336,14 @@ async function runCli() {
     if (fipsMode) config.firewall.fipsMode = true;
     if (jitApprovalRequired) config.firewall.jitApprovalRequired = true;
     if (anomalyEngine) {
-      if (!config.firewall.anomalyEngine) config.firewall.anomalyEngine = {};
-      config.firewall.anomalyEngine.enabled = true;
+      config.firewall.anomalyEngine = {
+        ...config.firewall.anomalyEngine,
+        enabled: true,
+      };
     }
   } else {
     config = {
+      users: {},
       firewall: {
         fipsMode,
         jitApprovalRequired,

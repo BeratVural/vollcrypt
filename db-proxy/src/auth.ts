@@ -1,3 +1,5 @@
+import type { RateLimiterOptions } from '@vollcrypt/db-guard';
+
 export interface ProxyUserContext {
   userId: string;
   role: string;
@@ -5,6 +7,8 @@ export interface ProxyUserContext {
 }
 
 export interface FirewallConfig {
+  fipsMode?: boolean;
+  ipBanning?: { enabled: boolean };
   versionMask?: string;
   maxRowsPerQuery?: number;
   temporalConstraints?: Record<string, { startHour: number; endHour: number; allowedDays: number[] }>;
@@ -35,7 +39,7 @@ export interface ProxyConfig {
       }
     >;
   };
-  rateLimiter?: any;
+  rateLimiter?: RateLimiterOptions;
   firewall?: FirewallConfig;
 }
 

@@ -271,7 +271,12 @@ async function runCli() {
             anomalyEngine = false;
         }
         else if (args[i] === '--db-type' && args[i + 1]) {
-            dbType = args[i + 1];
+            const requestedDbType = args[i + 1];
+            const supportedDbTypes = ['postgres', 'mysql', 'mongodb', 'mssql', 'oracle'];
+            if (!supportedDbTypes.includes(requestedDbType)) {
+                throw new Error(`Unsupported --db-type "${requestedDbType}"`);
+            }
+            dbType = requestedDbType;
             i++;
         }
         else if (args[i] === '--gossip-port' && args[i + 1]) {
@@ -327,11 +332,16 @@ async function runCli() {
         anomalyEngine = selected.anomalyEngine;
     }
     // Load config JSON if provided
-    let config = undefined;
+    let config;
     if (configPath) {
         const fullPath = path.resolve(configPath);
         if (fs.existsSync(fullPath)) {
-            config = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+            const parsedConfig = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+            if (!parsedConfig || typeof parsedConfig !== 'object' || Array.isArray(parsedConfig)) {
+                throw new Error('Proxy config must be a JSON object');
+            }
+            config = parsedConfig;
+            config.users ??= {};
         }
     }
     // Merge config overrides
@@ -343,13 +353,15 @@ async function runCli() {
         if (jitApprovalRequired)
             config.firewall.jitApprovalRequired = true;
         if (anomalyEngine) {
-            if (!config.firewall.anomalyEngine)
-                config.firewall.anomalyEngine = {};
-            config.firewall.anomalyEngine.enabled = true;
+            config.firewall.anomalyEngine = {
+                ...config.firewall.anomalyEngine,
+                enabled: true,
+            };
         }
     }
     else {
         config = {
+            users: {},
             firewall: {
                 fipsMode,
                 jitApprovalRequired,

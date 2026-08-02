@@ -1,9 +1,14 @@
+import type { RateLimiterOptions } from '@vollcrypt/db-guard';
 export interface ProxyUserContext {
     userId: string;
     role: string;
     tenantId?: string;
 }
 export interface FirewallConfig {
+    fipsMode?: boolean;
+    ipBanning?: {
+        enabled: boolean;
+    };
     versionMask?: string;
     maxRowsPerQuery?: number;
     temporalConstraints?: Record<string, {
@@ -40,7 +45,7 @@ export interface ProxyConfig {
             mask?: Record<string, 'credit_card' | 'email' | 'tc_no' | string>;
         }>;
     };
-    rateLimiter?: any;
+    rateLimiter?: RateLimiterOptions;
     firewall?: FirewallConfig;
 }
 /**

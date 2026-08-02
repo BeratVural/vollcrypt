@@ -1,8 +1,9 @@
 import * as net from 'net';
 import { validateQuery, ensureTenantScopedQuery, extractProjectionColumns, extractTableName } from '../waf.js';
-import { decryptValue, decryptWithSecurity, dbGuardContextStore } from '@vollcrypt/db-guard';
-import { getRbacConfig, resolveUserContext } from '../auth.js';
+import { resolveUserContext, type ProxyConfig } from '../auth.js';
+import { createInitialUserContext, decryptDriverValue, resolveProjectedField, type DriverConnectionOptions } from './common.js';
 
+/** Serializes an Oracle TNS refusal packet. */
 export function serializeOracleError(message: string): Buffer {
   const msgBuf = Buffer.from(message, 'ascii');
   const payload = Buffer.alloc(2 + msgBuf.length);
@@ -17,13 +18,14 @@ export function serializeOracleError(message: string): Buffer {
   return Buffer.concat([header, payload]);
 }
 
+/** Decrypts encrypted values in an Oracle TNS data response. */
 export function decryptOracleResponse(
   packet: Buffer,
   keys: Record<string, Buffer>,
   role: string = 'GUEST',
   userId: string = 'guest-user',
   tenantId?: string,
-  config?: any,
+  config?: ProxyConfig,
   modelName: string = 'default',
   columns: string[] = []
 ): Buffer {
@@ -45,34 +47,13 @@ export function decryptOracleResponse(
     const ctext = boundaryMatch ? ctextPart.substring(0, boundaryMatch.index) : ctextPart;
 
     try {
-      let fieldName = columns[cellIdx] || 'column';
-      let model = modelName;
-      if (fieldName.includes('.')) {
-        const parts = fieldName.split('.');
-        fieldName = parts[parts.length - 1];
-        model = parts[0] === 'u' || parts[0] === 't' ? modelName : parts[0];
-      }
-
-      const ptext = dbGuardContextStore.run(
-        {
-          role,
-          userId,
-          tenantId,
-          maxDecryptionsPerSecond: config?.rateLimiter?.maxDecryptionsPerSecond,
-          rateLimiterMode: config?.rateLimiter?.mode,
-        },
-        () => decryptWithSecurity(
+        const { field, model } = resolveProjectedField(columns[cellIdx], modelName, 'column');
+        const ptext = decryptDriverValue(
           ctext,
-          (cipherText) => decryptValue(cipherText, keys),
           model,
-          fieldName,
-          undefined,
-          {
-            cryptoRbac: getRbacConfig(config),
-            rateLimiter: config?.rateLimiter,
-          }
-        )
-      );
+          field,
+          { keys, role, userId, tenantId, config }
+        );
       const ptextBuf = Buffer.from(ptext, 'ascii');
       const ctextBuf = Buffer.from(ctext, 'ascii');
 
@@ -119,24 +100,14 @@ export function decryptOracleResponse(
   return newPacket;
 }
 
+/** Proxies one Oracle connection with identity, WAF, and decryption. */
 export function handleOracleConnection(
   clientSocket: net.Socket,
-  options: {
-    dbHost: string;
-    dbPort: number;
-    noWaf?: boolean;
-    role: string;
-    clientIp: string;
-    resolvedKeys: Record<string, Buffer>;
-    config?: any;
-    logSiem: (event: string, severity: number, message: string) => void;
-  }
+  options: DriverConnectionOptions
 ) {
   let connected = false;
   const queue: Buffer[] = [];
-  let currentRole = options.role;
-  let currentUserId = options.role === 'OWNER' ? 'usr-admin' : 'guest-user';
-  let currentTenantId: string | undefined;
+  let currentUser = createInitialUserContext(options.role);
   let identityResolved = false;
   let currentTable = 'default';
   let currentColumns: string[] = [];
@@ -155,14 +126,14 @@ export function handleOracleConnection(
   });
 
   backendSocket.on('data', (data) => {
-    let processedData: any = data;
+    let processedData: Buffer<ArrayBufferLike> = data;
     try {
       processedData = decryptOracleResponse(
         data,
         options.resolvedKeys,
-        currentRole,
-        currentUserId,
-        currentTenantId,
+        currentUser.role,
+        currentUser.userId,
+        currentUser.tenantId,
         options.config,
         currentTable,
         currentColumns
@@ -188,10 +159,7 @@ export function handleOracleConnection(
       const userMatch = packetStr.match(/\(\s*USER\s*=\s*([^)]+)\)/i) || packetStr.match(/AUTH_USERNAME\s*=\s*([A-Za-z0-9_]+)/i);
       if (type === 0x01 && !identityResolved && userMatch && userMatch[1]) {
         const username = userMatch[1].trim();
-        const userContext = resolveUserContext(username, options.config);
-        currentUserId = userContext.userId;
-        currentRole = userContext.role;
-        currentTenantId = userContext.tenantId;
+        currentUser = resolveUserContext(username, options.config);
         identityResolved = true;
       }
 
@@ -209,9 +177,9 @@ export function handleOracleConnection(
             const query = sqlMatch[0].trim();
             try {
               if (!options.noWaf) {
-                validateQuery(query, currentRole);
+                validateQuery(query, currentUser.role);
               }
-              ensureTenantScopedQuery(query, currentTenantId);
+              ensureTenantScopedQuery(query, currentUser.tenantId);
             } catch (err: any) {
               options.logSiem('WAF_ORACLE_BLOCK', 9, `Oracle WAF violation blocked: ${err.message}`);
               const errPacket = serializeOracleError(err.message);

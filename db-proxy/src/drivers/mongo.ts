@@ -1,6 +1,6 @@
 import * as net from 'net';
-import { decryptValue, decryptWithSecurity, dbGuardContextStore } from '@vollcrypt/db-guard';
-import { getRbacConfig, resolveUserContext } from '../auth.js';
+import { resolveUserContext, type ProxyConfig } from '../auth.js';
+import { createInitialUserContext, decryptDriverValue, type DriverConnectionOptions } from './common.js';
 
 function mongoCommandHasTenantValue(value: any, tenantId: string): boolean {
   if (!value || typeof value !== 'object') return false;
@@ -30,6 +30,7 @@ function ensureTenantScopedMongoCommand(commandDoc: any, tenantId: string | unde
   }
 }
 
+/** Parses one BSON document and returns its next byte offset. */
 export function parseBson(buf: Buffer, offset: number = 0): { value: any; nextOffset: number } {
   const size = buf.readInt32LE(offset);
   const end = offset + size;
@@ -87,6 +88,7 @@ export function parseBson(buf: Buffer, offset: number = 0): { value: any; nextOf
   return { value: obj, nextOffset: end };
 }
 
+/** Serializes a JavaScript document into BSON bytes. */
 export function serializeBson(obj: any): Buffer {
   const buffers: Buffer[] = [];
 
@@ -140,61 +142,57 @@ export function serializeBson(obj: any): Buffer {
   return Buffer.concat([sizeBuf, elements, Buffer.from([0x00])]);
 }
 
-export function decryptBsonObject(
+/** Decrypts encrypted values in a MongoDB response document. */
+export function decryptMongoResponse(
   obj: any,
   keys: Record<string, Buffer>,
   role: string = 'GUEST',
   userId: string = 'guest-user',
   tenantId?: string,
-  config?: any,
-  depth: number = 0,
+  config?: ProxyConfig,
   collectionName: string = 'default'
 ): any {
-  if (depth > 5) return obj; // Prevent stack overflows
-  if (obj === null || obj === undefined) return obj;
-
-  if (Array.isArray(obj)) {
-    return obj.map((item) => decryptBsonObject(item, keys, role, userId, tenantId, config, depth + 1, collectionName));
-  }
-
-  if (typeof obj === 'object' && !Buffer.isBuffer(obj)) {
-    const copy: any = {};
-    for (const [k, v] of Object.entries(obj)) {
-      if (typeof v === 'string' && v.startsWith('VOLLVALT:')) {
-        try {
-          copy[k] = dbGuardContextStore.run(
-            {
-              role,
-              userId,
-              tenantId,
-              maxDecryptionsPerSecond: config?.rateLimiter?.maxDecryptionsPerSecond,
-              rateLimiterMode: config?.rateLimiter?.mode,
-            },
-            () => decryptWithSecurity(
-              v,
-              (cipherText) => decryptValue(cipherText, keys),
-              collectionName,
-              k,
-              undefined,
-              {
-                cryptoRbac: getRbacConfig(config),
-                rateLimiter: config?.rateLimiter,
-              }
-            )
-          );
-        } catch (err: any) {
-          throw err;
-        }
-      } else {
-        copy[k] = decryptBsonObject(v, keys, role, userId, tenantId, config, depth + 1, collectionName);
-      }
-    }
-    return copy;
-  }
-
-  return obj;
+  return decryptMongoValue(
+    obj,
+    { keys, role, userId, tenantId, config },
+    collectionName,
+    0
+  );
 }
 
+function decryptMongoValue(
+  value: any,
+  context: {
+    keys: Record<string, Buffer>;
+    role: string;
+    userId: string;
+    tenantId?: string;
+    config?: ProxyConfig;
+  },
+  collectionName: string,
+  depth: number
+): any {
+  if (depth > 5 || value === null || value === undefined) return value;
+
+  if (Array.isArray(value)) {
+    return value.map((item) => decryptMongoValue(item, context, collectionName, depth + 1));
+  }
+
+  if (typeof value !== 'object' || Buffer.isBuffer(value)) return value;
+
+  const copy: Record<string, unknown> = {};
+  for (const [field, nested] of Object.entries(value)) {
+    copy[field] = typeof nested === 'string' && nested.startsWith('VOLLVALT:')
+      ? decryptDriverValue(nested, collectionName, field, context)
+      : decryptMongoValue(nested, context, collectionName, depth + 1);
+  }
+  return copy;
+}
+
+/** @deprecated Use decryptMongoResponse. */
+export const decryptBsonObject = decryptMongoResponse;
+
+/** Serializes a MongoDB OP_MSG authorization error. */
 export function serializeMongoError(message: string, code: number = 13): Buffer {
   const okName = Buffer.from('ok\0', 'ascii');
   const okVal = Buffer.alloc(8);
@@ -232,24 +230,14 @@ export function serializeMongoError(message: string, code: number = 13): Buffer 
   return Buffer.concat([header, bsonDoc]);
 }
 
+/** Proxies one MongoDB connection with command filtering and decryption. */
 export function handleMongoConnection(
   clientSocket: net.Socket,
-  options: {
-    dbHost: string;
-    dbPort: number;
-    noWaf?: boolean;
-    role: string;
-    clientIp: string;
-    resolvedKeys: Record<string, Buffer>;
-    config?: any;
-    logSiem: (event: string, severity: number, message: string) => void;
-  }
+  options: DriverConnectionOptions
 ) {
   let connected = false;
   const queue: Buffer[] = [];
-  let currentRole = options.role;
-  let currentUserId = options.role === 'OWNER' ? 'usr-admin' : 'guest-user';
-  let currentTenantId: string | undefined;
+  let currentUser = createInitialUserContext(options.role);
   let currentCollection = 'default';
 
   const backendSocket = net.connect({
@@ -275,14 +263,13 @@ export function handleMongoConnection(
           if (sectionType === 0x00) {
             const bsonOffset = 21;
             const { value: parsedDoc } = parseBson(data, bsonOffset);
-            const decryptedDoc = decryptBsonObject(
+            const decryptedDoc = decryptMongoResponse(
               parsedDoc,
               options.resolvedKeys,
-              currentRole,
-              currentUserId,
-              currentTenantId,
+              currentUser.role,
+              currentUser.userId,
+              currentUser.tenantId,
               options.config,
-              0,
               currentCollection
             );
             const newBson = serializeBson(decryptedDoc);
@@ -342,14 +329,11 @@ export function handleMongoConnection(
                   const match = payloadStr.match(/\bn=([^,]+)/);
                   if (match && match[1]) {
                     const username = match[1];
-                    const userContext = resolveUserContext(username, options.config);
-                    currentUserId = userContext.userId;
-                    currentRole = userContext.role;
-                    currentTenantId = userContext.tenantId;
+                    currentUser = resolveUserContext(username, options.config);
                   }
                 }
               }
-              ensureTenantScopedMongoCommand(commandDoc, currentTenantId);
+              ensureTenantScopedMongoCommand(commandDoc, currentUser.tenantId);
             } catch (e) {
               const msg = (e as Error).message || 'MongoDB request parsing failed';
               options.logSiem('WAF_MONGO_BLOCK', 9, `MongoDB request blocked: ${msg}`);

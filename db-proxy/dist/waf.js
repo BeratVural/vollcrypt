@@ -1,7 +1,4 @@
 "use strict";
-/**
- * Database Web Application Firewall (WAF) & SQLi protection rules.
- */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.normalizeQuery = normalizeQuery;
 exports.validateQuery = validateQuery;
@@ -14,6 +11,9 @@ exports.generateLaplaceNoise = generateLaplaceNoise;
 exports.identifyAggregates = identifyAggregates;
 exports.extractProjectionColumns = extractProjectionColumns;
 exports.extractTableName = extractTableName;
+/**
+ * Database Web Application Firewall (WAF) & SQLi protection rules.
+ */
 // Common SQL Injection patterns
 const SQLI_PATTERNS = [
     /\bunion\s+all\s+select\b/i,
@@ -303,9 +303,6 @@ function evaluateThreatScore(query) {
     return score;
 }
 /**
- * Rewrites SQL queries to inject RLS tenant isolation and database-level masking rules.
- */
-/**
  * Tokenizes SQL query string to isolate strings and symbols.
  */
 function tokenizeSql(sql) {
@@ -388,7 +385,7 @@ function cleanColumnName(name) {
     return cleaned;
 }
 /**
- * Rewrites SQL queries to inject RLS tenant isolation and database-level masking rules.
+ * Rewrites one top-level SQL block with tenant isolation and masking rules.
  */
 function rewriteQueryBlock(tokens, role, tenantId, config) {
     // 1. Identify projection context and inject SQL-level masking expressions
@@ -562,6 +559,7 @@ function generateLaplaceNoise(scale) {
     const u = Math.random() - 0.5;
     return -scale * Math.sign(u) * Math.log(1 - 2 * Math.abs(u));
 }
+/** Identifies aggregate positions in a SQL projection. */
 function identifyAggregates(sql) {
     const normalized = normalizeQuery(sql);
     const tokens = tokenizeSql(normalized);
@@ -659,6 +657,7 @@ function identifyAggregates(sql) {
         return firstToken.startsWith('avg') || firstToken.startsWith('sum') || firstToken.startsWith('count');
     });
 }
+/** Extracts source projection columns for field-level RBAC mapping. */
 function extractProjectionColumns(sql) {
     const normalized = normalizeQuery(sql);
     const tokens = tokenizeSql(normalized);
@@ -753,6 +752,7 @@ function extractProjectionColumns(sql) {
         return cleanColumnName(lastToken);
     });
 }
+/** Extracts the primary source table from a SQL statement. */
 function extractTableName(sql) {
     const normalized = normalizeQuery(sql);
     const tokens = tokenizeSql(normalized);

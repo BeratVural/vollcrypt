@@ -1,3 +1,5 @@
+import type { ProxyConfig } from './auth.js';
+
 /**
  * Database Web Application Firewall (WAF) & SQLi protection rules.
  */
@@ -317,9 +319,6 @@ export function evaluateThreatScore(query: string): number {
 }
 
 /**
- * Rewrites SQL queries to inject RLS tenant isolation and database-level masking rules.
- */
-/**
  * Tokenizes SQL query string to isolate strings and symbols.
  */
 export function tokenizeSql(sql: string): string[] {
@@ -392,13 +391,13 @@ function cleanColumnName(name: string): string {
 }
 
 /**
- * Rewrites SQL queries to inject RLS tenant isolation and database-level masking rules.
+ * Rewrites one top-level SQL block with tenant isolation and masking rules.
  */
 function rewriteQueryBlock(
   tokens: string[],
   role: string,
   tenantId: string | undefined,
-  config: any
+  config: ProxyConfig | undefined
 ): string[] {
   // 1. Identify projection context and inject SQL-level masking expressions
   const mask = config?.cryptoRbac?.roles?.[role]?.mask;
@@ -497,7 +496,7 @@ export function rewriteQuery(
   sql: string,
   role: string,
   tenantId: string | undefined,
-  config: any
+  config: ProxyConfig | undefined
 ): string {
   const normalized = normalizeQuery(sql);
   const tokens = tokenizeSql(normalized);
@@ -593,6 +592,7 @@ export function generateLaplaceNoise(scale: number): number {
   return -scale * Math.sign(u) * Math.log(1 - 2 * Math.abs(u));
 }
 
+/** Identifies aggregate positions in a SQL projection. */
 export function identifyAggregates(sql: string): boolean[] {
   const normalized = normalizeQuery(sql);
   const tokens = tokenizeSql(normalized);
@@ -689,6 +689,7 @@ export function identifyAggregates(sql: string): boolean[] {
   });
 }
 
+/** Extracts source projection columns for field-level RBAC mapping. */
 export function extractProjectionColumns(sql: string): string[] {
   const normalized = normalizeQuery(sql);
   const tokens = tokenizeSql(normalized);
@@ -784,6 +785,7 @@ export function extractProjectionColumns(sql: string): string[] {
   });
 }
 
+/** Extracts the primary source table from a SQL statement. */
 export function extractTableName(sql: string): string {
   const normalized = normalizeQuery(sql);
   const tokens = tokenizeSql(normalized);

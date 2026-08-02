@@ -39,8 +39,9 @@ exports.parseLogin7Username = parseLogin7Username;
 exports.handleMssqlConnection = handleMssqlConnection;
 const net = __importStar(require("net"));
 const waf_js_1 = require("../waf.js");
-const db_guard_1 = require("@vollcrypt/db-guard");
 const auth_js_1 = require("../auth.js");
+const common_js_1 = require("./common.js");
+/** Serializes an MS-TDS error response packet. */
 function serializeMssqlError(message, code = 50000) {
     const msgBuf = Buffer.from(message, 'utf16le');
     const srvName = Buffer.from('VOLLCRYPT\0', 'utf16le');
@@ -89,23 +90,8 @@ function decryptMssqlResponse(packet, keys, role = 'GUEST', userId = 'guest-user
         const boundaryMatch = ctextPart.match(/[^A-Za-z0-9+/=:]/);
         const ctext = boundaryMatch ? ctextPart.substring(0, boundaryMatch.index) : ctextPart;
         try {
-            let fieldName = columns[cellIdx] || 'column';
-            let model = modelName;
-            if (fieldName.includes('.')) {
-                const parts = fieldName.split('.');
-                fieldName = parts[parts.length - 1];
-                model = parts[0] === 'u' || parts[0] === 't' ? modelName : parts[0];
-            }
-            const ptext = db_guard_1.dbGuardContextStore.run({
-                role,
-                userId,
-                tenantId,
-                maxDecryptionsPerSecond: config?.rateLimiter?.maxDecryptionsPerSecond,
-                rateLimiterMode: config?.rateLimiter?.mode,
-            }, () => (0, db_guard_1.decryptWithSecurity)(ctext, (cipherText) => (0, db_guard_1.decryptValue)(cipherText, keys), model, fieldName, undefined, {
-                cryptoRbac: (0, auth_js_1.getRbacConfig)(config),
-                rateLimiter: config?.rateLimiter,
-            }));
+            const { field, model } = (0, common_js_1.resolveProjectedField)(columns[cellIdx], modelName, 'column');
+            const ptext = (0, common_js_1.decryptDriverValue)(ctext, model, field, { keys, role, userId, tenantId, config });
             const ptextBuf = Buffer.from(ptext, 'utf16le');
             const ctextBuf = Buffer.from(ctext, 'utf16le');
             const indexInBytes = buf.indexOf(ctextBuf);
@@ -163,12 +149,11 @@ function parseLogin7Username(packet) {
         return null;
     return packet.toString('utf16le', start, end);
 }
+/** Proxies one MSSQL connection with LOGIN7 identity, WAF, and decryption. */
 function handleMssqlConnection(clientSocket, options) {
     let connected = false;
     const queue = [];
-    let currentRole = options.role;
-    let currentUserId = options.role === 'OWNER' ? 'usr-admin' : 'guest-user';
-    let currentTenantId;
+    let currentUser = (0, common_js_1.createInitialUserContext)(options.role);
     let currentTable = 'default';
     let currentColumns = [];
     const backendSocket = net.connect({
@@ -186,7 +171,7 @@ function handleMssqlConnection(clientSocket, options) {
     backendSocket.on('data', (data) => {
         let processedData = data;
         try {
-            processedData = decryptMssqlResponse(data, options.resolvedKeys, currentRole, currentUserId, currentTenantId, options.config, currentTable, currentColumns);
+            processedData = decryptMssqlResponse(data, options.resolvedKeys, currentUser.role, currentUser.userId, currentUser.tenantId, options.config, currentTable, currentColumns);
         }
         catch (err) {
             options.logSiem('MSSQL_DECRYPT_ERROR', 8, `MSSQL decryption error: ${err.message}`);
@@ -205,19 +190,16 @@ function handleMssqlConnection(clientSocket, options) {
             if (type === 0x10) {
                 const username = parseLogin7Username(data);
                 if (username !== null) {
-                    const userContext = (0, auth_js_1.resolveUserContext)(username, options.config);
-                    currentUserId = userContext.userId;
-                    currentRole = userContext.role;
-                    currentTenantId = userContext.tenantId;
+                    currentUser = (0, auth_js_1.resolveUserContext)(username, options.config);
                 }
             }
             if (type === 0x01 || type === 0x03) { // SQL Batch or RPC
                 const query = data.toString('utf16le', 8);
                 try {
                     if (!options.noWaf) {
-                        (0, waf_js_1.validateQuery)(query, currentRole);
+                        (0, waf_js_1.validateQuery)(query, currentUser.role);
                     }
-                    (0, waf_js_1.ensureTenantScopedQuery)(query, currentTenantId);
+                    (0, waf_js_1.ensureTenantScopedQuery)(query, currentUser.tenantId);
                 }
                 catch (err) {
                     options.logSiem('WAF_MSSQL_BLOCK', 9, `MSSQL WAF violation blocked: ${err.message}`);

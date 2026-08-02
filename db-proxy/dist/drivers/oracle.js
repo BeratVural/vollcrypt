@@ -38,8 +38,9 @@ exports.decryptOracleResponse = decryptOracleResponse;
 exports.handleOracleConnection = handleOracleConnection;
 const net = __importStar(require("net"));
 const waf_js_1 = require("../waf.js");
-const db_guard_1 = require("@vollcrypt/db-guard");
 const auth_js_1 = require("../auth.js");
+const common_js_1 = require("./common.js");
+/** Serializes an Oracle TNS refusal packet. */
 function serializeOracleError(message) {
     const msgBuf = Buffer.from(message, 'ascii');
     const payload = Buffer.alloc(2 + msgBuf.length);
@@ -51,6 +52,7 @@ function serializeOracleError(message) {
     header[4] = 0x04; // TNS Refuse Packet Type
     return Buffer.concat([header, payload]);
 }
+/** Decrypts encrypted values in an Oracle TNS data response. */
 function decryptOracleResponse(packet, keys, role = 'GUEST', userId = 'guest-user', tenantId, config, modelName = 'default', columns = []) {
     if (packet.length < 8)
         return packet;
@@ -69,23 +71,8 @@ function decryptOracleResponse(packet, keys, role = 'GUEST', userId = 'guest-use
         const boundaryMatch = ctextPart.match(/[^A-Za-z0-9+/=:]/);
         const ctext = boundaryMatch ? ctextPart.substring(0, boundaryMatch.index) : ctextPart;
         try {
-            let fieldName = columns[cellIdx] || 'column';
-            let model = modelName;
-            if (fieldName.includes('.')) {
-                const parts = fieldName.split('.');
-                fieldName = parts[parts.length - 1];
-                model = parts[0] === 'u' || parts[0] === 't' ? modelName : parts[0];
-            }
-            const ptext = db_guard_1.dbGuardContextStore.run({
-                role,
-                userId,
-                tenantId,
-                maxDecryptionsPerSecond: config?.rateLimiter?.maxDecryptionsPerSecond,
-                rateLimiterMode: config?.rateLimiter?.mode,
-            }, () => (0, db_guard_1.decryptWithSecurity)(ctext, (cipherText) => (0, db_guard_1.decryptValue)(cipherText, keys), model, fieldName, undefined, {
-                cryptoRbac: (0, auth_js_1.getRbacConfig)(config),
-                rateLimiter: config?.rateLimiter,
-            }));
+            const { field, model } = (0, common_js_1.resolveProjectedField)(columns[cellIdx], modelName, 'column');
+            const ptext = (0, common_js_1.decryptDriverValue)(ctext, model, field, { keys, role, userId, tenantId, config });
             const ptextBuf = Buffer.from(ptext, 'ascii');
             const ctextBuf = Buffer.from(ctext, 'ascii');
             const indexInBytes = buf.indexOf(ctextBuf);
@@ -130,12 +117,11 @@ function decryptOracleResponse(packet, keys, role = 'GUEST', userId = 'guest-use
     }
     return newPacket;
 }
+/** Proxies one Oracle connection with identity, WAF, and decryption. */
 function handleOracleConnection(clientSocket, options) {
     let connected = false;
     const queue = [];
-    let currentRole = options.role;
-    let currentUserId = options.role === 'OWNER' ? 'usr-admin' : 'guest-user';
-    let currentTenantId;
+    let currentUser = (0, common_js_1.createInitialUserContext)(options.role);
     let identityResolved = false;
     let currentTable = 'default';
     let currentColumns = [];
@@ -154,7 +140,7 @@ function handleOracleConnection(clientSocket, options) {
     backendSocket.on('data', (data) => {
         let processedData = data;
         try {
-            processedData = decryptOracleResponse(data, options.resolvedKeys, currentRole, currentUserId, currentTenantId, options.config, currentTable, currentColumns);
+            processedData = decryptOracleResponse(data, options.resolvedKeys, currentUser.role, currentUser.userId, currentUser.tenantId, options.config, currentTable, currentColumns);
         }
         catch (err) {
             options.logSiem('ORACLE_DECRYPT_ERROR', 8, `Oracle decryption error: ${err.message}`);
@@ -174,10 +160,7 @@ function handleOracleConnection(clientSocket, options) {
             const userMatch = packetStr.match(/\(\s*USER\s*=\s*([^)]+)\)/i) || packetStr.match(/AUTH_USERNAME\s*=\s*([A-Za-z0-9_]+)/i);
             if (type === 0x01 && !identityResolved && userMatch && userMatch[1]) {
                 const username = userMatch[1].trim();
-                const userContext = (0, auth_js_1.resolveUserContext)(username, options.config);
-                currentUserId = userContext.userId;
-                currentRole = userContext.role;
-                currentTenantId = userContext.tenantId;
+                currentUser = (0, auth_js_1.resolveUserContext)(username, options.config);
                 identityResolved = true;
             }
             if (type === 0x06) { // TNS Data Packet
@@ -193,9 +176,9 @@ function handleOracleConnection(clientSocket, options) {
                         const query = sqlMatch[0].trim();
                         try {
                             if (!options.noWaf) {
-                                (0, waf_js_1.validateQuery)(query, currentRole);
+                                (0, waf_js_1.validateQuery)(query, currentUser.role);
                             }
-                            (0, waf_js_1.ensureTenantScopedQuery)(query, currentTenantId);
+                            (0, waf_js_1.ensureTenantScopedQuery)(query, currentUser.tenantId);
                         }
                         catch (err) {
                             options.logSiem('WAF_ORACLE_BLOCK', 9, `Oracle WAF violation blocked: ${err.message}`);

@@ -1,6 +1,6 @@
 {
   "name": "vollcrypt",
-  "version": "0.9.1",
+  "version": "1.0.0",
   "description": "Cross-platform Rust cryptography core",
   "private": true,
   "license": "GPL-3.0-only OR LicenseRef-Commercial",
