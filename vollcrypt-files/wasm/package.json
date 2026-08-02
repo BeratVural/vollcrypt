@@ -1,6 +1,6 @@
 {
   "name": "@vollcrypt/files-wasm",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Cross-platform, quantum-resistant file encryption engine for the browser/Node via WebAssembly",
   "type": "module",
   "main": "pkg/vollcrypt_files_wasm.js",
@@ -18,7 +18,8 @@
     "test": "wasm-pack test --node"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "repository": {
     "type": "git",

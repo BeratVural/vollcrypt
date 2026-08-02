@@ -1,6 +1,6 @@
 {
   "name": "@vollcrypt/messages-node",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Cross-platform, quantum-resistant cryptography engine for Node.js - native binding",
   "main": "index.js",
   "types": "index.d.ts",
@@ -9,7 +9,8 @@
     "test": "node --test tests/*.test.js"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "devDependencies": {
     "@napi-rs/cli": "^2.18.4"
@@ -17,7 +18,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/BeratVural/vollcrypt.git",
-    "directory": "node"
+    "directory": "vollcrypt-messages/node"
   },
   "homepage": "https://github.com/BeratVural/vollcrypt#readme",
   "bugs": {

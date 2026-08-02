@@ -1,0 +1,160 @@
+name: Vollcrypt Database Packages Release
+
+on:
+  push:
+    tags:
+      - "database-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+jobs:
+  package-db-guard:
+    name: Package @vollcrypt/db-guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Install dependencies
+        working-directory: db-guard/node
+        run: npm ci
+
+      - name: Test
+        working-directory: db-guard/node
+        run: npm test
+
+      - name: Build and generate SBOM
+        working-directory: db-guard/node
+        run: npm run build
+
+      - name: Create npm package
+        run: |
+          mkdir -p dist-packages
+          npm pack ./db-guard/node --pack-destination dist-packages
+
+      - name: Upload npm package
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-guard-npm-package
+          path: dist-packages/*.tgz
+          if-no-files-found: error
+
+      - name: Attest npm package provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: dist-packages/*.tgz
+
+      - name: Attest npm package SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: dist-packages/*.tgz
+          sbom-path: db-guard/node/dist/sbom.json
+
+  package-db-proxy:
+    name: Package @vollcrypt/db-proxy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Install dependencies
+        working-directory: db-proxy
+        run: npm ci
+
+      - name: Test
+        working-directory: db-proxy
+        run: npm test
+
+      - name: Build
+        working-directory: db-proxy
+        run: npm run build
+
+      - name: Generate CycloneDX SBOM
+        working-directory: db-proxy
+        run: npm sbom --sbom-format cyclonedx --omit=dev > sbom.cdx.json
+
+      - name: Create npm package
+        run: |
+          mkdir -p dist-packages
+          npm pack ./db-proxy --pack-destination dist-packages
+
+      - name: Upload npm package
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-proxy-npm-package
+          path: dist-packages/*.tgz
+          if-no-files-found: error
+
+      - name: Attest npm package provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: dist-packages/*.tgz
+
+      - name: Attest npm package SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: dist-packages/*.tgz
+          sbom-path: db-proxy/sbom.cdx.json
+
+  publish-db-guard:
+    name: Publish @vollcrypt/db-guard
+    if: startsWith(github.ref, 'refs/tags/database-v')
+    needs: package-db-guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Download npm package
+        uses: actions/download-artifact@v4
+        with:
+          name: db-guard-npm-package
+          path: dist-packages
+
+      - name: Publish with npm provenance
+        run: npm publish dist-packages/*.tgz --access public --provenance
+
+  publish-db-proxy:
+    name: Publish @vollcrypt/db-proxy
+    if: startsWith(github.ref, 'refs/tags/database-v')
+    needs:
+      - package-db-proxy
+      - publish-db-guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Download npm package
+        uses: actions/download-artifact@v4
+        with:
+          name: db-proxy-npm-package
+          path: dist-packages
+
+      - name: Publish with npm provenance
+        run: npm publish dist-packages/*.tgz --access public --provenance
