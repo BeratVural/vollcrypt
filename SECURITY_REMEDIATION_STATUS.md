@@ -1,6 +1,6 @@
 # Security Remediation Status
 
-Last verified: 2026-07-31
+Last verified: 2026-08-02
 
 Sources:
 
@@ -15,8 +15,8 @@ This file records repository state, not a certification. `Fixed` means the repor
 | --- | ---: | ---: | ---: | --- |
 | PDF critical K1-K16 | 16 | 0 | 0 | No known open critical implementation finding |
 | PDF high Y1-Y20 | 20 | 0 | 0 | No known open high implementation finding |
-| PDF medium M1-M51 | 44 | 5 | 2 | Remaining items are upstream, deployment, or maintainability work |
-| PDF low/info D1-D40 | 7 | 1 | 32 | Most remaining items are documentation/DRY/test-organization debt |
+| PDF medium M1-M51 | 48 | 3 | 0 | No open implementation finding; three documented runtime/deployment constraints remain |
+| PDF low/info D1-D40 | 40 | 0 | 0 | Reported documentation, DRY, test-organization, release, and SRP items are addressed |
 | MD K1-K23 (20 IDs present) | 17 | 3 | 0 | Three memory-residency items retain runtime/OS residual risk |
 | LAB K1-K3 | 3 | 0 | 0 | WAF bypass regressions covered |
 
@@ -74,18 +74,18 @@ This file records repository state, not a certification. `Fixed` means the repor
 | PDF-M9 | Fixed | Wall-clock assertions were replaced by deterministic large-step, replay-store, and 1000-entry key-log assertions; `cargo test -p vollcrypt-core` passes 242 tests |
 | PDF-M14 | Accepted design constraint | Online streaming release remains explicit opt-in; verified double-pass release is the safe default and is documented/tested |
 | PDF-M15, M17-M24, M28 | Fixed | Resolver, Merkle, key-log, manifest, shield, purge, timestamp, chunk validation, CI, and early-return zeroization fixes have regressions |
-| PDF-M16 | Partial | Deprecated upstream `ml-dsa` API remains behind a compatibility boundary. Upgrade requires a stable upstream replacement plus vector/interoperability tests |
+| PDF-M16 | Fixed | Files v1.0 stores the canonical 32-byte ML-DSA seed, uses explicit `SysRng` for generation/signing, rejects legacy 4064-byte keys, and passes core/Node/WASM regressions |
 | PDF-M25 | Fixed | Adversarial recommendations are generated from reproduced findings instead of stale static claims |
 | PDF-M26 | Fixed | Stability test defaults to 10 seconds and runs for 30 seconds in Files CI with validated override bounds |
 | PDF-M27 | Fixed | Benchmark JSON has schema/device/timestamp metadata; scheduled/manual baseline comparison fails on throughput drop above 20% |
 | PDF-M29 | Partial | PKCS#11 PIN is sourced from environment and limitations are documented; JavaScript immutable strings cannot provide a hard zeroization guarantee |
 | PDF-M30 | Partial / deployment constraint | Process-local DB Guard rate/fail-closed state is documented. Horizontal deployments require an external distributed control plane |
 | PDF-M31-M34, M36 | Fixed | Blind-index claims/root-salt protection, compliance scoring/shred evidence, and PQ claims are hardened |
-| PDF-M35 | Partial | Real ORM packages are installed, but Prisma/Mongoose/TypeORM/Drizzle tests still rely substantially on adapter mocks; real database integration jobs remain |
-| PDF-M37 | Not fixed (maintainability) | Six ORM adapters still expose materially different configuration/error/key-scope contracts |
+| PDF-M35 | Fixed | `ci-db-guard.yml` runs real Prisma, Mongoose, TypeORM, and Drizzle roundtrips against PostgreSQL and MongoDB services |
+| PDF-M37 | Fixed | Shared tenant, key-normalization, RBAC, and error contracts are used by the six DB Guard adapters with contract tests |
 | PDF-M38-M49 | Fixed | WAF/DLP/anomaly/secrets/TLS/cluster/parser/WASM/cache/TDS/state-reset and fragmented/concurrent protocol coverage are addressed |
 | PDF-M50 | Fixed | MySQL/Mongo/MSSQL/Oracle mocks parse real forwarded queries; WAF-blocked queries are asserted absent from backend observations; DB Proxy passes 60 tests |
-| PDF-M51 | Not fixed (maintainability) | `DbProxyServer.handleConnection` remains too large and should be decomposed without changing protocol behavior |
+| PDF-M51 | Fixed | PostgreSQL connection handling is decomposed into runtime creation and separate client/backend listener state machines while preserving the protocol suite |
 
 ## Low / Informational Matrix
 
@@ -95,11 +95,14 @@ This file records repository state, not a certification. `Fixed` means the repor
 | PDF-D34 | Fixed with monitored residual | `Cargo.lock` is committed and cargo audit runs in CI; pre-1.0 cryptographic dependencies remain monitored |
 | PDF-D35 | Fixed | Root `package.json` and Cargo workspace declare `GPL-3.0-only OR LicenseRef-Commercial` |
 | PDF-D36 | Fixed | CI no longer mutates `Cargo.toml` to remove the Wave submodule |
-| PDF-D37 | Partial - external GitHub setting | Release jobs reference protected environments, use provenance, and least privilege. Required-reviewer rules for `npm-publish` and `desktop-release` are not configured yet |
-| PDF-D38 | Fixed | Files/Messages npm releases generate and publish CycloneDX SBOMs with provenance |
+| PDF-D37 | Fixed | `desktop-release` has a required reviewer and protected-branch policy; npm workflows only create attested `.tgz` artifacts for explicit manual publication and hold no registry token |
+| PDF-D38 | Fixed | Files/Messages package workflows embed CycloneDX SBOMs and create GitHub provenance plus SBOM attestations for each `.tgz` artifact |
 | PDF-D39 | Fixed | Typed AWS/GCP KMS constructors and least-privilege IAM guidance are present |
 | PDF-D40 | Fixed | `SECURITY_DESIGN.md` now records DAST, load/soak, independent pentest, and restore owners/cadence/exit criteria |
-| PDF-D1-D23, D25-D33 | Not fixed (maintenance backlog) | Documentation consistency, JSDoc, DRY, naming, package-version alignment, deterministic test organization, and SRP cleanup. No direct exploit is claimed by the source report |
+| PDF-D1-D11 | Fixed | Messages binding parity, key-log verification use, shared encodings, deterministic/concurrent tests, version alignment, English documentation, and N-API Rustdoc are addressed |
+| PDF-D12-D18 | Fixed | Files constants, API docs, Merkle deprecation, shared AAD/I/O errors, typed parse errors, buffer-pool behavior, and empty-container roundtrip are addressed |
+| PDF-D19-D26 | Fixed | DB Guard responsibilities, key/tenant/RBAC/error contracts, JSDoc, secure-string reuse, and import consistency are addressed |
+| PDF-D27-D33 | Fixed | DB Proxy JSDoc, driver common contracts, typed config, naming, deterministic event-driven tests, and per-test state reset are addressed |
 
 ## MD and LAB Mapping
 
@@ -112,13 +115,15 @@ This file records repository state, not a certification. `Fixed` means the repor
 | MD-K12, K15, K20 | Partial runtime/OS residual | Best-effort buffer zeroization exists. Immutable JS strings, compiler/runtime copies, process memory snapshots, and core dumps cannot be made impossible by library code alone; production requires core-dump restrictions, process isolation, least privilege, and HSM/KMS use |
 | LAB-K1, LAB-K2, LAB-K3 | Fixed | Delay, server-file, encoded, and stacked-statement WAF bypass families have regression tests in `db-proxy/tests/proxy.test.ts` |
 
-## Remaining Top Five
+## Residual Constraints
 
-1. **Protect release environments (PDF-D37).** Configure required reviewers for GitHub environments `npm-publish` and `desktop-release`; verify an unapproved tag cannot publish.
-2. **Run real ORM/database integration tests (PDF-M35).** Add isolated Prisma, Mongoose, TypeORM, and Drizzle roundtrips that prove ciphertext-at-rest, authorized decrypt, unauthorized failure, and migration behavior.
-3. **Upgrade the ML-DSA compatibility boundary (PDF-M16).** Move to a stable non-deprecated upstream API and rerun official vectors, malformed-input, Node, WASM, and cross-language tests.
-4. **Unify DB Guard adapter contracts (PDF-M37).** Define one versioned config/key-scope/error contract and add compile-time fixtures for all six adapters.
-5. **Decompose DB Proxy connection handling (PDF-M51).** Extract TLS/auth, query policy, response transform, and lifecycle state machines while preserving the 60-test protocol suite and adding state-transition unit tests.
+No critical, high, medium, low, or informational implementation finding remains open in the two source audits. The remaining entries are explicit operating constraints rather than unfinished code fixes:
+
+1. **Verified-release streaming (PDF-M14).** Online plaintext release remains opt-in; verified double-pass release is the safe default.
+2. **JavaScript secret residency (PDF-M29 and MD-K12/K15/K20).** Buffers are zeroized best-effort, but immutable strings/runtime copies require process isolation, core-dump restrictions, and HSM/KMS use.
+3. **Horizontal deployment state (PDF-M30).** Clustered deployments must supply an external distributed authorization and rate-limit control plane.
+4. **Pre-1.0 upstream cryptography crates (PDF-D34).** `Cargo.lock`, dependency audit, CI, and Dependabot monitor upstream releases and advisories.
+5. **Independent assurance.** DAST, load/soak, restore exercises, and independent penetration tests remain scheduled operational activities in `SECURITY_DESIGN.md`.
 
 ## Verification Evidence
 
@@ -135,4 +140,4 @@ Representative remediation commits:
 - `c379378` actionable adversarial/stability/benchmark audits
 - `c9355f1` real alternative-driver forwarding tests
 
-Latest local verification includes Messages core 242/242, DB Proxy 60/60, Files stress/adversarial 16/16, benchmark checker 4/4, DB Guard 64/64, package builds, Clippy with warnings denied, YAML parsing, npm audit, and a real 256 MiB balanced benchmark regression roundtrip.
+Latest local verification includes Messages core 244/244, DB Proxy 60/60, DB Guard 71/71, Files core integration suites, Files Node 18/18, Files WASM 8/8, bench/stress/adversarial/desktop/fuzz compile checks, package dry-runs, Clippy with warnings denied, YAML parsing, npm audit, and a real 256 MiB balanced benchmark regression roundtrip.

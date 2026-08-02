@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-08-02
+
+### Security
+
+- Replaced deprecated expanded ML-DSA-65 private-key serialization with the canonical 32-byte seed API.
+- Uses the same explicit operating-system RNG abstraction for ML-DSA key generation and randomized signing.
+- Rejects legacy 4064-byte hybrid signing keys and trailing key bytes instead of interpreting them ambiguously.
+
+### Breaking Changes
+
+- Hybrid signing secret keys are now 64 bytes instead of 4064 bytes. Existing 0.x signing keys must be rotated; encrypted files, recipient keys, public keys, and signatures are unchanged.
+
 ## [0.1.0] - 2026-04-28
 
 ### Added

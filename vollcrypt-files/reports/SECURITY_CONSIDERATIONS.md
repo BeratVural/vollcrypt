@@ -88,7 +88,7 @@ The domain label separates signatures by context:
 * **`vollf-keylog-entry`**: For key registry events.
 
 ### Hedged Signing & Fault Mitigation
-ML-DSA signature generation is randomized (hedged) by default. The signing algorithm ingests system entropy (via `rand::rngs::OsRng`) as a seed.
+ML-DSA signature generation is randomized (hedged) by default. The signing algorithm ingests system entropy through an explicit `getrandom::SysRng` instance, the same RNG abstraction used for ML-DSA key generation.
 * **Side-Channel/Fault Protection**: Purely deterministic signing algorithms (where the signature is a deterministic function of the secret key and message) are vulnerable to differential fault analysis (DFA). If an attacker induces a hardware glitch during signing, they can recover the secret key. Introducing fresh entropy during signing disrupts deterministic relations, protecting the secret key against fault injection and side-channel analysis.
 
 ### Downgrade Protection & Policy Enforcements
@@ -107,7 +107,7 @@ The hybrid primitives result in significantly larger structures compared to clas
 | Structure | Classical Component | PQ Component | Hybrid Structure Size |
 |---|---|---|---|
 | **PublicKey** | Ed25519 (32 bytes) | ML-DSA-65 (1952 bytes) | **1984 bytes** |
-| **SecretKey** | Ed25519 (32 bytes) | ML-DSA-65 (4032 bytes) | **4064 bytes** |
+| **SecretKey** | Ed25519 (32 bytes) | ML-DSA-65 seed (32 bytes) | **64 bytes** |
 | **Signature** | Ed25519 (64 bytes) | ML-DSA-65 (3309 bytes) + Len (2B) | **3375 bytes** |
 
 ### Zeroization of Sensitive Memory
@@ -115,7 +115,7 @@ Memory safety and key secrecy are critical. All structures holding sensitive cry
 
 ---
 
-## 5. Cryptographic Suite Summary (v0.1)
+## 5. Cryptographic Suite Summary (v1.0)
 
 The following table summarizes the cryptographic algorithms and parameters utilized in Vollcrypt File:
 

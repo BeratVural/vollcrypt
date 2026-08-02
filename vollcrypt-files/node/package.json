@@ -1,6 +1,6 @@
 {
   "name": "@vollcrypt/files-node",
-  "version": "0.9.1",
+  "version": "1.0.0",
   "description": "Cross-platform, quantum-resistant file encryption engine for Node.js - native binding",
   "main": "index.js",
   "types": "index.d.ts",

@@ -80,6 +80,21 @@ fn test_ed25519() {
 }
 
 #[wasm_bindgen_test]
+fn test_hybrid_seed_key_roundtrip_and_legacy_rejection() {
+    let kp_js = hybrid_keypair_generate().unwrap();
+    let kp: HybridKeypairObj = serde_wasm_bindgen::from_value(kp_js).unwrap();
+    assert_eq!(kp.public_key.len(), 1_984);
+    assert_eq!(kp.secret_key.len(), 64);
+
+    let domain = "test-domain";
+    let context = b"ctx";
+    let payload = b"payload";
+    let signature = hybrid_sign(&kp.secret_key, &kp.public_key, domain, context, payload).unwrap();
+    assert!(hybrid_verify(&kp.public_key, domain, context, payload, &signature).unwrap());
+    assert!(hybrid_sign(&[0u8; 4_064], &kp.public_key, domain, context, payload).is_err());
+}
+
+#[wasm_bindgen_test]
 async fn test_async_pipelined_roundtrip() {
     use wasm_bindgen::JsValue;
 

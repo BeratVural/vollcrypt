@@ -31,7 +31,7 @@ fn to_hybrid_secret_key(slice: &[u8], name: &str) -> Result<HybridSecretKey> {
         ed25519.copy_from_slice(slice);
         Ok(HybridSecretKey {
             ed25519,
-            mldsa: [0u8; 4032],
+            mldsa: [0u8; vollcrypt_files_core::ML_DSA_65_SECRET_KEY_SIZE],
         })
     } else {
         HybridSecretKey::parse(slice)

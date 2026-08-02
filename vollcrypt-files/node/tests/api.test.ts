@@ -648,10 +648,18 @@ test('pipelined file encryption and decryption roundtrip with empty wraps', asyn
 test('hybrid signature downgrade protection', () => {
   const keys = api.hybridKeypairGenerate();
   const domain = "test-domain";
+
+  assert.strictEqual(keys.publicKey.length, 1984);
+  assert.strictEqual(keys.secretKey.length, 64);
   const context = Buffer.from("ctx");
   const payload = Buffer.from("hello world");
 
   const signature = api.hybridSign(keys.secretKey, keys.publicKey, domain, context, payload);
+
+  assert.throws(
+    () => api.hybridSign(Buffer.alloc(4064), keys.publicKey, domain, context, payload),
+    /Legacy 4064-byte hybrid signing keys are unsupported in v1.0/
+  );
 
   // Verify valid signature
   const verified = api.hybridVerify(keys.publicKey, domain, context, payload, signature);

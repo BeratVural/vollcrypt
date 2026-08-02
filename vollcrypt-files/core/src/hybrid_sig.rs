@@ -205,9 +205,22 @@ impl HybridSecretKey {
     }
 
     pub fn parse(input: &[u8]) -> Result<Self, FileFormatError> {
+        if input.len() == 4_064 {
+            return Err(FileFormatError::IntegrityError(
+                "Legacy 4064-byte hybrid signing keys are unsupported in v1.0; generate and register a new signing key"
+                    .to_string(),
+            ));
+        }
         if input.len() < HYBRID_SECRET_KEY_SIZE {
             return Err(FileFormatError::TruncatedField {
-                field: "hybrid cryptographic field",
+                field: "hybrid secret key",
+                expected: HYBRID_SECRET_KEY_SIZE,
+                got: input.len(),
+            });
+        }
+        if input.len() > HYBRID_SECRET_KEY_SIZE {
+            return Err(FileFormatError::InvalidFieldLength {
+                field: "hybrid secret key",
                 expected: HYBRID_SECRET_KEY_SIZE,
                 got: input.len(),
             });
@@ -240,5 +253,36 @@ mod tests {
         sig.mldsa = vec![0u8; ML_DSA_65_SIGNATURE_SIZE];
 
         assert!(!hybrid_verify(&pk, "test-domain", b"ctx", b"payload", &sig));
+    }
+
+    #[test]
+    fn hybrid_secret_key_roundtrip_uses_canonical_seed() {
+        let (pk, sk) = hybrid_keypair_generate();
+        let encoded = sk.write();
+
+        assert_eq!(encoded.len(), HYBRID_SECRET_KEY_SIZE);
+        assert_eq!(HYBRID_SECRET_KEY_SIZE, 64);
+
+        let parsed = HybridSecretKey::parse(&encoded).expect("secret key should parse");
+        let sig = hybrid_sign(&parsed, &pk, "test-domain", b"ctx", b"payload");
+        assert!(hybrid_verify(&pk, "test-domain", b"ctx", b"payload", &sig));
+    }
+
+    #[test]
+    fn hybrid_secret_key_rejects_legacy_expanded_encoding() {
+        let result = HybridSecretKey::parse(&[0u8; 4_064]);
+        assert!(matches!(result, Err(FileFormatError::IntegrityError(_))));
+    }
+
+    #[test]
+    fn hybrid_secret_key_rejects_trailing_bytes() {
+        let (_, sk) = hybrid_keypair_generate();
+        let mut encoded = sk.write();
+        encoded.push(0);
+
+        assert!(matches!(
+            HybridSecretKey::parse(&encoded),
+            Err(FileFormatError::InvalidFieldLength { .. })
+        ));
     }
 }

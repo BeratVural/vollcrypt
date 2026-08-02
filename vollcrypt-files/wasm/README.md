@@ -4,6 +4,15 @@ High-performance, chunk-based End-to-End Encrypted (E2EE) file container engine 
 
 ---
 
+## v1.0 Hybrid Signing Key Migration
+
+Vollcrypt Files v1.0 stores ML-DSA-65 signing keys as the canonical 32-byte FIPS 204 seed. As a result, an exported hybrid signing secret key is now 64 bytes: 32 bytes of Ed25519 key material followed by a 32-byte ML-DSA seed.
+
+The 4064-byte hybrid signing secret keys exported by 0.x releases cannot be converted back to the original seed and are rejected with an explicit error. Before upgrading an existing deployment, generate and register a new hybrid signing key. Existing encrypted file containers, recipient keys, public signing keys, and previously generated signatures remain compatible and verifiable.
+
+---
+
+
 Vollcrypt Files is designed for local file encryption, cloud object storage, and secure shared-file access. The native Rust and Node disk APIs process large files incrementally, but the browser WASM full-file API accepts in-memory `Uint8Array` values and limits each input to 64 MiB. Larger browser files require application-level chunk and range-request orchestration.
 
 This module provides high-performance chunked file encryption, cryptographic access control, and chunk integrity verification for large encrypted file containers.

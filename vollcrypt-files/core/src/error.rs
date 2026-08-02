@@ -33,6 +33,13 @@ pub enum FileFormatError {
         got: usize,
     },
 
+    #[error("Invalid {field} length: expected {expected} bytes, got {got} bytes")]
+    InvalidFieldLength {
+        field: &'static str,
+        expected: usize,
+        got: usize,
+    },
+
     #[error("Wrap payload length mismatch for type {wrap_type}: expected {expected} bytes, got {got} bytes")]
     WrapPayloadLengthMismatch {
         wrap_type: u8,

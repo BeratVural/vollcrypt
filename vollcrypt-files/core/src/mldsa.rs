@@ -3,7 +3,7 @@ use crate::constants::{
 };
 use getrandom::SysRng;
 use ml_dsa::signature::{Keypair, Verifier};
-use ml_dsa::{ExpandedSigningKey, Generate, MlDsa65, Signature, SigningKey, VerifyingKey};
+use ml_dsa::{Generate, MlDsa65, Signature, SigningKey, VerifyingKey};
 use zeroize::Zeroize;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -28,28 +28,28 @@ impl Drop for MlDsa65SecretKey {
 pub struct MlDsa65Signature(pub [u8; ML_DSA_65_SIGNATURE_SIZE]);
 
 pub fn mldsa_keypair_generate() -> (MlDsa65PublicKey, MlDsa65SecretKey) {
-    let sk = SigningKey::<MlDsa65>::generate();
-    let esk = sk.expanded_key();
+    let mut rng = SysRng;
+    let sk = SigningKey::<MlDsa65>::try_generate_from_rng(&mut rng)
+        .expect("ML-DSA key generation failed");
     let pk = sk.verifying_key();
 
     let mut pk_bytes = [0u8; ML_DSA_65_PUBLIC_KEY_SIZE];
     pk_bytes.copy_from_slice(pk.encode().as_slice());
 
     let mut sk_bytes = [0u8; ML_DSA_65_SECRET_KEY_SIZE];
-    #[allow(deprecated)]
-    sk_bytes.copy_from_slice(esk.to_expanded().as_slice());
+    sk_bytes.copy_from_slice(sk.to_seed().as_slice());
 
     (MlDsa65PublicKey(pk_bytes), MlDsa65SecretKey(sk_bytes))
 }
 
 pub fn mldsa_sign(sk: &MlDsa65SecretKey, message: &[u8]) -> MlDsa65Signature {
-    let enc_sk =
+    let seed =
         hybrid_array::Array::try_from(sk.0.as_slice()).expect("Invalid secret key bytes size");
-    #[allow(deprecated)]
-    let esk = ExpandedSigningKey::<MlDsa65>::from_expanded(&enc_sk);
+    let signing_key = SigningKey::<MlDsa65>::from_seed(&seed);
 
     let mut rng = SysRng;
-    let sig = esk
+    let sig = signing_key
+        .expanded_key()
         .sign_randomized(message, &[], &mut rng)
         .expect("ML-DSA signature generation failed");
 

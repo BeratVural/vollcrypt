@@ -10,7 +10,8 @@ pub const ML_KEM_768_DECAPSULATION_KEY_SIZE: usize = 2_400;
 pub const ML_KEM_768_CIPHERTEXT_SIZE: usize = 1_088;
 
 pub const ML_DSA_65_PUBLIC_KEY_SIZE: usize = 1_952;
-pub const ML_DSA_65_SECRET_KEY_SIZE: usize = 4_032;
+/// Canonical FIPS 204 seed used to reconstruct an ML-DSA-65 signing key.
+pub const ML_DSA_65_SECRET_KEY_SIZE: usize = 32;
 pub const ML_DSA_65_SIGNATURE_SIZE: usize = 3_309;
 
 pub const HYBRID_PUBLIC_KEY_SIZE: usize = 32 + ML_DSA_65_PUBLIC_KEY_SIZE;

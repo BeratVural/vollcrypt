@@ -1,7 +1,7 @@
 {
   "name": "vollcrypt-files-wasm",
   "type": "module",
-  "version": "0.1.2",
+  "version": "1.0.0",
   "license": "GPL-3.0-only OR LicenseRef-Commercial",
   "files": [
     "vollcrypt_files_wasm_bg.wasm",
