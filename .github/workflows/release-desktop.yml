@@ -100,8 +100,12 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-installers
-          find target -name "*.msi" -exec cp {} dist-installers/ \;
-          find target -name "*.exe" -exec cp {} dist-installers/ \;
+          VERSION=$(node -p "require('./vollcrypt-desktop/package.json').version")
+          for target in x86_64-pc-windows-msvc aarch64-pc-windows-msvc i686-pc-windows-msvc; do
+            find "target/$target/release/bundle/nsis" -maxdepth 1 -type f -name "*-setup.exe" -exec cp {} dist-installers/ \;
+          done
+          cp target/x86_64-pc-windows-msvc/release/vollcrypt-desktop.exe "dist-installers/VOLLcrypt_${VERSION}_x64-portable.exe"
+          test "$(find dist-installers -maxdepth 1 -type f | wc -l)" -eq 4
           ls -la dist-installers/
 
       - name: Stage Installers (macOS)
@@ -109,8 +113,9 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-installers
-          find target -name "*.dmg" -exec cp {} dist-installers/ \;
-          find target -name "*.app" -exec cp -r {} dist-installers/ \; 2>/dev/null || true
+          find target/x86_64-apple-darwin/release/bundle/dmg -maxdepth 1 -type f -name "*.dmg" -exec cp {} dist-installers/ \;
+          find target/aarch64-apple-darwin/release/bundle/dmg -maxdepth 1 -type f -name "*.dmg" -exec cp {} dist-installers/ \;
+          test "$(find dist-installers -maxdepth 1 -type f | wc -l)" -eq 2
           ls -la dist-installers/
 
       - name: Stage Installers (Linux)
@@ -118,8 +123,9 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-installers
-          find target -name "*.deb" -exec cp {} dist-installers/ \;
-          find target -name "*.AppImage" -exec cp {} dist-installers/ \;
+          find target/x86_64-unknown-linux-gnu/release/bundle/deb -maxdepth 1 -type f -name "*.deb" -exec cp {} dist-installers/ \;
+          find target/x86_64-unknown-linux-gnu/release/bundle/appimage -maxdepth 1 -type f -name "*.AppImage" -exec cp {} dist-installers/ \;
+          test "$(find dist-installers -maxdepth 1 -type f | wc -l)" -eq 2
           ls -la dist-installers/
 
       # -------------------------------------------------------------
