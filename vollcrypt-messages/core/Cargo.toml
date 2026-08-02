@@ -4,7 +4,7 @@ version = "1.0.0"
 edition = "2024"
 
 [dependencies]
-aes-gcm = "0.10.3"
+aes-gcm = "0.11.0"
 bip39 = "2.2.2"
 ed25519-dalek = { version = "2.2.0", features = ["rand_core"] }
 hkdf = "0.12.4"
