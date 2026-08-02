@@ -3006,7 +3006,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
 name = "node"
-version = "0.9.1"
+version = "1.0.0"
 dependencies = [
  "napi",
  "napi-build",
@@ -5704,7 +5704,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vollcrypt-core"
-version = "0.9.1"
+version = "1.0.0"
 dependencies = [
  "aes-gcm",
  "aes-kw",
@@ -5949,7 +5949,7 @@ dependencies = [
 
 [[package]]
 name = "wasm"
-version = "0.9.1"
+version = "1.0.0"
 dependencies = [
  "console_error_panic_hook",
  "console_log",

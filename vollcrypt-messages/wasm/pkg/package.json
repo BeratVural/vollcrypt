@@ -1,7 +1,7 @@
 {
   "name": "wasm",
   "type": "module",
-  "version": "0.9.1",
+  "version": "1.0.0",
   "files": [
     "wasm_bg.wasm",
     "wasm.js",
