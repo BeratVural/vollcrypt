@@ -9,10 +9,12 @@ on:
 permissions:
   contents: read
   id-token: write
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   # Messages Module Releases
-  build-and-publish-messages-node:
+  build-messages-node:
     name: Build Messages Node Bindings
     runs-on: ${{ matrix.os }}
     strategy:
@@ -66,11 +68,10 @@ jobs:
           path: vollcrypt-messages/node/vollcrypt.*.node
           if-no-files-found: error
 
-  publish-messages-node:
-    name: Publish @vollcrypt/messages-node
-    needs: build-and-publish-messages-node
+  package-messages-node:
+    name: Package @vollcrypt/messages-node
+    needs: build-messages-node
     runs-on: ubuntu-latest
-    environment: npm-publish
     steps:
       - uses: actions/checkout@v7
 
@@ -96,15 +97,33 @@ jobs:
       - name: List binaries
         run: ls -la vollcrypt-messages/node/vollcrypt.*.node
 
-      - name: Publish to NPM
-        run: cd vollcrypt-messages/node && npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Create npm package
+        run: |
+          mkdir -p dist-packages
+          cd vollcrypt-messages/node
+          npm pack --pack-destination ../../dist-packages
 
-  build-and-publish-messages-wasm:
-    name: Publish Messages WASM Bindings
+      - name: Upload npm package
+        uses: actions/upload-artifact@v4
+        with:
+          name: messages-node-npm-package
+          path: dist-packages/*.tgz
+          if-no-files-found: error
+
+      - name: Attest npm package provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: dist-packages/*.tgz
+
+      - name: Attest npm package SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: dist-packages/*.tgz
+          sbom-path: vollcrypt-messages/node/sbom.cdx.json
+
+  package-messages-wasm:
+    name: Package Messages WASM Bindings
     runs-on: ubuntu-latest
-    environment: npm-publish
     steps:
       - uses: actions/checkout@v7
 
@@ -131,7 +150,26 @@ jobs:
       - name: Generate CycloneDX SBOM
         run: node scripts/generate-cargo-sbom.js vollcrypt-messages/wasm/Cargo.toml vollcrypt-messages/wasm/package.json vollcrypt-messages/wasm/sbom.cdx.json
 
-      - name: Publish to NPM
-        run: cd vollcrypt-messages/wasm && npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Create npm package
+        run: |
+          mkdir -p dist-packages
+          cd vollcrypt-messages/wasm
+          npm pack --pack-destination ../../dist-packages
+
+      - name: Upload npm package
+        uses: actions/upload-artifact@v4
+        with:
+          name: messages-wasm-npm-package
+          path: dist-packages/*.tgz
+          if-no-files-found: error
+
+      - name: Attest npm package provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: dist-packages/*.tgz
+
+      - name: Attest npm package SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: dist-packages/*.tgz
+          sbom-path: vollcrypt-messages/wasm/sbom.cdx.json
