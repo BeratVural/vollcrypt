@@ -15,11 +15,13 @@ fn bigint_to_u64(value: BigInt, field: &str) -> Result<u64> {
     Ok(value)
 }
 
+/// Node.js binding for `generate_mnemonic`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn generate_mnemonic() -> String {
     vollcrypt_core::generate_mnemonic()
 }
 
+/// Node.js binding for `mnemonic_to_seed`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn mnemonic_to_seed(phrase: String, password: Option<String>) -> Result<Buffer> {
     let mut phrase = phrase;
@@ -40,6 +42,7 @@ pub fn mnemonic_to_seed(phrase: String, password: Option<String>) -> Result<Buff
 }
 
 // Secret Key, Public Key
+/// Node.js binding for `generate_ed25519_keypair`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn generate_ed25519_keypair() -> Vec<Buffer> {
     let (sk, pk) = vollcrypt_core::generate_ed25519_keypair();
@@ -47,12 +50,14 @@ pub fn generate_ed25519_keypair() -> Vec<Buffer> {
 }
 
 // Secret, Public
+/// Node.js binding for `generate_x25519_keypair`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn generate_x25519_keypair() -> Vec<Buffer> {
     let (secret, public) = vollcrypt_core::generate_x25519_keypair();
     vec![Buffer::from(secret), Buffer::from(public)]
 }
 
+/// Node.js binding for `ecdh_shared_secret`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn ecdh_shared_secret(our_secret: Uint8Array, their_public: Uint8Array) -> Result<Buffer> {
     let mut secret_copy = our_secret.as_ref().to_vec();
@@ -64,6 +69,7 @@ pub fn ecdh_shared_secret(our_secret: Uint8Array, their_public: Uint8Array) -> R
     }
 }
 
+/// Node.js binding for `sign_message`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn sign_message(secret_key: Uint8Array, message: Uint8Array) -> Result<Buffer> {
     let mut sk_copy = secret_key.as_ref().to_vec();
@@ -75,6 +81,7 @@ pub fn sign_message(secret_key: Uint8Array, message: Uint8Array) -> Result<Buffe
     }
 }
 
+/// Node.js binding for `sign_fresh_message`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn sign_fresh_message(
     secret_key: Uint8Array,
@@ -97,11 +104,13 @@ pub fn sign_fresh_message(
         .map_err(|error| Error::from_reason(error.to_string()))
 }
 
+/// Node.js data transfer object for `ReplayProtectionStore`.
 #[napi]
 pub struct ReplayProtectionStore {
     inner: std::sync::Mutex<vollcrypt_core::ReplayProtectionStore>,
 }
 
+/// Node.js methods for `ReplayProtectionStore`.
 #[napi]
 impl ReplayProtectionStore {
     #[napi(constructor)]
@@ -170,6 +179,7 @@ impl ReplayProtectionStore {
     }
 }
 
+/// Node.js binding for `verify_signature`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn verify_signature(
     public_key: Uint8Array,
@@ -213,6 +223,7 @@ pub fn verify_signature(
     vollcrypt_core::verify_signature(public_key.as_ref(), message.as_ref(), signature.as_ref())
 }
 
+/// Node.js binding for `encrypt_aes_gcm`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn encrypt_aes_gcm(
     key: Uint8Array,
@@ -229,6 +240,7 @@ pub fn encrypt_aes_gcm(
     }
 }
 
+/// Node.js binding for `decrypt_aes_gcm`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn decrypt_aes_gcm(
     key: Uint8Array,
@@ -245,6 +257,7 @@ pub fn decrypt_aes_gcm(
     }
 }
 
+/// Node.js binding for `encrypt_aes_gcm_padded`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn encrypt_aes_gcm_padded(
     key: Uint8Array,
@@ -261,6 +274,7 @@ pub fn encrypt_aes_gcm_padded(
     }
 }
 
+/// Node.js binding for `decrypt_aes_gcm_padded`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn decrypt_aes_gcm_padded(
     key: Uint8Array,
@@ -277,6 +291,7 @@ pub fn decrypt_aes_gcm_padded(
     }
 }
 
+/// Node.js binding for `encrypt_aes_gcm_chunked`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn encrypt_aes_gcm_chunked(
     key: Uint8Array,
@@ -299,6 +314,7 @@ pub fn encrypt_aes_gcm_chunked(
     }
 }
 
+/// Node.js binding for `decrypt_aes_gcm_chunked`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn decrypt_aes_gcm_chunked(
     key: Uint8Array,
@@ -315,6 +331,7 @@ pub fn decrypt_aes_gcm_chunked(
     }
 }
 
+/// Node.js binding for `encrypt_aes_gcm_chunked_padded`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn encrypt_aes_gcm_chunked_padded(
     key: Uint8Array,
@@ -337,6 +354,7 @@ pub fn encrypt_aes_gcm_chunked_padded(
     }
 }
 
+/// Node.js binding for `decrypt_aes_gcm_chunked_padded`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn decrypt_aes_gcm_chunked_padded(
     key: Uint8Array,
@@ -354,6 +372,7 @@ pub fn decrypt_aes_gcm_chunked_padded(
     }
 }
 
+/// Node.js binding for `derive_pbkdf2`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn derive_pbkdf2(
     password: Uint8Array,
@@ -369,6 +388,7 @@ pub fn derive_pbkdf2(
     Ok(Buffer::from(key))
 }
 
+/// Node.js binding for `derive_hkdf`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn derive_hkdf(
     ikm: Uint8Array,
@@ -387,6 +407,7 @@ pub fn derive_hkdf(
     }
 }
 
+/// Node.js binding for `derive_srk`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn derive_srk(dek: Uint8Array, chat_id: Uint8Array) -> Result<Buffer> {
     let mut dek_copy = dek.as_ref().to_vec();
@@ -398,6 +419,7 @@ pub fn derive_srk(dek: Uint8Array, chat_id: Uint8Array) -> Result<Buffer> {
     }
 }
 
+/// Node.js binding for `derive_window_key`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn derive_window_key(srk: Uint8Array, window_index: BigInt) -> Result<Buffer> {
     let window_index = bigint_to_u64(window_index, "window_index")?;
@@ -410,6 +432,7 @@ pub fn derive_window_key(srk: Uint8Array, window_index: BigInt) -> Result<Buffer
     }
 }
 
+/// Node.js binding for `generate_verification_code`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn generate_verification_code(
     key_a: Uint8Array,
@@ -445,6 +468,7 @@ pub fn generate_verification_code(
         .map_err(|e| Error::from_reason(format!("Serialization failed: {}", e)))
 }
 
+/// Node.js binding for `compute_fingerprint`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn compute_fingerprint(
     key_a: Uint8Array,
@@ -475,6 +499,7 @@ pub fn compute_fingerprint(
     Ok(Buffer::from(fp.to_vec()))
 }
 
+/// Node.js binding for `verify_fingerprints_match`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn verify_fingerprints_match(
     fingerprint_a: Uint8Array,
@@ -501,6 +526,7 @@ pub fn verify_fingerprints_match(
     ))
 }
 
+/// Node.js binding for `wrap_key`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn wrap_key(kek: Uint8Array, key_to_wrap: Uint8Array) -> Result<Buffer> {
     match vollcrypt_core::wrap_key(kek.as_ref(), key_to_wrap.as_ref()) {
@@ -509,6 +535,7 @@ pub fn wrap_key(kek: Uint8Array, key_to_wrap: Uint8Array) -> Result<Buffer> {
     }
 }
 
+/// Node.js binding for `unwrap_key`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn unwrap_key(kek: Uint8Array, wrapped_key: Uint8Array) -> Result<Buffer> {
     match vollcrypt_core::unwrap_key(kek.as_ref(), wrapped_key.as_ref()) {
@@ -517,6 +544,7 @@ pub fn unwrap_key(kek: Uint8Array, wrapped_key: Uint8Array) -> Result<Buffer> {
     }
 }
 
+/// Node.js binding for `pack_envelope`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn pack_envelope(
     window_index: u32,
@@ -534,6 +562,7 @@ pub fn pack_envelope(
     }
 }
 
+/// Node.js data transfer object for `UnpackedEnvelope`.
 #[napi(object)]
 pub struct UnpackedEnvelope {
     pub window_index: u32,
@@ -541,6 +570,7 @@ pub struct UnpackedEnvelope {
     pub encrypted_blob: Buffer,
 }
 
+/// Node.js binding for `unpack_envelope`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn unpack_envelope(envelope: Uint8Array) -> Result<UnpackedEnvelope> {
     match vollcrypt_core::unpack_envelope(envelope.as_ref()) {
@@ -555,18 +585,21 @@ pub fn unpack_envelope(envelope: Uint8Array) -> Result<UnpackedEnvelope> {
 
 // ==================== Post-Quantum Cryptography (Phase 6) ====================
 
+/// Node.js binding for `ml_kem_keygen`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn ml_kem_keygen() -> Vec<Buffer> {
     let (dk, ek) = vollcrypt_core::ml_kem_keygen();
     vec![Buffer::from(dk), Buffer::from(ek)]
 }
 
+/// Node.js data transfer object for `MlKemEncapsulationResult`.
 #[napi(object)]
 pub struct MlKemEncapsulationResult {
     pub ciphertext: Buffer,
     pub shared_secret: Buffer,
 }
 
+/// Node.js binding for `ml_kem_encapsulate`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn ml_kem_encapsulate(encapsulation_key: Uint8Array) -> Result<MlKemEncapsulationResult> {
     match vollcrypt_core::ml_kem_encapsulate(encapsulation_key.as_ref()) {
@@ -578,6 +611,7 @@ pub fn ml_kem_encapsulate(encapsulation_key: Uint8Array) -> Result<MlKemEncapsul
     }
 }
 
+/// Node.js binding for `ml_kem_decapsulate`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn ml_kem_decapsulate(decapsulation_key: Uint8Array, ciphertext: Uint8Array) -> Result<Buffer> {
     let mut dk_copy = decapsulation_key.as_ref().to_vec();
@@ -589,12 +623,14 @@ pub fn ml_kem_decapsulate(decapsulation_key: Uint8Array, ciphertext: Uint8Array)
     }
 }
 
+/// Node.js data transfer object for `HybridKemResult`.
 #[napi(object)]
 pub struct HybridKemResult {
     pub shared_key: Buffer,
     pub ml_kem_ciphertext: Buffer,
 }
 
+/// Node.js binding for `hybrid_kem_encapsulate`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn hybrid_kem_encapsulate(
     x25519_our_secret: Uint8Array,
@@ -617,6 +653,7 @@ pub fn hybrid_kem_encapsulate(
     }
 }
 
+/// Node.js binding for `hybrid_kem_decapsulate`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn hybrid_kem_decapsulate(
     x25519_our_secret: Uint8Array,
@@ -640,6 +677,7 @@ pub fn hybrid_kem_decapsulate(
     }
 }
 
+/// Node.js binding for `authenticated_kem_encapsulate`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn authenticated_kem_encapsulate(
     our_x25519_sk: Uint8Array,
@@ -663,6 +701,7 @@ pub fn authenticated_kem_encapsulate(
     }
 }
 
+/// Node.js binding for `authenticated_kem_decapsulate`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn authenticated_kem_decapsulate(
     our_x25519_sk: Uint8Array,
@@ -690,6 +729,7 @@ pub fn authenticated_kem_decapsulate(
 
 // ==================== Device Authorization Registry ====================
 
+/// Node.js binding for `registry_empty`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn registry_empty() -> String {
     let registry = vollcrypt_core::DefaultDeviceRegistry::new();
@@ -698,6 +738,7 @@ pub fn registry_empty() -> String {
         .unwrap_or_else(|_| "{\"devices\":[]}".to_string())
 }
 
+/// Node.js binding for `registry_add_device`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn registry_add_device(
     registry_json: String,
@@ -727,6 +768,7 @@ pub fn registry_add_device(
         .map_err(|e| Error::from_reason(e.to_string()))
 }
 
+/// Node.js binding for `registry_revoke_device`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn registry_revoke_device(registry_json: String, device_id: String) -> Result<String> {
     let mut registry = vollcrypt_core::DefaultDeviceRegistry::from_json(&registry_json)
@@ -741,6 +783,7 @@ pub fn registry_revoke_device(registry_json: String, device_id: String) -> Resul
         .map_err(|e| Error::from_reason(e.to_string()))
 }
 
+/// Node.js binding for `registry_get_active_devices`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn registry_get_active_devices(registry_json: String) -> Result<String> {
     let registry = vollcrypt_core::DefaultDeviceRegistry::from_json(&registry_json)
@@ -753,6 +796,7 @@ pub fn registry_get_active_devices(registry_json: String) -> Result<String> {
 
 // ==================== Post-Compromise Security (PCS) ====================
 
+/// Node.js binding for `generate_ratchet_keypair`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn generate_ratchet_keypair() -> Result<Vec<Buffer>> {
     match vollcrypt_core::generate_ratchet_keypair() {
@@ -764,6 +808,7 @@ pub fn generate_ratchet_keypair() -> Result<Vec<Buffer>> {
     }
 }
 
+/// Node.js binding for `ratchet_srk`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn ratchet_srk(
     current_srk: Uint8Array,
@@ -817,6 +862,7 @@ pub fn ratchet_srk(
     }
 }
 
+/// Node.js binding for `should_ratchet`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn should_ratchet(
     message_count: u32,
@@ -833,12 +879,14 @@ pub fn should_ratchet(
 
 // ==================== Transcript Hashing ====================
 
+/// Node.js binding for `transcript_new`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn transcript_new(session_id: Uint8Array) -> Buffer {
     let ts = vollcrypt_core::transcript::TranscriptState::new(session_id.as_ref());
     Buffer::from(ts.to_bytes().to_vec())
 }
 
+/// Node.js binding for `transcript_update`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn transcript_update(chain_state: Uint8Array, message_hash: Uint8Array) -> Result<Buffer> {
     if chain_state.len() != 32 || message_hash.len() != 32 {
@@ -856,6 +904,7 @@ pub fn transcript_update(chain_state: Uint8Array, message_hash: Uint8Array) -> R
     Ok(Buffer::from(ts.to_bytes().to_vec()))
 }
 
+/// Node.js binding for `transcript_compute_message_hash`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn transcript_compute_message_hash(
     message_id: Uint8Array,
@@ -873,6 +922,7 @@ pub fn transcript_compute_message_hash(
     Ok(Buffer::from(hash.to_vec()))
 }
 
+/// Node.js binding for `transcript_verify_sync`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn transcript_verify_sync(hash_a: Uint8Array, hash_b: Uint8Array) -> Result<bool> {
     if hash_a.len() != 32 || hash_b.len() != 32 {
@@ -890,6 +940,7 @@ pub fn transcript_verify_sync(hash_a: Uint8Array, hash_b: Uint8Array) -> Result<
 
 // ==================== Sealed Sender ====================
 
+/// Node.js binding for `seal_message`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn seal_message(
     recipient_x25519_pub: Uint8Array,
@@ -928,6 +979,7 @@ pub fn seal_message(
     }
 }
 
+/// Node.js binding for `unseal_message`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn unseal_message(
     sealed_packet: Uint8Array,
@@ -966,6 +1018,7 @@ pub fn unseal_message(
 
 // ==================== Key Transparency (Key Log) ====================
 
+/// Node.js binding for `key_log_create_entry`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn key_log_create_entry(
     user_id: Uint8Array,
@@ -1011,6 +1064,7 @@ pub fn key_log_create_entry(
     }
 }
 
+/// Node.js binding for `key_log_verify_chain`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn key_log_verify_chain(entries_json: String) -> Result<bool> {
     let entries: Vec<vollcrypt_core::key_log::KeyLogEntry> = serde_json::from_str(&entries_json)
@@ -1023,6 +1077,7 @@ pub fn key_log_verify_chain(entries_json: String) -> Result<bool> {
     }
 }
 
+/// Node.js binding for `key_log_current_key`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn key_log_current_key(entries_json: String, user_id: Uint8Array) -> Result<Option<Buffer>> {
     let entries: Vec<vollcrypt_core::key_log::KeyLogEntry> = serde_json::from_str(&entries_json)
@@ -1037,6 +1092,7 @@ pub fn key_log_current_key(entries_json: String, user_id: Uint8Array) -> Result<
     }
 }
 
+/// Node.js binding for `key_log_key_at_timestamp`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn key_log_key_at_timestamp(
     entries_json: String,
@@ -1056,6 +1112,7 @@ pub fn key_log_key_at_timestamp(
     }
 }
 
+/// Node.js binding for `key_log_compute_entry_hash`; cryptographic semantics are enforced by `vollcrypt-core`.
 #[napi]
 pub fn key_log_compute_entry_hash(entry_json: String) -> Result<Buffer> {
     let entry: vollcrypt_core::key_log::KeyLogEntry = serde_json::from_str(&entry_json)
