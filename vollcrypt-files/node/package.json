@@ -65,7 +65,7 @@
   "license": "GPL-3.0-only OR LicenseRef-Commercial",
   "devDependencies": {
     "@napi-rs/cli": "2.18.4",
-    "@types/node": "20.11.0",
+    "@types/node": "26.1.2",
     "tsx": "4.23.5",
     "typescript": "5.3.3"
   }
