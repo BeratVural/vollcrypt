@@ -33,12 +33,6 @@ updates:
     open-pull-requests-limit: 5
 
   - package-ecosystem: npm
-    directory: /db-proxy
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-
-  - package-ecosystem: npm
     directory: /vollcrypt-desktop
     schedule:
       interval: weekly
