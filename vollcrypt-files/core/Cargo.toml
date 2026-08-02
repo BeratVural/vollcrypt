@@ -23,7 +23,7 @@ ml-dsa = { version = "0.1.0", features = ["rand_core"] }
 hybrid-array = "0.4"
 getrandom = "0.4"
 log = "0.4"
-ed25519-dalek = { version = "2", features = ["fast"] }
+ed25519-dalek = { version = "3", features = ["fast"] }
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 crossbeam-channel = "0.5"
 
