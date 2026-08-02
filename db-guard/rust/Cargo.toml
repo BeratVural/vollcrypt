@@ -5,7 +5,7 @@ edition = "2021"
 description = "Database field-level encryption integrations for Vollcrypt"
 
 [dependencies]
-aes-gcm = "0.10.3"
+aes-gcm = "0.11.0"
 hkdf = "0.12.4"
 sha2 = "0.10.9"
 rand = "0.8.5"
