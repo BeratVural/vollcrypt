@@ -1,12 +1,11 @@
 ---
 ---
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "{{ site.theme }}";
 
 body {
   background-color: #070708 !important; 
   color: #e4e4e7 !important;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif !important;
 }
 
 strong, b {
@@ -39,7 +38,7 @@ header {
 }
 
 header h1 {
-  font-family: 'Inter', sans-serif !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
   font-weight: 800 !important;
   font-size: 24px !important;
   letter-spacing: 0.5px !important;
@@ -170,7 +169,7 @@ code {
   color: #e4e4e7 !important;
   padding: 0.2em 0.4em !important;
   border-radius: 6px !important;
-  font-family: 'JetBrains Mono', monospace !important;
+  font-family: 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace !important;
   font-size: 85% !important;
 }
 
@@ -296,7 +295,7 @@ hr {
   overflow-y: auto;
   padding-left: 16px;
   border-left: 1px solid #1f1f23;
-  font-family: 'Inter', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   z-index: 10;
 }
 
@@ -378,7 +377,7 @@ hr {
   cursor: pointer;
   opacity: 0;
   transition: all 0.2s ease;
-  font-family: 'Inter', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   
   &:hover {
     background-color: #222227;
@@ -391,171 +390,4 @@ hr {
     border-color: rgba(22, 101, 52, 0.3);
     color: #4ade80;
   }
-}
-
-/* Interactive Cryptography Playground */
-.crypto-playground-section {
-  margin-top: 40px;
-  
-  h2 {
-    border-bottom: 1px solid #1f1f23 !important;
-    padding-bottom: 8px !important;
-    color: #ffffff !important;
-  }
-}
-
-.playground-card {
-  background-color: #0f0f11;
-  border: 1px solid #1f1f23;
-  border-radius: 12px;
-  padding: 24px;
-  margin-top: 20px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-}
-
-.playground-tabs {
-  display: flex;
-  background-color: #16161a;
-  padding: 3px;
-  border-radius: 8px;
-  border: 1px solid #1f1f23;
-  margin-bottom: 20px;
-}
-
-.tab-btn {
-  flex: 1;
-  text-align: center;
-  padding: 8px 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: #71717a;
-  border-radius: 6px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-family: 'Inter', sans-serif;
-  
-  &:hover {
-    color: #a1a1aa;
-  }
-  
-  &.active {
-    background-color: #222227;
-    color: #ffffff;
-  }
-}
-
-.playground-group {
-  margin-bottom: 16px;
-  
-  label {
-    display: block;
-    font-size: 10px;
-    font-weight: 600;
-    color: #71717a;
-    letter-spacing: 0.5px;
-    margin-bottom: 6px;
-    text-transform: uppercase;
-  }
-}
-
-.playground-input {
-  width: 100%;
-  padding: 10px 12px;
-  background-color: #141416;
-  border: 1px solid #1f1f23;
-  border-radius: 6px;
-  color: #ffffff;
-  font-size: 13px;
-  outline: none;
-  transition: all 0.2s ease;
-  box-sizing: border-box;
-  font-family: 'Inter', sans-serif;
-  
-  &:focus {
-    border-color: #f97316;
-  }
-}
-
-textarea.playground-input {
-  min-height: 80px;
-  resize: none;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-}
-
-select.playground-input {
-  appearance: none;
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  background-size: 14px;
-  padding-right: 36px;
-  
-  &:focus {
-    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f97316' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  }
-}
-
-select.playground-input option {
-  background-color: #141416;
-  color: #ffffff;
-}
-
-.playground-btn-primary {
-  width: 100%;
-  padding: 12px;
-  background-color: #f97316;
-  color: #ffffff;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-transform: uppercase;
-  font-family: 'Inter', sans-serif;
-  
-  &:hover {
-    background-color: #ea580c;
-  }
-  
-  &:active {
-    transform: translateY(0.5px);
-  }
-}
-
-.result-group {
-  margin-top: 20px;
-  border-top: 1px solid #1f1f23;
-  padding-top: 16px;
-}
-
-.playground-display {
-  background-color: #141416;
-  border: 1px solid #1f1f23;
-  border-radius: 6px;
-  padding: 12px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  word-break: break-all;
-  max-height: 120px;
-  overflow-y: auto;
-  color: #8b8d99;
-  box-sizing: border-box;
-}
-
-.playground-info {
-  font-size: 12px;
-  color: #a1a1aa;
-  margin-bottom: 16px;
-  line-height: 1.5;
-}
-
-.field-helper {
-  font-size: 10px;
-  color: #52525b;
-  margin-top: 6px;
 }

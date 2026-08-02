@@ -1,6 +1,6 @@
 # db-guard
 
-Application-level, field-level encryption integrations for ORMs (Prisma, Mongoose, Drizzle, TypeORM, Diesel, SeaORM) powered by FIPS-compliant cryptography.
+Application-level, field-level encryption integrations for ORMs (Prisma, Mongoose, Drizzle, TypeORM, Diesel, SeaORM) using standard cryptographic primitives through Node.js and Rust providers. This package is not FIPS 140-3 validated.
 
 `db-guard` secures sensitive database columns (SSN, credit card numbers, addresses, personal data) by encrypting them before they hit the database. It prevents data leakage from compromised database dumps, unauthorized database connections, or compromised database administrators (DBAs).
 
@@ -14,8 +14,8 @@ Application-level, field-level encryption integrations for ORMs (Prisma, Mongoos
 - **Schema Evolution & Crypto-Agility**: Features backward-compatible prefixes for smooth algorithm transitions without database downtime.
 - **M-of-N Break-Glass Protocol**: Emergency KMS bypass via threshold Ed25519 signature verification.
 - **Compliance Scorecard CLI**: Built-in CLI scans configuration and outputs compliance scorecards for GDPR Article 32, KVKK Article 12, and PCI-DSS v4.0.
-- **Supply Chain Security (SLSA Level 4)**: Build pipeline automatically compiles CycloneDX SBOM and SLSA Level 4 Provenance files, cryptographically signed with Ed25519.
-- **FIPS 140-3 & Post-Quantum Hybrid Transition**: Conforms to FIPS 140-3 logical and physical boundaries with NIST FIPS 203 (ML-KEM) lattice-based algorithms registered for hybrid key exchange.
+- **Supply Chain Artifacts**: Release builds emit signed CycloneDX SBOM and build provenance artifacts for independent verification.
+- **FIPS / PQC Validation Roadmap**: FIPS 140-3 and post-quantum validation are roadmap items. The package does not currently provide a validated cryptographic module or validated PQC boundary.
 - **Hardened Blind Indexing**: Allows exact-match querying on encrypted columns via HKDF-SHA256 shadow columns, avoiding frequency analysis vulnerabilities.
 - **RAM Security**: Aggressive memory zeroization (null-byte writing) for keys and plaintext buffers in memory.
 - **Batch Migration CLI**: Built-in CLI tool to perform chunked shadow database migrations in the background.
@@ -267,5 +267,5 @@ npx vollcrypt-db-guard compliance \
 ## Supply Chain & Compliance Verification
 
 Refer to the following standalone validation documentation for formal verification processes:
-- **Supply Chain Artifacts**: Signed CycloneDX SBOM and SLSA Level 4 Provenance are located in `dist/sbom.json` and `dist/provenance.json` post-build.
-- **FIPS 140-3 Boundaries**: Detailed logical boundaries, Approved algorithm registries, and post-quantum hybrid structures are defined in [FIPS_VALIDATION.md](file:///c:/Users/iTopya/Desktop/Project/vollcrypt/db-guard/FIPS_VALIDATION.md).
+- **Supply Chain Artifacts**: Signed CycloneDX SBOM and build provenance are located in `dist/sbom.json` and `dist/provenance.json` post-build.
+- **FIPS / PQC Validation Status**: Current limitations, allowed wording, and validation requirements are defined in [FIPS_VALIDATION.md](https://github.com/BeratVural/vollcrypt/blob/main/db-guard/FIPS_VALIDATION.md).

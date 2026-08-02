@@ -29,9 +29,9 @@ Vollcrypt is a cryptographic library providing secure building blocks for end-to
 Explore the specific modules of Vollcrypt:
 
 *    **[Vollcrypt Messages Module Documentation (README-messages.md)](README-messages.md)** - Stable, E2EE messaging session managers, PCS ratchets, sealed sender, and transparency logs.
-*    **[Vollcrypt Files Module Documentation (README-files.md)](README-files.md)** - Active Development, streaming chunk-based encryption, and Merkle tree verification.
-*    **[Vollcrypt Desktop App Module Documentation (README-desktop.md)](README-desktop.md)** - Frameless, dark-mode native desktop application for file and text cryptography.
-*    **[Vollcrypt DB-Guard Module Documentation (README-db-guard.md)](README-db-guard.md)** - FIPS-compliant database field-level encryption integrations (Prisma, Mongoose, Drizzle, TypeORM, Diesel, SeaORM) with dynamic KMS routing and PKCS#11 HSM support.
+*    **[Vollcrypt Files Module Documentation (README-files.md)](README-files.md)** - Stable v1.0 file-container encryption with Node.js and WebAssembly bindings.
+*    **[Vollcrypt Desktop App Module Documentation (README-desktop.md)](README-desktop.md)** - Stable v1.0 native desktop application with [cross-platform downloads](https://github.com/BeratVural/vollcrypt/releases/tag/v1.0.0).
+*    **[Vollcrypt DB-Guard Module Documentation (README-db-guard.md)](README-db-guard.md)** - Database field-level encryption integrations with dynamic KMS routing and optional PKCS#11 providers; not FIPS 140-3 validated.
 *    **[Vollcrypt DB-Proxy Module Documentation (README-db-proxy.md)](README-db-proxy.md)** - Zero-trust database protocol proxy (PostgreSQL) executing dynamic envelope decryption and dynamic data masking (DDM) on-the-fly for off-the-shelf BI tools and SQL clients.
 *    **[Vollcrypt Wave Module Documentation (README-wave.md)](README-wave.md)** - Standalone, `#![no_std]` zero-allocation tactical radio COMSEC & TRANSEC protocol with deterministic chaos FHSS, dynamic aliasing, and Doppler sync.
 
@@ -45,7 +45,7 @@ This repository is organized as a monorepo containing the following modules:
 *   `vollcrypt-files/`: The Rust implementation and core logic for E2EE file/stream chunking and verification.
 *   `vollcrypt-wave/`: Standalone, `#![no_std]` zero-allocation tactical radio COMSEC & TRANSEC protocol implementation in Rust.
 *   `vollcrypt-desktop/`: Cross-platform desktop application built with Tauri (Rust) and React + Vanilla CSS.
-*   `db-guard/`: FIPS-compliant database field-level encryption adapters for Node.js ORMs and Rust ORMs.
+*   `db-guard/`: Database field-level encryption adapters for Node.js and Rust ORMs; not FIPS 140-3 validated.
 *   `db-proxy/`: A database wire-protocol proxy for transparent field decryption and masking in-transit.
 
 ```mermaid

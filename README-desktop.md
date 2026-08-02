@@ -2,6 +2,22 @@
 
 **Frameless, dark-mode native desktop application for high-performance local file and text cryptography, built with Tauri (Rust) and React + TypeScript + Vanilla CSS.**
 
+## Download VOLLcrypt Desktop v1.0.0
+
+The first stable desktop release is available from the [VOLLcrypt Desktop v1.0.0 release page](https://github.com/BeratVural/vollcrypt/releases/tag/v1.0.0).
+
+| Platform | Architecture | Package |
+|---|---|---|
+| Windows | x64 | [Setup](https://github.com/BeratVural/vollcrypt/releases/download/v1.0.0/VOLLcrypt_1.0.0_x64-setup.exe) / [Portable](https://github.com/BeratVural/vollcrypt/releases/download/v1.0.0/VOLLcrypt_1.0.0_x64-portable.exe) |
+| Windows | ARM64 | [Setup](https://github.com/BeratVural/vollcrypt/releases/download/v1.0.0/VOLLcrypt_1.0.0_arm64-setup.exe) |
+| Windows | x86 (32-bit) | [Setup](https://github.com/BeratVural/vollcrypt/releases/download/v1.0.0/VOLLcrypt_1.0.0_x86-setup.exe) |
+| macOS | Apple Silicon | [DMG](https://github.com/BeratVural/vollcrypt/releases/download/v1.0.0/VOLLcrypt_1.0.0_aarch64.dmg) |
+| macOS | Intel | [DMG](https://github.com/BeratVural/vollcrypt/releases/download/v1.0.0/VOLLcrypt_1.0.0_x64.dmg) |
+| Linux | amd64 | [DEB](https://github.com/BeratVural/vollcrypt/releases/download/v1.0.0/VOLLcrypt_1.0.0_amd64.deb) / [AppImage](https://github.com/BeratVural/vollcrypt/releases/download/v1.0.0/VOLLcrypt_1.0.0_amd64.AppImage) |
+
+### v1.0 Hybrid Signing Key Migration
+
+Vollcrypt Files v1.0 exports 64-byte hybrid signing secret keys based on the canonical ML-DSA-65 seed. Legacy 4064-byte hybrid signing secret keys from 0.x releases cannot be converted and are rejected. Generate and register a new hybrid signing key before upgrading an existing signing deployment. Existing encrypted containers, recipient keys, public signing keys, and previously generated signatures remain compatible and verifiable.
 
 ---
 
@@ -72,7 +88,7 @@ graph TD
 ```
 
 ### 1. Tauri Rust Backend (`src-tauri/`)
-- Interoperates natively with the [vollcrypt-files-core](file:///c:/Users/iTopya/Desktop/Project/vollcrypt/vollcrypt-files/core) Rust crate.
+- Interoperates natively with the [vollcrypt-files-core](https://github.com/BeratVural/vollcrypt/tree/main/vollcrypt-files/core) Rust crate.
 - Exposes secure native commands to the frontend via Tauri's IPC (Inter-Process Communication) layer.
 - Handles multi-threaded cryptographic file operations, native file dialogs, and OS window management safely.
 
@@ -203,7 +219,7 @@ VOLLcrypt's dark-themed, frameless visual layout has been carefully optimized an
 ### 1. Windows 10 & Windows 11 Support
 Tauri uses the Microsoft WebView2 runtime to render the frontend.
 - **Windows 11:** WebView2 is pre-installed natively in the operating system.
-- **Windows 10:** To support older versions of Windows 10, the installer is configured with `"webviewInstallMode": { "type": "downloadBootstrapper" }` in [tauri.conf.json](file:///c:/Users/iTopya/Desktop/Project/vollcrypt/vollcrypt-desktop/src-tauri/tauri.conf.json). If WebView2 is missing on the client PC, the installer downloads and runs the WebView2 Bootstrapper automatically.
+- **Windows 10:** To support older versions of Windows 10, the installer is configured with `"webviewInstallMode": { "type": "downloadBootstrapper" }` in [tauri.conf.json](https://github.com/BeratVural/vollcrypt/blob/main/vollcrypt-desktop/src-tauri/tauri.conf.json). If WebView2 is missing on the client PC, the installer downloads and runs the WebView2 Bootstrapper automatically.
 
 ### 2. Multi-Architecture Configurations
 The desktop application compiles for the following architectures:
@@ -215,8 +231,8 @@ The desktop application compiles for the following architectures:
 
 ## 🛡️ Security & Privacy Features
 
-- **100% Local Processing:** The application runs entirely offline. It does not initiate network calls, check home, or transmit telemetry.
-- **GDPR & ISO Compliant:** By keeping data processing fully on the user's machine, no personal data or decryption keys ever leave local memory, adhering to zero-trust principles.
+- **Local Cryptographic Processing:** File contents and cryptographic keys are processed on-device and are not transmitted. The application does not send telemetry; installation dependencies such as WebView2 and links explicitly opened by the user may use the network.
+- **Privacy-Focused Local Processing:** File contents and cryptographic keys remain on the user's device. Regulatory compliance still depends on the deployment, policies, and operational controls around the application.
 - **Uninstaller Safety:** When the application is uninstalled:
   - Application binaries, registry settings, AppData folders, and shortcuts are deleted.
   - **User-encrypted files (`.voll` documents) are preserved** and never deleted, protecting user data from accidental loss.
@@ -227,8 +243,8 @@ The desktop application compiles for the following architectures:
 
 CI/CD pipelines are split into separate workflows to prevent build conflicts:
 
-- 🖥️ **Desktop CI ([ci-desktop.yml](file:///c:/Users/iTopya/Desktop/Project/vollcrypt/.github/workflows/ci-desktop.yml))**: Installs Linux build dependencies (libwebkit2gtk-4.1, libxdo) and verifies Rust & React compilation on every push affecting the desktop directory.
-- 📦 **Desktop Release ([release-desktop.yml](file:///c:/Users/iTopya/Desktop/Project/vollcrypt/.github/workflows/release-desktop.yml))**:
+- 🖥️ **Desktop CI ([ci-desktop.yml](https://github.com/BeratVural/vollcrypt/blob/main/.github/workflows/ci-desktop.yml))**: Installs Linux build dependencies (libwebkit2gtk-4.1, libxdo) and verifies Rust & React compilation on every push affecting the desktop directory.
+- 📦 **Desktop Release ([release-desktop.yml](https://github.com/BeratVural/vollcrypt/blob/main/.github/workflows/release-desktop.yml))**:
   - Triggers on tag pushes (`v*`) or manually via the GitHub Actions UI (`workflow_dispatch`).
   - Compiles and bundles installers for Windows (x64, ARM64, x86), macOS (Intel, Apple Silicon), and Linux (x64 deb & AppImage) and uploads them to a draft GitHub Release.
 

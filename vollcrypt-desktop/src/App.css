@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Dancing+Script:wght@500;700&family=Caveat:wght@500;700&family=Architects+Daughter&family=Shadows+Into+Light&family=Pacifico&family=Satisfy&family=Kalam:wght@400;700&display=swap');
-
 :root {
   --accent-color: #f97316;
   --accent-color-hover: #ea580c;
@@ -11,7 +9,7 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  font-family: 'Inter', -apple-system, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   user-select: none;
   outline: none !important;
 }
@@ -100,7 +98,7 @@ body {
 }
 
 .brand-text {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 1px;
@@ -108,7 +106,7 @@ body {
 }
 
 .version-info {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
   font-size: 10px;
   color: #52525b;
 }
@@ -255,7 +253,7 @@ label {
 textarea.text-input {
   min-height: 100px;
   resize: none;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
   font-size: 12px;
 }
 
@@ -356,7 +354,7 @@ textarea.text-input {
   border: 1px solid #1f1f23;
   border-radius: 6px;
   padding: 10px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
   font-size: 11px;
   word-break: break-all;
   max-height: 100px;
@@ -428,7 +426,7 @@ textarea.text-input {
 }
 
 .titlebar-brand .brand-text {
-  font-family: 'Inter', -apple-system, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 15px;
   font-weight: 800;
   letter-spacing: 0.5px;
@@ -436,7 +434,7 @@ textarea.text-input {
 }
 
 .titlebar-brand .brand-crypt {
-  font-family: 'Caveat', cursive;
+  font-family: 'Segoe Print', 'Bradley Hand', cursive;
   font-size: 20px;
   font-weight: 700;
   color: var(--accent-color);
@@ -450,7 +448,7 @@ textarea.text-input {
 }
 
 .titlebar-brand .titlebar-version {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
   font-size: 11px;
   color: #71717a;
   margin-left: 8px;
@@ -475,7 +473,7 @@ textarea.text-input {
   height: 22px;
   cursor: pointer;
   outline: none;
-  font-family: 'Inter', -apple-system, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   transition: all 0.15s ease;
   margin-right: 4px;
   align-self: center;
@@ -727,14 +725,14 @@ textarea.text-input {
 }
 
 .splash-powered {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
   font-size: 14px;
   color: #71717a;
   letter-spacing: 0.5px;
 }
 
 .splash-voll {
-  font-family: 'Inter', -apple-system, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 22px;
   font-weight: 800;
   letter-spacing: 0.5px;
@@ -743,7 +741,7 @@ textarea.text-input {
 }
 
 .splash-crypt {
-  font-family: 'Caveat', cursive;
+  font-family: 'Segoe Print', 'Bradley Hand', cursive;
   font-size: 26px;
   font-weight: 700;
   color: var(--accent-color);
@@ -754,7 +752,7 @@ textarea.text-input {
 
 .splash-cursor {
   display: inline-block;
-  font-family: 'Inter', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-weight: 300;
   color: var(--accent-color);
   margin-left: 2px;
@@ -1221,7 +1219,7 @@ input:checked + .slider:before {
   white-space: nowrap;
   flex-grow: 1;
   margin-right: 8px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
 }
 
 .queue-item-remove {
@@ -1273,7 +1271,7 @@ input:checked + .slider:before {
   color: #ffffff;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
 }
 
 .tour-tooltip-desc {
@@ -1292,7 +1290,7 @@ input:checked + .slider:before {
 .tour-step-indicator {
   font-size: 10px;
   color: #71717a;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
 }
 
 .tour-btn-group {
@@ -1346,7 +1344,7 @@ input:checked + .slider:before {
   width: 100vw;
   background-color: #09090b;
   color: #e4e4e7;
-  font-family: 'Inter', -apple-system, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   user-select: none;
   -webkit-user-select: none;
   overflow: hidden;
@@ -1379,7 +1377,7 @@ input:checked + .slider:before {
 }
 
 .preview-security-badge {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
   font-size: 10px;
   font-weight: 600;
   background-color: rgba(249, 115, 22, 0.1);
@@ -1600,7 +1598,7 @@ input:checked + .slider:before {
   overflow: auto;
   padding: 20px;
   margin: 0;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
   font-size: 12px;
   line-height: 1.6;
   color: #e4e4e7;
@@ -1665,7 +1663,7 @@ input:checked + .slider:before {
   overflow: auto;
   padding: 20px;
   margin: 0;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
   font-size: 11px;
   line-height: 1.6;
   color: #8b8d99;

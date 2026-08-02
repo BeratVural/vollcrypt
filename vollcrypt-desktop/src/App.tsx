@@ -1421,7 +1421,7 @@ function App() {
 
         <div className="app-container" style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", zoom: totalZoom }}>
           <div className="main-card" style={{ maxWidth: "580px", padding: "24px" }}>
-            <h2 style={{ fontSize: "14px", fontWeight: "700", color: "#ffffff", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: "JetBrains Mono, monospace" }}>
+            <h2 style={{ fontSize: "14px", fontWeight: "700", color: "#ffffff", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: "Cascadia Mono, SFMono-Regular, Consolas, monospace" }}>
               End User License Agreement (EULA)
             </h2>
             <p style={{ fontSize: "11px", color: "#a1a1aa", marginBottom: "14px", lineHeight: "1.4" }}>
@@ -1435,7 +1435,7 @@ function App() {
               padding: "12px",
               height: "220px",
               overflowY: "scroll",
-              fontFamily: "JetBrains Mono, monospace",
+              fontFamily: "Cascadia Mono, SFMono-Regular, Consolas, monospace",
               fontSize: "10px",
               color: "#8b8d99",
               lineHeight: "1.5",
@@ -4138,7 +4138,7 @@ function SecurePreview({ sessionId, mimeType, filename, isFolder, size }: Secure
     if (bytes !== null) {
       return (
         <div className="secure-preview-hex-container">
-          <div className="hex-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 12px", background: "#16161a", borderBottom: "1px solid #1f1f23", fontSize: "10px", color: "#a1a1aa", fontFamily: "JetBrains Mono" }}>
+          <div className="hex-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 12px", background: "#16161a", borderBottom: "1px solid #1f1f23", fontSize: "10px", color: "#a1a1aa", fontFamily: "Cascadia Mono, SFMono-Regular, Consolas, monospace" }}>
             <span>Binary File Hex Dump</span>
             <span>Showing first 16KB ({formatBytes(bytes.length)})</span>
           </div>
@@ -4177,7 +4177,7 @@ function SecurePreview({ sessionId, mimeType, filename, isFolder, size }: Secure
           </span>
         </div>
         <div className="titlebar-controls" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-          <div className="preview-security-badge" style={{ alignSelf: "center", marginRight: "6px", fontFamily: 'JetBrains Mono', fontSize: '9px', padding: '2px 8px' }}>
+          <div className="preview-security-badge" style={{ alignSelf: "center", marginRight: "6px", fontFamily: 'Cascadia Mono, SFMono-Regular, Consolas, monospace', fontSize: '9px', padding: '2px 8px' }}>
             RAM-Only Mode
           </div>
           <button type="button" className="titlebar-btn" onClick={() => getCurrentWindow().minimize()} title="Minimize">⎯</button>

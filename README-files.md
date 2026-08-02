@@ -34,8 +34,8 @@ Vollcrypt Files does not provide real-time transport encryption for live network
 
 Those use cases require different security properties such as frame ordering, packet-loss tolerance, replay windows, rekeying, jitter handling, and low-latency authentication. They are intended to be handled by separate Vollcrypt protocol profiles such as:
 - **[Vollcrypt Messages Module Documentation (README-messages.md)](README-messages.md)**
-- `@vollcrypt/streaming`
-- `@vollcrypt/voice`
+- `@vollcrypt/streaming` (planned profile; not published)
+- `@vollcrypt/voice` (planned profile; not published)
 
 Vollcrypt Files focuses on encrypted file containers for local storage, cloud storage, and secure file sharing.
 
@@ -43,34 +43,21 @@ Vollcrypt Files focuses on encrypted file containers for local storage, cloud st
 
 ## Quick Start
 
-### High-Level API Usage
+### Install Published Packages
 
-```typescript
-import { files } from '@vollcrypt/files';
+Node.js native binding:
 
-// Encrypt a file using a password or recipient keys
-await files.encryptFile({
-  input: 'report.pdf',
-  output: 'report.pdf.voll',
-  password: 'my-secure-password',
-  recipients: [aliceRecipientId],
-});
-
-// Decrypt a file using a password
-await files.decryptFile({
-  input: 'report.pdf.voll',
-  output: 'report.pdf',
-  password: 'my-secure-password',
-});
-
-// Open a shared file using a recipient private key
-await files.openSharedFile({
-  input: 'report.pdf.voll',
-  recipientKey: myRecipientKey,
-});
+```bash
+npm install @vollcrypt/files-node
 ```
 
-### Advanced Asynchronous Pipelined File API (Zero-Copy)
+Browser WebAssembly binding:
+
+```bash
+npm install @vollcrypt/files-wasm
+```
+
+### Node.js Asynchronous Pipelined File API (Zero-Copy)
 
 ```typescript
 import { 
@@ -108,7 +95,7 @@ await decryptFilePipelinedAsync(
 ### WebAssembly (Browser) Integration
 
 ```javascript
-import init, { generateDek, generateFileId } from "./pkg/vollcrypt_file_wasm.js";
+import init, { generateDek, generateFileId } from "@vollcrypt/files-wasm";
 
 async function run() {
   await init();
@@ -519,25 +506,25 @@ When using Node.js or WebAssembly bindings, JavaScript runtimes may copy secrets
 ## Programmatic Integration Examples
 
 ### Out-of-Order Seek & Verify
-This TypeScript pseudocode details how an integrator reads any random chunk offset from an encrypted file, verifies its Merkle proof, and decrypts it independently.
+
+This example uses the published low-level exports from `@vollcrypt/files-node`. The `readHeaderPrefix`, `FileHandle`, and `MerkleProofProvider` helpers are application-owned I/O abstractions.
 
 ```ts
 import {
-  Header,
+  HeaderClass,
   decryptChunk,
   verifyMerkleProof,
   chunkLeafHash
-} from '@vollcrypt/files';
+} from '@vollcrypt/files-node';
 
 async function seekAndDecryptChunk(
   file: FileHandle,
   targetByteOffset: number,
-  keyHandle: VollcryptFileKey,
+  dek: Uint8Array,
   proofProvider: MerkleProofProvider
 ): Promise<Buffer> {
-  const { header, headerLen } = await Header.readFrom(file, {
-    maxHeaderSize: 16 * 1024 * 1024
-  });
+  const headerPrefix = await readHeaderPrefix(file, 16 * 1024 * 1024);
+  const { header, headerLen } = HeaderClass.parse(headerPrefix);
 
   const chunkSize = header.chunkSize;
   const plaintextLength = header.plaintextSize;
@@ -558,75 +545,31 @@ async function seekAndDecryptChunk(
 
   const envelopeSize = 32 + chunkPlaintextLen;
   const targetEnvelopeDiskPos = headerLen + chunkIndex * (32 + chunkSize);
-
   const envelopeBuffer = Buffer.alloc(envelopeSize);
   await file.read(envelopeBuffer, 0, envelopeSize, targetEnvelopeDiskPos);
 
   const parsedIndex = envelopeBuffer.readUInt32BE(0);
-
   if (parsedIndex !== chunkIndex) {
     throw new Error(`Chunk index mismatch: expected ${chunkIndex}, got ${parsedIndex}`);
   }
 
-  const iv = envelopeBuffer.subarray(4, 16);
-  const ciphertext = envelopeBuffer.subarray(16, 16 + chunkPlaintextLen);
-  const authTag = envelopeBuffer.subarray(16 + chunkPlaintextLen, envelopeSize);
+  const envelope = {
+    chunkIndex: parsedIndex,
+    iv: envelopeBuffer.subarray(4, 16),
+    ciphertext: envelopeBuffer.subarray(16, 16 + chunkPlaintextLen),
+    tag: envelopeBuffer.subarray(16 + chunkPlaintextLen, envelopeSize)
+  };
 
-  const leafHash = chunkLeafHash({
-    fileId,
-    chunkIndex,
-    chunkPlaintextLen,
-    iv,
-    tag: authTag
-  });
-
+  const leafHash = chunkLeafHash(envelope);
   const proof = await proofProvider.getProof(chunkIndex);
 
-  if (!verifyMerkleProof(leafHash, proof, merkleRoot, chunkIndex, totalChunks)) {
-    throw new Error(`Security Exception: Chunk ${chunkIndex} failed Merkle validation`);
+  if (!verifyMerkleProof(leafHash, chunkIndex, totalChunks, proof, merkleRoot)) {
+    throw new Error(`Security exception: chunk ${chunkIndex} failed Merkle validation`);
   }
 
-  return decryptChunk(keyHandle, fileId, chunkIndex, {
-    chunkIndex,
-    iv,
-    ciphertext,
-    tag: authTag
-  });
+  return decryptChunk(dek, fileId, chunkIndex, envelope);
 }
 ```
-
-### Low-Level Random-Access Parsing Example
-```typescript
-const { header, headerLen } = await Header.readFrom(file, {
-  maxHeaderSize: 16 * 1024 * 1024
-});
-
-const keyHandle = await files.openKeyFromPassword(password, header);
-
-// Fetch a single chunk out-of-order
-const chunkIndex = 42;
-const envelope = await fetchChunkEnvelope(file, header, chunkIndex);
-
-// Validate and check parsed index matches the expectation
-if (envelope.chunkIndex !== chunkIndex) {
-  throw new Error(`Chunk index mismatch: expected ${chunkIndex}, got ${envelope.chunkIndex}`);
-}
-
-const plaintext = await files.decryptChunk(envelope, keyHandle);
-
-// Verify leaf integrity locally
-const leafHash = chunkLeafHash({
-  fileId: header.fileId,
-  chunkIndex: envelope.chunkIndex,
-  chunkPlaintextLen: plaintext.length,
-  iv: envelope.iv,
-  tag: envelope.tag
-});
-assert.ok(verifyMerkleProof(leafHash, chunkIndex, totalChunks, proof, header.merkleRoot));
-
-keyHandle.destroy();
-```
-
 ---
 
 ## Advanced API Reference (Bindings)
@@ -699,14 +642,13 @@ if (report === "ContainerSealed") {
 
 ---
 
-## Package Layout
+## Published Packages
 
-- `@vollcrypt/core`: shared cryptographic primitives, suite IDs, KDFs, AEAD wrappers, encoders, and error types.
-- `@vollcrypt/files`: encrypted file container format for local files, cloud objects, and shared files.
-- `@vollcrypt/messages`: message encryption profile.
-- `@vollcrypt/streaming`: future real-time stream encryption profile.
-- `@vollcrypt/voice`: future low-latency voice/media encryption profile.
-- `vollcrypt`: optional high-level meta-package.
+- [`@vollcrypt/files-node`](https://www.npmjs.com/package/@vollcrypt/files-node): Node.js native binding for disk and low-level file-container APIs.
+- [`@vollcrypt/files-wasm`](https://www.npmjs.com/package/@vollcrypt/files-wasm): Browser WebAssembly binding with bounded in-memory file APIs.
+- `vollcrypt-files-core`: Rust workspace crate used by the native bindings and desktop application; it is not published to npm.
+- [`@vollcrypt/messages-node`](https://www.npmjs.com/package/@vollcrypt/messages-node) and [`@vollcrypt/messages-wasm`](https://www.npmjs.com/package/@vollcrypt/messages-wasm): separate encrypted-messaging packages.
+- Streaming and voice/media protocol profiles are roadmap items and are not currently published packages.
 
 ---
 

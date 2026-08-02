@@ -4,6 +4,12 @@ A zero-trust, wire-protocol database cryptographic gateway for PostgreSQL. It tr
 
 `db-proxy` works in conjunction with `@vollcrypt/db-guard` to enforce field-level security, role-based access control (RBAC), and decryption rate limits at the network layer.
 
+## Installation
+
+```bash
+npm install @vollcrypt/db-proxy
+```
+
 ---
 
 ## Key Features
@@ -119,7 +125,7 @@ When deploying multiple proxy nodes, configuring hybrid startups, or securing th
 - `peers`: An array of peer address strings (`host:port`) representing nodes in the consensus cluster.
 - `--interactive` / `-i`: Direct launch of the interactive feature configuration menu.
 - `--non-interactive` / `-y` / `--yes` / `-n`: Bypass the hybrid countdown startup sequence to launch instantly.
-- `--fips` / `--no-fips`: Force FIPS 140-3 cryptographic boundary mode (enables strict validated algorithms and audits).
+- `--fips` / `--no-fips`: Require an already active Node.js/OpenSSL FIPS mode and fail startup otherwise. This option does not certify the package as FIPS validated.
 - `--jit` / `--no-jit`: Toggle Just-In-Time access approval webhook checking for restricted column queries.
 - `--anomaly` / `--no-anomaly`: Toggle real-time AI Semantic Anomaly Engine threat checking.
 - `--db-type <type>`: Target database protocol driver. Options are `postgres`, `mysql`, or `mongodb`. Defaults to `postgres`.

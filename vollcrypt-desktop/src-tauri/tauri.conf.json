@@ -27,11 +27,11 @@
       "csp": {
         "default-src": "'self' customprotocol: asset:",
         "connect-src": "ipc: http://ipc.localhost",
-        "font-src": "'self' https://fonts.gstatic.com",
+        "font-src": "'self'",
         "img-src": "'self' asset: http://asset.localhost blob: data:",
         "media-src": "'self' blob:",
         "frame-src": "'self' blob:",
-        "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
+        "style-src": "'unsafe-inline' 'self'",
         "script-src": "'self'",
         "object-src": "'none'",
         "base-uri": "'none'",
