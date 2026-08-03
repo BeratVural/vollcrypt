@@ -1,0 +1,83 @@
+name: Bug report
+description: Report a reproducible problem in a Vollcrypt module
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Do not include secrets, private keys, or security vulnerabilities in this form.
+  - type: dropdown
+    id: module
+    attributes:
+      label: Module
+      options:
+        - Files Node.js
+        - Files WebAssembly
+        - Messages Node.js
+        - Messages WebAssembly
+        - Desktop
+        - DB Guard
+        - DB Proxy
+        - Wave
+        - Build or CI
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Package, release, or commit version
+      placeholder: "1.0.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows x64
+        - macOS Intel
+        - macOS Apple Silicon
+        - Linux x64
+        - Linux ARM64
+        - Browser
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Provide minimal steps and sample code using non-sensitive test data.
+      placeholder: |
+        1. Install...
+        2. Run...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Remove tokens, keys, paths, and personal information.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for duplicates.
+          required: true
+        - label: This report does not disclose a security vulnerability or sensitive data.
+          required: true
+        - label: I agree to follow the Code of Conduct.
+          required: true

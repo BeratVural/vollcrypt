@@ -6,8 +6,14 @@
   <p><strong>Cross-platform, quantum-resistant cryptography workspace for Node.js, WebAssembly, and Rust</strong></p>
   
   <p>
-    <a href="https://github.com/BeratVural/vollcrypt/actions/workflows/ci.yml">
-      <img src="https://github.com/BeratVural/vollcrypt/actions/workflows/ci.yml/badge.svg" alt="CI">
+    <a href="https://github.com/BeratVural/vollcrypt/actions/workflows/ci-files.yml">
+      <img src="https://github.com/BeratVural/vollcrypt/actions/workflows/ci-files.yml/badge.svg" alt="Files CI">
+    </a>
+    <a href="https://github.com/BeratVural/vollcrypt/actions/workflows/ci-messages.yml">
+      <img src="https://github.com/BeratVural/vollcrypt/actions/workflows/ci-messages.yml/badge.svg" alt="Messages CI">
+    </a>
+    <a href="https://www.npmjs.com/package/@vollcrypt/files-node">
+      <img src="https://img.shields.io/npm/v/%40vollcrypt%2Ffiles-node.svg" alt="npm files-node">
     </a>
     <a href="LICENSE-GPL">
       <img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="License: GPL v3">
@@ -22,7 +28,39 @@
 </div>
 ---
 
-Vollcrypt is a cryptographic library providing secure building blocks for end-to-end encrypted (E2EE) messaging systems and file transfer/storage tools. The core library is written in Rust and compiled to Node.js native bindings, WebAssembly, and native Rust.
+Vollcrypt is an open-source cryptography workspace for post-quantum messaging, encrypted files, WebAssembly applications, desktop users, and database security integrations. Its security-sensitive cores are written in Rust and exposed through native Node.js and WebAssembly bindings.
+
+## Start Here
+
+| I want to... | Start with |
+| :--- | :--- |
+| Encrypt files from Node.js | [`@vollcrypt/files-node`](https://www.npmjs.com/package/@vollcrypt/files-node) |
+| Encrypt files in a browser or WASM runtime | [`@vollcrypt/files-wasm`](https://www.npmjs.com/package/@vollcrypt/files-wasm) |
+| Build encrypted messaging | [`@vollcrypt/messages-node`](https://www.npmjs.com/package/@vollcrypt/messages-node) or [`@vollcrypt/messages-wasm`](https://www.npmjs.com/package/@vollcrypt/messages-wasm) |
+| Add field-level database encryption | [`@vollcrypt/db-guard`](https://www.npmjs.com/package/@vollcrypt/db-guard) |
+| Run a database security proxy | [`@vollcrypt/db-proxy`](https://www.npmjs.com/package/@vollcrypt/db-proxy) |
+| Encrypt local files without writing code | [Download Vollcrypt Desktop](https://github.com/BeratVural/vollcrypt/releases/latest) |
+
+### Quick Install
+
+```bash
+# File encryption for Node.js
+npm install @vollcrypt/files-node
+
+# End-to-end encrypted messaging for Node.js
+npm install @vollcrypt/messages-node
+```
+
+All six npm packages are dual-licensed under GPLv3 or a commercial license and published through npm trusted publishing with provenance attestations. Package-specific examples and API notes are linked in the module documentation below.
+
+## Join the Project
+
+Vollcrypt is looking for early users and contributors. You do not need a cryptography background to help with documentation, examples, cross-platform testing, TypeScript types, or developer tooling.
+
+* Browse [good first issues](https://github.com/BeratVural/vollcrypt/contribute).
+* Ask questions or share integration feedback in [GitHub Discussions](https://github.com/BeratVural/vollcrypt/discussions).
+* Read the [contribution guide](CONTRIBUTING.md) before opening a pull request.
+* Report security vulnerabilities privately using the [security policy](SECURITY.md).
 
 ## Documentation Modules
 
@@ -198,4 +236,3 @@ Vollcrypt is dual-licensed under:
 *   **Commercial:** Vollcrypt Commercial License ([LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md))
 
 For commercial license purchases, pricing, or custom enterprise terms, please contact [berat.vural.tr@gmail.com](mailto:berat.vural.tr@gmail.com).
-

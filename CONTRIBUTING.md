@@ -5,10 +5,20 @@ Thank you for your interest in contributing to Vollcrypt. This document covers e
 
 Please read this guide fully before contributing. Cryptographic libraries have stricter requirements than most projects, and some rules here are non-negotiable.
 
+## Find a Task
+
+* Start with the repository's [good first issues](https://github.com/BeratVural/vollcrypt/contribute).
+* Look for issues labeled [help wanted](https://github.com/BeratVural/vollcrypt/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22).
+* Use [GitHub Discussions](https://github.com/BeratVural/vollcrypt/discussions) for questions and design ideas.
+* Do not use public issues for vulnerabilities. Follow [SECURITY.md](SECURITY.md).
+
+Comment on an issue before starting substantial work so effort is not duplicated.
+
 ---
 
 ## Table of Contents
 
+* [Find a Task](#find-a-task)
 * [Code of Conduct](#code-of-conduct)
 * [Contributor License Agreement](#contributor-license-agreement)
 * [Prerequisites](#prerequisites)
@@ -29,19 +39,15 @@ Please read this guide fully before contributing. Cryptographic libraries have s
 
 ## Code of Conduct
 
-All contributors are expected to engage respectfully. Harassment, personal attacks, and dismissive behavior are not tolerated. Keep discussion focused on the technical merits of the work.
+Participation is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Be respectful, assume good intent, and keep technical disagreement focused on evidence.
 
 ---
 
 ## Contributor License Agreement
 
-**Signing the CLA is required before your first pull request can be merged.**
+Vollcrypt is dual-licensed under GPLv3 or a commercial license. The repository currently does not use an automated CLA bot, so contributors should not expect an external form to appear after opening a pull request.
 
-Vollcrypt is dual-licensed under GPLv3 (open source) and a commercial license. The CLA allows the project to offer both licenses while ensuring contributors retain credit for their work.
-
-When you open your first pull request, an automated bot will prompt you to sign the CLA through a short web form. The process takes about two minutes. Pull requests from contributors who have not signed cannot be merged regardless of their quality.
-
-If your contribution is on behalf of a company or organization, a corporate CLA is also available. Contact [berat.vural.tr@gmail.com](mailto:berat.vural.tr@gmail.com) before opening the pull request.
+For substantial original code, the maintainer may request a written contributor agreement before merge so the dual-license model remains clear. Any requirement will be discussed directly in the pull request. For company-sponsored contributions, contact [berat.vural.tr@gmail.com](mailto:berat.vural.tr@gmail.com).
 
 ---
 
@@ -55,10 +61,10 @@ If your contribution is on behalf of a company or organization, a corporate CLA 
 | npm        | ≥ 9             | Package management           |
 | cargo-edit | optional         | Managing Cargo dependencies  |
 
-Install Rust via [rustup](https://rustup.rs/). Install wasm-pack:
+Install Rust via [rustup](https://rustup.rs/). Install wasm-pack from crates.io:
 
 ```bash
-curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+cargo install wasm-pack --version 0.14.0 --locked
 ```
 
 ---
@@ -73,25 +79,22 @@ cd vollcrypt
 # 2. Add the upstream remote
 git remote add upstream https://github.com/BeratVural/vollcrypt.git
 
-# 3. Run all tests to confirm your environment is working
-cargo test --workspace
+# 3. Confirm the Rust workspace resolves
+cargo check --workspace
 
 # 4. Check formatting and lints
 cargo fmt --all -- --check
 cargo clippy --workspace -- -D warnings
 
-# 5. Build the Node.js native addon
-cd node && npm install && npm run build && cd ..
-
-# 6. Build the WebAssembly package
-cd wasm && wasm-pack build --target web --out-dir pkg && cd ..
-
-# 7. Run the examples to verify the full stack
-cd vollcrypt-example && npm install
-npx ts-node src/09_full_flow.ts
+# 5. Build and test the Node.js package you are changing
+cd vollcrypt-files/node
+npm ci
+npm run build
+npm test
+cd ../..
 ```
 
-If any step fails, open an issue rather than working around the problem — a broken setup experience is a bug.
+The workspace is large. Build and test the module you are changing unless an issue or reviewer asks for a broader check. The matching files under `.github/workflows` are the source of truth for platform-specific CI commands.
 
 ---
 
@@ -99,26 +102,22 @@ If any step fails, open an issue rather than working around the problem — a br
 
 ```
 vollcrypt/
-├── core/src/           Rust cryptographic core — all logic lives here
-│   ├── symmetric.rs    AES-256-GCM
-│   ├── pqc.rs          ML-KEM-768, Hybrid KEM, Authenticated KEM
-│   ├── keys.rs         Ed25519, X25519
-│   ├── kdf.rs          HKDF, PBKDF2, SRK/WindowKey derivation
-│   ├── ratchet.rs      PCS ratchet
-│   ├── transcript.rs   Message hash chain
-│   ├── sealed_sender.rs Sender privacy
-│   ├── verification.rs Key verification codes
-│   ├── key_log.rs      Key Transparency log
-│   ├── envelope.rs     Binary envelope packing
-│   ├── wrap.rs         AES-256-KW key wrapping
-│   ├── bip39.rs        BIP-39 mnemonic
-│   └── device.rs       Device registry
-├── node/               N-API binding (@vollcrypt/node)
-├── wasm/               wasm-bindgen binding (@vollcrypt/wasm)
-└── vollcrypt-example/  Runnable examples (01_keypair.ts → 10_verification.ts)
+├── vollcrypt-files/
+│   ├── core/           Rust file encryption engine
+│   ├── node/           @vollcrypt/files-node
+│   └── wasm/           @vollcrypt/files-wasm
+├── vollcrypt-messages/
+│   ├── core/           Rust encrypted messaging engine
+│   ├── node/           @vollcrypt/messages-node
+│   └── wasm/           @vollcrypt/messages-wasm
+├── vollcrypt-wave/     no_std radio COMSEC/TRANSEC module
+├── vollcrypt-desktop/  Tauri desktop application
+├── db-guard/node/      @vollcrypt/db-guard
+├── db-proxy/           @vollcrypt/db-proxy
+└── github-pages/       Project website
 ```
 
-**The rule of one core:** All cryptographic logic belongs in `core/src/`. The `node/` and `wasm/` directories contain only thin binding wrappers that call into the core. If you are adding cryptographic behavior, the implementation goes in `core/src/` and the binding exposes it — never the other way around.
+Keep security-sensitive behavior in the appropriate Rust core. Node.js and WebAssembly packages should remain thin bindings unless a change is inherently runtime-specific.
 
 ---
 
@@ -137,7 +136,7 @@ vollcrypt/
    git checkout -b fix/envelope-length-check
    ```
 3. **Make focused, incremental commits.** Each commit should represent one logical change. Avoid combining unrelated changes in a single commit or PR.
-4. **Run the full check suite before pushing:**
+4. **Run the relevant checks before pushing.** Rust core changes normally require:
    ```bash
    cargo fmt --all
    cargo clippy --workspace -- -D warnings
@@ -185,15 +184,15 @@ pub fn derive_window_key(srk: &[u8; 32], window_index: u64) -> Result<Vec<u8>, C
 
 ### TypeScript
 
-**Binding wrappers** in `node/src/lib.rs` and `wasm/src/lib.rs` must:
+**Binding wrappers** under `vollcrypt-files/{node,wasm}` and `vollcrypt-messages/{node,wasm}` must:
 
 * Convert between Rust and JS types cleanly, with explicit length checks
 * Return `napi::Result` or `Result<_, JsValue>` — never panic
 * Include TypeScript type definitions for every exported function and struct
 
-**Example files** in `vollcrypt-example/` must:
+**Example files** added to module documentation or test fixtures must:
 
-* Include a one-line comment at the top: `// Run: npx ts-node src/NN_name.ts`
+* Include a clear command showing how to run the example
 * Produce readable console output that demonstrates the behavior
 * Handle errors explicitly rather than letting them propagate silently
 
@@ -201,7 +200,7 @@ pub fn derive_window_key(srk: &[u8; 32], window_index: u64) -> Result<Vec<u8>, C
 
 ## Cryptographic Contribution Rules
 
-These rules apply to any change that touches `core/src/` or the binding layers. They are stricter than the general coding standards because mistakes in cryptographic code can silently break security guarantees without causing test failures.
+These rules apply to changes in any Vollcrypt Rust core or binding layer. They are stricter than the general coding standards because mistakes in cryptographic code can silently break security guarantees without causing test failures.
 
 ### Memory Safety
 
@@ -291,7 +290,7 @@ If a format must change, the new version must:
 
 ## Testing Requirements
 
-Every pull request that changes behavior in `core/src/` must include tests. The minimum required tests for any new cryptographic function are:
+Every pull request that changes behavior in a Rust core must include tests. The minimum required tests for any new cryptographic function are:
 
 | Test Type               | What It Verifies                                                                       |
 | ----------------------- | -------------------------------------------------------------------------------------- |
@@ -308,7 +307,7 @@ Run the full test suite before pushing:
 cargo test --workspace
 ```
 
-Tests must pass on all three platforms targeted by CI: Linux x64, macOS x64, Windows x64.
+Tests must pass on the platforms and targets defined by the matching GitHub Actions workflow.
 
 ---
 
@@ -379,7 +378,7 @@ BREAKING CHANGE: none
 * Performance improvements to non-cryptographic code paths (serialization, parsing, formatting)
 * New binding functions that expose existing core functionality to Node.js or WASM
 * Documentation improvements and corrections
-* Additional usage examples in `vollcrypt-example/`
+* Additional usage examples in module documentation and test fixtures
 * Improvements to CI, build tooling, and developer experience
 * New cryptographic primitives that follow the algorithm policy and include full test coverage
 
@@ -391,7 +390,7 @@ BREAKING CHANGE: none
 * Pull requests that introduce `unwrap()` or `expect()` in library code
 * Binding-layer logic that duplicates or reimplements core behavior
 * Changes that remove zeroization from sensitive data paths
-* Contributions without signed CLA
+* Contributions that cannot satisfy an applicable contributor agreement discussed in the pull request
 
 If you are unsure whether a contribution falls into either category, open an issue to discuss it first. A brief discussion saves everyone time.
 

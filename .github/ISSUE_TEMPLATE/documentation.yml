@@ -1,0 +1,47 @@
+name: Documentation improvement
+description: Report unclear, missing, or incorrect documentation
+title: "[Docs]: "
+labels:
+  - documentation
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Documentation area
+      options:
+        - Main README
+        - Files
+        - Messages
+        - Desktop
+        - DB Guard
+        - DB Proxy
+        - Wave
+        - GitHub Pages
+        - Contributing guide
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: location
+    attributes:
+      label: Page or file
+      placeholder: "README-files.md or a full URL"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is unclear or incorrect?
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement
+      description: A rough suggestion is enough. You do not need to write the final wording.
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I would be interested in opening a pull request for this.
