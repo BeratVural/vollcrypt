@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and integration feedback
+    url: https://github.com/BeratVural/vollcrypt/discussions
+    about: Ask for help, propose an idea, or share how you are using Vollcrypt.
+  - name: Security vulnerability
+    url: https://github.com/BeratVural/vollcrypt/security/policy
+    about: Report security issues privately. Do not open a public issue.

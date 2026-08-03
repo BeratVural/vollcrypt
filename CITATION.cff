@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use Vollcrypt in research or engineering work, please cite the project."
+title: "Vollcrypt"
+type: software
+authors:
+  - family-names: "Vural"
+    given-names: "Berat"
+version: "1.0.1"
+date-released: "2026-08-03"
+repository-code: "https://github.com/BeratVural/vollcrypt"
+url: "https://beratvural.github.io/vollcrypt/"
+license: "GPL-3.0-only OR LicenseRef-Commercial"
+keywords:
+  - post-quantum cryptography
+  - encryption
+  - Rust
+  - WebAssembly
+  - end-to-end encryption
