@@ -100,7 +100,7 @@
   "devDependencies": {
     "@prisma/client": "^5.0.0",
     "@types/node": "^20.11.0",
-    "@types/pg": "^8.20.0",
+    "@types/pg": "^8.20.3",
     "drizzle-orm": "^0.45.2",
     "mongoose": "^8.0.0",
     "pg": "^8.22.0",
