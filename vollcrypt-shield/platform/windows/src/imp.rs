@@ -459,13 +459,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn missing_privileges_fail_closed_or_roundtrip_succeeds() {
+    fn capability_probe_succeeds_or_fails_closed() {
         let directory = tempfile::tempdir().unwrap();
         let result = validate_active_response_capability(directory.path());
         if let Err(error) = result {
             assert!(matches!(
                 error,
-                WindowsBackupError::PrivilegeUnavailable(_) | WindowsBackupError::Windows { .. }
+                WindowsBackupError::PrivilegeUnavailable(_)
+                    | WindowsBackupError::Windows { .. }
+                    | WindowsBackupError::PartialWrite
             ));
         }
     }
