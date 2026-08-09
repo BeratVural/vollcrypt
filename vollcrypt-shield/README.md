@@ -31,6 +31,11 @@ are implemented. Active quarantine and rollback currently accept regular files
 only. Directories, symlinks, operating-system shutdown, network isolation, and
 permission-destructive responses are rejected.
 
+The release-gated platform matrix is Ubuntu 22.04/24.04 x86_64 and Windows
+Server 2022/2025 x86_64. Windows 11 x86_64 is a supported desktop target after
+a real-host smoke test for the release. Exact capability and validation limits
+are documented in [`docs/PLATFORM_SUPPORT.md`](docs/PLATFORM_SUPPORT.md).
+
 Shield does not depend on any other Vollcrypt product. Published agents and
 bindings include the Shield core they need and do not require another
 `@vollcrypt/*` package at runtime.
@@ -49,6 +54,7 @@ vollcrypt-shield init --config shield.toml --break-glass-key /offline/shield-bre
 vollcrypt-shield baseline --config shield.toml --scope default
 vollcrypt-shield verify --config shield.toml --scope default
 vollcrypt-shield watch --config shield.toml --scope default
+vollcrypt-shield dashboard --config shield.toml --scope default
 ```
 
 Every generated response policy is dry-run. Shield requires signed verification
@@ -58,6 +64,14 @@ successful activation is itself appended to the signed audit chain.
 The Linux watcher exposes only the watched scope's status through a user-only
 Unix socket; baseline, policy, and break-glass controls are not available over
 that socket.
+
+On headless Linux systems, `dashboard` provides a live, read-only terminal
+view of monitoring/containment state, response mode, audit-chain size, and the
+five most recent notifications for the selected scope. When output is piped or
+`--once` is used it renders once without terminal control sequences, making the
+same view suitable for service diagnostics and support captures.
+Follow [`docs/FILESYSTEM_LINUX_TEST.md`](docs/FILESYSTEM_LINUX_TEST.md) for the
+release-gated Ubuntu end-to-end validation.
 
 ## Shield Viewer
 
@@ -176,9 +190,10 @@ storage, administration, and dashboard implementation is maintained privately
 and is not published from this monorepo. Commercial capabilities include
 bootstrap provisioning, mTLS fleet transport, centralized inventory,
 replay-protected signed-summary retention, air-gapped ingestion, and signed
-service responses. Dashboard, SSO/RBAC, enterprise reporting, compliance
-exports, high-availability storage, managed certificates, and raw retention
-remain contract-specific roadmap items rather than current binary features.
+service responses, a centralized terminal dashboard, OIDC/RBAC, signed
+compliance exports, managed certificates, raw retention, and PostgreSQL-backed
+shared state. Production PostgreSQL qualification remains environment-specific,
+and external incident delivery is opt-in rather than enabled by default.
 
 The product remains Vollcrypt Shield; licensed customer deployment archives
 and their administration command use `shield-commercial`. Those private

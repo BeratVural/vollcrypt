@@ -6278,7 +6278,7 @@ dependencies = [
 
 [[package]]
 name = "vollcrypt-shield-classifier"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "clap",
  "hex",
@@ -6294,7 +6294,7 @@ dependencies = [
 
 [[package]]
 name = "vollcrypt-shield-cli"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "clap",
  "hex",
@@ -6307,7 +6307,7 @@ dependencies = [
 
 [[package]]
 name = "vollcrypt-shield-container"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "clap",
  "hex",
@@ -6321,7 +6321,7 @@ dependencies = [
 
 [[package]]
 name = "vollcrypt-shield-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "getrandom 0.4.2",
  "hybrid-array 0.4.12",
@@ -6337,7 +6337,7 @@ dependencies = [
 
 [[package]]
 name = "vollcrypt-shield-core-node"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "napi",
  "napi-build",
@@ -6347,7 +6347,7 @@ dependencies = [
 
 [[package]]
 name = "vollcrypt-shield-db"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "clap",
  "hex",
@@ -6362,14 +6362,14 @@ dependencies = [
 
 [[package]]
 name = "vollcrypt-shield-embedded"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "sha2",
 ]
 
 [[package]]
 name = "vollcrypt-shield-fs"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "filetime",
  "getrandom 0.4.2",
@@ -6393,7 +6393,7 @@ dependencies = [
 
 [[package]]
 name = "vollcrypt-shield-protocol"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "getrandom 0.4.2",
  "hex",
@@ -6411,7 +6411,7 @@ dependencies = [
 
 [[package]]
 name = "vollcrypt-shield-viewer"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "hex",
  "serde",
@@ -6427,7 +6427,7 @@ dependencies = [
 
 [[package]]
 name = "vollcrypt-shield-witness"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "clap",
  "hex",

@@ -143,4 +143,20 @@ fn baseline_verify_and_status_workflow_is_fail_safe() {
     assert_eq!(status["scope"], "default");
     assert_eq!(status["contained"], false);
     assert!(status["audit_records"].as_u64().unwrap() >= 4);
+
+    let dashboard = shield(&[
+        "dashboard",
+        "--config",
+        value(&config),
+        "--scope",
+        "default",
+        "--once",
+        "--no-color",
+    ]);
+    assert!(dashboard.status.success(), "{dashboard:?}");
+    let dashboard = String::from_utf8(dashboard.stdout).unwrap();
+    assert!(dashboard.contains("Vollcrypt Shield - Local Integrity Dashboard"));
+    assert!(dashboard.contains("Status          : MONITORING"));
+    assert!(dashboard.contains("Response mode   :"));
+    assert!(dashboard.contains("Recent notifications"));
 }

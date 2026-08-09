@@ -29,23 +29,32 @@ licensee's own application, subject to the applicable agreement.
 
 - centralized fleet registration, inventory, and provisioning;
 - time- and use-limited bootstrap workflows;
-- TLS 1.3 mTLS fleet service using customer-supplied certificates;
-- pinned agent identities and replay-protected signed-summary retention;
+- TLS 1.3 mTLS fleet service with managed or customer-supplied certificates;
+- managed client issuance, server rotation, CRL refresh, and revocation;
+- pinned agent identities and replay-protected signed-summary or raw retention;
 - air-gapped signed-package ingestion;
-- ML-DSA-signed service responses; and
+- centralized terminal dashboard and signed JSON/CSV compliance reports;
+- pinned-JWKS OIDC SSO with viewer/control role separation;
+- SQLite WAL or TLS 1.3 PostgreSQL storage;
+- durable local incident event export;
+- ML-DSA-signed service responses, storage policy, state, and reports; and
 - prebuilt `shield-commercial` Windows/Linux deployment bundles.
 
-## Contract-specific roadmap
+PostgreSQL production qualification requires a customer's disposable
+TLS-enabled staging database. External Slack, Teams, PagerDuty, or SIEM event
+delivery is disabled unless the customer explicitly authorizes and configures
+off-device event transmission. The current centralized dashboard is terminal
+based; a graphical fleet mode is not included in this delivery.
 
-- centralized dashboard and cross-agent comparison;
-- managed certificate lifecycle;
-- SSO, RBAC, viewer/control role separation, and enterprise audit roles;
-- compliance reports, evidence exports, and retention workflows;
-- database-backed high availability and horizontal scaling;
-- `raw` data retention; and
-- enterprise notification, incident-routing, and support integrations.
+## Contract-specific extensions
 
-Roadmap items are not part of the current deliverable unless a signed agreement
+- graphical fleet desktop mode;
+- customer-specific identity-provider and compliance templates;
+- external incident-routing and support integrations; and
+- deployment qualification for additional databases, operating systems, or
+  high-availability topologies.
+
+Extensions are not part of the current deliverable unless a signed agreement
 explicitly includes and schedules them. This public repository intentionally
 contains no commercial server, storage, administration, or fleet-dashboard
 source code.

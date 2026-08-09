@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -96,7 +96,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025]
     defaults:
       run:
         working-directory: vollcrypt-shield/bindings/node
@@ -132,7 +132,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025]
     defaults:
       run:
         working-directory: vollcrypt-shield/desktop-app

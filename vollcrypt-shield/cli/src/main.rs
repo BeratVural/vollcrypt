@@ -1,5 +1,5 @@
 use std::fs::OpenOptions;
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -20,6 +20,8 @@ use vollcrypt_shield_protocol::{
     },
     witness::AttestationRequest,
 };
+
+mod dashboard;
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum OfflineKind {
@@ -90,6 +92,18 @@ enum Command {
         config: PathBuf,
         #[arg(long)]
         scope: String,
+    },
+    Dashboard {
+        #[arg(long)]
+        config: PathBuf,
+        #[arg(long)]
+        scope: String,
+        #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u64).range(1..=3600))]
+        refresh_secs: u64,
+        #[arg(long)]
+        once: bool,
+        #[arg(long)]
+        no_color: bool,
     },
     AuditVerify {
         #[arg(long)]
@@ -266,22 +280,47 @@ fn run(arguments: Arguments) -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::Status { config, scope } => {
             let value = load_config(&config)?;
-            #[cfg(unix)]
-            let status = match vollcrypt_shield_fs::query_local_status(&value.state_dir, &scope) {
-                Ok(status) => status,
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
-                    ) =>
-                {
-                    ShieldAgent::load(value)?.status(&scope)?
-                }
-                Err(error) => return Err(error.into()),
-            };
-            #[cfg(not(unix))]
-            let status = ShieldAgent::load(value)?.status(&scope)?;
+            let status = load_status(value, &scope)?;
             println!("{}", serde_json::to_string_pretty(&status)?);
+        }
+        Command::Dashboard {
+            config,
+            scope,
+            refresh_secs,
+            once,
+            no_color,
+        } => {
+            let interactive = std::io::stdout().is_terminal();
+            loop {
+                let value = load_config(&config)?;
+                let scope_config = value
+                    .scopes
+                    .iter()
+                    .find(|candidate| candidate.id == scope)
+                    .cloned()
+                    .ok_or_else(|| format!("unknown scope id: {scope}"))?;
+                let notifications = dashboard::read_notification_tail(&value.state_dir, &scope);
+                let status = load_status(value, &scope)?;
+                let now = vollcrypt_shield_fs::agent::now_unix_ms()?;
+                if interactive && !once {
+                    print!("\x1b[2J\x1b[H");
+                }
+                print!(
+                    "{}",
+                    dashboard::render(
+                        &status,
+                        &scope_config,
+                        &notifications,
+                        now,
+                        interactive && !no_color,
+                    )
+                );
+                std::io::stdout().flush()?;
+                if once || !interactive {
+                    break;
+                }
+                std::thread::sleep(Duration::from_secs(refresh_secs));
+            }
         }
         Command::AuditVerify { config } => {
             let agent = ShieldAgent::load(load_config(&config)?)?;
@@ -517,6 +556,31 @@ fn run(arguments: Arguments) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+fn load_status(
+    value: AgentConfig,
+    scope: &str,
+) -> Result<vollcrypt_shield_fs::AgentStatus, Box<dyn std::error::Error>> {
+    #[cfg(unix)]
+    {
+        match vollcrypt_shield_fs::query_local_status(&value.state_dir, scope) {
+            Ok(status) => Ok(status),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+                ) =>
+            {
+                Ok(ShieldAgent::load(value)?.status(scope)?)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        Ok(ShieldAgent::load(value)?.status(scope)?)
+    }
 }
 
 fn load_config(path: &Path) -> Result<AgentConfig, Box<dyn std::error::Error>> {

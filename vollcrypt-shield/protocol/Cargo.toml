@@ -1,6 +1,6 @@
 [package]
 name = "vollcrypt-shield-protocol"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 license = "GPL-3.0-only OR LicenseRef-Commercial"
 description = "Pairing and witness protocols for Vollcrypt Shield"
@@ -16,5 +16,5 @@ sha2 = "0.10"
 spake2 = "=0.4.0"
 subtle = "2.6"
 thiserror = "2"
-vollcrypt-shield-core = { version = "0.1.0", path = "../core" }
+vollcrypt-shield-core = { version = "1.0.0", path = "../core" }
 zeroize = { version = "1.8", features = ["derive"] }
