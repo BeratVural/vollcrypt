@@ -108,7 +108,7 @@ impl Drop for LocalStatusServer {
 
 #[cfg(unix)]
 pub fn query_local_status(state_dir: &Path, scope: &str) -> std::io::Result<AgentStatus> {
-    use std::io::{Read, Write};
+    use std::io::Read;
 
     let mut stream = std::os::unix::net::UnixStream::connect(state_dir.join("ipc/status.sock"))?;
     stream.set_read_timeout(Some(std::time::Duration::from_secs(1)))?;
