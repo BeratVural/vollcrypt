@@ -174,12 +174,13 @@ pub struct ShieldClassifier {
 
 impl ShieldClassifier {
     pub fn new() -> Result<Self, ClassifierError> {
-        let public_key = verify_rule_signature(RULE_DESCRIPTOR.as_bytes())?;
+        let signed_descriptor = signed_rule_descriptor(RULE_DESCRIPTOR)?;
+        let public_key = verify_rule_signature(&signed_descriptor)?;
         let rules: RuleDocument = serde_json::from_str(RULE_DESCRIPTOR)
             .map_err(|error| ClassifierError::InvalidRuleDocument(error.to_string()))?;
         validate_rule_document(&rules)?;
         let mut digest = Sha256::new();
-        digest.update(RULE_DESCRIPTOR.as_bytes());
+        digest.update(&signed_descriptor);
         let mut key_digest = Sha256::new();
         key_digest.update(&public_key);
         Ok(Self {
@@ -198,6 +199,16 @@ impl ShieldClassifier {
     pub fn metadata(&self) -> &RuleSetMetadata {
         &self.metadata
     }
+}
+
+fn signed_rule_descriptor(descriptor: &str) -> Result<Vec<u8>, ClassifierError> {
+    let normalized = descriptor.replace("\r\n", "\n");
+    if normalized.contains('\r') {
+        return Err(ClassifierError::InvalidRuleDocument(
+            "rule document contains a non-canonical carriage return".to_owned(),
+        ));
+    }
+    Ok(normalized.into_bytes())
 }
 
 fn verify_rule_signature(descriptor: &[u8]) -> Result<Vec<u8>, ClassifierError> {
@@ -521,6 +532,17 @@ mod tests {
         assert_eq!(metadata.update_mode, "signed-compiled-in");
         assert_eq!(metadata.signature_algorithm, "ML-DSA-65");
         assert!(verify_rule_signature(b"tampered rules").is_err());
+    }
+
+    #[test]
+    fn signed_rule_bytes_are_stable_across_platform_line_endings() {
+        let lf = RULE_DESCRIPTOR.replace("\r\n", "\n");
+        let crlf = lf.replace('\n', "\r\n");
+        assert_eq!(
+            signed_rule_descriptor(&lf).unwrap(),
+            signed_rule_descriptor(&crlf).unwrap()
+        );
+        assert!(signed_rule_descriptor("{}\r").is_err());
     }
 
     #[test]
