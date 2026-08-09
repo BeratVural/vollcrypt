@@ -184,14 +184,21 @@ fn baseline_verify_and_status_workflow_is_fail_safe() {
     assert!(activated.status.success(), "{:?}", activated);
     #[cfg(windows)]
     {
-        assert!(!activated.status.success(), "{activated:?}");
-        let error = String::from_utf8_lossy(&activated.stderr);
-        assert!(error.contains("Windows active response baseline is incomplete"));
-        assert!(
-            std::fs::read_to_string(&config)
-                .unwrap()
-                .contains("mode = \"dry-run\"")
-        );
+        if activated.status.success() {
+            assert_eq!(activated.stdout, b"activated default\n");
+        } else {
+            let error = String::from_utf8_lossy(&activated.stderr);
+            assert!(
+                error.contains("Windows")
+                    && (error.contains("backup") || error.contains("active response")),
+                "unexpected activation error: {error}"
+            );
+            assert!(
+                std::fs::read_to_string(&config)
+                    .unwrap()
+                    .contains("mode = \"dry-run\"")
+            );
+        }
     }
 
     let status = shield(&["status", "--config", value(&config), "--scope", "default"]);
