@@ -45,6 +45,18 @@ dashboard must render once without terminal control sequences. Preserve the
 command output with the release evidence, then remove the disposable paths and
 move the break-glass seed to an offline location or destroy it securely.
 
+Before cleanup, run the interactive interface:
+
+```console
+target/release/vollcrypt-shield tui --config "$CONFIG" --scope default --no-color
+```
+
+Confirm that all six views open, the terminal remains responsive while
+`VERIFYING` is shown, and resize works down to 48 x 12. The Files view must
+show the changed file's absolute path. Press Enter on the text difference and
+confirm that the digest-verified unified comparison opens. Quit with `q`; the
+interface must not modify the changed file or any policy state.
+
 ## Watcher check
 
 Run `watch` in one terminal and modify a regular file in the disposable root

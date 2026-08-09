@@ -22,6 +22,7 @@ use vollcrypt_shield_protocol::{
 };
 
 mod dashboard;
+mod tui;
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum OfflineKind {
@@ -114,6 +115,17 @@ enum Command {
         refresh_secs: u64,
         #[arg(long)]
         once: bool,
+        #[arg(long)]
+        no_color: bool,
+    },
+    /// Open the full-screen, read-only integrity interface.
+    Tui {
+        #[arg(long)]
+        config: PathBuf,
+        #[arg(long)]
+        scope: Option<String>,
+        #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u64).range(1..=3600))]
+        refresh_secs: u64,
         #[arg(long)]
         no_color: bool,
     },
@@ -395,6 +407,18 @@ fn run(arguments: Arguments) -> Result<(), Box<dyn std::error::Error>> {
                 }
                 std::thread::sleep(Duration::from_secs(refresh_secs));
             }
+        }
+        Command::Tui {
+            config,
+            scope,
+            refresh_secs,
+            no_color,
+        } => {
+            tui::require_interactive(
+                std::io::stdin().is_terminal(),
+                std::io::stdout().is_terminal(),
+            )?;
+            tui::run(config, scope, Duration::from_secs(refresh_secs), no_color)?;
         }
         Command::AuditVerify { config } => {
             let agent = ShieldAgent::load(load_config(&config)?)?;

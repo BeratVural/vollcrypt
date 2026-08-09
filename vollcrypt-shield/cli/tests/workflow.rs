@@ -204,4 +204,18 @@ fn baseline_verify_and_status_workflow_is_fail_safe() {
     assert!(dashboard.contains("Status          : MONITORING"));
     assert!(dashboard.contains("Response mode   :"));
     assert!(dashboard.contains("Recent notifications"));
+
+    let tui = shield(&[
+        "tui",
+        "--config",
+        value(&config),
+        "--scope",
+        "default",
+        "--no-color",
+    ]);
+    assert!(!tui.status.success());
+    assert!(tui.stdout.is_empty());
+    let error = String::from_utf8(tui.stderr).unwrap();
+    assert!(error.contains("interactive terminal"));
+    assert!(!error.contains("\x1b["));
 }

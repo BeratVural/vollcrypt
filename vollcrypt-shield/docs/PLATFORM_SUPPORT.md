@@ -54,9 +54,11 @@ extended attributes without weakening access control.
 
 ## User interfaces
 
-- `vollcrypt-shield dashboard` is the supported interface for headless Linux.
-  It is read-only and displays scope state, response mode, audit count,
-  containment reason, and recent notifications.
+- `vollcrypt-shield tui` is the full-screen interface for headless Linux and
+  Windows terminals. Its read-only views independently verify signed local
+  evidence and run filesystem verification off the render thread.
+- `vollcrypt-shield dashboard --once` is stable non-interactive text output
+  for scripts, service diagnostics, and support captures.
 - Vollcrypt Shield Viewer is the graphical interface for desktop Linux and
   Windows. Its guarded `Monitor folder` flow can initialize a local dry-run
   scope and first signed baseline; operational views remain read-only and

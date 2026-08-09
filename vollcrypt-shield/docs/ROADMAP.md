@@ -17,17 +17,17 @@ platform or capability is never promoted based on compilation alone.
 
 ## Interactive terminal interface
 
-- [ ] Build a full-screen, read-only TUI for headless Linux using `ratatui` and
+- [x] Build a full-screen, read-only TUI for headless Linux using `ratatui` and
   `crossterm` while retaining the current non-interactive `dashboard --once`
   output for scripts and support captures.
-- [ ] Provide stable Overview, Scopes, Events, Files, Witnesses, and
+- [x] Provide stable Overview, Scopes, Events, Files, Witnesses, and
   Notifications views with keyboard navigation and accessible no-color mode.
-- [ ] Show absolute changed paths and bounded, digest-verified text diffs without
+- [x] Show absolute changed paths and bounded, digest-verified text diffs without
   reading unverified or oversized content into the terminal.
-- [ ] Keep policy activation, break-glass, baseline replacement, and destructive
+- [x] Keep policy activation, break-glass, baseline replacement, and destructive
   operations outside the first TUI delivery. Control actions require a separate
   threat model, confirmation design, and authorization boundary.
-- [ ] Add terminal-size, resize, malformed-event, high-volume-event, and
+- [x] Add terminal-size, resize, malformed-event, high-volume-event, and
   non-interactive regression tests.
 
 ## Active response

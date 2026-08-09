@@ -6,6 +6,7 @@ use vollcrypt_shield_fs::{AgentStatus, ScopeConfig, notification::Notification};
 
 const MAX_NOTIFICATION_TAIL_BYTES: u64 = 1_048_576;
 const RECENT_NOTIFICATION_LIMIT: usize = 5;
+pub const TUI_NOTIFICATION_LIMIT: usize = 500;
 
 #[derive(Debug, Default)]
 pub struct NotificationTail {
@@ -15,6 +16,14 @@ pub struct NotificationTail {
 }
 
 pub fn read_notification_tail(state_dir: &Path, scope: &str) -> NotificationTail {
+    read_notification_tail_with_limit(state_dir, scope, RECENT_NOTIFICATION_LIMIT)
+}
+
+pub fn read_notification_tail_with_limit(
+    state_dir: &Path,
+    scope: &str,
+    limit: usize,
+) -> NotificationTail {
     let path = state_dir.join("notifications.jsonl");
     let metadata = match std::fs::symlink_metadata(&path) {
         Ok(metadata) => metadata,
@@ -59,10 +68,9 @@ pub fn read_notification_tail(state_dir: &Path, scope: &str) -> NotificationTail
             Err(_) => result.invalid_records += 1,
         }
     }
-    if result.events.len() > RECENT_NOTIFICATION_LIMIT {
-        result
-            .events
-            .drain(..result.events.len() - RECENT_NOTIFICATION_LIMIT);
+    let limit = limit.clamp(1, TUI_NOTIFICATION_LIMIT);
+    if result.events.len() > limit {
+        result.events.drain(..result.events.len() - limit);
     }
     result
 }
@@ -215,5 +223,32 @@ mod tests {
         assert_eq!(tail.events.len(), 5);
         assert_eq!(tail.events[0].message, "event-3");
         assert_eq!(tail.events[4].message, "event-7");
+    }
+
+    #[test]
+    fn notification_tail_bounds_high_volume_and_counts_malformed_records() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("notifications.jsonl");
+        let mut text = String::from("not-json\n");
+        for index in 0..750 {
+            text.push_str(
+                &serde_json::to_string(&Notification {
+                    scope_id: "app".to_owned(),
+                    kind: "integrity-warning".to_owned(),
+                    timestamp_unix_ms: index,
+                    message: format!("event-{index}"),
+                    repeated: false,
+                })
+                .unwrap(),
+            );
+            text.push('\n');
+        }
+        std::fs::write(path, text).unwrap();
+
+        let tail = read_notification_tail_with_limit(directory.path(), "app", 500);
+        assert_eq!(tail.events.len(), 500);
+        assert_eq!(tail.events.first().unwrap().message, "event-250");
+        assert_eq!(tail.events.last().unwrap().message, "event-749");
+        assert_eq!(tail.invalid_records, 1);
     }
 }

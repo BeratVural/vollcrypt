@@ -56,7 +56,8 @@ the monitored state and a valid quorum anchors every baseline.
 vollcrypt-shield monitor-folder --root /srv/app --state-dir /var/lib/vollcrypt-shield --config shield.toml --break-glass-key /offline/shield-break-glass.seed
 vollcrypt-shield verify --config shield.toml --scope default
 vollcrypt-shield watch --config shield.toml --scope default
-vollcrypt-shield dashboard --config shield.toml --scope default
+vollcrypt-shield tui --config shield.toml --scope default
+vollcrypt-shield dashboard --config shield.toml --scope default --once --no-color
 ```
 
 `monitor-folder` performs the safe default config, identity, and first-baseline
@@ -76,11 +77,19 @@ The Linux watcher exposes only the watched scope's status through a user-only
 Unix socket; baseline, policy, and break-glass controls are not available over
 that socket.
 
-On headless Linux systems, `dashboard` provides a live, read-only terminal
-view of monitoring/containment state, response mode, audit-chain size, and the
-five most recent notifications for the selected scope. When output is piped or
-`--once` is used it renders once without terminal control sequences, making the
-same view suitable for service diagnostics and support captures.
+On headless systems, `tui` provides a full-screen, read-only interface with
+Overview, Scopes, Events, Files, Witnesses, and Notifications views. It
+independently verifies the agent key, signed state, baseline snapshots, witness
+registry, and audit chain; filesystem scans run in a background worker. Changed
+files are displayed with absolute paths, and bounded regular text files can be
+opened as digest-verified unified diffs. `--no-color` retains the same layout
+without relying on color.
+
+`dashboard --once` remains the non-interactive interface for scripts, service
+diagnostics, and support captures. It emits no terminal control sequences when
+output is piped and shows the selected scope plus its five most recent
+notifications. Neither terminal interface exposes baseline replacement, policy
+activation, containment, or break-glass controls.
 Follow [`docs/FILESYSTEM_LINUX_TEST.md`](docs/FILESYSTEM_LINUX_TEST.md) for the
 release-gated Ubuntu end-to-end validation.
 
