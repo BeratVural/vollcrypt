@@ -174,10 +174,15 @@ persists audit records outside attacker-writable firmware state. See
 Centralized fleet management is a commercially licensed product. Its server,
 storage, administration, and dashboard implementation is maintained privately
 and is not published from this monorepo. Commercial capabilities include
-bootstrap provisioning, mTLS fleet transport, centralized inventory and
-dashboard views, replay-protected summary retention, SSO/RBAC, enterprise
-reporting, compliance exports, high-availability storage, and policy-controlled
-raw or signed-summary retention.
+bootstrap provisioning, mTLS fleet transport, centralized inventory,
+replay-protected signed-summary retention, air-gapped ingestion, and signed
+service responses. Dashboard, SSO/RBAC, enterprise reporting, compliance
+exports, high-availability storage, managed certificates, and raw retention
+remain contract-specific roadmap items rather than current binary features.
+
+The product remains Vollcrypt Shield; licensed customer deployment archives
+and their administration command use `shield-commercial`. Those private
+archives are not published from this repository.
 
 The filesystem agent exports protocol files without exposing its secret key:
 
