@@ -1,2 +1,3 @@
 vollcrypt-wave/** binary
 *.sig binary
+vollcrypt-scan/shield-classifier/default_rules.json text eol=lf

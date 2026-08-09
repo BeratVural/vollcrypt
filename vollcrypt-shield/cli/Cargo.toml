@@ -1,0 +1,21 @@
+[package]
+name = "vollcrypt-shield-cli"
+version = "1.0.0"
+edition = "2024"
+license = "GPL-3.0-only OR LicenseRef-Commercial"
+description = "Self-contained CLI for the Vollcrypt Shield filesystem agent"
+
+[[bin]]
+name = "vollcrypt-shield"
+path = "src/main.rs"
+
+[dependencies]
+vollcrypt-shield-core = { version = "1.0.0", path = "../core" }
+vollcrypt-shield-fs = { version = "1.0.0", path = "../agents/fs" }
+vollcrypt-shield-protocol = { version = "1.0.0", path = "../protocol" }
+clap = { version = "4.6", features = ["derive"] }
+hex = "0.4"
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"

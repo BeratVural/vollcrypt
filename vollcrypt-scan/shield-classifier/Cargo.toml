@@ -1,0 +1,24 @@
+[package]
+name = "vollcrypt-shield-classifier"
+version = "1.0.0"
+edition = "2024"
+license = "GPL-3.0-only OR LicenseRef-Commercial"
+description = "Independent criticality classifier for Vollcrypt Shield policy suggestions"
+
+[[bin]]
+name = "vollcrypt-shield-classify"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.6", features = ["derive"] }
+hex = "0.4"
+hybrid-array = "0.4"
+ml-dsa = "0.1.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+vollcrypt-scan-core = { version = "0.1.0", path = "../core" }
+
+[dev-dependencies]
+tempfile = "3"

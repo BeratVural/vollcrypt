@@ -1,0 +1,30 @@
+[package]
+name = "vollcrypt-shield-fs"
+version = "1.0.0"
+edition = "2024"
+license = "GPL-3.0-only OR LicenseRef-Commercial"
+description = "Self-contained Vollcrypt Shield filesystem agent"
+
+[dependencies]
+vollcrypt-shield-core = { version = "1.0.0", path = "../../core" }
+vollcrypt-shield-protocol = { version = "1.0.0", path = "../../protocol" }
+filetime = "0.2"
+getrandom = "0.4"
+globset = "0.4"
+hex = "0.4"
+minicbor = { version = "2.3", features = ["derive", "std"] }
+notify = "8.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+toml = "1.1"
+ureq = { version = "3.4", default-features = false, features = ["json", "rustls"] }
+walkdir = "2.5"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31", features = ["fs", "user"] }
+xattr = "1.6"
+
+[dev-dependencies]
+tempfile = "3"

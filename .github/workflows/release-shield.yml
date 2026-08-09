@@ -1,0 +1,137 @@
+name: Vollcrypt Shield Release
+
+on:
+  push:
+    tags:
+      - "shield-v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Shield release tag (for example shield-v1.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  cli:
+    name: CLI (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux-x86_64
+            binary: vollcrypt-shield
+          - os: windows-2022
+            platform: windows-x86_64
+            binary: vollcrypt-shield.exe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+      - name: Build CLI
+        run: cargo build --locked --release -p vollcrypt-shield-cli
+      - name: Stage CLI
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "target/release/${{ matrix.binary }}" "dist/vollcrypt-shield-${{ matrix.platform }}${{ runner.os == 'Windows' && '.exe' || '' }}"
+      - name: Attest CLI
+        uses: actions/attest-build-provenance@8beda2b7ed98355c0e97c0a63bec38ae472e66c4 # v4
+        with:
+          subject-path: dist/*
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: shield-cli-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+
+  viewer:
+    name: Viewer (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux-x86_64
+          - os: windows-2022
+            platform: windows-x86_64
+    defaults:
+      run:
+        working-directory: vollcrypt-shield/desktop-app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: vollcrypt-shield/desktop-app/package-lock.json
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Install dependencies
+        run: npm ci
+      - name: Build Viewer bundles
+        run: npm run tauri build
+      - name: Stage Viewer bundles
+        shell: bash
+        run: |
+          mkdir -p ../../dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            find ../../target/release/bundle/nsis -maxdepth 1 -type f -name "*-setup.exe" -exec cp {} ../../dist/ \;
+            cp ../../target/release/vollcrypt-shield-viewer.exe ../../dist/vollcrypt-shield-viewer-windows-x86_64-portable.exe
+          else
+            find ../../target/release/bundle/deb -maxdepth 1 -type f -name "*.deb" -exec cp {} ../../dist/ \;
+            find ../../target/release/bundle/appimage -maxdepth 1 -type f -name "*.AppImage" -exec cp {} ../../dist/ \;
+          fi
+          test "$(find ../../dist -maxdepth 1 -type f | wc -l)" -ge 2
+      - name: Attest Viewer
+        uses: actions/attest-build-provenance@8beda2b7ed98355c0e97c0a63bec38ae472e66c4 # v4
+        with:
+          subject-path: dist/*
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: shield-viewer-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Draft GitHub release
+    needs: [cli, viewer]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: shield-*
+          path: release-assets
+          merge-multiple: true
+      - name: Create checksums
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS
+      - name: Create draft release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          files: release-assets/*
+          draft: true
+          generate_release_notes: true

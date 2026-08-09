@@ -1,0 +1,22 @@
+[package]
+name = "vollcrypt-shield-container"
+version = "1.0.0"
+edition = "2024"
+license = "GPL-3.0-only OR LicenseRef-Commercial"
+description = "Self-contained OCI image-layout integrity scanner for Vollcrypt Shield"
+
+[dependencies]
+clap = { version = "4.6", features = ["derive"] }
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+vollcrypt-shield-core = { version = "1.0.0", path = "../../core" }
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "vollcrypt-shield-container"
+path = "src/main.rs"
