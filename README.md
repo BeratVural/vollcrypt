@@ -39,6 +39,8 @@ Vollcrypt is an open-source cryptography workspace for post-quantum messaging, e
 | Build encrypted messaging | [`@vollcrypt/messages-node`](https://www.npmjs.com/package/@vollcrypt/messages-node) or [`@vollcrypt/messages-wasm`](https://www.npmjs.com/package/@vollcrypt/messages-wasm) |
 | Add field-level database encryption | [`@vollcrypt/db-guard`](https://www.npmjs.com/package/@vollcrypt/db-guard) |
 | Run a database security proxy | [`@vollcrypt/db-proxy`](https://www.npmjs.com/package/@vollcrypt/db-proxy) |
+| Classify a repository for integrity monitoring | [Vollcrypt Scan](README-scan.md) |
+| Detect and contain runtime integrity drift | [Vollcrypt Shield](README-shield.md) |
 | Encrypt local files without writing code | [Download Vollcrypt Desktop](https://github.com/BeratVural/vollcrypt/releases/latest) |
 
 ### Quick Install
@@ -53,9 +55,17 @@ npm install @vollcrypt/messages-node
 
 All six npm packages are dual-licensed under GPLv3 or a commercial license and published through npm trusted publishing with provenance attestations. Package-specific examples and API notes are linked in the module documentation below.
 
+<div class="commercial-band">
+  <h2>Protect More Than One Node</h2>
+  <p><strong>Vollcrypt Shield Commercial</strong> adds centralized fleet enrollment, managed mTLS identities and revocation, OIDC/RBAC, replay-protected evidence retention, PostgreSQL or SQLite storage, air-gapped ingestion, a terminal fleet dashboard, and independently verifiable signed compliance reports.</p>
+  <p>The commercial control plane is maintained in a private repository and delivered as prebuilt <code>shield-commercial</code> Linux and Windows bundles. Public agents, evidence formats, and verification remain independently auditable.</p>
+  <a class="action-link action-link-primary" href="mailto:berat.vural.tr@gmail.com?subject=Vollcrypt%20Shield%20Commercial">Discuss Shield Commercial</a>
+  <a class="action-link" href="README-shield.html">Explore Shield</a>
+</div>
+
 ## Join the Project
 
-Vollcrypt is looking for early users and contributors. You do not need a cryptography background to help with documentation, examples, cross-platform testing, TypeScript types, or developer tooling.
+Vollcrypt welcomes users and contributors. You do not need a cryptography background to help with documentation, examples, cross-platform testing, TypeScript types, or developer tooling.
 
 * Browse [good first issues](https://github.com/BeratVural/vollcrypt/contribute).
 * Ask questions or share integration feedback in [GitHub Discussions](https://github.com/BeratVural/vollcrypt/discussions).
@@ -71,8 +81,9 @@ Explore the specific modules of Vollcrypt:
 *    **[Vollcrypt Desktop App Module Documentation (README-desktop.md)](README-desktop.md)** - Stable v1.0 native desktop application with [cross-platform downloads](https://github.com/BeratVural/vollcrypt/releases/tag/v1.0.0).
 *    **[Vollcrypt DB-Guard Module Documentation (README-db-guard.md)](README-db-guard.md)** - Database field-level encryption integrations with dynamic KMS routing and optional PKCS#11 providers; not FIPS 140-3 validated.
 *    **[Vollcrypt DB-Proxy Module Documentation (README-db-proxy.md)](README-db-proxy.md)** - Zero-trust database protocol proxy (PostgreSQL) executing dynamic envelope decryption and dynamic data masking (DDM) on-the-fly for off-the-shelf BI tools and SQL clients.
+*    **[Vollcrypt Scan Documentation (README-scan.md)](README-scan.md)** - Deterministic bounded traversal and explainable, signed criticality classification for integrity monitoring.
 *    **[Vollcrypt Wave Module Documentation (README-wave.md)](README-wave.md)** - Standalone, `#![no_std]` zero-allocation tactical radio COMSEC & TRANSEC protocol with deterministic chaos FHSS, dynamic aliasing, and Doppler sync.
-*    **[Vollcrypt Shield Documentation (vollcrypt-shield/README.md)](vollcrypt-shield/README.md)** - Standalone tamper-evident filesystem integrity verification with ML-DSA-65 signed baselines and bounded, scope-only response.
+*    **[Vollcrypt Shield Documentation (README-shield.md)](README-shield.md)** - Runtime integrity verification, independent Viewer, bounded scope-only response, and optional commercial fleet operations.
 
 ---
 
@@ -86,6 +97,7 @@ This repository is organized as a monorepo containing the following modules:
 *   `vollcrypt-desktop/`: Cross-platform desktop application built with Tauri (Rust) and React + Vanilla CSS.
 *   `db-guard/`: Database field-level encryption adapters for Node.js and Rust ORMs; not FIPS 140-3 validated.
 *   `db-proxy/`: A database wire-protocol proxy for transparent field decryption and masking in-transit.
+*   `vollcrypt-scan/`: Product-neutral bounded scanning core and independently reviewed Shield classification rules.
 *   `vollcrypt-shield/`: Independent integrity proof core, Linux-first filesystem agent, CLI, and Node native binding.
 
 ```mermaid

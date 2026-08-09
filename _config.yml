@@ -1,1 +1,4 @@
 theme: jekyll-theme-minimal
+title: Vollcrypt
+description: Quantum-resistant cryptography, deterministic scanning, and runtime integrity protection.
+lang: en-US

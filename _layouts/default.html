@@ -25,6 +25,8 @@
           <a href="{{ '/README-files.html' | relative_url }}" class="nav-btn" id="nav-files">Files Module</a>
           <a href="{{ '/README-db-guard.html' | relative_url }}" class="nav-btn" id="nav-db-guard">DB Guard</a>
           <a href="{{ '/README-db-proxy.html' | relative_url }}" class="nav-btn" id="nav-db-proxy">DB Proxy</a>
+          <a href="{{ '/README-scan.html' | relative_url }}" class="nav-btn" id="nav-scan">Scan</a>
+          <a href="{{ '/README-shield.html' | relative_url }}" class="nav-btn" id="nav-shield">Shield</a>
           <a href="{{ '/README-desktop.html' | relative_url }}" class="nav-btn" id="nav-desktop">Desktop App</a>
           <a href="{{ '/README-wave.html' | relative_url }}" class="nav-btn" id="nav-wave">Wave Module</a>
         </nav>
@@ -55,6 +57,8 @@
         const navFiles = document.getElementById("nav-files");
         const navDbGuard = document.getElementById("nav-db-guard");
         const navDbProxy = document.getElementById("nav-db-proxy");
+        const navScan = document.getElementById("nav-scan");
+        const navShield = document.getElementById("nav-shield");
         const navDesktop = document.getElementById("nav-desktop");
         const navWave = document.getElementById("nav-wave");
         
@@ -66,6 +70,10 @@
           navDbGuard.classList.add("active");
         } else if (currentPath.includes("README-db-proxy")) {
           navDbProxy.classList.add("active");
+        } else if (currentPath.includes("README-scan")) {
+          navScan.classList.add("active");
+        } else if (currentPath.includes("README-shield")) {
+          navShield.classList.add("active");
         } else if (currentPath.includes("README-desktop")) {
           navDesktop.classList.add("active");
         } else if (currentPath.includes("README-wave")) {
