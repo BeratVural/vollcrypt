@@ -1,0 +1,43 @@
+{
+  "name": "@vollcrypt/shield-core-node",
+  "version": "0.1.0",
+  "description": "Self-contained Node.js native binding for Vollcrypt Shield core",
+  "main": "loader.js",
+  "types": "index.d.ts",
+  "license": "GPL-3.0-only OR LicenseRef-Commercial",
+  "private": true,
+  "files": [
+    "loader.js",
+    "index.d.ts",
+    "vollcrypt-shield-core-node.*.node",
+    "README.md",
+    "LICENSE",
+    "LICENSE-GPL",
+    "LICENSE-COMMERCIAL.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BeratVural/vollcrypt.git",
+    "directory": "vollcrypt-shield/bindings/node"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "napi": {
+    "name": "vollcrypt-shield-core-node",
+    "triples": {
+      "defaults": true
+    }
+  },
+  "scripts": {
+    "build": "napi build --platform --release --cargo-flags=--locked",
+    "test": "node --test tests/*.test.js"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "2.18.4"
+  }
+}

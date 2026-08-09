@@ -1,0 +1,26 @@
+[package]
+name = "vollcrypt-shield-viewer"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only OR LicenseRef-Commercial"
+description = "Independent desktop verifier for Vollcrypt Shield"
+
+[lib]
+name = "vollcrypt_shield_viewer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+vollcrypt-shield-core = { version = "0.1.0", path = "../../core" }
+vollcrypt-shield-fs = { version = "0.1.0", path = "../../agents/fs" }
+vollcrypt-shield-protocol = { version = "0.1.0", path = "../../protocol" }
+
+[dev-dependencies]
+tempfile = "3"

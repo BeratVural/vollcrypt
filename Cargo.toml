@@ -11,6 +11,17 @@ members = [
     "vollcrypt-files/adversarial",
     "vollcrypt-desktop/src-tauri",
     "db-guard/rust",
+    "vollcrypt-shield/core",
+    "vollcrypt-shield/agents/fs",
+    "vollcrypt-shield/agents/container",
+    "vollcrypt-shield/agents/db",
+    "vollcrypt-shield/cli",
+    "vollcrypt-shield/bindings/node",
+    "vollcrypt-shield/desktop-app/src-tauri",
+    "vollcrypt-shield/protocol",
+    "vollcrypt-shield/witness",
+    "vollcrypt-scan/core",
+    "vollcrypt-scan/shield-classifier",
 ]
 exclude = ["vollcrypt-wave"]
 resolver = "2"

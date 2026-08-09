@@ -1,0 +1,17 @@
+[package]
+name = "vollcrypt-shield-core-node"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only OR LicenseRef-Commercial"
+description = "Self-contained Node.js binding for Vollcrypt Shield core"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+vollcrypt-shield-core = { version = "0.1.0", path = "../../core" }
+napi = { version = "2", default-features = false, features = ["napi6"] }
+napi-derive = "2"
+
+[build-dependencies]
+napi-build = "2"

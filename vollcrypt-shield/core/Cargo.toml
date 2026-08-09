@@ -1,0 +1,20 @@
+[package]
+name = "vollcrypt-shield-core"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only OR LicenseRef-Commercial"
+description = "Shield-specific integrity proofs, signed baselines, and audit chains"
+
+[dependencies]
+getrandom = "0.4"
+hybrid-array = "0.4"
+minicbor = { version = "2.3", features = ["derive", "std"] }
+ml-dsa = { version = "0.1.1", features = ["rand_core"] }
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+subtle = "2"
+thiserror = "2"
+zeroize = { version = "1", features = ["zeroize_derive"] }
+
+[dev-dependencies]
+tempfile = "3"

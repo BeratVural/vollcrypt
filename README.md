@@ -34,6 +34,7 @@ Explore the specific modules of Vollcrypt:
 *    **[Vollcrypt DB-Guard Module Documentation (README-db-guard.md)](README-db-guard.md)** - Database field-level encryption integrations with dynamic KMS routing and optional PKCS#11 providers; not FIPS 140-3 validated.
 *    **[Vollcrypt DB-Proxy Module Documentation (README-db-proxy.md)](README-db-proxy.md)** - Zero-trust database protocol proxy (PostgreSQL) executing dynamic envelope decryption and dynamic data masking (DDM) on-the-fly for off-the-shelf BI tools and SQL clients.
 *    **[Vollcrypt Wave Module Documentation (README-wave.md)](README-wave.md)** - Standalone, `#![no_std]` zero-allocation tactical radio COMSEC & TRANSEC protocol with deterministic chaos FHSS, dynamic aliasing, and Doppler sync.
+*    **[Vollcrypt Shield Documentation (vollcrypt-shield/README.md)](vollcrypt-shield/README.md)** - Standalone tamper-evident filesystem integrity verification with ML-DSA-65 signed baselines and bounded, scope-only response.
 
 ---
 
@@ -47,6 +48,7 @@ This repository is organized as a monorepo containing the following modules:
 *   `vollcrypt-desktop/`: Cross-platform desktop application built with Tauri (Rust) and React + Vanilla CSS.
 *   `db-guard/`: Database field-level encryption adapters for Node.js and Rust ORMs; not FIPS 140-3 validated.
 *   `db-proxy/`: A database wire-protocol proxy for transparent field decryption and masking in-transit.
+*   `vollcrypt-shield/`: Independent integrity proof core, Linux-first filesystem agent, CLI, and Node native binding.
 
 ```mermaid
 graph TD
@@ -123,6 +125,11 @@ Vollcrypt workspace exposes a unified suite of quantum-resistant cryptographic e
    Establishes physical and logical guardrails for hardware devices.
    * **Poison Pill Zeroization:** Wipes key material and permanently locks compromised devices via Ed25519-signed OTAZ commands.
    * **Reactive Hardware Wiping:** Triggered automatically upon case intrusion or debugger JTAG connection detection.
+
+6. **Runtime Integrity and Scoped Containment (Vollcrypt Shield)**
+   Verifies monitored filesystem state against ML-DSA-65 signed Merkle roots and records signed, tamper-evident audit events.
+   * **Bounded Response:** Mandatory dry-run precedes reversible quarantine, atomic rollback, and scope-only containment on supported Linux/Unix targets.
+   * **No Global Device Lock:** Shield does not shut down the operating system, cut networking, or globally stop unrelated scopes.
 
 ---
 

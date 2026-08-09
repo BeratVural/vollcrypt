@@ -1,0 +1,16 @@
+Vollcrypt Dual Licensing
+
+Vollcrypt is a dual-licensed cryptographic workspace. Users can choose between two licensing paths based on their project requirements and commercial usage constraints:
+
+1. OPEN SOURCE LICENSE (GPL-3.0)
+If you are developing an open-source application and are willing to share your source code under the terms of the GNU General Public License version 3.0, you may use Vollcrypt under the GPL-3.0 license.
+The full text of the GPL-3.0 license can be found in the LICENSE-GPL file.
+
+2. COMMERCIAL LICENSE
+If you wish to integrate Vollcrypt into a proprietary/commercial application and do not wish to be bound by the copyleft terms of the GPL-3.0 (i.e., you want to keep your application source code closed), you must obtain a Commercial License.
+The terms of the Commercial License can be found in the LICENSE-COMMERCIAL.md file.
+
+---
+
+For inquiries regarding commercial license purchases, pricing tiers, or custom enterprise terms, please contact:
+Email: berat.vural.tr@gmail.com
