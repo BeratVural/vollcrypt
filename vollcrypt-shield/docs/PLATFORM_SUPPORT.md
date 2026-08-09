@@ -18,6 +18,21 @@ reporting, notifications, and Viewer. It requires a signed release smoke test
 on a real Windows 11 host because GitHub-hosted CI uses Windows Server images.
 It has the same enforced dry-run response boundary as Windows Server.
 
+## Qualification targets
+
+The following platforms are being qualified but are not release-supported
+until every listed gate passes for a Shield release:
+
+| Platform | Architecture | Current gate |
+| --- | --- | --- |
+| Ubuntu 26.04 LTS | x86_64 | Dedicated Rust, Node binding, and Viewer CI plus unrestricted watcher and package smoke tests |
+| Debian 13 | x86_64 | Dedicated agent/CLI CI plus unrestricted watcher, Viewer, and package smoke tests |
+
+Qualification results must be recorded as `blocked`, rather than product
+failures, when a test environment denies required Unix-domain sockets, network
+access, package installation, or a graphical session. A blocked result never
+promotes a platform to release-supported.
+
 Other Linux distributions, Windows on ARM, and 32-bit systems are not release
 supported until they have dedicated build and runtime coverage. The Rust
 libraries may compile elsewhere, but successful compilation is not a support

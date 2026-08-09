@@ -51,3 +51,10 @@ Run `watch` in one terminal and modify a regular file in the disposable root
 from another terminal. Confirm that `status`, `dashboard`, the signed audit
 chain, and `notifications.jsonl` reflect the event. Stop the watcher normally.
 Filesystem notifications are hints; the periodic full rescan remains required.
+
+Run this check in an unrestricted user session. Some CI, container, and coding
+agent sandboxes deny Unix-domain socket operations with `EPERM`. In that case,
+record the watcher check as blocked by the environment and repeat it outside the
+sandbox; do not classify it as a Shield product failure. `status` and
+`dashboard` may use the signed persisted state when live IPC is unavailable and
+print an explicit warning to standard error.

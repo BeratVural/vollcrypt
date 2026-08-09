@@ -640,12 +640,10 @@ fn load_status(
     {
         match vollcrypt_shield_fs::query_local_status(&value.state_dir, scope) {
             Ok(status) => Ok(status),
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
-                ) =>
-            {
+            Err(error) if status_ipc_is_unavailable(&error) => {
+                eprintln!(
+                    "warning: live status IPC is unavailable ({error}); using signed persisted state"
+                );
                 Ok(ShieldAgent::load(value)?.status(scope)?)
             }
             Err(error) => Err(error.into()),
@@ -655,6 +653,16 @@ fn load_status(
     {
         Ok(ShieldAgent::load(value)?.status(scope)?)
     }
+}
+
+#[cfg(unix)]
+fn status_ipc_is_unavailable(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::NotFound
+            | std::io::ErrorKind::ConnectionRefused
+            | std::io::ErrorKind::PermissionDenied
+    )
 }
 
 fn load_config(path: &Path) -> Result<AgentConfig, Box<dyn std::error::Error>> {
@@ -776,4 +784,27 @@ fn replace_file(path: &Path, bytes: &[u8]) -> Result<(), Box<dyn std::error::Err
     }
     std::fs::remove_file(backup)?;
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::status_ipc_is_unavailable;
+
+    #[test]
+    fn status_falls_back_only_when_local_ipc_is_unavailable() {
+        for kind in [
+            std::io::ErrorKind::NotFound,
+            std::io::ErrorKind::ConnectionRefused,
+            std::io::ErrorKind::PermissionDenied,
+        ] {
+            assert!(status_ipc_is_unavailable(&std::io::Error::from(kind)));
+        }
+
+        assert!(!status_ipc_is_unavailable(&std::io::Error::from(
+            std::io::ErrorKind::InvalidData,
+        )));
+        assert!(!status_ipc_is_unavailable(&std::io::Error::from(
+            std::io::ErrorKind::TimedOut,
+        )));
+    }
 }
