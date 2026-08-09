@@ -10,6 +10,7 @@ the exact Shield release.
 | --- | --- | --- | --- | --- | --- |
 | Ubuntu 22.04 LTS | x86_64 | Supported | Supported for non-system regular-file scopes | Supported on desktop installs | Dedicated CI and release smoke test |
 | Ubuntu 24.04 LTS | x86_64 | Supported | Supported for non-system regular-file scopes | Supported on desktop installs | Dedicated CI and release smoke test |
+| Ubuntu 26.04 LTS | x86_64 | Supported | Supported for non-system regular-file scopes | Supported on desktop installs | Dedicated CI and real-host smoke test |
 | Windows Server 2022 | x86_64 | Supported | Not supported; enforced dry-run | Supported | Dedicated CI and release smoke test |
 | Windows Server 2025 | x86_64 | Supported | Not supported; enforced dry-run | Supported | Dedicated CI and release smoke test |
 
@@ -25,18 +26,18 @@ until every listed gate passes for a Shield release:
 
 | Platform | Architecture | Current gate |
 | --- | --- | --- |
-| Ubuntu 26.04 LTS | x86_64 | Dedicated Rust, Node binding, and Viewer CI plus unrestricted watcher and package smoke tests |
-| Debian 13 | x86_64 | Dedicated agent/CLI CI plus unrestricted watcher, Viewer, and package smoke tests |
+| Debian 13 | x86_64 | Dedicated agent/CLI, Node binding, and Viewer CI plus unrestricted watcher and package smoke tests |
+| Windows 11 | ARM64 | Dedicated Rust/CLI, Node binding, and Viewer CI plus signed real-device installer smoke test |
 
 Qualification results must be recorded as `blocked`, rather than product
 failures, when a test environment denies required Unix-domain sockets, network
 access, package installation, or a graphical session. A blocked result never
 promotes a platform to release-supported.
 
-Other Linux distributions, Windows on ARM, and 32-bit systems are not release
-supported until they have dedicated build and runtime coverage. The Rust
-libraries may compile elsewhere, but successful compilation is not a support
-commitment.
+Other Linux distributions, Windows architectures outside the listed targets,
+and 32-bit systems are not release supported until they have dedicated build
+and runtime coverage. The Rust libraries may compile elsewhere, but successful
+compilation is not a support commitment.
 
 ## Capability boundary
 
@@ -72,8 +73,8 @@ published:
 2. Node binding build and tests on each release-gated operating system.
 3. Viewer frontend build and independent verifier tests on each release-gated
    operating system.
-4. Installer/package smoke tests on Ubuntu 22.04, Ubuntu 24.04, Windows Server
-   2022, and Windows Server 2025.
+4. Installer/package smoke tests on Ubuntu 22.04, Ubuntu 24.04, Ubuntu 26.04,
+   Windows Server 2022, and Windows Server 2025.
 5. A real-host Windows 11 smoke test before marking Windows 11 as verified in
    release notes.
 

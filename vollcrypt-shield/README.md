@@ -32,13 +32,13 @@ are implemented. Active quarantine and rollback currently accept regular files
 only. Directories, symlinks, operating-system shutdown, network isolation, and
 permission-destructive responses are rejected.
 
-The release-gated platform matrix is Ubuntu 22.04/24.04 x86_64 and Windows
+The release-gated platform matrix is Ubuntu 22.04/24.04/26.04 x86_64 and Windows
 Server 2022/2025 x86_64. Windows 11 x86_64 is a supported desktop target after
 a real-host smoke test for the release. Exact capability and validation limits
 are documented in [`docs/PLATFORM_SUPPORT.md`](docs/PLATFORM_SUPPORT.md).
-Ubuntu 26.04 LTS and Debian 13 x86_64 are active qualification targets; they
-are not release-supported until their dedicated CI and real-host smoke gates
-pass.
+Debian 13 x86_64 and Windows 11 ARM64 are active qualification targets. The
+ordered implementation backlog, including the full headless TUI, is maintained
+in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 Shield does not depend on any other Vollcrypt product. Published agents and
 bindings include the Shield core they need and do not require another
