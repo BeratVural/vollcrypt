@@ -11,7 +11,8 @@ system. The current public delivery includes:
 - reversible quarantine, atomic rollback, and scope-only containment;
 - recurring containment notifications and signed break-glass release commands;
 - a self-contained CLI and Node.js native binding;
-- an independent, read-only Tauri Viewer for scope status, verified events,
+- an independent Tauri Viewer with guarded local folder onboarding and
+  read-only scope status, verified events,
   file-level Merkle inspection, and external M-of-N witness quorum proofs;
 - short-lived SPAKE2 agent-witness pairing over a one-shot TCP listener, with
   a versioned QR URI and mutually authenticated ML-DSA public identities.
@@ -49,12 +50,19 @@ the monitored state and a valid quorum anchors every baseline.
 ## CLI workflow
 
 ```console
-vollcrypt-shield config-example --root /srv/app --state-dir /var/lib/vollcrypt-shield --output shield.toml
-vollcrypt-shield init --config shield.toml --break-glass-key /offline/shield-break-glass.seed
-vollcrypt-shield baseline --config shield.toml --scope default
+vollcrypt-shield monitor-folder --root /srv/app --state-dir /var/lib/vollcrypt-shield --config shield.toml --break-glass-key /offline/shield-break-glass.seed
 vollcrypt-shield verify --config shield.toml --scope default
 vollcrypt-shield watch --config shield.toml --scope default
 vollcrypt-shield dashboard --config shield.toml --scope default
+```
+
+`monitor-folder` performs the safe default config, identity, and first-baseline
+steps in one command. The equivalent advanced sequence remains available:
+
+```console
+vollcrypt-shield config-example --root /srv/app --state-dir /var/lib/vollcrypt-shield --output shield.toml
+vollcrypt-shield init --config shield.toml --break-glass-key /offline/shield-break-glass.seed
+vollcrypt-shield baseline --config shield.toml --scope default
 ```
 
 Every generated response policy is dry-run. Shield requires signed verification
@@ -78,6 +86,18 @@ release-gated Ubuntu end-to-end validation.
 The Viewer verifies the configured agent public key, signed state, signed
 baseline, tamper-evident audit chain, and current Merkle root itself. It does
 not expose policy activation, deployment approval, or break-glass commands.
+`Monitor folder` creates a dedicated local agent state outside the selected
+tree, requires the emergency recovery key to be saved outside that tree,
+starts with `dry-run` plus `warn`, and creates the first signed baseline. An
+existing Viewer-managed folder reopens its previously generated configuration
+without replacing keys or baseline state.
+Verification runs on background workers so folder and configuration controls
+remain responsive during long scans. Detected differences show absolute paths
+and open an on-demand comparison backed by the signed baseline vault. Text
+rendering is limited to digest-verified regular UTF-8 files no larger than 512
+KiB; binary, oversized, directory, and symlink differences expose only hashes,
+sizes, and change type. Viewer settings persist automatic verification,
+refresh interval, diff context, line wrapping, and event-limit preferences.
 Local deployments are labelled `local-unanchored` because a key stored on the
 monitored host is not an independent trust anchor. The Viewer labels a scope
 `witness-quorum` only after independently verifying the selected external

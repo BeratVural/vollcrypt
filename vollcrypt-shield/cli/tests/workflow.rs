@@ -12,6 +12,51 @@ fn value(path: &std::path::Path) -> &str {
 }
 
 #[test]
+fn monitor_folder_creates_a_complete_dry_run_setup() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("project");
+    let state = directory.path().join("state");
+    let config = directory.path().join("shield.toml");
+    let break_glass = directory.path().join("offline-break-glass.seed");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("app.conf"), b"approved").unwrap();
+
+    let setup = shield(&[
+        "monitor-folder",
+        "--root",
+        value(&root),
+        "--state-dir",
+        value(&state),
+        "--config",
+        value(&config),
+        "--break-glass-key",
+        value(&break_glass),
+    ]);
+    assert!(setup.status.success(), "{setup:?}");
+    let setup_json: serde_json::Value = serde_json::from_slice(&setup.stdout).unwrap();
+    assert_eq!(setup_json["scope"], "default");
+    assert_eq!(setup_json["policyMode"], "dry-run");
+    assert!(config.is_file());
+    assert!(break_glass.is_file());
+    assert!(state.join("snapshots/default.snapshot.cbor").is_file());
+
+    let verified = shield(&["verify", "--config", value(&config), "--scope", "default"]);
+    assert!(verified.status.success(), "{verified:?}");
+    let repeated = shield(&[
+        "monitor-folder",
+        "--root",
+        value(&root),
+        "--state-dir",
+        value(&state),
+        "--config",
+        value(&config),
+        "--break-glass-key",
+        value(&break_glass),
+    ]);
+    assert!(!repeated.status.success());
+}
+
+#[test]
 fn baseline_verify_and_status_workflow_is_fail_safe() {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().join("watched");

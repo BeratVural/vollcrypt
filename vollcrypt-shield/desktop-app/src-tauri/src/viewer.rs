@@ -1,14 +1,21 @@
 use std::collections::BTreeSet;
-use std::io::Read;
-use std::path::Path;
+use std::fs::OpenOptions;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
+use tauri::Manager;
 use vollcrypt_shield_core::{
-    AuditEvent, AuditEventKind, DifferenceKind, MlDsa65PublicKey, PolicyMode, ResponseAction,
-    SignedSnapshot, Snapshot,
+    AuditEvent, AuditEventKind, DifferenceKind, EntryKind, MetadataPolicy, MlDsa65PublicKey,
+    NormalizedPath, PolicyMode, ResponseAction, ResponsePolicy, ScanProfile, SignedSnapshot,
+    Snapshot,
 };
-use vollcrypt_shield_fs::{AgentConfig, Scanner, audit_store::AuditStore, state::StateStore};
+use vollcrypt_shield_fs::{
+    AgentConfig, NotificationConfig, Scanner, ScopeConfig, ShieldAgent, audit_store::AuditStore,
+    state::StateStore,
+};
 use vollcrypt_shield_protocol::witness::{
     QuorumExpectation, QuorumProof, SignedWitnessStatement, WitnessPolicy, verify_witness_quorum,
 };
@@ -60,6 +67,16 @@ pub struct OfflinePackageReport {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct FolderSetupReport {
+    config_path: String,
+    root_path: String,
+    break_glass_secret_path: String,
+    baseline_root: String,
+    scope_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ScopeReport {
     id: String,
     root: String,
@@ -99,7 +116,24 @@ struct WitnessReport {
 #[serde(rename_all = "camelCase")]
 struct DifferenceReport {
     path: String,
+    absolute_path: String,
     kind: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileComparisonReport {
+    relative_path: String,
+    absolute_path: String,
+    kind: String,
+    baseline_digest: Option<String>,
+    current_digest: Option<String>,
+    baseline_size: Option<u64>,
+    current_size: Option<u64>,
+    baseline_text: Option<String>,
+    current_text: Option<String>,
+    content_status: String,
+    detail: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -115,29 +149,259 @@ struct EventReport {
 }
 
 #[tauri::command]
-pub fn inspect_agent(
+pub fn find_monitored_folder(
+    app: tauri::AppHandle,
+    root_path: String,
+) -> Result<Option<String>, String> {
+    let app_data = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    find_monitored_folder_at(Path::new(&root_path), &app_data).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn monitor_folder(
+    app: tauri::AppHandle,
+    root_path: String,
+    break_glass_secret_path: String,
+) -> Result<FolderSetupReport, String> {
+    let app_data = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        monitor_folder_at(
+            Path::new(&root_path),
+            &app_data,
+            Path::new(&break_glass_secret_path),
+        )
+        .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("folder setup worker failed: {error}"))?
+}
+
+fn find_monitored_folder_at(
+    root_path: &Path,
+    app_data: &Path,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    let root = canonical_monitored_root(root_path)?;
+    let (_, config_path) = managed_folder_paths(&root, app_data);
+    if !config_path.exists() {
+        return Ok(None);
+    }
+    let metadata = std::fs::symlink_metadata(&config_path)?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err("managed folder configuration is not a regular file".into());
+    }
+    let text = String::from_utf8(read_bounded_regular(&config_path, 1_048_576)?)?;
+    let config = AgentConfig::from_toml(&text)?;
+    if config.scopes.len() != 1 || config.scopes[0].root.canonicalize()? != root {
+        return Err("managed folder configuration does not match the selected folder".into());
+    }
+    Ok(Some(config_path.display().to_string()))
+}
+
+fn monitor_folder_at(
+    root_path: &Path,
+    app_data: &Path,
+    break_glass_secret_path: &Path,
+) -> Result<FolderSetupReport, Box<dyn std::error::Error>> {
+    let root = canonical_monitored_root(root_path)?;
+    if !app_data.is_absolute() {
+        return Err("Shield application data path must be absolute".into());
+    }
+    let (state_dir, config_path) = managed_folder_paths(&root, app_data);
+    if config_path.exists() || state_dir.exists() {
+        return Err(
+            "this folder already has managed Shield state; open its existing configuration".into(),
+        );
+    }
+
+    let break_glass_secret_path = canonical_new_file_path(break_glass_secret_path)?;
+    if break_glass_secret_path.starts_with(&root) {
+        return Err(
+            "the emergency recovery key must be stored outside the monitored folder".into(),
+        );
+    }
+    let break_glass_public_path = break_glass_secret_path.with_extension("public");
+    if break_glass_secret_path.exists() || break_glass_public_path.exists() {
+        return Err("refusing to overwrite existing emergency recovery key material".into());
+    }
+
+    let scope_id = managed_scope_id(&root);
+    let scope = ScopeConfig {
+        id: scope_id.clone(),
+        root: root.clone(),
+        include: vec!["**".to_owned()],
+        exclude: vec![],
+        metadata: MetadataPolicy::default(),
+        full_scan: ScanProfile::full_default(),
+        incremental_scan: ScanProfile::incremental_default(),
+        full_rescan_interval_secs: 300,
+        response: ResponsePolicy::default(),
+    };
+    let config = AgentConfig {
+        state_dir: state_dir.clone(),
+        scopes: vec![scope.clone()],
+        notifications: NotificationConfig::default(),
+    };
+    config.validate()?;
+
+    // Preflight the complete tree before creating identity or recovery material.
+    Scanner::new(&scope)?.full_scan(&scope)?;
+    std::fs::create_dir_all(
+        config_path
+            .parent()
+            .ok_or("managed configuration has no parent directory")?,
+    )?;
+    let mut agent = ShieldAgent::initialize(config.clone(), &break_glass_secret_path)?;
+    let baseline = agent.create_baseline(&scope_id)?;
+    write_new_private(&config_path, config.to_toml()?.as_bytes())?;
+
+    Ok(FolderSetupReport {
+        config_path: config_path.display().to_string(),
+        root_path: root.display().to_string(),
+        break_glass_secret_path: break_glass_secret_path.display().to_string(),
+        baseline_root: hex::encode(baseline.root),
+        scope_id,
+    })
+}
+
+fn canonical_monitored_root(path: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if !path.is_absolute() {
+        return Err("monitored folder path must be absolute".into());
+    }
+    let metadata = std::fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err("monitored folder must be a regular directory, not a symlink".into());
+    }
+    Ok(path.canonicalize()?)
+}
+
+fn canonical_new_file_path(path: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if !path.is_absolute() {
+        return Err("emergency recovery key path must be absolute".into());
+    }
+    let file_name = path
+        .file_name()
+        .ok_or("emergency recovery key path has no file name")?;
+    let parent = path
+        .parent()
+        .ok_or("emergency recovery key path has no parent directory")?
+        .canonicalize()?;
+    if !parent.is_dir() {
+        return Err("emergency recovery key parent is not a directory".into());
+    }
+    Ok(parent.join(file_name))
+}
+
+fn managed_folder_paths(root: &Path, app_data: &Path) -> (PathBuf, PathBuf) {
+    let digest = managed_folder_digest(root);
+    let identifier = hex::encode(&digest[..12]);
+    (
+        app_data.join("agents").join(&identifier),
+        app_data
+            .join("configurations")
+            .join(format!("{identifier}.toml")),
+    )
+}
+
+fn managed_scope_id(root: &Path) -> String {
+    let mut name = root
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("folder")
+        .chars()
+        .map(|value| {
+            if value.is_ascii_alphanumeric() || matches!(value, '-' | '_' | '.') {
+                value
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    name.truncate(80);
+    name = name.trim_matches('-').to_owned();
+    if name.is_empty() {
+        name = "folder".to_owned();
+    }
+    format!(
+        "{}-{}",
+        name,
+        hex::encode(&managed_folder_digest(root)[..6])
+    )
+}
+
+fn managed_folder_digest(root: &Path) -> [u8; 32] {
+    let bytes = root.to_string_lossy();
+    let mut hasher = Sha256::new();
+    hasher.update(b"VOLLCRYPT-SHIELD-VIEWER-MANAGED-FOLDER-v1\0");
+    hasher.update((bytes.len() as u64).to_be_bytes());
+    hasher.update(bytes.as_bytes());
+    hasher.finalize().into()
+}
+
+fn write_new_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
+}
+
+#[tauri::command]
+pub async fn inspect_agent(
     config_path: String,
     witness_policy_path: Option<String>,
     witness_statements_dir: Option<String>,
 ) -> Result<ViewerReport, String> {
-    inspect_agent_path(
-        Path::new(&config_path),
-        witness_policy_path.as_deref().map(Path::new),
-        witness_statements_dir.as_deref().map(Path::new),
-    )
-    .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        inspect_agent_path(
+            Path::new(&config_path),
+            witness_policy_path.as_deref().map(Path::new),
+            witness_statements_dir.as_deref().map(Path::new),
+        )
+        .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("verification worker failed: {error}"))?
 }
 
 #[tauri::command]
-pub fn inspect_offline_package(
+pub async fn inspect_offline_package(
     package_path: String,
     expected_public_key_path: String,
 ) -> Result<OfflinePackageReport, String> {
-    inspect_offline_package_path(
-        Path::new(&package_path),
-        Path::new(&expected_public_key_path),
-    )
-    .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        inspect_offline_package_path(
+            Path::new(&package_path),
+            Path::new(&expected_public_key_path),
+        )
+        .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("offline verification worker failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn inspect_difference(
+    config_path: String,
+    scope_id: String,
+    relative_path: String,
+) -> Result<FileComparisonReport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        inspect_difference_path(Path::new(&config_path), &scope_id, &relative_path)
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("comparison worker failed: {error}"))?
 }
 
 fn inspect_offline_package_path(
@@ -274,6 +538,185 @@ fn read_bounded_regular(path: &Path, limit: u64) -> Result<Vec<u8>, Box<dyn std:
     Ok(bytes)
 }
 
+const MAX_COMPARISON_BYTES: u64 = 512 * 1024;
+const FILE_CONTENT_DOMAIN: &[u8] = b"VOLLCRYPT-SHIELD-FILE-v1\0";
+
+struct ContentPreview {
+    text: Option<String>,
+    status: &'static str,
+}
+
+fn inspect_difference_path(
+    config_path: &Path,
+    scope_id: &str,
+    relative_path: &str,
+) -> Result<FileComparisonReport, Box<dyn std::error::Error>> {
+    let config_text = String::from_utf8(read_bounded_regular(config_path, 1_048_576)?)?;
+    let config = AgentConfig::from_toml(&config_text)?;
+    let scope = config
+        .scopes
+        .iter()
+        .find(|scope| scope.id == scope_id)
+        .ok_or("comparison scope is not configured")?;
+    let normalized = NormalizedPath::new(relative_path.to_owned())?;
+    let absolute_path = scope.root.join(normalized.as_str());
+
+    let public_key = MlDsa65PublicKey::from_bytes(&read_bounded_regular(
+        &config.state_dir.join("keys/agent.public"),
+        1_952,
+    )?)?;
+    let snapshot_path = config
+        .state_dir
+        .join("snapshots")
+        .join(format!("{}.snapshot.cbor", scope.id));
+    let signed =
+        SignedSnapshot::from_cbor(&read_bounded_regular(&snapshot_path, 64 * 1024 * 1024)?)?;
+    if signed.public_key()?.key_id() != public_key.key_id() {
+        return Err("baseline signer does not match the trusted agent key".into());
+    }
+    let snapshot = signed.verify()?;
+    if snapshot.scope_id != scope.id {
+        return Err("baseline scope does not match its configured scope".into());
+    }
+    let baseline = snapshot
+        .entries
+        .iter()
+        .find(|entry| entry.path == normalized)
+        .cloned();
+
+    let current = match std::fs::symlink_metadata(&absolute_path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+        Ok(_) => Scanner::new(scope)?
+            .incremental_scan(scope, [absolute_path.clone()])?
+            .into_iter()
+            .find(|entry| entry.path == normalized),
+    };
+
+    let kind = match (&baseline, &current) {
+        (None, Some(_)) => DifferenceKind::Added,
+        (Some(_), None) => DifferenceKind::Removed,
+        (Some(expected), Some(actual)) if expected != actual => DifferenceKind::Modified,
+        _ => return Err("the selected path no longer differs from the signed baseline".into()),
+    };
+
+    let baseline_preview = match baseline.as_ref() {
+        Some(entry) => {
+            let object = config
+                .state_dir
+                .join("vault/objects")
+                .join(hex::encode(entry.content_digest));
+            verified_content_preview(&object, entry.kind, entry.size, &entry.content_digest)?
+        }
+        None => ContentPreview {
+            text: None,
+            status: "missing",
+        },
+    };
+    let current_preview = match current.as_ref() {
+        Some(entry) => verified_content_preview(
+            &absolute_path,
+            entry.kind,
+            entry.size,
+            &entry.content_digest,
+        )?,
+        None => ContentPreview {
+            text: None,
+            status: "missing",
+        },
+    };
+
+    let content_status = if matches!(kind, DifferenceKind::Added)
+        && current_preview.status == "text"
+        || matches!(kind, DifferenceKind::Removed) && baseline_preview.status == "text"
+        || matches!(kind, DifferenceKind::Modified)
+            && baseline_preview.status == "text"
+            && current_preview.status == "text"
+    {
+        "text"
+    } else if baseline_preview.status == "too-large" || current_preview.status == "too-large" {
+        "too-large"
+    } else if baseline_preview.status == "binary" || current_preview.status == "binary" {
+        "binary"
+    } else {
+        "not-text-file"
+    };
+    let detail = if content_status == "text"
+        && baseline_preview.text.is_some()
+        && baseline_preview.text == current_preview.text
+    {
+        "File contents match; the integrity difference is metadata-only."
+    } else {
+        match content_status {
+            "text" => "Verified baseline and current text are available for comparison.",
+            "too-large" => "Content comparison is limited to regular files of 512 KiB or less.",
+            "binary" => "Binary content is not rendered; verified hashes and sizes are shown.",
+            _ => "Content comparison is available only for regular text files.",
+        }
+    }
+    .to_owned();
+
+    Ok(FileComparisonReport {
+        relative_path: normalized.to_string(),
+        absolute_path: absolute_path.display().to_string(),
+        kind: difference_kind(kind).to_owned(),
+        baseline_digest: baseline
+            .as_ref()
+            .map(|entry| hex::encode(entry.content_digest)),
+        current_digest: current
+            .as_ref()
+            .map(|entry| hex::encode(entry.content_digest)),
+        baseline_size: baseline.as_ref().map(|entry| entry.size),
+        current_size: current.as_ref().map(|entry| entry.size),
+        baseline_text: baseline_preview.text,
+        current_text: current_preview.text,
+        content_status: content_status.to_owned(),
+        detail,
+    })
+}
+
+fn verified_content_preview(
+    path: &Path,
+    kind: EntryKind,
+    size: u64,
+    expected_digest: &[u8; 32],
+) -> Result<ContentPreview, Box<dyn std::error::Error>> {
+    if kind != EntryKind::File {
+        return Ok(ContentPreview {
+            text: None,
+            status: "not-file",
+        });
+    }
+    if size > MAX_COMPARISON_BYTES {
+        return Ok(ContentPreview {
+            text: None,
+            status: "too-large",
+        });
+    }
+    let bytes = read_bounded_regular(path, MAX_COMPARISON_BYTES)?;
+    let mut hasher = Sha256::new();
+    hasher.update(FILE_CONTENT_DOMAIN);
+    hasher.update(&bytes);
+    let actual: [u8; 32] = hasher.finalize().into();
+    if actual != *expected_digest {
+        return Err(format!(
+            "file changed while preparing comparison: {}",
+            path.display()
+        )
+        .into());
+    }
+    match String::from_utf8(bytes) {
+        Ok(text) if !text.contains('\0') => Ok(ContentPreview {
+            text: Some(text),
+            status: "text",
+        }),
+        _ => Ok(ContentPreview {
+            text: None,
+            status: "binary",
+        }),
+    }
+}
+
 fn inspect_agent_path(
     config_path: &Path,
     witness_policy_path: Option<&Path>,
@@ -393,6 +836,11 @@ fn inspect_agent_path(
                     .take(500)
                     .map(|difference| DifferenceReport {
                         path: difference.path.to_string(),
+                        absolute_path: scope
+                            .root
+                            .join(difference.path.as_str())
+                            .display()
+                            .to_string(),
                         kind: difference_kind(difference.kind).to_owned(),
                     })
                     .collect();
@@ -749,6 +1197,58 @@ mod tests {
     }
 
     #[test]
+    fn direct_folder_setup_creates_dry_run_baseline_and_reopens() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("project");
+        let app_data = directory.path().join("viewer-data");
+        let recovery = directory.path().join("recovery/shield-break-glass.seed");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::create_dir(recovery.parent().unwrap()).unwrap();
+        std::fs::write(root.join("app.conf"), b"approved").unwrap();
+
+        let setup = monitor_folder_at(&root, &app_data, &recovery).unwrap();
+        let config_path = PathBuf::from(&setup.config_path);
+        let config =
+            AgentConfig::from_toml(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        assert_eq!(config.scopes.len(), 1);
+        assert_eq!(config.scopes[0].response.mode, PolicyMode::DryRun);
+        assert_eq!(
+            config.scopes[0].response.actions,
+            vec![ResponseAction::Warn]
+        );
+        assert!(recovery.is_file());
+        assert!(recovery.with_extension("public").is_file());
+        assert_eq!(
+            find_monitored_folder_at(&root, &app_data).unwrap(),
+            Some(setup.config_path.clone())
+        );
+
+        let report = inspect_agent_path(&config_path, None, None).unwrap();
+        assert_eq!(report.status, "verified");
+        assert_eq!(
+            report.scopes[0].root,
+            root.canonicalize().unwrap().display().to_string()
+        );
+        assert_eq!(report.scopes[0].policy_mode, "dry-run");
+    }
+
+    #[test]
+    fn direct_folder_setup_rejects_recovery_key_inside_scope() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("project");
+        let app_data = directory.path().join("viewer-data");
+        std::fs::create_dir(&root).unwrap();
+        let recovery = root.join("shield-break-glass.seed");
+
+        let error = monitor_folder_at(&root, &app_data, &recovery)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("outside the monitored folder"));
+        assert!(!app_data.exists());
+        assert!(!recovery.exists());
+    }
+
+    #[test]
     fn reports_filesystem_drift_without_mutating_the_agent() {
         let (directory, config_path) = fixture();
         std::fs::write(directory.path().join("watched/app.conf"), b"changed").unwrap();
@@ -756,6 +1256,47 @@ mod tests {
         assert_eq!(report.status, "attention");
         assert_eq!(report.scopes[0].status, "changed");
         assert_eq!(report.scopes[0].differences.len(), 1);
+        assert_eq!(
+            report.scopes[0].differences[0].absolute_path,
+            directory
+                .path()
+                .join("watched")
+                .join("app.conf")
+                .display()
+                .to_string()
+        );
+    }
+
+    #[test]
+    fn comparison_returns_verified_text_for_modified_added_and_removed_files() {
+        let (directory, config_path) = fixture();
+        let watched = directory.path().join("watched");
+
+        std::fs::write(watched.join("app.conf"), b"changed\nsecond line\n").unwrap();
+        let modified = inspect_difference_path(&config_path, "application", "app.conf").unwrap();
+        assert_eq!(modified.kind, "modified");
+        assert_eq!(modified.content_status, "text");
+        assert_eq!(modified.baseline_text.as_deref(), Some("approved"));
+        assert_eq!(
+            modified.current_text.as_deref(),
+            Some("changed\nsecond line\n")
+        );
+        assert_eq!(
+            modified.absolute_path,
+            watched.join("app.conf").display().to_string()
+        );
+
+        std::fs::write(watched.join("new.txt"), b"new content").unwrap();
+        let added = inspect_difference_path(&config_path, "application", "new.txt").unwrap();
+        assert_eq!(added.kind, "added");
+        assert!(added.baseline_text.is_none());
+        assert_eq!(added.current_text.as_deref(), Some("new content"));
+
+        std::fs::remove_file(watched.join("app.conf")).unwrap();
+        let removed = inspect_difference_path(&config_path, "application", "app.conf").unwrap();
+        assert_eq!(removed.kind, "removed");
+        assert_eq!(removed.baseline_text.as_deref(), Some("approved"));
+        assert!(removed.current_text.is_none());
     }
 
     #[test]

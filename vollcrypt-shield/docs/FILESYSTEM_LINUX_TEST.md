@@ -25,9 +25,7 @@ BREAK_GLASS=$(mktemp /tmp/shield-break-glass.XXXXXX.seed)
 rm -f "$BREAK_GLASS"
 
 printf 'approved\n' > "$ROOT/app.conf"
-target/release/vollcrypt-shield config-example --root "$ROOT" --state-dir "$STATE" --output "$CONFIG"
-target/release/vollcrypt-shield init --config "$CONFIG" --break-glass-key "$BREAK_GLASS"
-target/release/vollcrypt-shield baseline --config "$CONFIG" --scope default
+target/release/vollcrypt-shield monitor-folder --root "$ROOT" --state-dir "$STATE" --config "$CONFIG" --break-glass-key "$BREAK_GLASS"
 target/release/vollcrypt-shield verify --config "$CONFIG" --scope default
 target/release/vollcrypt-shield dashboard --config "$CONFIG" --scope default --once --no-color
 

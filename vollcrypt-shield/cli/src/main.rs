@@ -11,7 +11,7 @@ use vollcrypt_shield_core::{
     ScanProfile, SignedBreakGlassCommand, SignedSnapshot,
 };
 use vollcrypt_shield_fs::{
-    AgentConfig, NotificationConfig, ScopeConfig, ShieldAgent, WitnessPairingServer,
+    AgentConfig, NotificationConfig, Scanner, ScopeConfig, ShieldAgent, WitnessPairingServer,
 };
 use vollcrypt_shield_protocol::{
     control_plane::{SignedAgentSummary, SignedEnrollmentRequest},
@@ -55,6 +55,18 @@ struct Arguments {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    MonitorFolder {
+        #[arg(long)]
+        root: PathBuf,
+        #[arg(long)]
+        state_dir: PathBuf,
+        #[arg(long)]
+        config: PathBuf,
+        #[arg(long)]
+        break_glass_key: PathBuf,
+        #[arg(long, default_value = "default")]
+        scope: String,
+    },
     ConfigExample {
         #[arg(long)]
         root: PathBuf,
@@ -225,6 +237,68 @@ fn main() -> ExitCode {
 
 fn run(arguments: Arguments) -> Result<(), Box<dyn std::error::Error>> {
     match arguments.command {
+        Command::MonitorFolder {
+            root,
+            state_dir,
+            config,
+            break_glass_key,
+            scope,
+        } => {
+            let root_metadata = std::fs::symlink_metadata(&root)?;
+            if root_metadata.file_type().is_symlink() || !root_metadata.is_dir() {
+                return Err("monitored root must be a regular directory, not a symlink".into());
+            }
+            let root = root.canonicalize()?;
+            let state_dir = canonical_new_path(&state_dir, "state directory")?;
+            let config = canonical_new_path(&config, "configuration")?;
+            let break_glass_key = canonical_new_path(&break_glass_key, "break-glass key")?;
+            if config.exists()
+                || state_dir.exists()
+                || break_glass_key.exists()
+                || break_glass_key.with_extension("public").exists()
+            {
+                return Err("refusing to overwrite existing Shield setup material".into());
+            }
+            if config.starts_with(&root) || break_glass_key.starts_with(&root) {
+                return Err(
+                    "configuration and break-glass key must be stored outside the monitored root"
+                        .into(),
+                );
+            }
+            let scope_config = ScopeConfig {
+                id: scope.clone(),
+                root,
+                include: vec!["**".to_owned()],
+                exclude: vec![],
+                metadata: MetadataPolicy::default(),
+                full_scan: ScanProfile::full_default(),
+                incremental_scan: ScanProfile::incremental_default(),
+                full_rescan_interval_secs: 300,
+                response: ResponsePolicy::default(),
+            };
+            let value = AgentConfig {
+                state_dir,
+                scopes: vec![scope_config.clone()],
+                notifications: NotificationConfig::default(),
+            };
+            value.validate()?;
+            Scanner::new(&scope_config)?.full_scan(&scope_config)?;
+            let mut agent = ShieldAgent::initialize(value.clone(), &break_glass_key)?;
+            let baseline = agent.create_baseline(&scope)?;
+            write_new(&config, value.to_toml()?.as_bytes())?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "config": config,
+                    "scope": scope,
+                    "root": scope_config.root,
+                    "stateDir": value.state_dir,
+                    "breakGlassKey": break_glass_key,
+                    "baselineRoot": hex::encode(baseline.root),
+                    "policyMode": "dry-run",
+                }))?
+            );
+        }
         Command::ConfigExample {
             root,
             state_dir,
@@ -585,6 +659,23 @@ fn load_status(
 
 fn load_config(path: &Path) -> Result<AgentConfig, Box<dyn std::error::Error>> {
     Ok(AgentConfig::from_toml(&std::fs::read_to_string(path)?)?)
+}
+
+fn canonical_new_path(path: &Path, label: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if !path.is_absolute() {
+        return Err(format!("{label} path must be absolute").into());
+    }
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| format!("{label} path has no final component"))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("{label} path has no parent directory"))?
+        .canonicalize()?;
+    if !parent.is_dir() {
+        return Err(format!("{label} parent is not a directory").into());
+    }
+    Ok(parent.join(file_name))
 }
 
 fn fleet_previous_hash(
