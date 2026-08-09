@@ -4,6 +4,9 @@ pub enum AgentError {
     Core(#[from] vollcrypt_shield_core::ShieldError),
     #[error(transparent)]
     Protocol(#[from] vollcrypt_shield_protocol::ProtocolError),
+    #[cfg(windows)]
+    #[error(transparent)]
+    WindowsBackup(#[from] vollcrypt_shield_windows::WindowsBackupError),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error("configuration error: {0}")]

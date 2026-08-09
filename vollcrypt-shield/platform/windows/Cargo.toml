@@ -1,0 +1,23 @@
+[package]
+name = "vollcrypt-shield-windows"
+version = "1.0.0"
+edition = "2024"
+license = "GPL-3.0-only OR LicenseRef-Commercial"
+description = "Isolated Windows backup and security metadata support for Vollcrypt Shield"
+
+[dependencies]
+thiserror = "2"
+
+[target.'cfg(windows)'.dependencies]
+sha2 = "0.10"
+windows = { version = "0.61.3", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+tempfile = "3"

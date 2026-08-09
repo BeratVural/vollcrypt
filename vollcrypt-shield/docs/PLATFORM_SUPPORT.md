@@ -12,13 +12,14 @@ the exact Shield release. Support removal follows
 | Ubuntu 22.04 LTS | x86_64 | Supported | Supported for non-system regular-file scopes | Supported on desktop installs | Dedicated CI and release smoke test |
 | Ubuntu 24.04 LTS | x86_64 | Supported | Supported for non-system regular-file scopes | Supported on desktop installs | Dedicated CI and release smoke test |
 | Ubuntu 26.04 LTS | x86_64 | Supported | Supported for non-system regular-file scopes | Supported on desktop installs | Dedicated CI and real-host smoke test |
-| Windows Server 2022 | x86_64 | Supported | Not supported; enforced dry-run | Supported | Dedicated CI and release smoke test |
-| Windows Server 2025 | x86_64 | Supported | Not supported; enforced dry-run | Supported | Dedicated CI and release smoke test |
+| Windows Server 2022 | x86_64 | Supported | Implemented behind a privilege/capability gate; qualification pending | Supported | Dedicated CI and release smoke test |
+| Windows Server 2025 | x86_64 | Supported | Implemented behind a privilege/capability gate; qualification pending | Supported | Dedicated CI and release smoke test |
 
 Windows 11 x86_64 is a supported desktop target for the CLI, detection,
 reporting, notifications, and Viewer. It requires a signed release smoke test
 on a real Windows 11 host because GitHub-hosted CI uses Windows Server images.
-It has the same enforced dry-run response boundary as Windows Server.
+Its active-response implementation has the same fail-closed qualification
+boundary as Windows Server.
 
 ## Qualification targets
 
@@ -48,10 +49,17 @@ network isolation, and permission-destructive actions are rejected. Protected
 system roots remain passive even when a policy says `active`.
 
 Windows scans, verifies, signs evidence, records the audit chain, emits
-notifications, serves status, and runs the read-only Viewer. Quarantine and
-rollback stay disabled until Shield can preserve and atomically restore Windows
-owners, DACLs, SACLs, integrity labels, alternate data streams, and relevant
-extended attributes without weakening access control.
+notifications, serves status, and runs the read-only Viewer without elevated
+backup privileges. Active quarantine and rollback require a new baseline from
+the same privileged Shield service account that will run the agent. Shield uses
+the Windows backup stream to preserve default data, alternate data streams,
+extended attributes, owner, DACL, SACL, and integrity label. It stores creation,
+access, write, and change times plus file attributes separately in the signed
+sidecar. Activation performs a create-new backup/restore probe and fails closed
+unless `SeBackupPrivilege`, `SeRestorePrivilege`, and `SeSecurityPrivilege` are
+all assigned and can be enabled. Regular non-reparse, non-EFS files are the only
+accepted targets. The feature is not release-qualified until the real-host
+recovery tests listed in the roadmap pass.
 
 ## User interfaces
 

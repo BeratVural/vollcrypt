@@ -6771,6 +6771,7 @@ dependencies = [
  "ureq",
  "vollcrypt-shield-core",
  "vollcrypt-shield-protocol",
+ "vollcrypt-shield-windows",
  "walkdir",
  "xattr",
 ]
@@ -6808,6 +6809,16 @@ dependencies = [
  "vollcrypt-shield-core",
  "vollcrypt-shield-fs",
  "vollcrypt-shield-protocol",
+]
+
+[[package]]
+name = "vollcrypt-shield-windows"
+version = "1.0.0"
+dependencies = [
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.18",
+ "windows 0.61.3",
 ]
 
 [[package]]

@@ -32,7 +32,7 @@ platform or capability is never promoted based on compilation alone.
 
 ## Active response
 
-- [ ] Implement Windows quarantine and rollback only after owners, DACLs, SACLs,
+- [x] Implement Windows quarantine and rollback only after owners, DACLs, SACLs,
   integrity labels, alternate data streams, timestamps, and relevant attributes
   can be captured and restored atomically without weakening access control.
 - [ ] Add crash recovery, power-loss, locked-file, junction/reparse-point, and

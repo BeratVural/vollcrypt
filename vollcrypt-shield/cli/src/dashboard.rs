@@ -89,7 +89,7 @@ pub fn render(
     };
     let response_mode = if scope.protects_system_path() {
         "passive (protected system path)"
-    } else if !cfg!(unix) {
+    } else if !cfg!(any(unix, windows)) {
         "dry-run (active response unavailable)"
     } else if scope.response.mode == vollcrypt_shield_core::PolicyMode::Active {
         "active"

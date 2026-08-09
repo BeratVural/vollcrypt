@@ -421,7 +421,9 @@ impl ShieldAgent {
         )?;
         self.response
             .notify_monitoring_failure(&scope.id, &reason, now)?;
-        if cfg!(unix) && scope.response.mode == PolicyMode::Active && !scope.protects_system_path()
+        if cfg!(any(unix, windows))
+            && scope.response.mode == PolicyMode::Active
+            && !scope.protects_system_path()
         {
             let mut context = ResponseContext {
                 state: &mut self.state,
@@ -596,6 +598,10 @@ impl ShieldAgent {
                 "only an active policy can be recorded as promoted".to_owned(),
             ));
         }
+        #[cfg(windows)]
+        self.response
+            .vault()
+            .validate_windows_active_response(&scope, &self.agent_public)?;
         let now = now_unix_ms()?;
         self.audit.append(
             now,

@@ -21,11 +21,17 @@ The Phase 2 response engine is deliberately bounded:
 - a contained scope emits persistent audit records and recurring log/webhook
   reminders until a valid break-glass command releases it.
 
-The metadata guarantee above applies to the Linux/Unix active-response target.
-Windows remains enforced dry-run in this delivery because preserving and
-restoring Windows ACLs and ownership losslessly is not implemented. Active
-quarantine and rollback reject non-regular files instead of applying an unsafe
-partial restore.
+On Windows, complete response metadata is held in a separate versioned,
+ML-DSA-signed vault sidecar. `BackupRead`/`BackupWrite` preserve the default data
+stream, alternate data streams, extended attributes, owner, DACL, SACL, and
+integrity label; signed basic metadata preserves creation, access, write, and
+change times plus file attributes. Active promotion requires a successful
+round-trip probe under a service account with `SeBackupPrivilege`,
+`SeRestorePrivilege`, and `SeSecurityPrivilege`. A missing privilege, incomplete
+baseline, corrupted backup, reparse point, EFS file, or restore error rejects
+activation or contains the affected scope instead of applying a partial
+response. Windows active response remains qualification-only until the
+real-host crash and recovery matrix is complete.
 
 ## Trust boundary
 

@@ -1334,7 +1334,7 @@ fn verify_scope_read_only(
 fn response_mode(scope: &ScopeConfig) -> String {
     if scope.protects_system_path() {
         "passive".to_owned()
-    } else if !cfg!(unix) {
+    } else if !cfg!(any(unix, windows)) {
         "dry-run".to_owned()
     } else {
         match scope.response.mode {

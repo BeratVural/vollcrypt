@@ -21,6 +21,7 @@ members = [
     "vollcrypt-shield/desktop-app/src-tauri",
     "vollcrypt-shield/protocol",
     "vollcrypt-shield/witness",
+    "vollcrypt-shield/platform/windows",
     "vollcrypt-scan/core",
     "vollcrypt-scan/shield-classifier",
 ]

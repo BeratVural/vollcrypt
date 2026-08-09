@@ -70,16 +70,22 @@ impl ResponseEngine {
             .iter()
             .map(|entry| (entry.path.clone(), entry))
             .collect();
-        let force_dry_run = scope.protects_system_path() || !cfg!(unix);
+        let force_dry_run = scope.protects_system_path() || !cfg!(any(unix, windows));
         let mut outcomes = Vec::new();
+
+        #[cfg(windows)]
+        if scope.response.mode == PolicyMode::Active && !force_dry_run {
+            self.vault
+                .validate_windows_runtime_response(scope, context.agent_public)?;
+        }
 
         for difference in &report.differences {
             let path = difference.path.to_string();
             if scope.response.mode == PolicyMode::DryRun || force_dry_run {
                 let reason = if scope.protects_system_path() {
                     "protected system root forces passive response"
-                } else if !cfg!(unix) {
-                    "Phase 2 active response is Linux/Unix-only"
+                } else if !cfg!(any(unix, windows)) {
+                    "active response is unavailable on this platform"
                 } else {
                     "response policy is in mandatory dry-run"
                 };

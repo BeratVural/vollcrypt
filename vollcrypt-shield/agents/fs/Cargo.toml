@@ -26,5 +26,8 @@ walkdir = "2.5"
 nix = { version = "0.31", features = ["fs", "user"] }
 xattr = "1.6"
 
+[target.'cfg(windows)'.dependencies]
+vollcrypt-shield-windows = { version = "1.0.0", path = "../../platform/windows" }
+
 [dev-dependencies]
 tempfile = "3"

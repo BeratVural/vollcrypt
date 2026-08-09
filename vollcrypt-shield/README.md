@@ -25,11 +25,17 @@ system. The current public delivery includes:
   Cortex-M33, Cortex-M4, and RV32 targets, with monotonic audit checkpoints and
   a hardware-backed ML-DSA-65 signing boundary.
 
-Linux/Unix is the active-response target for this delivery. On Windows the
-agent scans, verifies, logs, and reports in enforced dry-run mode; it does not
-quarantine or roll back until equivalent ACL/ownership restoration guarantees
-are implemented. Active quarantine and rollback currently accept regular files
-only. Directories, symlinks, operating-system shutdown, network isolation, and
+Linux/Unix is the release-qualified active-response target. Windows active
+quarantine and rollback are implemented behind a fail-closed capability gate,
+but remain a qualification feature until the real-host recovery matrix is
+complete. A Windows policy can be promoted only when its baseline contains a
+complete ML-DSA-signed BackupRead archive for every file and the Shield service
+account can enable `SeBackupPrivilege`, `SeRestorePrivilege`, and
+`SeSecurityPrivilege`. The activation probe round-trips owner, DACL, SACL,
+integrity label, alternate data streams, basic timestamps, and file attributes.
+Ordinary Windows accounts retain the complete detection workflow in dry-run.
+Active quarantine and rollback accept regular, non-reparse, non-EFS files only.
+Directories, symlinks, operating-system shutdown, network isolation, and
 permission-destructive responses are rejected.
 
 The release-gated platform matrix is Ubuntu 22.04/24.04/26.04 x86_64 and Windows
