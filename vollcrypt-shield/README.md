@@ -39,6 +39,8 @@ are documented in [`docs/PLATFORM_SUPPORT.md`](docs/PLATFORM_SUPPORT.md).
 Debian 13 x86_64 and Windows 11 ARM64 are active qualification targets. The
 ordered implementation backlog, including the full headless TUI, is maintained
 in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+Platform, protocol, and package support removal follows the published
+[`deprecation policy`](docs/DEPRECATION_POLICY.md).
 
 Shield does not depend on any other Vollcrypt product. Published agents and
 bindings include the Shield core they need and do not require another

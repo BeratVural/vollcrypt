@@ -62,5 +62,5 @@ platform or capability is never promoted based on compilation alone.
 - [ ] Add upgrade, downgrade-rejection, state migration, backup restoration, and
   break-glass recovery drills to release evidence.
 - [ ] Add long-running watcher resource and notification-delivery soak tests.
-- [ ] Define deprecation windows for operating systems, protocol versions, and
+- [x] Define deprecation windows for operating systems, protocol versions, and
   package formats before removing support.

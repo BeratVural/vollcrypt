@@ -2,7 +2,8 @@
 
 This document defines the public Shield support boundary. A platform is only
 listed as verified after its required CI job and release smoke test pass for
-the exact Shield release.
+the exact Shield release. Support removal follows
+[`DEPRECATION_POLICY.md`](DEPRECATION_POLICY.md).
 
 ## Release-gated platforms
 
