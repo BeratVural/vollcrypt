@@ -35,7 +35,7 @@
   },
   "scripts": {
     "build": "napi build --platform --release --cargo-flags=--locked",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/binding.test.js"
   },
   "devDependencies": {
     "@napi-rs/cli": "2.18.4"

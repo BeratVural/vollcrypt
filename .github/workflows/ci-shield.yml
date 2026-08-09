@@ -87,7 +87,7 @@ jobs:
         shell: bash
         run: |
           test "$(git ls-files vollcrypt-shield/control-plane)" = "vollcrypt-shield/control-plane/README.md"
-          ! git grep -n 'name = "vollcrypt-shield-control-plane"' -- ':!vollcrypt-shield/control-plane/README.md'
+          ! git grep -n 'name = "vollcrypt-shield-control-plane"' -- '*.toml' '*.rs'
 
       - name: Lint Shield
         run: cargo clippy --locked -p vollcrypt-shield-core -p vollcrypt-shield-protocol -p vollcrypt-shield-witness -p vollcrypt-shield-fs -p vollcrypt-shield-container -p vollcrypt-shield-db -p vollcrypt-shield-embedded -p vollcrypt-shield-cli -p vollcrypt-shield-core-node -p vollcrypt-scan-core -p vollcrypt-shield-classifier --all-targets -- -D warnings

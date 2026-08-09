@@ -77,8 +77,7 @@ fn handle_status_connection(
     stream.set_read_timeout(Some(std::time::Duration::from_millis(250)))?;
     stream.set_write_timeout(Some(std::time::Duration::from_millis(250)))?;
     let mut request = Vec::new();
-    stream
-        .by_ref()
+    std::io::Read::by_ref(&mut stream)
         .take(MAX_REQUEST_BYTES + 1)
         .read_to_end(&mut request)?;
     if request.len() as u64 > MAX_REQUEST_BYTES {
