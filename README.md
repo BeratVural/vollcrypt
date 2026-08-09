@@ -127,8 +127,9 @@ Vollcrypt workspace exposes a unified suite of quantum-resistant cryptographic e
    * **Reactive Hardware Wiping:** Triggered automatically upon case intrusion or debugger JTAG connection detection.
 
 6. **Runtime Integrity and Scoped Containment (Vollcrypt Shield)**
-   Verifies monitored filesystem state against ML-DSA-65 signed Merkle roots and records signed, tamper-evident audit events.
+   Verifies filesystem, OCI image, SQLite record, and embedded-device state against ML-DSA-65 signed Merkle roots and records signed, tamper-evident audit events.
    * **Bounded Response:** Mandatory dry-run precedes reversible quarantine, atomic rollback, and scope-only containment on supported Linux/Unix targets.
+   * **Embedded Foundation:** A standalone, zero-allocation `#![no_std]` integrity state supports Cortex-M33, Cortex-M4, and RV32 hardware integrations without depending on Wave.
    * **No Global Device Lock:** Shield does not shut down the operating system, cut networking, or globally stop unrelated scopes.
 
 ---

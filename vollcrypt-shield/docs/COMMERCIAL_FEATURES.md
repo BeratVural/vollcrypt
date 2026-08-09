@@ -8,7 +8,8 @@ implementation repository.
 ## Public and dual-licensed
 
 - Shield core Merkle, ML-DSA, policy, audit, and snapshot primitives;
-- standalone filesystem, OCI container, and SQLite database agents;
+- standalone filesystem, OCI container, SQLite database, and `no_std` embedded
+  agents;
 - witness node and M-of-N witness protocol;
 - pairing, enrollment, signed-summary, offline-package, and signed-response
   protocol formats;

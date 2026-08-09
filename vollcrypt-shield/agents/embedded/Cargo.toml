@@ -1,0 +1,10 @@
+[package]
+name = "vollcrypt-shield-embedded"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only OR LicenseRef-Commercial"
+description = "Zero-allocation no_std integrity state for embedded Vollcrypt Shield targets"
+
+[dependencies]
+sha2 = { version = "0.10", default-features = false }
+

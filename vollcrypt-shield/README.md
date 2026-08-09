@@ -1,8 +1,7 @@
 # Vollcrypt Shield
 
 Vollcrypt Shield is a tamper-evident integrity verification and scoped response
-system. The current delivery covers Phase 0-5 and the host-agent slice of
-Phase 6:
+system. The current public delivery includes:
 
 - a Shield-specific sparse Merkle tree and signed baseline format;
 - ML-DSA-65 signatures and deterministic CBOR protocol records;
@@ -21,6 +20,9 @@ Phase 6:
 - an independent OCI image-layout agent that verifies every reachable index,
   manifest, config, and layer descriptor before comparing an ML-DSA-signed
   Shield baseline.
+- an independent, zero-allocation `no_std` embedded integrity state for
+  Cortex-M33, Cortex-M4, and RV32 targets, with monotonic audit checkpoints and
+  a hardware-backed ML-DSA-65 signing boundary.
 
 Linux/Unix is the active-response target for this delivery. On Windows the
 agent scans, verifies, logs, and reports in enforced dry-run mode; it does not
@@ -151,6 +153,21 @@ vollcrypt-shield-db verify --state-dir /var/lib/vollcrypt-shield/db/accounts --d
 
 PostgreSQL/MySQL and optional db-guard enhanced context remain later adapters;
 they are not required for the current SQLite mode.
+
+## Embedded integrity foundation
+
+`vollcrypt-shield-embedded` is independent of Wave and every other Vollcrypt
+package. It maintains a fixed-capacity Merkle measurement set, monotonic audit
+chain, scope-only containment gate, and fixed checkpoint bytes without an
+allocator or operating system. Applications provide persistence, a hardware
+monotonic counter, notifications, and ML-DSA-65 signing or verification through
+traits.
+
+This is an integrity-state foundation, not a bootloader or board support
+package. A deployment reaches a hardware-backed trust level only when the
+application places counters and keys in TrustZone-M or a secure element and
+persists audit records outside attacker-writable firmware state. See
+[`agents/embedded/README.md`](agents/embedded/README.md).
 
 ## Commercial fleet platform
 

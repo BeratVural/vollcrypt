@@ -6361,6 +6361,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "vollcrypt-shield-embedded"
+version = "0.1.0"
+dependencies = [
+ "sha2",
+]
+
+[[package]]
 name = "vollcrypt-shield-fs"
 version = "0.1.0"
 dependencies = [

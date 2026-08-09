@@ -15,6 +15,7 @@ members = [
     "vollcrypt-shield/agents/fs",
     "vollcrypt-shield/agents/container",
     "vollcrypt-shield/agents/db",
+    "vollcrypt-shield/agents/embedded",
     "vollcrypt-shield/cli",
     "vollcrypt-shield/bindings/node",
     "vollcrypt-shield/desktop-app/src-tauri",

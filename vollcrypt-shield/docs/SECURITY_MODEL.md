@@ -34,7 +34,9 @@ a software-only local trust root. Shield reports this mode as
 `local-unanchored`. Phase 4 can raise the evidence level with an external M-of-N
 witness policy, but only when the Viewer pins that policy outside agent state
 and monitored scopes and independently verifies quorum statements for every
-baseline. Hardware-backed roots remain future work.
+baseline. The embedded crate provides a hardware signer/counter integration
+boundary, but hardware-backed assurance still depends on the board integration
+placing those assets in TrustZone-M or a secure element.
 
 Connected pairing uses a random 80-bit one-time code, SPAKE2, HKDF-SHA-256, and
 mutual HMAC confirmation that binds each peer's ML-DSA public identity. The
@@ -57,6 +59,14 @@ classifier verifies its compiled canonical default rule document with
 ML-DSA-65, applies deterministic file/byte ceilings, and does not follow
 symlinks. Its output cannot activate responses; an administrator must review
 it and Shield's mandatory dry-run/promotion controls still apply.
+
+Embedded measurements use a fixed-capacity, sorted Merkle set and reject
+capacity overflow. Audit events require a strictly increasing caller-supplied
+counter. Checkpoints bind the device, scope, signer key ID, baseline epoch,
+measurement root, audit head, and current containment ID. The embedded crate
+does not persist state itself; insecure application storage can still permit
+state replacement or denial of service. Break-glass release is scope- and
+containment-bound and must be verified as ML-DSA-65 by the application.
 
 ## Terminology
 

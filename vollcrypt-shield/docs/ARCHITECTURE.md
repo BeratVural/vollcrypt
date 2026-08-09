@@ -18,6 +18,7 @@ and cannot be required for base Shield behavior.
 | `agents/fs/` | `vollcrypt-shield-fs` | Scan, vault, response, notifications |
 | `agents/container/` | `vollcrypt-shield-container` | Reachable OCI graph verification and signed image baselines |
 | `agents/db/` | `vollcrypt-shield-db` | Canonical database-record integrity; statically bundled SQLite adapter |
+| `agents/embedded/` | `vollcrypt-shield-embedded` | Zero-allocation device measurements, containment, and signed checkpoints |
 | `cli/` | `vollcrypt-shield` | Administration and local agent commands |
 | `bindings/node/` | `@vollcrypt/shield-core-node` | Self-contained Node native SDK |
 | `protocol/` | `vollcrypt-shield-protocol` | Pairing and M-of-N witness records |
@@ -26,9 +27,6 @@ and cannot be required for base Shield behavior.
 | `control-plane/` | Documentation only | Commercial fleet capability and public interoperability boundary |
 | `../vollcrypt-scan/core/` | `vollcrypt-scan-core` | Product-neutral bounded scan engine |
 | `../vollcrypt-scan/shield-classifier/` | `vollcrypt-shield-classifier` | Signed advisory criticality rules |
-
-The embedded component will be added only when its roadmap phase begins. Empty
-placeholder packages are intentionally not published.
 
 The Node artifact has no production npm dependencies and loads only the native
 binary included in its own package. The Rust path dependency on `core/` is a
@@ -86,6 +84,21 @@ Tables without a primary key require explicit key columns. Null or duplicate
 keys, non-finite REAL values, hidden key columns, schema ambiguity, symlinked
 database files, and configured byte/row limits fail closed. PostgreSQL/MySQL and
 optional db-guard context adapters are not implemented in this slice.
+
+## Embedded boundary
+
+The embedded agent is a standalone `no_std` crate and does not import Shield
+core, Wave, a HAL, an allocator, or an operating-system API. It uses sorted,
+fixed-capacity measurements to derive a deterministic SHA-256 Merkle root and
+chains audit records to caller-supplied hardware monotonic counters.
+
+The crate emits fixed, versioned checkpoint bytes and delegates ML-DSA-65 to a
+secure-element/TrustZone trait. It does not claim hardware-backed assurance
+when an application keeps the key or counter in ordinary writable memory.
+Containment affects one `ScopeState`: it blocks baseline replacement until a
+signature-verified command bound to that exact containment ID is accepted.
+Board storage, boot enforcement, interrupts, and notifications remain explicit
+application responsibilities.
 
 ## Fleet boundary
 
