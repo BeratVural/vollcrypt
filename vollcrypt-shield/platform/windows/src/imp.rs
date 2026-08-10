@@ -556,13 +556,13 @@ mod tests {
     }
 
     #[test]
-    fn locked_file_capture_fails_without_modifying_the_source() {
+    fn locked_file_move_fails_without_modifying_the_source() {
         if !privileged_host_available() {
             return;
         }
         let directory = tempfile::tempdir().unwrap();
         let source = directory.path().join("locked.conf");
-        let archive = directory.path().join("locked.backup");
+        let destination = directory.path().join("locked.destination");
         std::fs::write(&source, b"locked").unwrap();
         let wide = wide_path(&source).unwrap();
         // SAFETY: the path is NUL-terminated and the returned handle is owned.
@@ -580,9 +580,9 @@ mod tests {
         .unwrap();
         let lock = OwnedHandle(handle);
 
-        assert!(capture_file(&source, &archive).is_err());
+        assert!(move_file_noreplace_durable(&source, &destination).is_err());
         assert_eq!(std::fs::read(&source).unwrap(), b"locked");
-        assert!(!archive.exists());
+        assert!(!destination.exists());
         drop(lock);
     }
 

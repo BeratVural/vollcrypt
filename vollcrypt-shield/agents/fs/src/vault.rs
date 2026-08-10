@@ -719,6 +719,9 @@ impl Vault {
 
     fn remove_transaction_artifacts(&self, transaction: &QuarantineTransaction) -> Result<()> {
         let directory = self.root.join("quarantine").join(&transaction.scope_id);
+        if !path_exists_no_follow(&directory)? {
+            return Ok(());
+        }
         remove_file_if_present(&directory.join(format!("{}.object", transaction.transaction_id)))?;
         remove_file_if_present(
             &directory.join(format!("{}.manifest.cbor", transaction.transaction_id)),
