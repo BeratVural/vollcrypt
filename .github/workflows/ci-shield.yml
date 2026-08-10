@@ -84,10 +84,12 @@ jobs:
           set -euo pipefail
           cert_dir="$(mktemp -d)"
           printf '%s' "$cert_dir" > /tmp/shield-postgres-cert-dir
-          openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' -keyout "$cert_dir/server.key" -out "$cert_dir/server.crt"
+          openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 -subj '/CN=Shield PostgreSQL Test CA' -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign' -keyout "$cert_dir/ca.key" -out "$cert_dir/ca.crt"
+          openssl req -newkey rsa:2048 -sha256 -nodes -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' -addext 'basicConstraints=critical,CA:FALSE' -addext 'extendedKeyUsage=serverAuth' -keyout "$cert_dir/server.key" -out "$cert_dir/server.csr"
+          openssl x509 -req -sha256 -days 1 -in "$cert_dir/server.csr" -CA "$cert_dir/ca.crt" -CAkey "$cert_dir/ca.key" -CAcreateserial -copy_extensions copy -out "$cert_dir/server.crt"
           docker run -d --name shield-postgres -p 5432:5432 -e POSTGRES_PASSWORD=shield-ci-password -e POSTGRES_DB=shield -v "$cert_dir:/certificate-input:ro" --entrypoint sh postgres:17-alpine -c 'cp /certificate-input/server.* /tmp/; chown postgres:postgres /tmp/server.*; chmod 600 /tmp/server.key; exec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/tmp/server.crt -c ssl_key_file=/tmp/server.key'
           for attempt in $(seq 1 60); do
-            if docker exec shield-postgres pg_isready -U postgres -d shield; then
+            if docker exec shield-postgres psql -U postgres -d shield -Atc 'SELECT 1' >/dev/null 2>&1; then
               break
             fi
             test "$attempt" -lt 60
@@ -113,12 +115,12 @@ jobs:
           cargo build --locked --release -p vollcrypt-shield-db
           bin=target/release/vollcrypt-shield-db
           "$bin" init --state-dir "$state" --scope accounts
-          "$bin" baseline-postgres --state-dir "$state" --ca-file "$cert_dir/server.crt" --table accounts | tee /tmp/shield-postgres-baseline.json
+          "$bin" baseline-postgres --state-dir "$state" --ca-file "$cert_dir/ca.crt" --table accounts | tee /tmp/shield-postgres-baseline.json
           grep -q '"status": "baseline-created"' /tmp/shield-postgres-baseline.json
-          "$bin" verify-postgres --state-dir "$state" --ca-file "$cert_dir/server.crt" --table accounts | grep -q '"status": "match"'
+          "$bin" verify-postgres --state-dir "$state" --ca-file "$cert_dir/ca.crt" --table accounts | grep -q '"status": "match"'
           docker exec shield-postgres psql -U postgres -d shield -v ON_ERROR_STOP=1 -c "UPDATE accounts SET enabled = NOT enabled WHERE id = 2"
           set +e
-          "$bin" verify-postgres --state-dir "$state" --ca-file "$cert_dir/server.crt" --table accounts >/tmp/shield-postgres-drift.json
+          "$bin" verify-postgres --state-dir "$state" --ca-file "$cert_dir/ca.crt" --table accounts >/tmp/shield-postgres-drift.json
           status=$?
           set -e
           test "$status" -eq 2
@@ -148,12 +150,12 @@ jobs:
             case "$cert_dir" in /tmp/tmp.*) rm -rf -- "$cert_dir" ;; esac
           }
           trap cleanup EXIT
-          openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 -subj '/CN=Shield MySQL Test CA' -keyout "$cert_dir/ca-key.pem" -out "$cert_dir/ca.pem"
-          openssl req -newkey rsa:2048 -sha256 -nodes -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' -keyout "$cert_dir/server-key.pem" -out "$cert_dir/server.csr"
+          openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 -subj '/CN=Shield MySQL Test CA' -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign' -keyout "$cert_dir/ca-key.pem" -out "$cert_dir/ca.pem"
+          openssl req -newkey rsa:2048 -sha256 -nodes -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' -addext 'basicConstraints=critical,CA:FALSE' -addext 'extendedKeyUsage=serverAuth' -keyout "$cert_dir/server-key.pem" -out "$cert_dir/server.csr"
           openssl x509 -req -sha256 -days 1 -in "$cert_dir/server.csr" -CA "$cert_dir/ca.pem" -CAkey "$cert_dir/ca-key.pem" -CAcreateserial -copy_extensions copy -out "$cert_dir/server-cert.pem"
           docker run -d --name shield-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=shield-ci-password -e MYSQL_DATABASE=shield -v "$cert_dir:/certificate-input:ro" --entrypoint sh mysql:8.4 -c 'cp /certificate-input/ca.pem /certificate-input/server-cert.pem /certificate-input/server-key.pem /tmp/; chown mysql:mysql /tmp/ca.pem /tmp/server-cert.pem /tmp/server-key.pem; chmod 600 /tmp/server-key.pem; exec docker-entrypoint.sh mysqld --require_secure_transport=ON --ssl-ca=/tmp/ca.pem --ssl-cert=/tmp/server-cert.pem --ssl-key=/tmp/server-key.pem'
           for attempt in $(seq 1 90); do
-            if docker exec shield-mysql mysqladmin ping -uroot -pshield-ci-password --silent; then
+            if docker exec shield-mysql mysqladmin ping -h127.0.0.1 -uroot -pshield-ci-password --silent; then
               break
             fi
             test "$attempt" -lt 90
