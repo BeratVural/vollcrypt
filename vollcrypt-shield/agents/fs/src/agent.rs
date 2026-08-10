@@ -97,8 +97,21 @@ impl ShieldAgent {
         let break_glass_public =
             MlDsa65PublicKey::from_bytes(&std::fs::read(keys.join("break-glass.public"))?)?;
         let state = StateStore::load_or_new(config.state_dir.join("state.cbor"), &agent_public)?;
-        let audit = AuditStore::load_or_new(config.state_dir.join("audit.log"), &agent_public)?;
+        let mut audit = AuditStore::load_or_new(config.state_dir.join("audit.log"), &agent_public)?;
         let response = ResponseEngine::new(&config.state_dir, &config.notifications)?;
+        for recovery in response
+            .vault()
+            .recover_pending_transactions(&config.scopes, &agent_public)?
+        {
+            audit.append(
+                now_unix_ms()?,
+                &recovery.scope_id,
+                AuditEventKind::AgentStarted,
+                Some(recovery.path),
+                recovery.detail,
+                &agent_secret,
+            )?;
+        }
         let witnesses =
             WitnessRegistry::load(config.state_dir.join("witnesses.cbor"), &agent_public)?;
         Ok(Self {

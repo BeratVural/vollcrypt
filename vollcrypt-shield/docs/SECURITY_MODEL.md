@@ -14,6 +14,10 @@ The Phase 2 response engine is deliberately bounded:
   `chmod 000`, or performs a global agent lock;
 - quarantine records the original path, permissions, ownership, timestamps,
   extended attributes, and content digest before moving an entry;
+- quarantine writes an ML-DSA-signed, fsynced transaction before the first
+  no-clobber move; startup restores an interrupted staging file, finalizes a
+  fully signed commit, or refuses to start when paths or evidence are
+  ambiguous;
 - rollback verifies backup content and metadata in a random, create-new
   same-directory file, then atomically creates the destination with a
   no-clobber hard link;
@@ -32,6 +36,15 @@ baseline, corrupted backup, reparse point, EFS file, or restore error rejects
 activation or contains the affected scope instead of applying a partial
 response. Windows active response remains qualification-only until the
 real-host crash and recovery matrix is complete.
+
+Transaction recovery never trusts a staging filename by itself. The signed
+record binds the scope, normalized original path, observed digest, optional
+baseline digest, timestamp, and random transaction identifier. A recreated
+destination, a modified transaction, a digest mismatch, an unknown scope, or
+missing source and staging content is a fail-closed startup error. On Windows,
+source/staging moves use `MoveFileExW` without replacement and with
+`MOVEFILE_WRITE_THROUGH`; on Linux, `renameat2(RENAME_NOREPLACE)` is followed by
+a parent-directory durability barrier.
 
 ## Trust boundary
 

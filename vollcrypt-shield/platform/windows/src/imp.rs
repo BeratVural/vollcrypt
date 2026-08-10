@@ -20,8 +20,8 @@ use windows::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_REPARSE_POINT, FILE_BASIC_INFO, FILE_FLAG_BACKUP_SEMANTICS,
     FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_DELETE,
     FILE_SHARE_READ, FILE_SHARE_WRITE, FileBasicInfo, FlushFileBuffers,
-    GetFileInformationByHandleEx, OPEN_EXISTING, READ_CONTROL, ReadFile,
-    SetFileInformationByHandle, WRITE_DAC, WRITE_OWNER,
+    GetFileInformationByHandleEx, GetVolumePathNameW, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+    OPEN_EXISTING, READ_CONTROL, ReadFile, SetFileInformationByHandle, WRITE_DAC, WRITE_OWNER,
 };
 use windows::Win32::System::SystemServices::ACCESS_SYSTEM_SECURITY;
 use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
@@ -131,6 +131,53 @@ pub fn validate_active_response_capability(directory: &Path) -> Result<()> {
 pub fn validate_required_privileges() -> Result<()> {
     drop(PrivilegeGuard::enable_all()?);
     Ok(())
+}
+
+pub fn move_file_noreplace_durable(source: &Path, destination: &Path) -> Result<()> {
+    let source_volume = volume_root(source)?;
+    let destination_parent = destination.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "move destination has no parent",
+        )
+    })?;
+    let destination_volume = volume_root(destination_parent)?;
+    if !source_volume.eq_ignore_ascii_case(&destination_volume) {
+        return Err(WindowsBackupError::CrossVolumeMove {
+            source_path: source.display().to_string(),
+            destination_path: destination.display().to_string(),
+        });
+    }
+    let source = wide_path(source)?;
+    let destination = wide_path(destination)?;
+    // SAFETY: both paths are NUL-terminated for the duration of the call.
+    // Omitting MOVEFILE_REPLACE_EXISTING makes the operation fail closed if a
+    // racing process creates the destination. WRITE_THROUGH waits for the move
+    // to reach durable storage before returning.
+    unsafe {
+        MoveFileExW(
+            PCWSTR(source.as_ptr()),
+            PCWSTR(destination.as_ptr()),
+            MOVEFILE_WRITE_THROUGH,
+        )
+    }
+    .map_err(|error| windows_error("MoveFileExW", error))
+}
+
+fn volume_root(path: &Path) -> Result<String> {
+    let path = wide_path(path)?;
+    let mut root = vec![0_u16; 32_768];
+    // SAFETY: the input is NUL-terminated and the output slice is valid
+    // writable storage for the duration of the call.
+    unsafe { GetVolumePathNameW(PCWSTR(path.as_ptr()), &mut root) }
+        .map_err(|error| windows_error("GetVolumePathNameW", error))?;
+    let length = root.iter().position(|value| *value == 0).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Windows volume root is not NUL-terminated",
+        )
+    })?;
+    Ok(String::from_utf16_lossy(&root[..length]))
 }
 
 fn query_metadata(path: &Path) -> Result<FileBasicMetadata> {
@@ -458,10 +505,28 @@ impl From<FileBasicMetadata> for FILE_BASIC_INFO {
 mod tests {
     use super::*;
 
+    fn qualification_required() -> bool {
+        std::env::var_os("VOLLCRYPT_SHIELD_WINDOWS_ACTIVE_QUALIFICATION").is_some()
+    }
+
+    fn privileged_host_available() -> bool {
+        match validate_required_privileges() {
+            Ok(()) => true,
+            Err(error) if qualification_required() => {
+                panic!("Windows active-response qualification requires privileges: {error}")
+            }
+            Err(_) => false,
+        }
+    }
+
     #[test]
     fn capability_probe_succeeds_or_fails_closed() {
         let directory = tempfile::tempdir().unwrap();
         let result = validate_active_response_capability(directory.path());
+        if qualification_required() {
+            result.unwrap();
+            return;
+        }
         if let Err(error) = result {
             assert!(matches!(
                 error,
@@ -470,5 +535,135 @@ mod tests {
                     | WindowsBackupError::PartialWrite
             ));
         }
+    }
+
+    #[test]
+    fn durable_move_never_replaces_an_existing_destination() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("source");
+        let destination = directory.path().join("destination");
+        std::fs::write(&source, b"source").unwrap();
+        std::fs::write(&destination, b"destination").unwrap();
+
+        assert!(move_file_noreplace_durable(&source, &destination).is_err());
+        assert_eq!(std::fs::read(&source).unwrap(), b"source");
+        assert_eq!(std::fs::read(&destination).unwrap(), b"destination");
+
+        std::fs::remove_file(&destination).unwrap();
+        move_file_noreplace_durable(&source, &destination).unwrap();
+        assert!(!source.exists());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"source");
+    }
+
+    #[test]
+    fn locked_file_capture_fails_without_modifying_the_source() {
+        if !privileged_host_available() {
+            return;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("locked.conf");
+        let archive = directory.path().join("locked.backup");
+        std::fs::write(&source, b"locked").unwrap();
+        let wide = wide_path(&source).unwrap();
+        // SAFETY: the path is NUL-terminated and the returned handle is owned.
+        let handle = unsafe {
+            CreateFileW(
+                PCWSTR(wide.as_ptr()),
+                FILE_GENERIC_READ.0,
+                windows::Win32::Storage::FileSystem::FILE_SHARE_MODE(0),
+                None,
+                OPEN_EXISTING,
+                FILE_FLAG_OPEN_REPARSE_POINT,
+                None,
+            )
+        }
+        .unwrap();
+        let lock = OwnedHandle(handle);
+
+        assert!(capture_file(&source, &archive).is_err());
+        assert_eq!(std::fs::read(&source).unwrap(), b"locked");
+        assert!(!archive.exists());
+        drop(lock);
+    }
+
+    #[test]
+    fn file_and_directory_reparse_points_are_rejected() {
+        if !privileged_host_available() {
+            return;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let target_file = directory.path().join("target.conf");
+        let target_directory = directory.path().join("target-dir");
+        let file_link = directory.path().join("file-link");
+        let directory_link = directory.path().join("directory-link");
+        std::fs::write(&target_file, b"target").unwrap();
+        std::fs::create_dir(&target_directory).unwrap();
+
+        let file_link_created =
+            std::os::windows::fs::symlink_file(&target_file, &file_link).is_ok();
+        if qualification_required() {
+            assert!(
+                file_link_created,
+                "qualification host cannot create file symlink"
+            );
+        }
+        if file_link_created {
+            assert!(matches!(
+                capture_file(&file_link, &directory.path().join("file.backup")),
+                Err(WindowsBackupError::UnsupportedFile(_))
+            ));
+        }
+        let directory_link_created =
+            std::os::windows::fs::symlink_dir(&target_directory, &directory_link).is_ok();
+        if qualification_required() {
+            assert!(
+                directory_link_created,
+                "qualification host cannot create directory junction/reparse point"
+            );
+        }
+        if directory_link_created {
+            assert!(matches!(
+                capture_file(&directory_link, &directory.path().join("directory.backup")),
+                Err(WindowsBackupError::UnsupportedFile(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn cross_volume_move_fails_closed_and_preserves_source() {
+        let primary = tempfile::tempdir().unwrap();
+        let primary_root = primary.path().canonicalize().unwrap();
+        let primary_prefix = primary_root.components().next();
+        let mut secondary = None;
+        for letter in b'C'..=b'Z' {
+            let root = PathBuf::from(format!("{}:\\", letter as char));
+            if !root.is_dir() || root.components().next() == primary_prefix {
+                continue;
+            }
+            if let Ok(directory) = tempfile::Builder::new()
+                .prefix("vollcrypt-shield-cross-volume-")
+                .tempdir_in(&root)
+                && !volume_root(directory.path())
+                    .unwrap()
+                    .eq_ignore_ascii_case(&volume_root(primary.path()).unwrap())
+            {
+                secondary = Some(directory);
+                break;
+            }
+        }
+        let Some(secondary) = secondary else {
+            assert!(
+                !qualification_required(),
+                "qualification host requires two writable volumes"
+            );
+            return;
+        };
+        let source = primary.path().join("source");
+        let destination = secondary.path().join("destination");
+        std::fs::write(&source, b"cross-volume").unwrap();
+
+        assert!(move_file_noreplace_durable(&source, &destination).is_err());
+        assert_eq!(std::fs::read(&source).unwrap(), b"cross-volume");
+        assert!(!destination.exists());
     }
 }

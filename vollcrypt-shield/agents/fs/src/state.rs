@@ -207,6 +207,15 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
         }
         Err(error) => return Err(error.into()),
     }
+    sync_parent_directory(path)?;
+    Ok(())
+}
+
+pub(crate) fn sync_parent_directory(_path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    if let Some(parent) = _path.parent() {
+        std::fs::File::open(parent)?.sync_all()?;
+    }
     Ok(())
 }
 

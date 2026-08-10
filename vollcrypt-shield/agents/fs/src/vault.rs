@@ -1,6 +1,4 @@
-use std::fs::File;
-#[cfg(not(windows))]
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
@@ -14,11 +12,13 @@ use vollcrypt_shield_core::{
 use crate::config::ScopeConfig;
 use crate::error::{AgentError, Result};
 use crate::metadata::CapturedMetadata;
-use crate::state::write_atomic;
+use crate::state::{sync_parent_directory, write_atomic};
 
 const FILE_DOMAIN: &[u8] = b"VOLLCRYPT-SHIELD-FILE-v1\0";
 const VAULT_SIGNATURE_CONTEXT: &[u8] = b"Vollcrypt Shield Vault v1";
 const QUARANTINE_SIGNATURE_CONTEXT: &[u8] = b"Vollcrypt Shield Quarantine v1";
+const QUARANTINE_TRANSACTION_SIGNATURE_CONTEXT: &[u8] =
+    b"Vollcrypt Shield Quarantine Transaction v1";
 #[cfg(windows)]
 const WINDOWS_BACKUP_DOMAIN: &[u8] = b"VOLLCRYPT-SHIELD-WINDOWS-BACKUP-v1\0";
 #[cfg(windows)]
@@ -97,6 +97,32 @@ struct SignedQuarantineRecord {
     public_key: Vec<u8>,
     #[n(2)]
     signature: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+#[cbor(array)]
+struct QuarantineTransaction {
+    #[n(0)]
+    version: u16,
+    #[n(1)]
+    transaction_id: String,
+    #[n(2)]
+    scope_id: String,
+    #[n(3)]
+    original_path: String,
+    #[n(4)]
+    observed_digest: [u8; 32],
+    #[n(5)]
+    baseline_digest: Option<[u8; 32]>,
+    #[n(6)]
+    created_at_unix_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuarantineRecovery {
+    pub scope_id: String,
+    pub path: String,
+    pub detail: String,
 }
 
 #[cfg(windows)]
@@ -179,6 +205,7 @@ impl Vault {
         std::fs::create_dir_all(root.join("objects"))?;
         std::fs::create_dir_all(root.join("manifests"))?;
         std::fs::create_dir_all(root.join("quarantine"))?;
+        std::fs::create_dir_all(root.join("transactions"))?;
         #[cfg(windows)]
         std::fs::create_dir_all(root.join("windows").join("objects"))?;
         Ok(Self { root })
@@ -495,6 +522,225 @@ impl Vault {
         Ok(windows)
     }
 
+    pub fn recover_pending_transactions(
+        &self,
+        scopes: &[ScopeConfig],
+        trusted_key: &MlDsa65PublicKey,
+    ) -> Result<Vec<QuarantineRecovery>> {
+        let directory = self.root.join("transactions");
+        let mut journals = Vec::new();
+        for entry in std::fs::read_dir(&directory)? {
+            let path = entry?.path();
+            if path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(".transaction.cbor"))
+            {
+                journals.push(path);
+            }
+        }
+        journals.sort();
+
+        let mut recoveries = Vec::with_capacity(journals.len());
+        for journal in journals {
+            recoveries.push(self.recover_transaction(&journal, scopes, trusted_key)?);
+        }
+        Ok(recoveries)
+    }
+
+    fn recover_transaction(
+        &self,
+        journal: &Path,
+        scopes: &[ScopeConfig],
+        trusted_key: &MlDsa65PublicKey,
+    ) -> Result<QuarantineRecovery> {
+        let transaction: QuarantineTransaction = verify_signed_record(
+            &std::fs::read(journal)?,
+            trusted_key,
+            QUARANTINE_TRANSACTION_SIGNATURE_CONTEXT,
+        )?;
+        let journal_id = journal
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.strip_suffix(".transaction.cbor"))
+            .ok_or_else(|| {
+                AgentError::Quarantine("invalid quarantine transaction filename".to_owned())
+            })?;
+        if transaction.version != FORMAT_VERSION
+            || transaction.transaction_id != journal_id
+            || !is_safe_transaction_id(&transaction.transaction_id)
+        {
+            return Err(AgentError::Quarantine(
+                "quarantine transaction version or identifier is invalid".to_owned(),
+            ));
+        }
+        let scope = scopes
+            .iter()
+            .find(|scope| scope.id == transaction.scope_id)
+            .ok_or_else(|| {
+                AgentError::Quarantine(format!(
+                    "quarantine transaction references an unconfigured scope: {}",
+                    transaction.scope_id
+                ))
+            })?;
+        let relative = NormalizedPath::new(&transaction.original_path)?;
+        let source = scope.root.join(relative.as_str());
+        let parent = source.parent().ok_or_else(|| {
+            AgentError::UnsafeResponseTarget(format!(
+                "recovery target has no parent: {}",
+                source.display()
+            ))
+        })?;
+        let staged = parent.join(format!(
+            ".vollcrypt-shield-quarantine-{}",
+            transaction.transaction_id
+        ));
+        let source_exists = path_exists_no_follow(&source)?;
+        let staged_exists = path_exists_no_follow(&staged)?;
+        let committed = self.transaction_is_committed(&transaction, trusted_key)?;
+
+        let detail = match (source_exists, staged_exists, committed) {
+            (true, false, false) => {
+                self.remove_transaction_artifacts(&transaction)?;
+                self.remove_transaction(journal)?;
+                "discarded pre-move quarantine transaction"
+            }
+            (false, true, false) => {
+                let staged_type = std::fs::symlink_metadata(&staged)?.file_type();
+                if !staged_type.is_file() || staged_type.is_symlink() {
+                    return Err(AgentError::UnsafeResponseTarget(format!(
+                        "staged recovery target is not a regular file: {}",
+                        staged.display()
+                    )));
+                }
+                let actual = hash_file_for_recovery(&staged)?;
+                if actual != transaction.observed_digest {
+                    return Err(AgentError::Quarantine(format!(
+                        "staged recovery object digest mismatch: {}",
+                        staged.display()
+                    )));
+                }
+                move_file_noreplace_durable(&staged, &source)?;
+                self.remove_transaction_artifacts(&transaction)?;
+                self.remove_transaction(journal)?;
+                "restored interrupted quarantine to its original path"
+            }
+            (false, true, true) => {
+                remove_file_durable(&staged)?;
+                self.remove_transaction(journal)?;
+                "completed durable removal for committed quarantine"
+            }
+            (false, false, true) => {
+                self.remove_transaction(journal)?;
+                "finalized committed quarantine transaction"
+            }
+            (true, false, true) => {
+                return Err(AgentError::Quarantine(format!(
+                    "committed quarantine destination was recreated before recovery: {}",
+                    source.display()
+                )));
+            }
+            (true, true, _) => {
+                return Err(AgentError::Quarantine(format!(
+                    "both original and staged quarantine paths exist; refusing to overwrite either: {}",
+                    source.display()
+                )));
+            }
+            (false, false, false) => {
+                return Err(AgentError::Quarantine(format!(
+                    "quarantine transaction lost both original and staged content: {}",
+                    source.display()
+                )));
+            }
+        };
+        Ok(QuarantineRecovery {
+            scope_id: transaction.scope_id,
+            path: transaction.original_path,
+            detail: detail.to_owned(),
+        })
+    }
+
+    fn transaction_is_committed(
+        &self,
+        transaction: &QuarantineTransaction,
+        trusted_key: &MlDsa65PublicKey,
+    ) -> Result<bool> {
+        let directory = self.root.join("quarantine").join(&transaction.scope_id);
+        let manifest = directory.join(format!("{}.manifest.cbor", transaction.transaction_id));
+        if !path_exists_no_follow(&manifest)? {
+            return Ok(false);
+        }
+        let record: QuarantineRecord = verify_signed_record(
+            &std::fs::read(&manifest)?,
+            trusted_key,
+            QUARANTINE_SIGNATURE_CONTEXT,
+        )?;
+        let object = directory.join(format!("{}.object", transaction.transaction_id));
+        if record.version != FORMAT_VERSION
+            || record.scope_id != transaction.scope_id
+            || record.original_path != transaction.original_path
+            || record.observed_digest != transaction.observed_digest
+            || record.baseline_digest != transaction.baseline_digest
+            || record.quarantined_at_unix_ms != transaction.created_at_unix_ms
+            || Path::new(&record.quarantine_object) != object
+            || !path_exists_no_follow(&object)?
+            || hash_regular_file(&object)?.0 != transaction.observed_digest
+        {
+            return Err(AgentError::Quarantine(
+                "committed quarantine record is incomplete or inconsistent".to_owned(),
+            ));
+        }
+        #[cfg(windows)]
+        {
+            let windows_manifest =
+                directory.join(format!("{}.windows.cbor", transaction.transaction_id));
+            let windows: WindowsQuarantineRecord = verify_signed_record(
+                &std::fs::read(&windows_manifest)?,
+                trusted_key,
+                WINDOWS_QUARANTINE_SIGNATURE_CONTEXT,
+            )?;
+            let backup = directory.join(&windows.backup_object);
+            if windows.version != FORMAT_VERSION
+                || windows.scope_id != transaction.scope_id
+                || windows.original_path != transaction.original_path
+                || windows.observed_digest != transaction.observed_digest
+                || windows.quarantined_at_unix_ms != transaction.created_at_unix_ms
+                || !is_single_normal_component(Path::new(&windows.backup_object))
+                || !path_exists_no_follow(&backup)?
+                || hash_backup_file(&backup)? != windows.backup_digest
+            {
+                return Err(AgentError::Quarantine(
+                    "committed Windows quarantine record is incomplete or inconsistent".to_owned(),
+                ));
+            }
+        }
+        Ok(true)
+    }
+
+    fn remove_transaction_artifacts(&self, transaction: &QuarantineTransaction) -> Result<()> {
+        let directory = self.root.join("quarantine").join(&transaction.scope_id);
+        remove_file_if_present(&directory.join(format!("{}.object", transaction.transaction_id)))?;
+        remove_file_if_present(
+            &directory.join(format!("{}.manifest.cbor", transaction.transaction_id)),
+        )?;
+        #[cfg(windows)]
+        {
+            remove_file_if_present(
+                &directory.join(format!("{}.windows.backup", transaction.transaction_id)),
+            )?;
+            remove_file_if_present(
+                &directory.join(format!("{}.windows.cbor", transaction.transaction_id)),
+            )?;
+        }
+        sync_parent_directory(&directory.join("entry"))?;
+        Ok(())
+    }
+
+    fn remove_transaction(&self, journal: &Path) -> Result<()> {
+        remove_file_if_present(journal)?;
+        sync_parent_directory(journal)
+    }
+
     pub fn quarantine_regular_file(
         &self,
         scope: &ScopeConfig,
@@ -530,6 +776,10 @@ impl Vault {
         let directory = self.root.join("quarantine").join(&scope.id);
         let object = directory.join(format!("{name}.object"));
         let manifest_path = directory.join(format!("{name}.manifest.cbor"));
+        let transaction_path = self
+            .root
+            .join("transactions")
+            .join(format!("{name}.transaction.cbor"));
         #[cfg(windows)]
         let windows_backup = directory.join(format!("{name}.windows.backup"));
         #[cfg(windows)]
@@ -539,7 +789,25 @@ impl Vault {
                 "random quarantine staging path already exists".to_owned(),
             ));
         }
-        std::fs::rename(&source, &staged)?;
+        std::fs::create_dir_all(&directory)?;
+        let transaction = QuarantineTransaction {
+            version: FORMAT_VERSION,
+            transaction_id: name.clone(),
+            scope_id: scope.id.clone(),
+            original_path: path.to_string(),
+            observed_digest,
+            baseline_digest,
+            created_at_unix_ms: now_unix_ms,
+        };
+        self.write_transaction(&transaction_path, &transaction, secret)?;
+        if let Err(error) = move_file_noreplace_durable(&source, &staged) {
+            let _ = self.remove_transaction(&transaction_path);
+            return Err(error);
+        }
+        #[cfg(test)]
+        if std::env::var_os("VOLLCRYPT_SHIELD_TEST_EXIT_AFTER_STAGE").is_some() {
+            std::process::exit(86);
+        }
 
         let result = (|| -> Result<QuarantineRecord> {
             let staged_type = std::fs::symlink_metadata(&staged)?.file_type();
@@ -550,7 +818,6 @@ impl Vault {
                 )));
             }
             let metadata = CapturedMetadata::capture_complete(&staged)?;
-            std::fs::create_dir_all(&directory)?;
             copy_regular_verified(&staged, &object, &observed_digest)?;
 
             #[cfg(windows)]
@@ -611,24 +878,80 @@ impl Vault {
         })();
 
         match result {
-            Ok(record) => match std::fs::remove_file(&staged) {
-                Ok(()) => Ok(record),
+            Ok(record) => match remove_file_durable(&staged) {
+                Ok(()) => {
+                    self.remove_transaction(&transaction_path)?;
+                    Ok(record)
+                }
                 Err(error) => {
-                    restore_staged_source(&staged, &source);
-                    cleanup_quarantine_artifacts(&object, &manifest_path);
-                    #[cfg(windows)]
-                    cleanup_quarantine_artifacts(&windows_backup, &windows_manifest);
-                    Err(error.into())
+                    match self.abort_quarantine_transaction(
+                        &transaction,
+                        &transaction_path,
+                        &staged,
+                        &source,
+                    ) {
+                        Ok(()) => Err(error),
+                        Err(recovery_error) => Err(AgentError::Quarantine(format!(
+                            "quarantine cleanup failed ({error}); recovery is pending ({recovery_error})"
+                        ))),
+                    }
                 }
             },
             Err(error) => {
-                restore_staged_source(&staged, &source);
-                cleanup_quarantine_artifacts(&object, &manifest_path);
-                #[cfg(windows)]
-                cleanup_quarantine_artifacts(&windows_backup, &windows_manifest);
-                Err(error)
+                match self.abort_quarantine_transaction(
+                    &transaction,
+                    &transaction_path,
+                    &staged,
+                    &source,
+                ) {
+                    Ok(()) => Err(error),
+                    Err(recovery_error) => Err(AgentError::Quarantine(format!(
+                        "quarantine failed ({error}); recovery is pending ({recovery_error})"
+                    ))),
+                }
             }
         }
+    }
+
+    fn write_transaction(
+        &self,
+        path: &Path,
+        transaction: &QuarantineTransaction,
+        secret: &MlDsa65SecretKey,
+    ) -> Result<()> {
+        let encoded = sign_record(
+            transaction,
+            secret,
+            QUARANTINE_TRANSACTION_SIGNATURE_CONTEXT,
+        )?;
+        write_new_durable(path, &encoded)
+    }
+
+    fn abort_quarantine_transaction(
+        &self,
+        transaction: &QuarantineTransaction,
+        journal: &Path,
+        staged: &Path,
+        source: &Path,
+    ) -> Result<()> {
+        let source_exists = path_exists_no_follow(source)?;
+        let staged_exists = path_exists_no_follow(staged)?;
+        match (source_exists, staged_exists) {
+            (false, true) => move_file_noreplace_durable(staged, source)?,
+            (true, false) => {}
+            (true, true) => {
+                return Err(AgentError::Quarantine(
+                    "both source and staging path exist during quarantine abort".to_owned(),
+                ));
+            }
+            (false, false) => {
+                return Err(AgentError::Quarantine(
+                    "both source and staging path are absent during quarantine abort".to_owned(),
+                ));
+            }
+        }
+        self.remove_transaction_artifacts(transaction)?;
+        self.remove_transaction(journal)
     }
 
     pub fn restore_regular_file(
@@ -853,7 +1176,6 @@ impl Vault {
     }
 }
 
-#[cfg(windows)]
 fn sign_record<T: Encode<()>>(
     record: &T,
     secret: &MlDsa65SecretKey,
@@ -872,7 +1194,6 @@ fn sign_record<T: Encode<()>>(
     minicbor::to_vec(signed).map_err(|error| AgentError::Serialization(error.to_string()))
 }
 
-#[cfg(windows)]
 fn verify_signed_record<T>(
     encoded: &[u8],
     trusted_key: &MlDsa65PublicKey,
@@ -885,7 +1206,7 @@ where
     let embedded = MlDsa65PublicKey::from_bytes(&signed.public_key)?;
     if embedded.key_id() != trusted_key.key_id() {
         return Err(AgentError::Config(
-            "Windows vault signer does not match configured agent key".to_owned(),
+            "signed vault record signer does not match configured agent key".to_owned(),
         ));
     }
     trusted_key.verify_with_context(
@@ -912,7 +1233,6 @@ fn hash_backup_file(path: &Path) -> Result<[u8; 32]> {
     Ok(hasher.finalize().into())
 }
 
-#[cfg(windows)]
 fn random_hex() -> Result<String> {
     let mut nonce = [0_u8; 16];
     getrandom::fill(&mut nonce).map_err(|error| AgentError::Quarantine(error.to_string()))?;
@@ -974,18 +1294,127 @@ fn copy_regular_verified(source: &Path, destination: &Path, expected: &[u8; 32])
     Ok(())
 }
 
-fn restore_staged_source(staged: &Path, source: &Path) {
-    if std::fs::symlink_metadata(staged).is_ok()
-        && !source.exists()
-        && std::fs::symlink_metadata(source).is_err()
-    {
-        let _ = std::fs::rename(staged, source);
+fn is_safe_transaction_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 160
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+}
+
+fn path_exists_no_follow(path: &Path) -> Result<bool> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
     }
 }
 
-fn cleanup_quarantine_artifacts(object: &Path, manifest: &Path) {
-    let _ = std::fs::remove_file(object);
-    let _ = std::fs::remove_file(manifest);
+fn remove_file_if_present(path: &Path) -> Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn write_new_durable(path: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        AgentError::Quarantine(format!(
+            "transaction path has no parent: {}",
+            path.display()
+        ))
+    })?;
+    std::fs::create_dir_all(parent)?;
+    let temporary = parent.join(format!(
+        ".{}.{}.tmp",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| AgentError::Quarantine(
+                "transaction filename is not UTF-8".to_owned()
+            ))?,
+        random_hex()?
+    ));
+    let result = (|| -> Result<()> {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        use std::io::Write;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        move_file_noreplace_durable(&temporary, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
+
+fn move_file_noreplace_durable(source: &Path, destination: &Path) -> Result<()> {
+    #[cfg(windows)]
+    {
+        vollcrypt_shield_windows::move_file_noreplace_durable(source, destination)?;
+        Ok(())
+    }
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        use nix::fcntl::{RenameFlags, renameat2};
+        let source_parent = source.parent().ok_or_else(|| {
+            AgentError::Quarantine(format!("move source has no parent: {}", source.display()))
+        })?;
+        let destination_parent = destination.parent().ok_or_else(|| {
+            AgentError::Quarantine(format!(
+                "move destination has no parent: {}",
+                destination.display()
+            ))
+        })?;
+        let source_name = source.file_name().ok_or_else(|| {
+            AgentError::Quarantine(format!("move source has no filename: {}", source.display()))
+        })?;
+        let destination_name = destination.file_name().ok_or_else(|| {
+            AgentError::Quarantine(format!(
+                "move destination has no filename: {}",
+                destination.display()
+            ))
+        })?;
+        let source_directory = File::open(source_parent)?;
+        let destination_directory = File::open(destination_parent)?;
+        renameat2(
+            &source_directory,
+            source_name,
+            &destination_directory,
+            destination_name,
+            RenameFlags::RENAME_NOREPLACE,
+        )
+        .map_err(|error| std::io::Error::from_raw_os_error(error as i32))?;
+        sync_parent_directory(source)?;
+        if source_parent != destination_parent {
+            sync_parent_directory(destination)?;
+        }
+        Ok(())
+    }
+    #[cfg(not(any(windows, all(target_os = "linux", target_env = "gnu"))))]
+    {
+        if path_exists_no_follow(destination)? {
+            return Err(AgentError::Quarantine(format!(
+                "move destination already exists: {}",
+                destination.display()
+            )));
+        }
+        std::fs::rename(source, destination)?;
+        sync_parent_directory(source)?;
+        if source.parent() != destination.parent() {
+            sync_parent_directory(destination)?;
+        }
+        Ok(())
+    }
+}
+
+fn remove_file_durable(path: &Path) -> Result<()> {
+    std::fs::remove_file(path)?;
+    sync_parent_directory(path)
 }
 
 fn hash_regular_file(path: &Path) -> Result<([u8; 32], u64)> {
@@ -1003,6 +1432,14 @@ fn hash_regular_file(path: &Path) -> Result<([u8; 32], u64)> {
         hasher.update(&buffer[..read]);
     }
     Ok((hasher.finalize().into(), metadata.len()))
+}
+
+fn hash_file_for_recovery(path: &Path) -> Result<[u8; 32]> {
+    #[cfg(windows)]
+    if let Ok(digest) = vollcrypt_shield_windows::hash_default_stream(path, FILE_DOMAIN) {
+        return Ok(digest);
+    }
+    Ok(hash_regular_file(path)?.0)
 }
 
 fn decode_exact<'a, T>(bytes: &'a [u8]) -> Result<T>
@@ -1025,6 +1462,47 @@ where
 mod tests {
     use super::*;
     use vollcrypt_shield_core::{MetadataPolicy, MlDsa65KeyPair, ResponsePolicy, ScanProfile};
+
+    fn fixture() -> (tempfile::TempDir, ScopeConfig, Vault, MlDsa65KeyPair) {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("scope");
+        let state = directory.path().join("state");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("app.conf"), b"approved").unwrap();
+        let scope = ScopeConfig {
+            id: "scope".to_owned(),
+            root,
+            include: vec!["**".to_owned()],
+            exclude: Vec::new(),
+            metadata: MetadataPolicy::default(),
+            full_scan: ScanProfile::full_default(),
+            incremental_scan: ScanProfile::incremental_default(),
+            full_rescan_interval_secs: 300,
+            response: ResponsePolicy::default(),
+        };
+        let vault = Vault::new(&state).unwrap();
+        let pair = MlDsa65KeyPair::generate().unwrap();
+        (directory, scope, vault, pair)
+    }
+
+    fn transaction(scope: &ScopeConfig, id: &str) -> QuarantineTransaction {
+        QuarantineTransaction {
+            version: FORMAT_VERSION,
+            transaction_id: id.to_owned(),
+            scope_id: scope.id.clone(),
+            original_path: "app.conf".to_owned(),
+            observed_digest: hash_regular_file(&scope.root.join("app.conf")).unwrap().0,
+            baseline_digest: None,
+            created_at_unix_ms: 1,
+        }
+    }
+
+    fn journal(vault: &Vault, id: &str) -> PathBuf {
+        vault
+            .root
+            .join("transactions")
+            .join(format!("{id}.transaction.cbor"))
+    }
 
     #[test]
     fn failed_quarantine_restores_atomically_staged_source() {
@@ -1064,5 +1542,182 @@ mod tests {
                 .to_string_lossy()
                 .starts_with(".vollcrypt-shield-quarantine-")
         }));
+    }
+
+    #[test]
+    fn recovery_discards_durable_journal_written_before_move() {
+        let (_directory, scope, vault, pair) = fixture();
+        let transaction = transaction(&scope, "before-move");
+        let journal = journal(&vault, &transaction.transaction_id);
+        vault
+            .write_transaction(&journal, &transaction, &pair.secret)
+            .unwrap();
+
+        let recovered = vault
+            .recover_pending_transactions(std::slice::from_ref(&scope), &pair.public)
+            .unwrap();
+        assert_eq!(recovered.len(), 1);
+        assert!(scope.root.join("app.conf").is_file());
+        assert!(!journal.exists());
+    }
+
+    #[test]
+    fn recovery_restores_staged_file_without_clobbering() {
+        let (_directory, scope, vault, pair) = fixture();
+        let transaction = transaction(&scope, "after-move");
+        let journal = journal(&vault, &transaction.transaction_id);
+        vault
+            .write_transaction(&journal, &transaction, &pair.secret)
+            .unwrap();
+        let source = scope.root.join("app.conf");
+        let staged = scope.root.join(".vollcrypt-shield-quarantine-after-move");
+        std::fs::rename(&source, &staged).unwrap();
+
+        vault
+            .recover_pending_transactions(std::slice::from_ref(&scope), &pair.public)
+            .unwrap();
+        assert_eq!(std::fs::read(&source).unwrap(), b"approved");
+        assert!(!staged.exists());
+        assert!(!journal.exists());
+    }
+
+    #[test]
+    fn recovery_finalizes_a_signed_committed_quarantine() {
+        #[cfg(windows)]
+        if vollcrypt_shield_windows::validate_required_privileges().is_err() {
+            return;
+        }
+        let (_directory, scope, vault, pair) = fixture();
+        let source = scope.root.join("app.conf");
+        let observed = hash_regular_file(&source).unwrap().0;
+        let record = vault
+            .quarantine_regular_file(
+                &scope,
+                &NormalizedPath::new("app.conf").unwrap(),
+                observed,
+                None,
+                7,
+                &pair.secret,
+            )
+            .unwrap();
+        let object = PathBuf::from(&record.quarantine_object);
+        let id = object.file_stem().unwrap().to_str().unwrap().to_owned();
+        let transaction = QuarantineTransaction {
+            version: FORMAT_VERSION,
+            transaction_id: id.clone(),
+            scope_id: scope.id.clone(),
+            original_path: "app.conf".to_owned(),
+            observed_digest: observed,
+            baseline_digest: None,
+            created_at_unix_ms: 7,
+        };
+        let journal = journal(&vault, &id);
+        vault
+            .write_transaction(&journal, &transaction, &pair.secret)
+            .unwrap();
+
+        vault
+            .recover_pending_transactions(std::slice::from_ref(&scope), &pair.public)
+            .unwrap();
+        assert!(!source.exists());
+        assert!(object.is_file());
+        assert!(!journal.exists());
+    }
+
+    #[test]
+    fn recovery_rejects_tampered_transaction_and_path_collision() {
+        let (_directory, scope, vault, pair) = fixture();
+        let transaction = transaction(&scope, "collision");
+        let journal = journal(&vault, &transaction.transaction_id);
+        vault
+            .write_transaction(&journal, &transaction, &pair.secret)
+            .unwrap();
+        let staged = scope.root.join(".vollcrypt-shield-quarantine-collision");
+        std::fs::write(&staged, b"racing-content").unwrap();
+        assert!(
+            vault
+                .recover_pending_transactions(std::slice::from_ref(&scope), &pair.public)
+                .is_err()
+        );
+        assert!(scope.root.join("app.conf").is_file());
+        assert!(staged.is_file());
+
+        std::fs::remove_file(&staged).unwrap();
+        let mut bytes = std::fs::read(&journal).unwrap();
+        let last = bytes.len() - 1;
+        bytes[last] ^= 1;
+        std::fs::write(&journal, bytes).unwrap();
+        assert!(
+            vault
+                .recover_pending_transactions(&[scope], &pair.public)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn abrupt_process_termination_is_recovered_on_restart() {
+        let (directory, scope, vault, pair) = fixture();
+        let seed = directory.path().join("agent.seed");
+        std::fs::write(&seed, pair.secret.expose_seed()).unwrap();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("vault::tests::crash_recovery_child")
+            .arg("--nocapture")
+            .env("VOLLCRYPT_SHIELD_TEST_CHILD_ROOT", &scope.root)
+            .env(
+                "VOLLCRYPT_SHIELD_TEST_CHILD_STATE",
+                directory.path().join("state"),
+            )
+            .env("VOLLCRYPT_SHIELD_TEST_CHILD_SEED", &seed)
+            .env("VOLLCRYPT_SHIELD_TEST_EXIT_AFTER_STAGE", "1")
+            .status()
+            .unwrap();
+        assert_eq!(status.code(), Some(86));
+        assert!(!scope.root.join("app.conf").exists());
+
+        let recovered = vault
+            .recover_pending_transactions(std::slice::from_ref(&scope), &pair.public)
+            .unwrap();
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(
+            std::fs::read(scope.root.join("app.conf")).unwrap(),
+            b"approved"
+        );
+    }
+
+    #[test]
+    fn crash_recovery_child() {
+        let Some(root) = std::env::var_os("VOLLCRYPT_SHIELD_TEST_CHILD_ROOT") else {
+            return;
+        };
+        let state = PathBuf::from(std::env::var_os("VOLLCRYPT_SHIELD_TEST_CHILD_STATE").unwrap());
+        let seed =
+            std::fs::read(std::env::var_os("VOLLCRYPT_SHIELD_TEST_CHILD_SEED").unwrap()).unwrap();
+        let secret = MlDsa65SecretKey::from_seed(&seed).unwrap();
+        let scope = ScopeConfig {
+            id: "scope".to_owned(),
+            root: PathBuf::from(root),
+            include: vec!["**".to_owned()],
+            exclude: Vec::new(),
+            metadata: MetadataPolicy::default(),
+            full_scan: ScanProfile::full_default(),
+            incremental_scan: ScanProfile::incremental_default(),
+            full_rescan_interval_secs: 300,
+            response: ResponsePolicy::default(),
+        };
+        let source = scope.root.join("app.conf");
+        let observed = hash_regular_file(&source).unwrap().0;
+        Vault::new(&state)
+            .unwrap()
+            .quarantine_regular_file(
+                &scope,
+                &NormalizedPath::new("app.conf").unwrap(),
+                observed,
+                None,
+                11,
+                &secret,
+            )
+            .unwrap();
+        panic!("test failpoint did not terminate the child process");
     }
 }

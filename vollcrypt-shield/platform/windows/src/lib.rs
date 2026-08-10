@@ -32,6 +32,11 @@ pub enum WindowsBackupError {
     NoProgress(&'static str),
     #[error("Windows backup stream was only partially written")]
     PartialWrite,
+    #[error("durable move cannot cross Windows volumes: {source_path} -> {destination_path}")]
+    CrossVolumeMove {
+        source_path: String,
+        destination_path: String,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, WindowsBackupError>;
@@ -41,8 +46,8 @@ mod imp;
 
 #[cfg(windows)]
 pub use imp::{
-    capture_file, hash_default_stream, restore_file, validate_active_response_capability,
-    validate_required_privileges,
+    capture_file, hash_default_stream, move_file_noreplace_durable, restore_file,
+    validate_active_response_capability, validate_required_privileges,
 };
 
 #[cfg(not(windows))]
@@ -71,5 +76,10 @@ pub fn validate_active_response_capability(_directory: &Path) -> Result<()> {
 
 #[cfg(not(windows))]
 pub fn validate_required_privileges() -> Result<()> {
+    Err(WindowsBackupError::UnsupportedPlatform)
+}
+
+#[cfg(not(windows))]
+pub fn move_file_noreplace_durable(_source: &Path, _destination: &Path) -> Result<()> {
     Err(WindowsBackupError::UnsupportedPlatform)
 }

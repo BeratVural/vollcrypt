@@ -37,6 +37,9 @@ platform or capability is never promoted based on compilation alone.
   can be captured and restored atomically without weakening access control.
 - [ ] Add crash recovery, power-loss, locked-file, junction/reparse-point, and
   cross-volume rollback tests on real Windows hosts.
+  The implementation and strict test harness are complete; promotion remains
+  blocked until the strict gate in `WINDOWS_RECOVERY_QUALIFICATION.md` is
+  retained as release evidence on each claimed Windows target.
 
 ## Container integrity
 
