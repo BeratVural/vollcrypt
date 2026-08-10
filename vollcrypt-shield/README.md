@@ -225,6 +225,8 @@ integration remains a separate fail-closed boundary. Follow
 [`docs/CONTAINER_LINUX_TEST.md`](docs/CONTAINER_LINUX_TEST.md) for the Linux
 runtime validation matrix and
 [`docs/CONTAINER_SIDECAR.md`](docs/CONTAINER_SIDECAR.md) for deployment.
+The digest-only, namespace-bound Kubernetes webhook is documented in
+[`docs/KUBERNETES_ADMISSION.md`](docs/KUBERNETES_ADMISSION.md).
 
 ## Database record integrity
 

@@ -7,8 +7,8 @@ use std::time::Duration;
 use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::json;
 use vollcrypt_shield_container::{
-    ContainerAgent, OciLayoutScanner, OciScanLimits, RuntimeKind, check_sidecar,
-    monitor_containerd, monitor_docker, serve_sidecar,
+    ContainerAgent, OciLayoutScanner, OciScanLimits, RuntimeKind, check_admission_file,
+    check_sidecar, monitor_containerd, monitor_docker, serve_admission, serve_sidecar,
 };
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -16,6 +16,7 @@ enum RuntimeArgument {
     Docker,
     Containerd,
     Sidecar,
+    Admission,
 }
 
 impl From<RuntimeArgument> for RuntimeKind {
@@ -24,6 +25,7 @@ impl From<RuntimeArgument> for RuntimeKind {
             RuntimeArgument::Docker => Self::Docker,
             RuntimeArgument::Containerd => Self::Containerd,
             RuntimeArgument::Sidecar => Self::Sidecar,
+            RuntimeArgument::Admission => Self::Admission,
         }
     }
 }
@@ -119,6 +121,32 @@ enum Command {
         listen: SocketAddr,
         #[arg(long, default_value_t = 5)]
         poll_seconds: u64,
+    },
+    ApproveAdmission {
+        #[arg(long)]
+        state_dir: PathBuf,
+        #[arg(long)]
+        namespace: String,
+        #[arg(long = "image-digest", required = true)]
+        image_digests: Vec<String>,
+        #[arg(long)]
+        replace: bool,
+    },
+    AdmissionCheck {
+        #[arg(long)]
+        state_dir: PathBuf,
+        #[arg(long)]
+        review: PathBuf,
+    },
+    ServeAdmission {
+        #[arg(long)]
+        state_dir: PathBuf,
+        #[arg(long, default_value = "0.0.0.0:8443")]
+        listen: SocketAddr,
+        #[arg(long)]
+        tls_cert: PathBuf,
+        #[arg(long)]
+        tls_key: PathBuf,
     },
     RuntimeAuditVerify {
         #[arg(long)]
@@ -305,6 +333,41 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Duration::from_secs(poll_seconds),
             )
             .await?;
+        }
+        Command::ApproveAdmission {
+            state_dir,
+            namespace,
+            image_digests,
+            replace,
+        } => {
+            let agent = ContainerAgent::load(&state_dir)?;
+            let policy =
+                agent.create_admission_runtime_policy(&namespace, &image_digests, replace)?;
+            print_json(json!({
+                "status": "admission-policy-approved",
+                "scopeId": agent.scope_id(),
+                "runtime": policy.runtime(),
+                "namespace": policy.namespace(),
+                "approvedImageDigests": policy.approved_image_digests(),
+                "guaranteeLevel": "build-time-only",
+            }))?;
+        }
+        Command::AdmissionCheck { state_dir, review } => {
+            let agent = ContainerAgent::load(&state_dir)?;
+            let outcome = check_admission_file(&agent, &review)?;
+            print_json(outcome.response)?;
+            if !outcome.allowed {
+                std::process::exit(2);
+            }
+        }
+        Command::ServeAdmission {
+            state_dir,
+            listen,
+            tls_cert,
+            tls_key,
+        } => {
+            let agent = ContainerAgent::load(&state_dir)?;
+            serve_admission(&agent, listen, &tls_cert, &tls_key).await?;
         }
         Command::RuntimeAuditVerify { state_dir, runtime } => {
             let agent = ContainerAgent::load(&state_dir)?;

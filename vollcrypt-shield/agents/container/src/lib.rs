@@ -3,8 +3,9 @@
 mod runtime;
 
 pub use runtime::{
-    MonitorSummary, RuntimeDecision, RuntimeKind, RuntimePolicy, SidecarEvidence, check_sidecar,
-    monitor_containerd, monitor_docker, serve_sidecar,
+    AdmissionOutcome, MonitorSummary, RuntimeDecision, RuntimeKind, RuntimePolicy, SidecarEvidence,
+    check_admission, check_admission_file, check_sidecar, monitor_containerd, monitor_docker,
+    serve_admission, serve_sidecar,
 };
 
 use std::collections::{BTreeMap, VecDeque};

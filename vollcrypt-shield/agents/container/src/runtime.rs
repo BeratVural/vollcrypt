@@ -21,9 +21,11 @@ use super::{
     read_regular, write_atomic,
 };
 
+mod admission;
 mod containerd;
 mod sidecar;
 
+pub use admission::{AdmissionOutcome, check_admission, check_admission_file, serve_admission};
 pub use containerd::monitor_containerd;
 pub use sidecar::{SidecarEvidence, check_sidecar, serve_sidecar};
 
@@ -47,6 +49,8 @@ pub enum RuntimeKind {
     Containerd = 2,
     #[n(3)]
     Sidecar = 3,
+    #[n(4)]
+    Admission = 4,
 }
 
 impl RuntimeKind {
@@ -55,6 +59,7 @@ impl RuntimeKind {
             Self::Docker => DOCKER_POLICY_FILE,
             Self::Containerd => "runtime.containerd.policy.cbor",
             Self::Sidecar => "runtime.sidecar.policy.cbor",
+            Self::Admission => "runtime.admission.policy.cbor",
         }
     }
 
@@ -63,6 +68,7 @@ impl RuntimeKind {
             Self::Docker => RUNTIME_AUDIT_FILE,
             Self::Containerd => "runtime.containerd.audit.cborseq",
             Self::Sidecar => "runtime.sidecar.audit.cborseq",
+            Self::Admission => "runtime.admission.audit.cborseq",
         }
     }
 
@@ -71,6 +77,7 @@ impl RuntimeKind {
             Self::Docker => RUNTIME_AUDIT_LOCK,
             Self::Containerd => "runtime.containerd.audit.lock",
             Self::Sidecar => "runtime.sidecar.audit.lock",
+            Self::Admission => "runtime.admission.audit.lock",
         }
     }
 }
@@ -155,6 +162,7 @@ impl RuntimePolicy {
             (RuntimeKind::Docker, None) => {}
             (RuntimeKind::Containerd, Some(namespace)) => validate_namespace(namespace)?,
             (RuntimeKind::Sidecar, Some(binding)) => validate_sidecar_binding(binding)?,
+            (RuntimeKind::Admission, Some(namespace)) => validate_namespace(namespace)?,
             _ => {
                 return Err(ContainerError::State(
                     "runtime policy namespace binding is invalid".to_owned(),
@@ -404,6 +412,35 @@ impl ContainerAgent {
             now_unix_ms()?,
             image_digests,
             Some(binding.to_owned()),
+        )?;
+        let signed = SignedRuntimePolicy::sign(&policy, self)?;
+        write_atomic(&path, &signed.to_cbor()?, replace)?;
+        Ok(policy)
+    }
+
+    pub fn create_admission_runtime_policy(
+        &self,
+        namespace: &str,
+        image_digests: &[String],
+        replace: bool,
+    ) -> Result<RuntimePolicy> {
+        validate_namespace(namespace)?;
+        let runtime = RuntimeKind::Admission;
+        let path = self.state_dir.join(runtime.policy_file());
+        if path.exists() {
+            self.load_runtime_policy(runtime)?;
+            if !replace {
+                return Err(ContainerError::State(
+                    "runtime policy exists; pass --replace to approve replacement".to_owned(),
+                ));
+            }
+        }
+        let policy = RuntimePolicy::new(
+            self.scope_id.clone(),
+            runtime,
+            now_unix_ms()?,
+            image_digests,
+            Some(namespace.to_owned()),
         )?;
         let signed = SignedRuntimePolicy::sign(&policy, self)?;
         write_atomic(&path, &signed.to_cbor()?, replace)?;

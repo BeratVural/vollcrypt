@@ -163,17 +163,26 @@ jobs:
           sudo "$bin" init --state-dir "$state" --scope containerd-runtime-ci
           sudo "$bin" approve-containerd --state-dir "$state" \
             --namespace "$namespace" --image-digest "$approved_digest"
+          sudo "$bin" watch-containerd --state-dir "$state" --max-observations 1 \
+            >/tmp/shield-containerd-approved.jsonl &
+          approved_watcher=$!
+          sleep 2
           sudo ctr --namespace "$namespace" run -d \
             docker.io/library/alpine:3.20 shield-approved sleep 120
-          sudo "$bin" watch-containerd --state-dir "$state" --max-observations 1 \
-            | tee /tmp/shield-containerd-approved.jsonl
+          wait "$approved_watcher"
           grep -q '"approved":true' /tmp/shield-containerd-approved.jsonl
+          sudo ctr --namespace "$namespace" tasks kill --signal SIGKILL shield-approved
+          sudo ctr --namespace "$namespace" tasks rm shield-approved
+          sudo ctr --namespace "$namespace" containers rm shield-approved
 
+          sudo "$bin" watch-containerd --state-dir "$state" --max-observations 1 \
+            >/tmp/shield-containerd-unapproved.jsonl &
+          rejected_watcher=$!
+          sleep 2
           sudo ctr --namespace "$namespace" run -d \
             docker.io/library/busybox:1.36 shield-unapproved sleep 120
           set +e
-          sudo "$bin" watch-containerd --state-dir "$state" --max-observations 2 \
-            >/tmp/shield-containerd-unapproved.jsonl
+          wait "$rejected_watcher"
           status=$?
           set -e
           test "$status" -eq 2
@@ -250,6 +259,66 @@ jobs:
           wait "$sidecar_pid" || true
           sidecar_pid=
           "$bin" runtime-audit-verify --state-dir "$state" --runtime sidecar \
+            | grep -q '"status": "valid"'
+
+      - name: Qualify fail-closed admission HTTPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$(mktemp -d)"
+          state="$root/state"
+          cert="$root/tls.crt"
+          key="$root/tls.key"
+          review="$root/review.json"
+          bin="$PWD/target/release/vollcrypt-shield-container"
+          digest="sha256:$(printf c%.0s {1..64})"
+          cleanup() {
+            if test -n "${admission_pid:-}"; then
+              kill "$admission_pid" >/dev/null 2>&1 || true
+              wait "$admission_pid" >/dev/null 2>&1 || true
+            fi
+            case "$root" in
+              /tmp/tmp.*) rm -rf -- "$root" ;;
+            esac
+          }
+          trap cleanup EXIT
+
+          "$bin" init --state-dir "$state" --scope admission-ci
+          "$bin" approve-admission --state-dir "$state" \
+            --namespace production --image-digest "$digest"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -keyout "$key" -out "$cert" -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost' >/dev/null 2>&1
+          printf '{"apiVersion":"admission.k8s.io/v1","kind":"AdmissionReview","request":{"uid":"ci-request","namespace":"production","operation":"CREATE","object":{"apiVersion":"v1","kind":"Pod","spec":{"containers":[{"name":"app","image":"registry.example/app@%s"}]}}}}' \
+            "$digest" >"$review"
+          "$bin" admission-check --state-dir "$state" --review "$review" \
+            | grep -q '"allowed": true'
+
+          "$bin" serve-admission --state-dir "$state" \
+            --listen 127.0.0.1:9443 --tls-cert "$cert" --tls-key "$key" &
+          admission_pid=$!
+          for attempt in {1..30}; do
+            if curl --fail --silent --cacert "$cert" \
+              https://localhost:9443/healthz >/dev/null; then
+              break
+            fi
+            sleep 0.25
+          done
+          curl --fail --silent --cacert "$cert" \
+            -H 'content-type: application/json' --data-binary "@$review" \
+            https://localhost:9443/validate | grep -q '"allowed":true'
+
+          sed -i 's#registry.example/app@sha256:[c]*#registry.example/app:latest#' "$review"
+          curl --fail --silent --cacert "$cert" \
+            -H 'content-type: application/json' --data-binary "@$review" \
+            https://localhost:9443/validate | grep -q '"allowed":false'
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --cacert "$cert" -H 'content-type: application/json' --data '{}' \
+            https://localhost:9443/validate)" = 400
+          kill "$admission_pid"
+          wait "$admission_pid" || true
+          admission_pid=
+          "$bin" runtime-audit-verify --state-dir "$state" --runtime admission \
             | grep -q '"status": "valid"'
 
   linux-distro-qualification:
