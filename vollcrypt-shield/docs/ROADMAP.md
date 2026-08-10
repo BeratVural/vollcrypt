@@ -43,10 +43,10 @@ platform or capability is never promoted based on compilation alone.
 
 ## Container integrity
 
-- [ ] Add live containerd and Docker event monitoring to the host agent.
-- [ ] Add a sidecar integration with an explicitly lower assurance label than
+- [x] Add live containerd and Docker event monitoring to the host agent.
+- [x] Add a sidecar integration with an explicitly lower assurance label than
   host-level monitoring.
-- [ ] Add a Kubernetes admission controller that verifies signed image evidence
+- [x] Add a Kubernetes admission controller that verifies signed image evidence
   before admission and fails closed under a bounded, documented policy.
 
 ## Database integrity
