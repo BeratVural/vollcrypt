@@ -70,3 +70,19 @@ record the watcher check as blocked by the environment and repeat it outside the
 sandbox; do not classify it as a Shield product failure. `status` and
 `dashboard` may use the signed persisted state when live IPC is unavailable and
 print an explicit warning to standard error.
+
+## Automated Debian qualification
+
+The pinned Debian 13 CI image runs the same watcher over a real inotify/Unix
+socket path and installs a disposable `.deb` built from the release CLI:
+
+```console
+bash vollcrypt-shield/scripts/linux-qualification.sh \
+  target/release/vollcrypt-shield debian13
+```
+
+The command must observe a dry-run notification, verify the signed audit chain,
+prove live local-status IPC without persisted-state fallback, install and
+execute the package, and uninstall it cleanly. A container or runner that
+blocks inotify, Unix sockets, or package installation is not promotion
+evidence.

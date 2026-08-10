@@ -97,6 +97,11 @@ jobs:
       - name: Build release CLI
         run: cargo build --locked --release -p vollcrypt-shield-cli
 
+      - name: Run unrestricted watcher and Debian package smoke
+        run: |
+          bash vollcrypt-shield/scripts/linux-qualification.sh \
+            target/release/vollcrypt-shield debian13
+
       - name: Build and test Node binding
         working-directory: vollcrypt-shield/bindings/node
         run: |
