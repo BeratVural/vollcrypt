@@ -73,17 +73,19 @@ admission decisions remain later Phase 6 work.
 
 ## Database boundary
 
-The database agent is independent of db-guard. Its first built-in adapter opens
-SQLite read-only using a statically bundled SQLite library and scans inside one
-consistent transaction. It accepts a validated table identifier, never raw SQL.
-The table schema and typed column values are canonicalized into the snapshot.
-Stable key values are domain-separated and hashed before becoming row paths, so
+The database agent is independent of db-guard. Its built-in adapters open
+SQLite read-only using a statically bundled SQLite library or connect to
+PostgreSQL with certificate-validated TLS. Both scan inside a consistent,
+read-only transaction and accept validated table identifiers, never raw SQL.
+The table schema and typed canonical values are bound into the snapshot. Stable
+key values are domain-separated and hashed before becoming row paths, so
 baseline and diagnostic output do not expose primary-key values or row content.
 
 Tables without a primary key require explicit key columns. Null or duplicate
 keys, non-finite REAL values, hidden key columns, schema ambiguity, symlinked
-database files, and configured byte/row limits fail closed. PostgreSQL/MySQL and
-optional db-guard context adapters are not implemented in this slice.
+database files, and configured byte/row limits fail closed. PostgreSQL also
+rejects locale-dependent and user-defined types outside its canonical boundary.
+MySQL and optional db-guard context adapters are not implemented yet.
 
 ## Embedded boundary
 

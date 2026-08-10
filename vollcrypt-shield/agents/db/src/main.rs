@@ -5,7 +5,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use serde_json::json;
-use vollcrypt_shield_db::{DatabaseAgent, DatabaseScanConfig, scan_sqlite};
+use vollcrypt_shield_db::{
+    DatabaseAgent, DatabaseScanConfig, PostgresScanOptions, scan_postgres, scan_sqlite,
+};
 
 #[derive(Parser)]
 #[command(name = "vollcrypt-shield-db")]
@@ -53,16 +55,59 @@ enum Command {
         #[arg(long = "key-column")]
         key_columns: Vec<String>,
     },
+    ScanPostgres {
+        #[arg(long, default_value = "SHIELD_POSTGRES_URL")]
+        connection_env: String,
+        #[arg(long, default_value = "public")]
+        schema: String,
+        #[arg(long)]
+        ca_file: Option<PathBuf>,
+        #[arg(long)]
+        table: String,
+        #[arg(long = "key-column")]
+        key_columns: Vec<String>,
+    },
+    BaselinePostgres {
+        #[arg(long)]
+        state_dir: PathBuf,
+        #[arg(long, default_value = "SHIELD_POSTGRES_URL")]
+        connection_env: String,
+        #[arg(long, default_value = "public")]
+        schema: String,
+        #[arg(long)]
+        ca_file: Option<PathBuf>,
+        #[arg(long)]
+        table: String,
+        #[arg(long = "key-column")]
+        key_columns: Vec<String>,
+        #[arg(long)]
+        replace: bool,
+    },
+    VerifyPostgres {
+        #[arg(long)]
+        state_dir: PathBuf,
+        #[arg(long, default_value = "SHIELD_POSTGRES_URL")]
+        connection_env: String,
+        #[arg(long, default_value = "public")]
+        schema: String,
+        #[arg(long)]
+        ca_file: Option<PathBuf>,
+        #[arg(long)]
+        table: String,
+        #[arg(long = "key-column")]
+        key_columns: Vec<String>,
+    },
 }
 
-fn main() {
-    if let Err(error) = run() {
+#[tokio::main]
+async fn main() {
+    if let Err(error) = run().await {
         eprintln!("{error}");
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<(), Box<dyn std::error::Error>> {
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
     match Cli::parse().command {
         Command::Init { state_dir, scope } => {
             let agent = DatabaseAgent::initialize(&state_dir, &scope)?;
@@ -119,8 +164,86 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+        Command::ScanPostgres {
+            connection_env,
+            schema,
+            ca_file,
+            table,
+            key_columns,
+        } => {
+            let config = DatabaseScanConfig::new(table, key_columns)?;
+            let options = postgres_options(&connection_env, schema, ca_file)?;
+            let report = scan_postgres(&options, &config, "standalone-scan", now_ms()?).await?;
+            print_json(scan_json("valid", &report))?;
+        }
+        Command::BaselinePostgres {
+            state_dir,
+            connection_env,
+            schema,
+            ca_file,
+            table,
+            key_columns,
+            replace,
+        } => {
+            let agent = DatabaseAgent::load(&state_dir)?;
+            let config = DatabaseScanConfig::new(table, key_columns)?;
+            let options = postgres_options(&connection_env, schema, ca_file)?;
+            let report = scan_postgres(&options, &config, agent.scope_id(), now_ms()?).await?;
+            agent.create_baseline_from_report(&report, replace)?;
+            let mut value = scan_json("baseline-created", &report);
+            value["scopeId"] = json!(agent.scope_id());
+            value["keyId"] = json!(hex::encode(agent.key_id()));
+            print_json(value)?;
+        }
+        Command::VerifyPostgres {
+            state_dir,
+            connection_env,
+            schema,
+            ca_file,
+            table,
+            key_columns,
+        } => {
+            let agent = DatabaseAgent::load(&state_dir)?;
+            let config = DatabaseScanConfig::new(table, key_columns)?;
+            let options = postgres_options(&connection_env, schema, ca_file)?;
+            let scan = scan_postgres(&options, &config, agent.scope_id(), now_ms()?).await?;
+            let verification = agent.verify_report(&scan)?;
+            print_verification(&scan, &verification)?;
+            if !verification.is_match() {
+                std::process::exit(2);
+            }
+        }
     }
     Ok(())
+}
+
+fn postgres_options(
+    connection_env: &str,
+    schema: String,
+    ca_file: Option<PathBuf>,
+) -> Result<PostgresScanOptions, Box<dyn std::error::Error>> {
+    let connection = std::env::var(connection_env).map_err(|_| {
+        format!("PostgreSQL connection environment variable is missing: {connection_env}")
+    })?;
+    Ok(PostgresScanOptions::new(connection)?
+        .with_schema(schema)?
+        .with_ca_file(ca_file)?)
+}
+
+fn print_verification(
+    scan: &vollcrypt_shield_db::DatabaseScanReport,
+    verification: &vollcrypt_shield_core::VerificationReport,
+) -> Result<(), serde_json::Error> {
+    print_json(json!({
+        "status": if verification.is_match() { "match" } else { "mismatch" },
+        "scopeId": verification.scope_id,
+        "table": scan.table,
+        "keyColumns": scan.key_columns,
+        "recordCount": scan.record_count,
+        "baselineRoot": hex::encode(verification.baseline_root),
+        "observedRoot": hex::encode(verification.observed_root),
+        "differences": verification.differences,
+    }))
 }
 
 fn scan_json(status: &str, report: &vollcrypt_shield_db::DatabaseScanReport) -> serde_json::Value {

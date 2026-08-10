@@ -15,6 +15,10 @@ use vollcrypt_shield_core::{
     NormalizedPath, SignedSnapshot, Snapshot, VerificationDifference, VerificationReport,
 };
 
+mod postgres;
+
+pub use postgres::{PostgresScanOptions, scan_postgres};
+
 const BASELINE_FILE: &str = "baseline.snapshot.cbor";
 const KEY_DIRECTORY: &str = "keys";
 const PUBLIC_KEY_FILE: &str = "agent.public";
@@ -31,6 +35,8 @@ pub enum DatabaseError {
     Io(#[from] std::io::Error),
     #[error("SQLite error: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    #[error("PostgreSQL error: {0}")]
+    Postgres(String),
     #[error("invalid database scan configuration: {0}")]
     Config(String),
     #[error("database scan limit exceeded: {0}")]
@@ -126,7 +132,7 @@ pub struct DatabaseScanReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum DatabaseValue {
+pub(crate) enum DatabaseValue {
     Null,
     Integer(i64),
     Real(u64),
@@ -144,7 +150,7 @@ struct ColumnInfo {
     hidden: u32,
 }
 
-struct CanonicalReportBuilder {
+pub(crate) struct CanonicalReportBuilder {
     table: String,
     key_columns: Vec<String>,
     key_indexes: Vec<usize>,
@@ -159,16 +165,16 @@ struct CanonicalReportBuilder {
     total_value_bytes: u64,
 }
 
-struct CanonicalSourceSchema {
-    key_columns: Vec<String>,
-    key_indexes: Vec<usize>,
-    column_names: Vec<String>,
-    schema_hash: [u8; 32],
-    schema_size: u64,
+pub(crate) struct CanonicalSourceSchema {
+    pub(crate) key_columns: Vec<String>,
+    pub(crate) key_indexes: Vec<usize>,
+    pub(crate) column_names: Vec<String>,
+    pub(crate) schema_hash: [u8; 32],
+    pub(crate) schema_size: u64,
 }
 
 impl CanonicalReportBuilder {
-    fn new(
+    pub(crate) fn new(
         config: &DatabaseScanConfig,
         schema: CanonicalSourceSchema,
         scope_id: &str,
@@ -197,7 +203,7 @@ impl CanonicalReportBuilder {
         })
     }
 
-    fn push_row(&mut self, values: Vec<DatabaseValue>) -> Result<()> {
+    pub(crate) fn push_row(&mut self, values: Vec<DatabaseValue>) -> Result<()> {
         if values.len() != self.column_names.len() {
             return Err(DatabaseError::Config(
                 "record source returned an unexpected column count".to_owned(),
@@ -242,7 +248,7 @@ impl CanonicalReportBuilder {
         Ok(())
     }
 
-    fn finish(self) -> Result<DatabaseScanReport> {
+    pub(crate) fn finish(self) -> Result<DatabaseScanReport> {
         let snapshot = Snapshot::new(&self.scope_id, self.entries, self.created_at_unix_ms)?;
         Ok(DatabaseScanReport {
             table: self.table,
@@ -335,8 +341,7 @@ impl DatabaseAgent {
             }
         }
         let report = scan_sqlite(database, config, &self.scope_id, now_unix_ms()?)?;
-        let signed = SignedSnapshot::sign(&report.snapshot, &self.secret)?;
-        write_atomic(&baseline, &signed.to_cbor()?, replace)?;
+        self.create_baseline_from_report(&report, replace)?;
         Ok(report)
     }
 
@@ -365,8 +370,49 @@ impl DatabaseAgent {
         self.ensure_disjoint(database)?;
         let baseline = self.load_baseline()?;
         let observed = scan_sqlite(database, config, &self.scope_id, now_unix_ms()?)?;
-        let verification = compare_snapshots(&baseline, &observed.snapshot);
+        let verification = self.verify_report_against(&baseline, &observed)?;
         Ok((observed, verification))
+    }
+
+    pub fn create_baseline_from_report(
+        &self,
+        report: &DatabaseScanReport,
+        replace: bool,
+    ) -> Result<()> {
+        if report.snapshot.scope_id != self.scope_id {
+            return Err(DatabaseError::State(
+                "scan report scope does not match database agent scope".to_owned(),
+            ));
+        }
+        let baseline = self.baseline_path();
+        if baseline.exists() {
+            self.load_baseline()?;
+            if !replace {
+                return Err(DatabaseError::State(
+                    "baseline exists; pass --replace to approve replacement".to_owned(),
+                ));
+            }
+        }
+        let signed = SignedSnapshot::sign(&report.snapshot, &self.secret)?;
+        write_atomic(&baseline, &signed.to_cbor()?, replace)
+    }
+
+    pub fn verify_report(&self, report: &DatabaseScanReport) -> Result<VerificationReport> {
+        let baseline = self.load_baseline()?;
+        self.verify_report_against(&baseline, report)
+    }
+
+    fn verify_report_against(
+        &self,
+        baseline: &Snapshot,
+        report: &DatabaseScanReport,
+    ) -> Result<VerificationReport> {
+        if report.snapshot.scope_id != self.scope_id {
+            return Err(DatabaseError::State(
+                "scan report scope does not match database agent scope".to_owned(),
+            ));
+        }
+        Ok(compare_snapshots(baseline, &report.snapshot))
     }
 
     fn baseline_path(&self) -> PathBuf {

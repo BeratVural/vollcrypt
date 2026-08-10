@@ -231,10 +231,10 @@ The digest-only, namespace-bound Kubernetes webhook is documented in
 ## Database record integrity
 
 `vollcrypt-shield-db` is a standalone Phase 9 agent with a statically bundled
-SQLite adapter. It needs neither db-guard nor a system SQLite installation. A
-read-only transaction produces an ML-DSA-signed Merkle baseline over the table
-schema and canonical typed rows, while hashed row paths avoid disclosing key
-values.
+SQLite adapter and a TLS-required PostgreSQL adapter. It needs neither db-guard
+nor another Vollcrypt package. A consistent read-only transaction produces an
+ML-DSA-signed Merkle baseline over the table schema and canonical rows, while
+hashed row paths avoid disclosing key values.
 
 ```console
 vollcrypt-shield-db init --state-dir /var/lib/vollcrypt-shield/db/accounts --scope accounts
@@ -242,8 +242,10 @@ vollcrypt-shield-db baseline --state-dir /var/lib/vollcrypt-shield/db/accounts -
 vollcrypt-shield-db verify --state-dir /var/lib/vollcrypt-shield/db/accounts --database app.sqlite --table accounts
 ```
 
-PostgreSQL/MySQL and optional db-guard enhanced context remain later adapters;
-they are not required for the current SQLite mode.
+For PostgreSQL, set SHIELD_POSTGRES_URL and use baseline-postgres or
+verify-postgres; private trust roots are passed with --ca-file. Credentials are
+never accepted as CLI arguments. MySQL and optional db-guard enhanced context
+remain later adapters and are not required by either current mode.
 
 ## Embedded integrity foundation
 
