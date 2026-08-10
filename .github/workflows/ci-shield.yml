@@ -84,8 +84,8 @@ jobs:
           set -euo pipefail
           cert_dir="$(mktemp -d)"
           printf '%s' "$cert_dir" > /tmp/shield-postgres-cert-dir
-          openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 +            -subj '/CN=localhost' +            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' +            -keyout "$cert_dir/server.key" -out "$cert_dir/server.crt"
-          docker run -d --name shield-postgres -p 5432:5432 +            -e POSTGRES_PASSWORD=shield-ci-password +            -e POSTGRES_DB=shield +            -v "$cert_dir:/certificate-input:ro" +            --entrypoint sh postgres:17-alpine -c +            'cp /certificate-input/server.* /tmp/; chown postgres:postgres /tmp/server.*; chmod 600 /tmp/server.key; exec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/tmp/server.crt -c ssl_key_file=/tmp/server.key'
+          openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' -keyout "$cert_dir/server.key" -out "$cert_dir/server.crt"
+          docker run -d --name shield-postgres -p 5432:5432 -e POSTGRES_PASSWORD=shield-ci-password -e POSTGRES_DB=shield -v "$cert_dir:/certificate-input:ro" --entrypoint sh postgres:17-alpine -c 'cp /certificate-input/server.* /tmp/; chown postgres:postgres /tmp/server.*; chmod 600 /tmp/server.key; exec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/tmp/server.crt -c ssl_key_file=/tmp/server.key'
           for attempt in $(seq 1 60); do
             if docker exec shield-postgres pg_isready -U postgres -d shield; then
               break
@@ -94,7 +94,7 @@ jobs:
             sleep 1
           done
           test "$(docker exec shield-postgres psql -U postgres -d shield -Atc 'SHOW ssl')" = on
-          docker exec shield-postgres psql -U postgres -d shield -v ON_ERROR_STOP=1 -c +            "CREATE TABLE accounts (id BIGINT PRIMARY KEY, email TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT true); INSERT INTO accounts VALUES (1, 'first@example.test', true), (2, 'second@example.test', false);"
+          docker exec shield-postgres psql -U postgres -d shield -v ON_ERROR_STOP=1 -c "CREATE TABLE accounts (id BIGINT PRIMARY KEY, email TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT true); INSERT INTO accounts VALUES (1, 'first@example.test', true), (2, 'second@example.test', false);"
 
       - name: Qualify consistent PostgreSQL baseline and drift
         shell: bash
@@ -113,12 +113,12 @@ jobs:
           cargo build --locked --release -p vollcrypt-shield-db
           bin=target/release/vollcrypt-shield-db
           "$bin" init --state-dir "$state" --scope accounts
-          "$bin" baseline-postgres --state-dir "$state" +            --ca-file "$cert_dir/server.crt" --table accounts +            | tee /tmp/shield-postgres-baseline.json
+          "$bin" baseline-postgres --state-dir "$state" --ca-file "$cert_dir/server.crt" --table accounts | tee /tmp/shield-postgres-baseline.json
           grep -q '"status": "baseline-created"' /tmp/shield-postgres-baseline.json
-          "$bin" verify-postgres --state-dir "$state" +            --ca-file "$cert_dir/server.crt" --table accounts +            | grep -q '"status": "match"'
-          docker exec shield-postgres psql -U postgres -d shield -v ON_ERROR_STOP=1 -c +            "UPDATE accounts SET enabled = NOT enabled WHERE id = 2"
+          "$bin" verify-postgres --state-dir "$state" --ca-file "$cert_dir/server.crt" --table accounts | grep -q '"status": "match"'
+          docker exec shield-postgres psql -U postgres -d shield -v ON_ERROR_STOP=1 -c "UPDATE accounts SET enabled = NOT enabled WHERE id = 2"
           set +e
-          "$bin" verify-postgres --state-dir "$state" +            --ca-file "$cert_dir/server.crt" --table accounts +            >/tmp/shield-postgres-drift.json
+          "$bin" verify-postgres --state-dir "$state" --ca-file "$cert_dir/server.crt" --table accounts >/tmp/shield-postgres-drift.json
           status=$?
           set -e
           test "$status" -eq 2
