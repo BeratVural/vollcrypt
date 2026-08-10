@@ -6,14 +6,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{Parser, Subcommand};
 use serde_json::json;
 use vollcrypt_shield_db::{
-    DatabaseAgent, DatabaseScanConfig, MySqlScanOptions, PostgresScanOptions, scan_mysql,
-    scan_postgres, scan_sqlite,
+    DatabaseAgent, DatabaseScanConfig, DbGuardContextV1, MySqlScanOptions, PostgresScanOptions,
+    load_db_guard_context_v1, scan_mysql, scan_postgres, scan_sqlite,
 };
 
 #[derive(Parser)]
 #[command(name = "vollcrypt-shield-db")]
 #[command(about = "Independent database record integrity agent for Vollcrypt Shield")]
 struct Cli {
+    #[arg(long, global = true)]
+    db_guard_context: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
@@ -145,7 +147,13 @@ async fn main() {
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    match Cli::parse().command {
+    let cli = Cli::parse();
+    let db_guard_context = cli
+        .db_guard_context
+        .as_deref()
+        .map(load_db_guard_context_v1)
+        .transpose()?;
+    match cli.command {
         Command::Init { state_dir, scope } => {
             let agent = DatabaseAgent::initialize(&state_dir, &scope)?;
             print_json(json!({
@@ -159,7 +167,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             table,
             key_columns,
         } => {
-            let config = DatabaseScanConfig::new(table, key_columns)?;
+            let config = database_config(table, key_columns, &db_guard_context)?;
             let report = scan_sqlite(&database, &config, "standalone-scan", now_ms()?)?;
             print_json(scan_json("valid", &report))?;
         }
@@ -171,7 +179,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             replace,
         } => {
             let agent = DatabaseAgent::load(&state_dir)?;
-            let config = DatabaseScanConfig::new(table, key_columns)?;
+            let config = database_config(table, key_columns, &db_guard_context)?;
             let report = agent.create_baseline(&database, &config, replace)?;
             let mut value = scan_json("baseline-created", &report);
             value["scopeId"] = json!(agent.scope_id());
@@ -185,7 +193,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             key_columns,
         } => {
             let agent = DatabaseAgent::load(&state_dir)?;
-            let config = DatabaseScanConfig::new(table, key_columns)?;
+            let config = database_config(table, key_columns, &db_guard_context)?;
             let (scan, verification) = agent.verify(&database, &config)?;
             print_json(json!({
                 "status": if verification.is_match() { "match" } else { "mismatch" },
@@ -208,7 +216,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             table,
             key_columns,
         } => {
-            let config = DatabaseScanConfig::new(table, key_columns)?;
+            let config = database_config(table, key_columns, &db_guard_context)?;
             let options = postgres_options(&connection_env, schema, ca_file)?;
             let report = scan_postgres(&options, &config, "standalone-scan", now_ms()?).await?;
             print_json(scan_json("valid", &report))?;
@@ -223,7 +231,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             replace,
         } => {
             let agent = DatabaseAgent::load(&state_dir)?;
-            let config = DatabaseScanConfig::new(table, key_columns)?;
+            let config = database_config(table, key_columns, &db_guard_context)?;
             let options = postgres_options(&connection_env, schema, ca_file)?;
             let report = scan_postgres(&options, &config, agent.scope_id(), now_ms()?).await?;
             agent.create_baseline_from_report(&report, replace)?;
@@ -241,7 +249,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             key_columns,
         } => {
             let agent = DatabaseAgent::load(&state_dir)?;
-            let config = DatabaseScanConfig::new(table, key_columns)?;
+            let config = database_config(table, key_columns, &db_guard_context)?;
             let options = postgres_options(&connection_env, schema, ca_file)?;
             let scan = scan_postgres(&options, &config, agent.scope_id(), now_ms()?).await?;
             let verification = agent.verify_report(&scan)?;
@@ -256,7 +264,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             table,
             key_columns,
         } => {
-            let config = DatabaseScanConfig::new(table, key_columns)?;
+            let config = database_config(table, key_columns, &db_guard_context)?;
             let options = mysql_options(&connection_env, ca_file)?;
             let report = scan_mysql(&options, &config, "standalone-scan", now_ms()?)?;
             print_json(scan_json("valid", &report))?;
@@ -270,7 +278,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             replace,
         } => {
             let agent = DatabaseAgent::load(&state_dir)?;
-            let config = DatabaseScanConfig::new(table, key_columns)?;
+            let config = database_config(table, key_columns, &db_guard_context)?;
             let options = mysql_options(&connection_env, ca_file)?;
             let report = scan_mysql(&options, &config, agent.scope_id(), now_ms()?)?;
             agent.create_baseline_from_report(&report, replace)?;
@@ -287,7 +295,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             key_columns,
         } => {
             let agent = DatabaseAgent::load(&state_dir)?;
-            let config = DatabaseScanConfig::new(table, key_columns)?;
+            let config = database_config(table, key_columns, &db_guard_context)?;
             let options = mysql_options(&connection_env, ca_file)?;
             let scan = scan_mysql(&options, &config, agent.scope_id(), now_ms()?)?;
             let verification = agent.verify_report(&scan)?;
@@ -298,6 +306,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+fn database_config(
+    table: String,
+    key_columns: Vec<String>,
+    db_guard_context: &Option<DbGuardContextV1>,
+) -> Result<DatabaseScanConfig, vollcrypt_shield_db::DatabaseError> {
+    DatabaseScanConfig::new(table, key_columns)?.with_db_guard_context(db_guard_context.clone())
 }
 
 fn postgres_options(

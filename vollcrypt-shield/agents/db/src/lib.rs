@@ -30,6 +30,8 @@ const MAX_BASELINE_BYTES: u64 = 134_217_728;
 const ROW_KEY_DOMAIN: &[u8] = b"VOLLCRYPT-SHIELD-DB-ROW-KEY-v1\0";
 const ROW_CONTENT_DOMAIN: &[u8] = b"VOLLCRYPT-SHIELD-DB-ROW-CONTENT-v1\0";
 const SCHEMA_DOMAIN: &[u8] = b"VOLLCRYPT-SHIELD-DB-SCHEMA-v1\0";
+const DB_GUARD_CONTEXT_DOMAIN: &[u8] = b"VOLLCRYPT-SHIELD-DB-GUARD-CONTEXT-v1\0";
+const MAX_DB_GUARD_CONTEXT_BYTES: u64 = 65_536;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DatabaseError {
@@ -95,6 +97,7 @@ pub struct DatabaseScanConfig {
     pub table: String,
     pub key_columns: Vec<String>,
     pub limits: DatabaseScanLimits,
+    pub db_guard_context: Option<DbGuardContextV1>,
 }
 
 impl DatabaseScanConfig {
@@ -103,9 +106,16 @@ impl DatabaseScanConfig {
             table: table.into(),
             key_columns,
             limits: DatabaseScanLimits::default(),
+            db_guard_context: None,
         };
         config.validate()?;
         Ok(config)
+    }
+
+    pub fn with_db_guard_context(mut self, context: Option<DbGuardContextV1>) -> Result<Self> {
+        self.db_guard_context = context;
+        self.validate()?;
+        Ok(self)
     }
 
     fn validate(&self) -> Result<()> {
@@ -120,8 +130,72 @@ impl DatabaseScanConfig {
                 ));
             }
         }
+        if let Some(context) = &self.db_guard_context {
+            context.validate()?;
+        }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DbGuardContextV1 {
+    pub format_version: u16,
+    pub database_id: String,
+    pub kms_route_id: Option<String>,
+    pub encryption_policy_digest: String,
+    pub key_epoch: u64,
+}
+
+impl DbGuardContextV1 {
+    pub fn validate(&self) -> Result<()> {
+        if self.format_version != 1 {
+            return Err(DatabaseError::Config(
+                "unsupported db-guard context format version".to_owned(),
+            ));
+        }
+        validate_context_identifier(&self.database_id, "db-guard databaseId")?;
+        if let Some(route) = &self.kms_route_id {
+            validate_context_identifier(route, "db-guard kmsRouteId")?;
+        }
+        decode_context_digest(&self.encryption_policy_digest)?;
+        Ok(())
+    }
+
+    fn canonical_bytes(&self) -> Result<Vec<u8>> {
+        self.validate()?;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&self.format_version.to_be_bytes());
+        append_context_field(&mut bytes, self.database_id.as_bytes());
+        match &self.kms_route_id {
+            Some(route) => {
+                bytes.push(1);
+                append_context_field(&mut bytes, route.as_bytes());
+            }
+            None => bytes.push(0),
+        }
+        bytes.extend_from_slice(&decode_context_digest(&self.encryption_policy_digest)?);
+        bytes.extend_from_slice(&self.key_epoch.to_be_bytes());
+        Ok(bytes)
+    }
+}
+
+pub fn load_db_guard_context_v1(path: &Path) -> Result<DbGuardContextV1> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink()
+        || !metadata.is_file()
+        || metadata.len() > MAX_DB_GUARD_CONTEXT_BYTES
+    {
+        return Err(DatabaseError::Config(
+            "db-guard context must be a regular non-symlink file no larger than 64 KiB".to_owned(),
+        ));
+    }
+    let context: DbGuardContextV1 =
+        serde_json::from_slice(&std::fs::read(path)?).map_err(|error| {
+            DatabaseError::Config(format!("invalid db-guard context JSON: {error}"))
+        })?;
+    context.validate()?;
+    Ok(context)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -181,10 +255,25 @@ pub(crate) struct CanonicalSourceSchema {
 impl CanonicalReportBuilder {
     pub(crate) fn new(
         config: &DatabaseScanConfig,
-        schema: CanonicalSourceSchema,
+        mut schema: CanonicalSourceSchema,
         scope_id: &str,
         created_at_unix_ms: u64,
     ) -> Result<Self> {
+        if let Some(context) = &config.db_guard_context {
+            let context_bytes = context.canonical_bytes()?;
+            let mut hash = Sha256::new();
+            hash.update(DB_GUARD_CONTEXT_DOMAIN);
+            hash.update(schema.schema_hash);
+            hash.update((context_bytes.len() as u64).to_be_bytes());
+            hash.update(&context_bytes);
+            schema.schema_hash = hash.finalize().into();
+            schema.schema_size = schema
+                .schema_size
+                .checked_add(context_bytes.len() as u64)
+                .ok_or_else(|| {
+                    DatabaseError::Limit("database schema context size overflow".to_owned())
+                })?;
+        }
         let schema_path = NormalizedPath::new(format!("schema/{}", config.table))?;
         Ok(Self {
             table: config.table.clone(),
@@ -264,6 +353,38 @@ impl CanonicalReportBuilder {
             snapshot,
         })
     }
+}
+
+fn validate_context_identifier(value: &str, label: &str) -> Result<()> {
+    if value.is_empty()
+        || value.len() > 128
+        || !value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'/' | b'-')
+        })
+    {
+        return Err(DatabaseError::Config(format!(
+            "{label} must be 1..128 safe ASCII characters"
+        )));
+    }
+    Ok(())
+}
+
+fn decode_context_digest(value: &str) -> Result<[u8; 32]> {
+    let decoded = hex::decode(value).map_err(|_| {
+        DatabaseError::Config(
+            "db-guard encryptionPolicyDigest must be a 32-byte hexadecimal digest".to_owned(),
+        )
+    })?;
+    decoded.try_into().map_err(|_| {
+        DatabaseError::Config(
+            "db-guard encryptionPolicyDigest must be a 32-byte hexadecimal digest".to_owned(),
+        )
+    })
+}
+
+fn append_context_field(target: &mut Vec<u8>, value: &[u8]) {
+    target.extend_from_slice(&(value.len() as u64).to_be_bytes());
+    target.extend_from_slice(value);
 }
 
 pub struct DatabaseAgent {
@@ -990,5 +1111,56 @@ mod tests {
             .unwrap();
         let config = DatabaseScanConfig::new("docs", vec!["content".to_owned()]).unwrap();
         assert!(scan_sqlite(&path, &config, "docs", 100).is_err());
+    }
+
+    #[test]
+    fn db_guard_context_is_versioned_validated_and_bound_to_root() {
+        let directory = tempfile::tempdir().unwrap();
+        let database_path = directory.path().join("app.sqlite");
+        database(&database_path);
+        let standalone = DatabaseScanConfig::new("accounts", vec![]).unwrap();
+        let context = DbGuardContextV1 {
+            format_version: 1,
+            database_id: "primary/accounts".to_owned(),
+            kms_route_id: Some("kms/eu-central-1/app".to_owned()),
+            encryption_policy_digest: "ab".repeat(32),
+            key_epoch: 7,
+        };
+        let enhanced = standalone
+            .clone()
+            .with_db_guard_context(Some(context.clone()))
+            .unwrap();
+        let standalone_report = scan_sqlite(&database_path, &standalone, "accounts", 100).unwrap();
+        let enhanced_report = scan_sqlite(&database_path, &enhanced, "accounts", 100).unwrap();
+        assert_ne!(standalone_report.schema_hash, enhanced_report.schema_hash);
+        assert_ne!(
+            standalone_report.snapshot.root,
+            enhanced_report.snapshot.root
+        );
+
+        let context_path = directory.path().join("db-guard-context.json");
+        std::fs::write(&context_path, serde_json::to_vec(&context).unwrap()).unwrap();
+        assert_eq!(load_db_guard_context_v1(&context_path).unwrap(), context);
+    }
+
+    #[test]
+    fn db_guard_context_rejects_unknown_versions_fields_and_digests() {
+        let directory = tempfile::tempdir().unwrap();
+        let context_path = directory.path().join("db-guard-context.json");
+        std::fs::write(
+            &context_path,
+            r#"{"formatVersion":2,"databaseId":"db","kmsRouteId":null,"encryptionPolicyDigest":"00","keyEpoch":1}"#,
+        )
+        .unwrap();
+        assert!(load_db_guard_context_v1(&context_path).is_err());
+        std::fs::write(
+            &context_path,
+            format!(
+                r#"{{"formatVersion":1,"databaseId":"db","kmsRouteId":null,"encryptionPolicyDigest":"{}","keyEpoch":1,"unknown":true}}"#,
+                "00".repeat(32)
+            ),
+        )
+        .unwrap();
+        assert!(load_db_guard_context_v1(&context_path).is_err());
     }
 }

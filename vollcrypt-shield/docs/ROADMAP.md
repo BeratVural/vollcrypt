@@ -53,7 +53,7 @@ platform or capability is never promoted based on compilation alone.
 
 - [ ] Implement PostgreSQL and MySQL adapters using consistent read-only
   snapshots and the existing canonical record-source contract.
-- [ ] Add optional db-guard enhanced context through an explicit versioned
+- [x] Add optional db-guard enhanced context through an explicit versioned
   adapter; standalone Shield DB behavior must remain independent.
 - [ ] Qualify the commercial PostgreSQL backend against a disposable,
   TLS-enabled staging database without publishing private implementation code.

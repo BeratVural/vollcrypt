@@ -85,7 +85,10 @@ Tables without a primary key require explicit key columns. Null or duplicate
 keys, non-finite REAL values, hidden key columns, schema ambiguity, symlinked
 database files, and configured byte/row limits fail closed. PostgreSQL also
 rejects locale-dependent and user-defined types outside its canonical boundary.
-MySQL and optional db-guard context adapters are not implemented yet.
+MySQL uses the same bounded record-source contract over required TLS. Optional
+db-guard context is accepted only through the explicit v1 JSON adapter; Shield
+does not import, discover, or execute db-guard and standalone operation remains
+unchanged.
 
 ## Embedded boundary
 

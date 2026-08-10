@@ -2,8 +2,8 @@
 
 `vollcrypt-shield-db` is an independent database-record integrity agent. It
 does not require db-guard or any other Vollcrypt package at runtime. The
-built-in adapters support statically bundled SQLite and TLS-protected
-PostgreSQL.
+built-in adapters support statically bundled SQLite plus TLS-protected
+PostgreSQL and MySQL.
 
 The scanner opens SQLite read-only, starts a consistent transaction, binds the
 table schema into the snapshot, and represents each row by a path derived from
@@ -32,6 +32,8 @@ scan fails closed if those values are null or do not uniquely identify rows.
 SQLite views and arbitrary SQL queries are intentionally not accepted.
 
 This package is licensed under `GPL-3.0-only OR LicenseRef-Commercial`.
-The future MySQL driver will implement the same canonical record-source
-contract. db-guard detection remains an optional enhanced mode, not a runtime
+MySQL implements the same canonical record-source contract over
+certificate-validated TLS. Optional db-guard enhanced context uses the
+explicit, versioned contract in
+[DB_GUARD_CONTEXT_V1.md](DB_GUARD_CONTEXT_V1.md); it is never a runtime
 prerequisite.
