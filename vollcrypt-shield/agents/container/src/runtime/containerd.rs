@@ -81,8 +81,8 @@ where
     };
 
     let filters = vec![
-        format!("namespace=={namespace},topic==/containers/create"),
-        format!("namespace=={namespace},topic==/tasks/start"),
+        format!("namespace==\"{namespace}\",topic==\"/containers/create\""),
+        format!("namespace==\"{namespace}\",topic==\"/tasks/start\""),
     ];
     let subscription = namespaced(SubscribeRequest { filters }, namespace)?;
     let mut stream = match client.events().subscribe(subscription).await {
