@@ -526,7 +526,7 @@ jobs:
     steps:
       - name: Install system dependencies
         shell: bash
-        run: dnf install -y ca-certificates findutils gcc gcc-c++ git make openssl-devel pkgconf-pkg-config rpm-build tar gzip
+        run: dnf install -y bash ca-certificates findutils gcc gcc-c++ git make openssl-devel pkgconf-pkg-config rpm-build tar gzip
 
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
