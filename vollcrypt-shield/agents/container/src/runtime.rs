@@ -22,8 +22,10 @@ use super::{
 };
 
 mod containerd;
+mod sidecar;
 
 pub use containerd::monitor_containerd;
+pub use sidecar::{SidecarEvidence, check_sidecar, serve_sidecar};
 
 const POLICY_SIGNATURE_CONTEXT: &[u8] = b"Vollcrypt Shield Container Runtime Policy v1";
 const POLICY_HASH_DOMAIN: &[u8] = b"VOLLCRYPT-SHIELD-CONTAINER-RUNTIME-POLICY-v1\0";
@@ -43,6 +45,8 @@ pub enum RuntimeKind {
     Docker = 1,
     #[n(2)]
     Containerd = 2,
+    #[n(3)]
+    Sidecar = 3,
 }
 
 impl RuntimeKind {
@@ -50,6 +54,7 @@ impl RuntimeKind {
         match self {
             Self::Docker => DOCKER_POLICY_FILE,
             Self::Containerd => "runtime.containerd.policy.cbor",
+            Self::Sidecar => "runtime.sidecar.policy.cbor",
         }
     }
 
@@ -57,6 +62,7 @@ impl RuntimeKind {
         match self {
             Self::Docker => RUNTIME_AUDIT_FILE,
             Self::Containerd => "runtime.containerd.audit.cborseq",
+            Self::Sidecar => "runtime.sidecar.audit.cborseq",
         }
     }
 
@@ -64,6 +70,7 @@ impl RuntimeKind {
         match self {
             Self::Docker => RUNTIME_AUDIT_LOCK,
             Self::Containerd => "runtime.containerd.audit.lock",
+            Self::Sidecar => "runtime.sidecar.audit.lock",
         }
     }
 }
@@ -147,6 +154,7 @@ impl RuntimePolicy {
         match (self.runtime, self.namespace.as_deref()) {
             (RuntimeKind::Docker, None) => {}
             (RuntimeKind::Containerd, Some(namespace)) => validate_namespace(namespace)?,
+            (RuntimeKind::Sidecar, Some(binding)) => validate_sidecar_binding(binding)?,
             _ => {
                 return Err(ContainerError::State(
                     "runtime policy namespace binding is invalid".to_owned(),
@@ -183,6 +191,10 @@ impl RuntimePolicy {
     }
 
     pub fn namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn binding(&self) -> Option<&str> {
         self.namespace.as_deref()
     }
 
@@ -275,7 +287,11 @@ struct RuntimeObservation {
 }
 
 impl RuntimeObservation {
-    fn evaluate(self, policy: &RuntimePolicy) -> RuntimeDecision {
+    fn evaluate(
+        self,
+        policy: &RuntimePolicy,
+        integration_mode: IntegrationMode,
+    ) -> RuntimeDecision {
         let (approved, reason) = match self.image_digest.as_deref() {
             Some(digest) if policy.permits(digest) => (
                 true,
@@ -289,8 +305,8 @@ impl RuntimeObservation {
         };
         RuntimeDecision {
             runtime: self.runtime,
-            integration_mode: IntegrationMode::HostAgent,
-            guarantee_level: IntegrationMode::HostAgent.guarantee(),
+            integration_mode,
+            guarantee_level: integration_mode.guarantee(),
             timestamp_unix_ms: self.timestamp_unix_ms,
             action: self.action,
             object_id: self.object_id,
@@ -359,6 +375,35 @@ impl ContainerAgent {
             now_unix_ms()?,
             image_digests,
             Some(namespace.to_owned()),
+        )?;
+        let signed = SignedRuntimePolicy::sign(&policy, self)?;
+        write_atomic(&path, &signed.to_cbor()?, replace)?;
+        Ok(policy)
+    }
+
+    pub fn create_sidecar_runtime_policy(
+        &self,
+        binding: &str,
+        image_digests: &[String],
+        replace: bool,
+    ) -> Result<RuntimePolicy> {
+        validate_sidecar_binding(binding)?;
+        let runtime = RuntimeKind::Sidecar;
+        let path = self.state_dir.join(runtime.policy_file());
+        if path.exists() {
+            self.load_runtime_policy(runtime)?;
+            if !replace {
+                return Err(ContainerError::State(
+                    "runtime policy exists; pass --replace to approve replacement".to_owned(),
+                ));
+            }
+        }
+        let policy = RuntimePolicy::new(
+            self.scope_id.clone(),
+            runtime,
+            now_unix_ms()?,
+            image_digests,
+            Some(binding.to_owned()),
         )?;
         let signed = SignedRuntimePolicy::sign(&policy, self)?;
         write_atomic(&path, &signed.to_cbor()?, replace)?;
@@ -477,7 +522,7 @@ where
             object_id,
             image_digest,
         }
-        .evaluate(&policy);
+        .evaluate(&policy, IntegrationMode::HostAgent);
         process_decision(&mut audit, &decision, &mut summary, &mut report)?;
         if max_observations == Some(summary.observations) {
             audit.append_status(AuditEventKind::AgentStopped, "observation limit reached")?;
@@ -515,7 +560,7 @@ where
                 return Err(error);
             }
         };
-        let decision = observation.evaluate(&policy);
+        let decision = observation.evaluate(&policy, IntegrationMode::HostAgent);
         process_decision(&mut audit, &decision, &mut summary, &mut report)?;
         if max_observations == Some(summary.observations) {
             audit.append_status(AuditEventKind::AgentStopped, "observation limit reached")?;
@@ -788,6 +833,21 @@ fn validate_namespace(namespace: &str) -> Result<()> {
     Ok(())
 }
 
+fn validate_sidecar_binding(binding: &str) -> Result<()> {
+    let Some((namespace, container)) = binding.split_once('/') else {
+        return Err(ContainerError::State(
+            "sidecar binding must use namespace/container format".to_owned(),
+        ));
+    };
+    if binding.len() > 257 || container.contains('/') {
+        return Err(ContainerError::State(
+            "sidecar binding must contain one bounded namespace/container pair".to_owned(),
+        ));
+    }
+    validate_namespace(namespace)?;
+    validate_namespace(container)
+}
+
 fn docker_timestamp_ms(event: &EventMessage) -> Result<u64> {
     if let Some(nanoseconds) = event.time_nano {
         if nanoseconds < 0 {
@@ -931,9 +991,21 @@ mod tests {
             object_id: "container".to_owned(),
             image_digest,
         };
-        assert!(observation(Some(approved)).evaluate(&policy).approved);
-        assert!(!observation(Some(digest('b'))).evaluate(&policy).approved);
-        assert!(!observation(None).evaluate(&policy).approved);
+        assert!(
+            observation(Some(approved))
+                .evaluate(&policy, IntegrationMode::HostAgent)
+                .approved
+        );
+        assert!(
+            !observation(Some(digest('b')))
+                .evaluate(&policy, IntegrationMode::HostAgent)
+                .approved
+        );
+        assert!(
+            !observation(None)
+                .evaluate(&policy, IntegrationMode::HostAgent)
+                .approved
+        );
         assert!(normalize_image_digest("alpine:latest").is_err());
         assert!(normalize_image_digest(&format!("sha256:{}", "A".repeat(64))).is_err());
     }

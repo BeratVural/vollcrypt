@@ -1,18 +1,21 @@
 #![forbid(unsafe_code)]
 
+use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::json;
 use vollcrypt_shield_container::{
-    ContainerAgent, OciLayoutScanner, OciScanLimits, RuntimeKind, monitor_containerd,
-    monitor_docker,
+    ContainerAgent, OciLayoutScanner, OciScanLimits, RuntimeKind, check_sidecar,
+    monitor_containerd, monitor_docker, serve_sidecar,
 };
 
 #[derive(Clone, Copy, ValueEnum)]
 enum RuntimeArgument {
     Docker,
     Containerd,
+    Sidecar,
 }
 
 impl From<RuntimeArgument> for RuntimeKind {
@@ -20,6 +23,7 @@ impl From<RuntimeArgument> for RuntimeKind {
         match value {
             RuntimeArgument::Docker => Self::Docker,
             RuntimeArgument::Containerd => Self::Containerd,
+            RuntimeArgument::Sidecar => Self::Sidecar,
         }
     }
 }
@@ -89,6 +93,32 @@ enum Command {
         socket: PathBuf,
         #[arg(long)]
         max_observations: Option<usize>,
+    },
+    ApproveSidecar {
+        #[arg(long)]
+        state_dir: PathBuf,
+        #[arg(long)]
+        binding: String,
+        #[arg(long = "image-digest", required = true)]
+        image_digests: Vec<String>,
+        #[arg(long)]
+        replace: bool,
+    },
+    SidecarCheck {
+        #[arg(long)]
+        state_dir: PathBuf,
+        #[arg(long)]
+        evidence_file: Option<PathBuf>,
+    },
+    ServeSidecar {
+        #[arg(long)]
+        state_dir: PathBuf,
+        #[arg(long)]
+        evidence_file: Option<PathBuf>,
+        #[arg(long, default_value = "0.0.0.0:9464")]
+        listen: SocketAddr,
+        #[arg(long, default_value_t = 5)]
+        poll_seconds: u64,
     },
     RuntimeAuditVerify {
         #[arg(long)]
@@ -232,6 +262,49 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             if summary.violations > 0 {
                 std::process::exit(2);
             }
+        }
+        Command::ApproveSidecar {
+            state_dir,
+            binding,
+            image_digests,
+            replace,
+        } => {
+            let agent = ContainerAgent::load(&state_dir)?;
+            let policy = agent.create_sidecar_runtime_policy(&binding, &image_digests, replace)?;
+            print_json(json!({
+                "status": "sidecar-policy-approved",
+                "scopeId": agent.scope_id(),
+                "runtime": policy.runtime(),
+                "binding": policy.binding(),
+                "approvedImageDigests": policy.approved_image_digests(),
+                "guaranteeLevel": "constrained",
+            }))?;
+        }
+        Command::SidecarCheck {
+            state_dir,
+            evidence_file,
+        } => {
+            let agent = ContainerAgent::load(&state_dir)?;
+            let decision = check_sidecar(&agent, evidence_file.as_deref())?;
+            print_json(serde_json::to_value(&decision)?)?;
+            if !decision.approved {
+                std::process::exit(2);
+            }
+        }
+        Command::ServeSidecar {
+            state_dir,
+            evidence_file,
+            listen,
+            poll_seconds,
+        } => {
+            let agent = ContainerAgent::load(&state_dir)?;
+            serve_sidecar(
+                &agent,
+                evidence_file.as_deref(),
+                listen,
+                Duration::from_secs(poll_seconds),
+            )
+            .await?;
         }
         Command::RuntimeAuditVerify { state_dir, runtime } => {
             let agent = ContainerAgent::load(&state_dir)?;

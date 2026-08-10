@@ -216,10 +216,15 @@ vollcrypt-shield-container runtime-audit-verify \
 Runtime sockets are privileged local trust boundaries; Shield never exposes
 them over its own network interface. Strong containerd mode requires a
 root-owned, non-symlink, non-world-writable Unix socket and a namespace bound
-inside the signed policy. Sidecar and admission-controller integrations are not
-implemented yet and must not be treated as equivalent runtime guarantees. Follow
+inside the signed policy. The Kubernetes sidecar verifies a deployment-declared
+digest against a policy signed before the pod is admitted and exposes
+`/readyz` for Pod readiness. It is always labeled `constrained`: unlike the
+host monitors, it cannot independently query the runtime's actual image ID and
+must not be presented as an equivalent guarantee. The admission-controller
+integration remains a separate fail-closed boundary. Follow
 [`docs/CONTAINER_LINUX_TEST.md`](docs/CONTAINER_LINUX_TEST.md) for the Linux
-runtime validation matrix.
+runtime validation matrix and
+[`docs/CONTAINER_SIDECAR.md`](docs/CONTAINER_SIDECAR.md) for deployment.
 
 ## Database record integrity
 

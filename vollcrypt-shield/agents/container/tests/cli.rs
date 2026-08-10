@@ -124,6 +124,66 @@ fn cli_initializes_baselines_and_verifies_an_oci_layout() {
             .unwrap()
             .contains("\"records\": 0")
     );
+
+    let sidecar_evidence = directory.path().join("sidecar-evidence.json");
+    std::fs::write(
+        &sidecar_evidence,
+        format!(
+            "{{\"version\":1,\"podUid\":\"pod-cli\",\"namespace\":\"default\",\"containerName\":\"app\",\"imageDigest\":\"{}\"}}",
+            digest
+        ),
+    )
+    .unwrap();
+    let sidecar_state = directory.path().join("sidecar-state");
+    let initialized_sidecar = Command::new(binary)
+        .args(["init", "--state-dir"])
+        .arg(&sidecar_state)
+        .args(["--scope", "sidecar-cli"])
+        .output()
+        .unwrap();
+    assert!(initialized_sidecar.status.success());
+    let approve_sidecar = Command::new(binary)
+        .args(["approve-sidecar", "--state-dir"])
+        .arg(&sidecar_state)
+        .args([
+            "--binding",
+            "default/app",
+            "--image-digest",
+            digest.as_str(),
+        ])
+        .output()
+        .unwrap();
+    assert!(approve_sidecar.status.success());
+    assert!(
+        String::from_utf8(approve_sidecar.stdout)
+            .unwrap()
+            .contains("\"guaranteeLevel\": \"constrained\"")
+    );
+
+    let check = Command::new(binary)
+        .args(["sidecar-check", "--state-dir"])
+        .arg(&sidecar_state)
+        .arg("--evidence-file")
+        .arg(&sidecar_evidence)
+        .output()
+        .unwrap();
+    assert!(check.status.success());
+    let check_output = String::from_utf8(check.stdout).unwrap();
+    assert!(check_output.contains("\"integrationMode\": \"sidecar\""));
+    assert!(check_output.contains("\"guaranteeLevel\": \"constrained\""));
+
+    let sidecar_audit = Command::new(binary)
+        .args(["runtime-audit-verify", "--state-dir"])
+        .arg(&sidecar_state)
+        .args(["--runtime", "sidecar"])
+        .output()
+        .unwrap();
+    assert!(sidecar_audit.status.success());
+    assert!(
+        String::from_utf8(sidecar_audit.stdout)
+            .unwrap()
+            .contains("\"records\": 3")
+    );
 }
 
 fn create_layout(root: &Path) {

@@ -3,7 +3,7 @@ use std::path::Path;
 use super::{ContainerAgent, ContainerError, MonitorSummary, Result, RuntimeDecision};
 #[cfg(unix)]
 use super::{
-    RuntimeAuditWriter, RuntimeKind, RuntimeObservation, bounded_identifier,
+    IntegrationMode, RuntimeAuditWriter, RuntimeKind, RuntimeObservation, bounded_identifier,
     normalize_image_digest, process_decision, runtime_error,
 };
 
@@ -134,7 +134,7 @@ where
             object_id,
             image_digest,
         }
-        .evaluate(&policy);
+        .evaluate(&policy, IntegrationMode::HostAgent);
         process_decision(&mut audit, &decision, &mut summary, &mut report)?;
         if max_observations == Some(summary.observations) {
             audit.append_status(
@@ -175,7 +175,7 @@ where
                 return Err(error);
             }
         };
-        let decision = observation.evaluate(&policy);
+        let decision = observation.evaluate(&policy, IntegrationMode::HostAgent);
         process_decision(&mut audit, &decision, &mut summary, &mut report)?;
         if max_observations == Some(summary.observations) {
             audit.append_status(

@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments-api
+  namespace: production
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payments-api
+  template:
+    metadata:
+      labels:
+        app: payments-api
+      annotations:
+        vollcrypt.io/image-digest: "sha256:REPLACE_WITH_APPROVED_APP_DIGEST"
+    spec:
+      securityContext:
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: stage-shield-state
+          image: "REPLACE_WITH_DIGEST_PINNED_STAGER_IMAGE"
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              umask 077
+              mkdir -p /state/keys
+              cp /approved/scope.id /state/scope.id
+              cp /approved/agent.seed /state/keys/agent.seed
+              cp /approved/agent.public /state/keys/agent.public
+              cp /approved/runtime.sidecar.policy.cbor /state/runtime.sidecar.policy.cbor
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+          volumeMounts:
+            - name: approved-state
+              mountPath: /approved
+              readOnly: true
+            - name: runtime-state
+              mountPath: /state
+      containers:
+        - name: payments-api
+          image: "REPLACE_WITH_DIGEST_PINNED_APP_IMAGE"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+        - name: vollcrypt-shield
+          image: "REPLACE_WITH_DIGEST_PINNED_SHIELD_IMAGE"
+          args:
+            - serve-sidecar
+            - --state-dir
+            - /state
+            - --listen
+            - 0.0.0.0:9464
+            - --poll-seconds
+            - "5"
+          env:
+            - name: SHIELD_POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: SHIELD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: SHIELD_CONTAINER_NAME
+              value: payments-api
+            - name: SHIELD_IMAGE_DIGEST
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['vollcrypt.io/image-digest']
+          ports:
+            - name: shield-ready
+              containerPort: 9464
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: shield-ready
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 1
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+          volumeMounts:
+            - name: runtime-state
+              mountPath: /state
+      volumes:
+        - name: approved-state
+          secret:
+            secretName: REPLACE_WITH_PREAPPROVED_SHIELD_STATE_SECRET
+            defaultMode: 0440
+        - name: runtime-state
+          emptyDir: {}

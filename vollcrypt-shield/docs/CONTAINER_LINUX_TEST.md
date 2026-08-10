@@ -99,8 +99,8 @@ by containerd's Images service:
 ```console
 sudo ctr namespaces create shield-test
 sudo ctr --namespace shield-test images pull docker.io/library/alpine:3.20
-digest=$(sudo ctr --namespace shield-test images info \
-  docker.io/library/alpine:3.20 | jq -r '.target.digest')
+digest=$(sudo ctr --namespace shield-test images ls \
+  | awk '$1 == "docker.io/library/alpine:3.20" { print $3 }')
 sudo target/debug/vollcrypt-shield-container approve-containerd \
   --state-dir /tmp/shield-container-state --namespace shield-test \
   --image-digest "$digest"
@@ -118,3 +118,20 @@ the inventory window remain queued on the established gRPC stream. It rejects
 namespace mismatch, unexpected topics, protobuf type confusion, oversized
 payloads, invalid timestamps, and untrusted socket ownership before reporting a
 `strong` guarantee.
+
+## Constrained sidecar
+
+Follow [CONTAINER_SIDECAR.md](CONTAINER_SIDECAR.md) to generate the signed
+policy outside the pod. Run the one-shot check before deploying:
+
+```console
+target/debug/vollcrypt-shield-container sidecar-check \
+  --state-dir /tmp/shield-sidecar-state \
+  --evidence-file /tmp/shield-sidecar-evidence.json
+target/debug/vollcrypt-shield-container runtime-audit-verify \
+  --state-dir /tmp/shield-sidecar-state --runtime sidecar
+```
+
+Expected: the decision reports `sidecar`, `constrained`, and
+`"approved":true`. A binding mismatch, mutable tag, malformed evidence, or
+unapproved digest reports `"approved":false` and exits with status 2.
