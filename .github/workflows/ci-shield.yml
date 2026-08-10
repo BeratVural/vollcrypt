@@ -155,8 +155,8 @@ jobs:
           sudo ctr namespaces create "$namespace"
           sudo ctr --namespace "$namespace" images pull docker.io/library/alpine:3.20
           sudo ctr --namespace "$namespace" images pull docker.io/library/busybox:1.36
-          approved_digest="$(sudo ctr --namespace "$namespace" images info \
-            docker.io/library/alpine:3.20 | jq -r '.target.digest')"
+          approved_digest="$(sudo ctr --namespace "$namespace" images ls \
+            | awk '$1 == "docker.io/library/alpine:3.20" { print $3 }')"
           test "${approved_digest#sha256:}" != "$approved_digest"
 
           bin="$PWD/target/release/vollcrypt-shield-container"
