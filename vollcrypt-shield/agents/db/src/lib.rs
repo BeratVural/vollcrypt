@@ -144,6 +144,117 @@ struct ColumnInfo {
     hidden: u32,
 }
 
+struct CanonicalReportBuilder {
+    table: String,
+    key_columns: Vec<String>,
+    key_indexes: Vec<usize>,
+    column_names: Vec<String>,
+    limits: DatabaseScanLimits,
+    schema_hash: [u8; 32],
+    scope_id: String,
+    created_at_unix_ms: u64,
+    entries: Vec<IntegrityEntry>,
+    paths: BTreeSet<NormalizedPath>,
+    record_count: u64,
+    total_value_bytes: u64,
+}
+
+struct CanonicalSourceSchema {
+    key_columns: Vec<String>,
+    key_indexes: Vec<usize>,
+    column_names: Vec<String>,
+    schema_hash: [u8; 32],
+    schema_size: u64,
+}
+
+impl CanonicalReportBuilder {
+    fn new(
+        config: &DatabaseScanConfig,
+        schema: CanonicalSourceSchema,
+        scope_id: &str,
+        created_at_unix_ms: u64,
+    ) -> Result<Self> {
+        let schema_path = NormalizedPath::new(format!("schema/{}", config.table))?;
+        Ok(Self {
+            table: config.table.clone(),
+            key_columns: schema.key_columns,
+            key_indexes: schema.key_indexes,
+            column_names: schema.column_names,
+            limits: config.limits.clone(),
+            schema_hash: schema.schema_hash,
+            scope_id: scope_id.to_owned(),
+            created_at_unix_ms,
+            entries: vec![IntegrityEntry::new(
+                schema_path,
+                EntryKind::File,
+                schema.schema_hash,
+                [0; 32],
+                schema.schema_size,
+            )],
+            paths: BTreeSet::new(),
+            record_count: 0,
+            total_value_bytes: 0,
+        })
+    }
+
+    fn push_row(&mut self, values: Vec<DatabaseValue>) -> Result<()> {
+        if values.len() != self.column_names.len() {
+            return Err(DatabaseError::Config(
+                "record source returned an unexpected column count".to_owned(),
+            ));
+        }
+        self.record_count = self
+            .record_count
+            .checked_add(1)
+            .ok_or_else(|| DatabaseError::Limit("row count overflow".to_owned()))?;
+        if self.record_count > self.limits.max_rows {
+            return Err(DatabaseError::Limit("row count limit exceeded".to_owned()));
+        }
+        let row_bytes = values.iter().try_fold(0_u64, |total, value| {
+            total
+                .checked_add(value_size(value))
+                .ok_or_else(|| DatabaseError::Limit("row value bytes overflow".to_owned()))
+        })?;
+        self.total_value_bytes = self
+            .total_value_bytes
+            .checked_add(row_bytes)
+            .ok_or_else(|| DatabaseError::Limit("total value bytes overflow".to_owned()))?;
+        if self.total_value_bytes > self.limits.max_total_value_bytes {
+            return Err(DatabaseError::Limit(
+                "total value byte limit exceeded".to_owned(),
+            ));
+        }
+        let key_hash = hash_key(&self.table, &self.key_columns, &self.key_indexes, &values)?;
+        let path = NormalizedPath::new(format!("row/{}", hex::encode(key_hash)))?;
+        if !self.paths.insert(path.clone()) {
+            return Err(DatabaseError::Config(
+                "selected key columns do not uniquely identify every row".to_owned(),
+            ));
+        }
+        let content = hash_row(&self.table, self.schema_hash, &self.column_names, &values);
+        self.entries.push(IntegrityEntry::new(
+            path,
+            EntryKind::File,
+            content,
+            self.schema_hash,
+            row_bytes,
+        ));
+        Ok(())
+    }
+
+    fn finish(self) -> Result<DatabaseScanReport> {
+        let snapshot = Snapshot::new(&self.scope_id, self.entries, self.created_at_unix_ms)?;
+        Ok(DatabaseScanReport {
+            table: self.table,
+            key_columns: self.key_columns,
+            record_count: self.record_count,
+            total_value_bytes: self.total_value_bytes,
+            schema_hash: self.schema_hash,
+            snapshot,
+        })
+    }
+}
+
 pub struct DatabaseAgent {
     state_dir: PathBuf,
     scope_id: String,
@@ -360,66 +471,33 @@ fn scan_connection(
     );
     let mut statement = connection.prepare(&select)?;
     let mut rows = statement.query([])?;
-    let mut entries = vec![IntegrityEntry::new(
-        NormalizedPath::new(format!("schema/{}", config.table))?,
-        EntryKind::File,
-        schema_hash,
-        [0; 32],
-        u64::try_from(schema_sql.len())
-            .map_err(|_| DatabaseError::Limit("schema length exceeds u64".to_owned()))?,
-    )];
-    let mut paths = BTreeSet::new();
-    let mut record_count = 0_u64;
-    let mut total_value_bytes = 0_u64;
+    let schema_size = u64::try_from(schema_sql.len())
+        .map_err(|_| DatabaseError::Limit("schema length exceeds u64".to_owned()))?;
+    let column_names = selected_columns
+        .iter()
+        .map(|column| column.name.clone())
+        .collect();
+    let mut builder = CanonicalReportBuilder::new(
+        config,
+        CanonicalSourceSchema {
+            key_columns,
+            key_indexes,
+            column_names,
+            schema_hash,
+            schema_size,
+        },
+        scope_id,
+        created_at_unix_ms,
+    )?;
     while let Some(row) = rows.next()? {
-        record_count = record_count
-            .checked_add(1)
-            .ok_or_else(|| DatabaseError::Limit("row count overflow".to_owned()))?;
-        if record_count > config.limits.max_rows {
-            return Err(DatabaseError::Limit("row count limit exceeded".to_owned()));
-        }
         let mut values = Vec::with_capacity(selected_columns.len());
-        let mut row_bytes = 0_u64;
         for index in 0..selected_columns.len() {
             let value = database_value(row.get_ref(index)?, config.limits.max_value_bytes)?;
-            row_bytes = row_bytes
-                .checked_add(value_size(&value))
-                .ok_or_else(|| DatabaseError::Limit("row value bytes overflow".to_owned()))?;
             values.push(value);
         }
-        total_value_bytes = total_value_bytes
-            .checked_add(row_bytes)
-            .ok_or_else(|| DatabaseError::Limit("total value bytes overflow".to_owned()))?;
-        if total_value_bytes > config.limits.max_total_value_bytes {
-            return Err(DatabaseError::Limit(
-                "total value byte limit exceeded".to_owned(),
-            ));
-        }
-        let key_hash = hash_key(&config.table, &key_columns, &key_indexes, &values)?;
-        let path = NormalizedPath::new(format!("row/{}", hex::encode(key_hash)))?;
-        if !paths.insert(path.clone()) {
-            return Err(DatabaseError::Config(
-                "selected key columns do not uniquely identify every row".to_owned(),
-            ));
-        }
-        let content = hash_row(&config.table, schema_hash, &selected_columns, &values);
-        entries.push(IntegrityEntry::new(
-            path,
-            EntryKind::File,
-            content,
-            schema_hash,
-            row_bytes,
-        ));
+        builder.push_row(values)?;
     }
-    let snapshot = Snapshot::new(scope_id, entries, created_at_unix_ms)?;
-    Ok(DatabaseScanReport {
-        table: config.table.clone(),
-        key_columns,
-        record_count,
-        total_value_bytes,
-        schema_hash,
-        snapshot,
-    })
+    builder.finish()
 }
 
 fn load_columns(connection: &Connection, table: &str, maximum: usize) -> Result<Vec<ColumnInfo>> {
@@ -558,7 +636,7 @@ fn hash_key(
 fn hash_row(
     table: &str,
     schema_hash: [u8; 32],
-    columns: &[&ColumnInfo],
+    columns: &[String],
     values: &[DatabaseValue],
 ) -> [u8; 32] {
     let mut hash = Sha256::new();
@@ -566,7 +644,7 @@ fn hash_row(
     update_bytes(&mut hash, table.as_bytes());
     hash.update(schema_hash);
     for (column, value) in columns.iter().zip(values) {
-        update_bytes(&mut hash, column.name.as_bytes());
+        update_bytes(&mut hash, column.as_bytes());
         update_value(&mut hash, value);
     }
     hash.finalize().into()
