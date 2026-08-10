@@ -4,7 +4,7 @@ use std::time::Duration;
 use mysql::prelude::Queryable;
 use mysql::{
     AccessMode, Conn, IsolationLevel, Opts, OptsBuilder, Row, SslOpts, Transaction, TxOpts, Value,
-    params,
+    from_value_opt, params,
 };
 use sha2::{Digest, Sha256};
 
@@ -203,13 +203,13 @@ fn load_columns(
                 data_type: required_column(&row, 1, "DATA_TYPE")?,
                 column_type: required_column(&row, 2, "COLUMN_TYPE")?,
                 nullable: required_column::<i64>(&row, 3, "IS_NULLABLE")? != 0,
-                default_value: row.get(4),
+                default_value: optional_column(&row, 4, "COLUMN_DEFAULT")?,
                 extra: required_column(&row, 5, "EXTRA")?,
-                collation: row.get(6),
-                character_set: row.get(7),
-                numeric_precision: row.get(8),
-                numeric_scale: row.get(9),
-                datetime_precision: row.get(10),
+                collation: optional_column(&row, 6, "COLLATION_NAME")?,
+                character_set: optional_column(&row, 7, "CHARACTER_SET_NAME")?,
+                numeric_precision: optional_column(&row, 8, "NUMERIC_PRECISION")?,
+                numeric_scale: optional_column(&row, 9, "NUMERIC_SCALE")?,
+                datetime_precision: optional_column(&row, 10, "DATETIME_PRECISION")?,
             };
             validate_identifier(&column.name, "MySQL column")?;
             Ok(column)
@@ -405,11 +405,33 @@ fn required_column<T>(row: &Row, index: usize, name: &str) -> Result<T>
 where
     T: mysql::prelude::FromValue,
 {
-    row.get(index).ok_or_else(|| {
-        DatabaseError::MySql(format!(
-            "MySQL metadata row did not contain required field {name}"
-        ))
+    optional_column(row, index, name)?.ok_or_else(|| {
+        DatabaseError::MySql(format!("MySQL metadata field {name} is unexpectedly NULL"))
     })
+}
+
+fn optional_column<T>(row: &Row, index: usize, name: &str) -> Result<Option<T>>
+where
+    T: mysql::prelude::FromValue,
+{
+    convert_optional(row.as_ref(index), name)
+}
+
+fn convert_optional<T>(value: Option<&Value>, name: &str) -> Result<Option<T>>
+where
+    T: mysql::prelude::FromValue,
+{
+    match value {
+        None => Err(DatabaseError::MySql(format!(
+            "MySQL metadata row did not contain field {name}"
+        ))),
+        Some(Value::NULL) => Ok(None),
+        Some(value) => from_value_opt(value.clone()).map(Some).map_err(|error| {
+            DatabaseError::MySql(format!(
+                "MySQL metadata field {name} has an unexpected value: {error:?}"
+            ))
+        }),
+    }
 }
 
 fn validate_ca_file(path: &Path) -> Result<()> {
@@ -480,5 +502,18 @@ mod tests {
             DatabaseValue::Blob(vec![0xff])
         );
         assert!(mysql_value(Value::Double(f64::NAN), &column("n", "double"), 16).is_err());
+    }
+
+    #[test]
+    fn nullable_metadata_is_decoded_without_panicking() {
+        assert_eq!(
+            convert_optional::<String>(Some(&Value::NULL), "COLUMN_DEFAULT").unwrap(),
+            None
+        );
+        assert_eq!(
+            convert_optional::<u64>(Some(&Value::UInt(65)), "NUMERIC_PRECISION").unwrap(),
+            Some(65)
+        );
+        assert!(convert_optional::<u64>(None, "NUMERIC_PRECISION").is_err());
     }
 }
