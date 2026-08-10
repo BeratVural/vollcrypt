@@ -2,7 +2,9 @@
 
 mod runtime;
 
-pub use runtime::{MonitorSummary, RuntimeDecision, RuntimeKind, RuntimePolicy, monitor_docker};
+pub use runtime::{
+    MonitorSummary, RuntimeDecision, RuntimeKind, RuntimePolicy, monitor_containerd, monitor_docker,
+};
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fs::{File, OpenOptions};

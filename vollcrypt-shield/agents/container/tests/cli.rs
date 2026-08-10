@@ -98,6 +98,32 @@ fn cli_initializes_baselines_and_verifies_an_oci_layout() {
             .unwrap()
             .contains("\"records\": 0")
     );
+
+    let containerd_policy = Command::new(binary)
+        .args(["approve-containerd", "--state-dir"])
+        .arg(&state)
+        .args(["--namespace", "k8s.io", "--image-digest", &digest])
+        .output()
+        .unwrap();
+    assert!(containerd_policy.status.success());
+    assert!(
+        String::from_utf8(containerd_policy.stdout)
+            .unwrap()
+            .contains("k8s.io")
+    );
+
+    let containerd_audit = Command::new(binary)
+        .args(["runtime-audit-verify", "--state-dir"])
+        .arg(&state)
+        .args(["--runtime", "containerd"])
+        .output()
+        .unwrap();
+    assert!(containerd_audit.status.success());
+    assert!(
+        String::from_utf8(containerd_audit.stdout)
+            .unwrap()
+            .contains("\"records\": 0")
+    );
 }
 
 fn create_layout(root: &Path) {

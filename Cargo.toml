@@ -37,4 +37,5 @@ opt-level = 3
 codegen-units = 1
 
 [patch.crates-io]
+containerd-client = { path = "./vollcrypt-shield/vendor/containerd-client" }
 ml-kem = { path = "./ml-kem" }

@@ -2,11 +2,27 @@
 
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::json;
 use vollcrypt_shield_container::{
-    ContainerAgent, OciLayoutScanner, OciScanLimits, RuntimeKind, monitor_docker,
+    ContainerAgent, OciLayoutScanner, OciScanLimits, RuntimeKind, monitor_containerd,
+    monitor_docker,
 };
+
+#[derive(Clone, Copy, ValueEnum)]
+enum RuntimeArgument {
+    Docker,
+    Containerd,
+}
+
+impl From<RuntimeArgument> for RuntimeKind {
+    fn from(value: RuntimeArgument) -> Self {
+        match value {
+            RuntimeArgument::Docker => Self::Docker,
+            RuntimeArgument::Containerd => Self::Containerd,
+        }
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "vollcrypt-shield-container")]
@@ -56,9 +72,29 @@ enum Command {
         #[arg(long)]
         max_observations: Option<usize>,
     },
+    ApproveContainerd {
+        #[arg(long)]
+        state_dir: PathBuf,
+        #[arg(long)]
+        namespace: String,
+        #[arg(long = "image-digest", required = true)]
+        image_digests: Vec<String>,
+        #[arg(long)]
+        replace: bool,
+    },
+    WatchContainerd {
+        #[arg(long)]
+        state_dir: PathBuf,
+        #[arg(long, default_value = "/run/containerd/containerd.sock")]
+        socket: PathBuf,
+        #[arg(long)]
+        max_observations: Option<usize>,
+    },
     RuntimeAuditVerify {
         #[arg(long)]
         state_dir: PathBuf,
+        #[arg(long, value_enum, default_value_t = RuntimeArgument::Docker)]
+        runtime: RuntimeArgument,
     },
 }
 
@@ -159,12 +195,52 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
-        Command::RuntimeAuditVerify { state_dir } => {
+        Command::ApproveContainerd {
+            state_dir,
+            namespace,
+            image_digests,
+            replace,
+        } => {
             let agent = ContainerAgent::load(&state_dir)?;
-            let events = agent.verify_runtime_audit()?;
+            let policy =
+                agent.create_containerd_runtime_policy(&namespace, &image_digests, replace)?;
+            print_json(json!({
+                "status": "containerd-policy-approved",
+                "scopeId": agent.scope_id(),
+                "runtime": policy.runtime(),
+                "namespace": policy.namespace(),
+                "approvedImageDigests": policy.approved_image_digests(),
+            }))?;
+        }
+        Command::WatchContainerd {
+            state_dir,
+            socket,
+            max_observations,
+        } => {
+            let agent = ContainerAgent::load(&state_dir)?;
+            let summary = monitor_containerd(&agent, &socket, max_observations, |decision| {
+                if let Ok(encoded) = serde_json::to_string(decision) {
+                    println!("{encoded}");
+                }
+            })
+            .await?;
+            print_json(json!({
+                "status": if summary.violations == 0 { "monitor-complete" } else { "violations-detected" },
+                "observations": summary.observations,
+                "violations": summary.violations,
+            }))?;
+            if summary.violations > 0 {
+                std::process::exit(2);
+            }
+        }
+        Command::RuntimeAuditVerify { state_dir, runtime } => {
+            let agent = ContainerAgent::load(&state_dir)?;
+            let runtime = RuntimeKind::from(runtime);
+            let events = agent.verify_runtime_audit_for(runtime)?;
             print_json(json!({
                 "status": "valid",
                 "scopeId": agent.scope_id(),
+                "runtime": runtime,
                 "records": events.len(),
             }))?;
         }

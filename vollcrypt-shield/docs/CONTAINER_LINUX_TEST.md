@@ -90,3 +90,31 @@ whose immutable ID is absent from the policy. A bounded monitor run must report
 `"approved":false`, persist the violation, and exit with status 2. A daemon
 disconnect or malformed event fails the monitor closed and appends a
 `MonitoringFailed` audit event when the journal remains writable.
+
+## Live containerd host monitor
+
+Use a disposable namespace and approve the target descriptor digest reported
+by containerd's Images service:
+
+```console
+sudo ctr namespaces create shield-test
+sudo ctr --namespace shield-test images pull docker.io/library/alpine:3.20
+digest=$(sudo ctr --namespace shield-test images info \
+  docker.io/library/alpine:3.20 | jq -r '.target.digest')
+sudo target/debug/vollcrypt-shield-container approve-containerd \
+  --state-dir /tmp/shield-container-state --namespace shield-test \
+  --image-digest "$digest"
+sudo ctr --namespace shield-test run -d \
+  docker.io/library/alpine:3.20 shield-approved sleep 120
+sudo target/debug/vollcrypt-shield-container watch-containerd \
+  --state-dir /tmp/shield-container-state --max-observations 1
+sudo target/debug/vollcrypt-shield-container runtime-audit-verify \
+  --state-dir /tmp/shield-container-state --runtime containerd
+```
+
+Expected: the inventory observation is approved and the containerd audit chain
+is valid. The monitor subscribes before inventory so events occurring during
+the inventory window remain queued on the established gRPC stream. It rejects
+namespace mismatch, unexpected topics, protobuf type confusion, oversized
+payloads, invalid timestamps, and untrusted socket ownership before reporting a
+`strong` guarantee.

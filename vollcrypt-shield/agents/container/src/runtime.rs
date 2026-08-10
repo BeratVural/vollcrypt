@@ -21,6 +21,10 @@ use super::{
     read_regular, write_atomic,
 };
 
+mod containerd;
+
+pub use containerd::monitor_containerd;
+
 const POLICY_SIGNATURE_CONTEXT: &[u8] = b"Vollcrypt Shield Container Runtime Policy v1";
 const POLICY_HASH_DOMAIN: &[u8] = b"VOLLCRYPT-SHIELD-CONTAINER-RUNTIME-POLICY-v1\0";
 const POLICY_MAX_BYTES: u64 = 1_048_576;
@@ -48,6 +52,20 @@ impl RuntimeKind {
             Self::Containerd => "runtime.containerd.policy.cbor",
         }
     }
+
+    fn audit_file(self) -> &'static str {
+        match self {
+            Self::Docker => RUNTIME_AUDIT_FILE,
+            Self::Containerd => "runtime.containerd.audit.cborseq",
+        }
+    }
+
+    fn audit_lock(self) -> &'static str {
+        match self {
+            Self::Docker => RUNTIME_AUDIT_LOCK,
+            Self::Containerd => "runtime.containerd.audit.lock",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
@@ -63,6 +81,8 @@ pub struct RuntimePolicy {
     created_at_unix_ms: u64,
     #[n(4)]
     approved_image_digests: Vec<String>,
+    #[n(5)]
+    namespace: Option<String>,
 }
 
 impl RuntimePolicy {
@@ -71,6 +91,7 @@ impl RuntimePolicy {
         runtime: RuntimeKind,
         created_at_unix_ms: u64,
         digests: &[String],
+        namespace: Option<String>,
     ) -> Result<Self> {
         if digests.is_empty() || digests.len() > 10_000 {
             return Err(ContainerError::State(
@@ -89,6 +110,7 @@ impl RuntimePolicy {
             runtime,
             created_at_unix_ms,
             approved_image_digests,
+            namespace,
         };
         policy.validate()?;
         Ok(policy)
@@ -122,6 +144,15 @@ impl RuntimePolicy {
             }
             previous = Some(digest);
         }
+        match (self.runtime, self.namespace.as_deref()) {
+            (RuntimeKind::Docker, None) => {}
+            (RuntimeKind::Containerd, Some(namespace)) => validate_namespace(namespace)?,
+            _ => {
+                return Err(ContainerError::State(
+                    "runtime policy namespace binding is invalid".to_owned(),
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -149,6 +180,10 @@ impl RuntimePolicy {
 
     pub fn approved_image_digests(&self) -> &[String] {
         &self.approved_image_digests
+    }
+
+    pub fn namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
     }
 
     pub fn permits(&self, digest: &str) -> bool {
@@ -294,6 +329,36 @@ impl ContainerAgent {
             runtime,
             now_unix_ms()?,
             image_digests,
+            None,
+        )?;
+        let signed = SignedRuntimePolicy::sign(&policy, self)?;
+        write_atomic(&path, &signed.to_cbor()?, replace)?;
+        Ok(policy)
+    }
+
+    pub fn create_containerd_runtime_policy(
+        &self,
+        namespace: &str,
+        image_digests: &[String],
+        replace: bool,
+    ) -> Result<RuntimePolicy> {
+        validate_namespace(namespace)?;
+        let runtime = RuntimeKind::Containerd;
+        let path = self.state_dir.join(runtime.policy_file());
+        if path.exists() {
+            self.load_runtime_policy(runtime)?;
+            if !replace {
+                return Err(ContainerError::State(
+                    "runtime policy exists; pass --replace to approve replacement".to_owned(),
+                ));
+            }
+        }
+        let policy = RuntimePolicy::new(
+            self.scope_id.clone(),
+            runtime,
+            now_unix_ms()?,
+            image_digests,
+            Some(namespace.to_owned()),
         )?;
         let signed = SignedRuntimePolicy::sign(&policy, self)?;
         write_atomic(&path, &signed.to_cbor()?, replace)?;
@@ -320,7 +385,11 @@ impl ContainerAgent {
     }
 
     pub fn verify_runtime_audit(&self) -> Result<Vec<AuditEvent>> {
-        let path = self.state_dir.join(RUNTIME_AUDIT_FILE);
+        self.verify_runtime_audit_for(RuntimeKind::Docker)
+    }
+
+    pub fn verify_runtime_audit_for(&self, runtime: RuntimeKind) -> Result<Vec<AuditEvent>> {
+        let path = self.state_dir.join(runtime.audit_file());
         if !path.exists() {
             return Ok(Vec::new());
         }
@@ -356,7 +425,7 @@ where
         ));
     }
     let policy = agent.load_runtime_policy(RuntimeKind::Docker)?;
-    let mut audit = RuntimeAuditWriter::open(agent)?;
+    let mut audit = RuntimeAuditWriter::open(agent, RuntimeKind::Docker)?;
     let docker = match Docker::connect_with_local_defaults() {
         Ok(docker) => docker,
         Err(error) => {
@@ -519,8 +588,8 @@ struct RuntimeAuditWriter {
 }
 
 impl RuntimeAuditWriter {
-    fn open(agent: &ContainerAgent) -> Result<Self> {
-        let lock_path = agent.state_dir.join(RUNTIME_AUDIT_LOCK);
+    fn open(agent: &ContainerAgent, runtime: RuntimeKind) -> Result<Self> {
+        let lock_path = agent.state_dir.join(runtime.audit_lock());
         let lock = open_private_file(&lock_path, true)?;
         lock.try_lock_exclusive().map_err(|error| {
             ContainerError::State(format!(
@@ -528,7 +597,7 @@ impl RuntimeAuditWriter {
                 lock_path.display()
             ))
         })?;
-        let path = agent.state_dir.join(RUNTIME_AUDIT_FILE);
+        let path = agent.state_dir.join(runtime.audit_file());
         let records = if path.exists() {
             read_audit_records(&path)?
         } else {
@@ -705,6 +774,20 @@ fn bounded_action(value: Option<&str>) -> Result<String> {
     Ok(value.to_owned())
 }
 
+fn validate_namespace(namespace: &str) -> Result<()> {
+    if namespace.is_empty()
+        || namespace.len() > 128
+        || !namespace
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return Err(ContainerError::State(
+            "containerd namespace must be 1-128 ASCII identifier characters".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 fn docker_timestamp_ms(event: &EventMessage) -> Result<u64> {
     if let Some(nanoseconds) = event.time_nano {
         if nanoseconds < 0 {
@@ -745,6 +828,21 @@ fn runtime_error(context: &str, error: impl std::fmt::Display) -> ContainerError
 mod tests {
     use super::*;
 
+    #[derive(Encode)]
+    #[cbor(array)]
+    struct LegacyRuntimePolicy {
+        #[n(0)]
+        version: u16,
+        #[n(1)]
+        scope_id: String,
+        #[n(2)]
+        runtime: RuntimeKind,
+        #[n(3)]
+        created_at_unix_ms: u64,
+        #[n(4)]
+        approved_image_digests: Vec<String>,
+    }
+
     fn digest(byte: char) -> String {
         format!("sha256:{}", byte.to_string().repeat(64))
     }
@@ -779,6 +877,43 @@ mod tests {
     }
 
     #[test]
+    fn runtime_policy_keeps_legacy_docker_payload_compatibility() {
+        let approved = digest('a');
+        let legacy = LegacyRuntimePolicy {
+            version: FORMAT_VERSION,
+            scope_id: "legacy".to_owned(),
+            runtime: RuntimeKind::Docker,
+            created_at_unix_ms: 1,
+            approved_image_digests: vec![approved.clone()],
+        };
+        let encoded = minicbor::to_vec(legacy).unwrap();
+        let decoded = RuntimePolicy::from_cbor(&encoded).unwrap();
+        assert_eq!(decoded.namespace(), None);
+        assert_eq!(decoded.approved_image_digests(), &[approved]);
+    }
+
+    #[test]
+    fn containerd_policy_binds_namespace_and_rejects_filter_injection() {
+        let directory = tempfile::tempdir().unwrap();
+        let state = directory.path().join("state");
+        let agent = ContainerAgent::initialize(&state, "containerd-policy").unwrap();
+        let policy = agent
+            .create_containerd_runtime_policy("k8s.io", &[digest('a')], false)
+            .unwrap();
+        assert_eq!(policy.namespace(), Some("k8s.io"));
+        assert_eq!(policy.runtime(), RuntimeKind::Containerd);
+        assert!(
+            agent
+                .create_containerd_runtime_policy(
+                    "k8s.io,topic==/tasks/start",
+                    &[digest('a')],
+                    true,
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
     fn immutable_digest_policy_denies_tags_unknown_and_unapproved_images() {
         let approved = digest('a');
         let policy = RuntimePolicy::new(
@@ -786,6 +921,7 @@ mod tests {
             RuntimeKind::Docker,
             1,
             std::slice::from_ref(&approved),
+            None,
         )
         .unwrap();
         let observation = |image_digest| RuntimeObservation {
@@ -808,8 +944,8 @@ mod tests {
         let state = directory.path().join("state");
         let agent = ContainerAgent::initialize(&state, "runtime-audit").unwrap();
         {
-            let mut audit = RuntimeAuditWriter::open(&agent).unwrap();
-            assert!(RuntimeAuditWriter::open(&agent).is_err());
+            let mut audit = RuntimeAuditWriter::open(&agent, RuntimeKind::Docker).unwrap();
+            assert!(RuntimeAuditWriter::open(&agent, RuntimeKind::Docker).is_err());
             audit
                 .append_status(AuditEventKind::AgentStarted, "started")
                 .unwrap();
@@ -848,7 +984,7 @@ mod tests {
         std::fs::write(&target, b"do-not-touch").unwrap();
         let lock = state.join(RUNTIME_AUDIT_LOCK);
         std::os::unix::fs::symlink(&target, &lock).unwrap();
-        assert!(RuntimeAuditWriter::open(&agent).is_err());
+        assert!(RuntimeAuditWriter::open(&agent, RuntimeKind::Docker).is_err());
         assert_eq!(std::fs::read(target).unwrap(), b"do-not-touch");
     }
 
@@ -857,6 +993,8 @@ mod tests {
         assert!(bounded_identifier(Some(&"x".repeat(129)), "id").is_err());
         assert!(bounded_action(Some(&"x".repeat(65))).is_err());
         assert!(bounded_action(Some("start\nforged")).is_err());
-        assert!(RuntimePolicy::new("scope".to_owned(), RuntimeKind::Docker, 1, &[]).is_err());
+        assert!(RuntimePolicy::new("scope".to_owned(), RuntimeKind::Docker, 1, &[], None).is_err());
+        assert!(validate_namespace("k8s.io").is_ok());
+        assert!(validate_namespace("k8s.io,topic==/tasks/start").is_err());
     }
 }
