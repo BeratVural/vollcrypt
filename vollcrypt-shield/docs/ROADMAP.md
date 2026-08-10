@@ -66,6 +66,9 @@ platform or capability is never promoted based on compilation alone.
   break-glass recovery drills to release evidence. The named cross-platform and
   Unix vault drills are required by both CI and the release workflow; see
   `RELEASE_OPERATIONS.md`.
-- [ ] Add long-running watcher resource and notification-delivery soak tests.
+- [x] Add long-running watcher resource and notification-delivery soak tests.
+  Every change runs a bounded smoke; releases require five minutes, and the
+  scheduled/manual workflow runs fifteen minutes while bounding RSS and file
+  descriptor growth and verifying log, webhook, IPC, and signed audit delivery.
 - [x] Define deprecation windows for operating systems, protocol versions, and
   package formats before removing support.

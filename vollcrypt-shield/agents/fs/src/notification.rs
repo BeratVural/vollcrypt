@@ -111,6 +111,8 @@ impl NotificationHub {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
 
     #[test]
     fn log_notifications_are_persistent_json_lines() {
@@ -133,5 +135,79 @@ mod tests {
     fn insecure_remote_webhook_is_rejected() {
         assert!(WebhookNotifier::new("http://example.com/hook").is_err());
         assert!(WebhookNotifier::new("http://127.0.0.1:8080/hook").is_ok());
+    }
+
+    #[test]
+    fn notification_delivery_soak_preserves_log_and_webhook_events() {
+        const EVENT_COUNT: usize = 128;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            for _ in 0..EVENT_COUNT {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = Vec::new();
+                let mut buffer = [0_u8; 4096];
+                let header_end = loop {
+                    let read = stream.read(&mut buffer).unwrap();
+                    assert!(read > 0);
+                    request.extend_from_slice(&buffer[..read]);
+                    if let Some(position) =
+                        request.windows(4).position(|window| window == b"\r\n\r\n")
+                    {
+                        break position + 4;
+                    }
+                };
+                let headers = std::str::from_utf8(&request[..header_end]).unwrap();
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse::<usize>().unwrap())
+                    })
+                    .unwrap();
+                while request.len() < header_end + content_length {
+                    let read = stream.read(&mut buffer).unwrap();
+                    assert!(read > 0);
+                    request.extend_from_slice(&buffer[..read]);
+                }
+                assert!(request.starts_with(b"POST /shield HTTP/1.1\r\n"));
+                stream
+                    .write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+                    .unwrap();
+            }
+        });
+
+        let directory = tempfile::tempdir().unwrap();
+        let hub = NotificationHub::new(
+            directory.path(),
+            &NotificationConfig {
+                webhook_url: Some(format!("http://{address}/shield")),
+            },
+        )
+        .unwrap();
+        for sequence in 0..EVENT_COUNT {
+            hub.send(&Notification {
+                scope_id: "scope".to_owned(),
+                kind: "dry-run-response".to_owned(),
+                timestamp_unix_ms: sequence as u64 + 1,
+                message: format!("event {sequence}"),
+                repeated: sequence > 0,
+            })
+            .unwrap();
+        }
+        server.join().unwrap();
+
+        let log = std::fs::read_to_string(directory.path().join("notifications.jsonl")).unwrap();
+        let records = log
+            .lines()
+            .map(|line| serde_json::from_str::<Notification>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(records.len(), EVENT_COUNT);
+        assert_eq!(records.first().unwrap().timestamp_unix_ms, 1);
+        assert_eq!(
+            records.last().unwrap().timestamp_unix_ms,
+            EVENT_COUNT as u64
+        );
     }
 }

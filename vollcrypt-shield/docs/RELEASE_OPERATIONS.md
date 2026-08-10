@@ -21,6 +21,16 @@ The migration backup is not a general-purpose secret export. It contains the
 previous signed state document, not agent or break-glass private keys. Operators
 must still back up offline break-glass material independently.
 
+## Watcher soak
+
+`scripts/watcher-soak.sh` drives the release binary through repeated real
+filesystem changes while checking live local-status IPC, signed audit
+verification, durable JSONL delivery, RSS growth, and file descriptor growth.
+Pull requests use a 30-second regression run, releases require five minutes,
+and `Vollcrypt Shield Soak` runs for fifteen minutes daily or with a manually
+selected duration. The Rust `notification_delivery_soak` test separately
+delivers a 128-event burst to both the durable log and a loopback webhook.
+
 ## Downgrade rule
 
 State schema v2 is intentionally rejected by a v1 reader. Downgrading a binary
