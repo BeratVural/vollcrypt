@@ -15,8 +15,10 @@ use vollcrypt_shield_core::{
     NormalizedPath, SignedSnapshot, Snapshot, VerificationDifference, VerificationReport,
 };
 
+mod mysql;
 mod postgres;
 
+pub use mysql::{MySqlScanOptions, scan_mysql};
 pub use postgres::{PostgresScanOptions, scan_postgres};
 
 const BASELINE_FILE: &str = "baseline.snapshot.cbor";
@@ -37,6 +39,8 @@ pub enum DatabaseError {
     Sqlite(#[from] rusqlite::Error),
     #[error("PostgreSQL error: {0}")]
     Postgres(String),
+    #[error("MySQL error: {0}")]
+    MySql(String),
     #[error("invalid database scan configuration: {0}")]
     Config(String),
     #[error("database scan limit exceeded: {0}")]
@@ -135,6 +139,7 @@ pub struct DatabaseScanReport {
 pub(crate) enum DatabaseValue {
     Null,
     Integer(i64),
+    Unsigned(u64),
     Real(u64),
     Text(Vec<u8>),
     Blob(Vec<u8>),
@@ -629,7 +634,7 @@ fn database_value(value: ValueRef<'_>, maximum: u64) -> Result<DatabaseValue> {
 fn value_size(value: &DatabaseValue) -> u64 {
     match value {
         DatabaseValue::Null => 0,
-        DatabaseValue::Integer(_) | DatabaseValue::Real(_) => 8,
+        DatabaseValue::Integer(_) | DatabaseValue::Unsigned(_) | DatabaseValue::Real(_) => 8,
         DatabaseValue::Text(value) | DatabaseValue::Blob(value) => value.len() as u64,
     }
 }
@@ -706,6 +711,10 @@ fn update_value(hash: &mut Sha256, value: &DatabaseValue) {
         DatabaseValue::Null => hash.update([0]),
         DatabaseValue::Integer(value) => {
             hash.update([1]);
+            hash.update(value.to_be_bytes());
+        }
+        DatabaseValue::Unsigned(value) => {
+            hash.update([5]);
             hash.update(value.to_be_bytes());
         }
         DatabaseValue::Real(bits) => {

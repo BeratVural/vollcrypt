@@ -6,7 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{Parser, Subcommand};
 use serde_json::json;
 use vollcrypt_shield_db::{
-    DatabaseAgent, DatabaseScanConfig, PostgresScanOptions, scan_postgres, scan_sqlite,
+    DatabaseAgent, DatabaseScanConfig, MySqlScanOptions, PostgresScanOptions, scan_mysql,
+    scan_postgres, scan_sqlite,
 };
 
 #[derive(Parser)]
@@ -90,6 +91,42 @@ enum Command {
         connection_env: String,
         #[arg(long, default_value = "public")]
         schema: String,
+        #[arg(long)]
+        ca_file: Option<PathBuf>,
+        #[arg(long)]
+        table: String,
+        #[arg(long = "key-column")]
+        key_columns: Vec<String>,
+    },
+    ScanMysql {
+        #[arg(long, default_value = "SHIELD_MYSQL_URL")]
+        connection_env: String,
+        #[arg(long)]
+        ca_file: Option<PathBuf>,
+        #[arg(long)]
+        table: String,
+        #[arg(long = "key-column")]
+        key_columns: Vec<String>,
+    },
+    BaselineMysql {
+        #[arg(long)]
+        state_dir: PathBuf,
+        #[arg(long, default_value = "SHIELD_MYSQL_URL")]
+        connection_env: String,
+        #[arg(long)]
+        ca_file: Option<PathBuf>,
+        #[arg(long)]
+        table: String,
+        #[arg(long = "key-column")]
+        key_columns: Vec<String>,
+        #[arg(long)]
+        replace: bool,
+    },
+    VerifyMysql {
+        #[arg(long)]
+        state_dir: PathBuf,
+        #[arg(long, default_value = "SHIELD_MYSQL_URL")]
+        connection_env: String,
         #[arg(long)]
         ca_file: Option<PathBuf>,
         #[arg(long)]
@@ -213,6 +250,52 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+        Command::ScanMysql {
+            connection_env,
+            ca_file,
+            table,
+            key_columns,
+        } => {
+            let config = DatabaseScanConfig::new(table, key_columns)?;
+            let options = mysql_options(&connection_env, ca_file)?;
+            let report = scan_mysql(&options, &config, "standalone-scan", now_ms()?)?;
+            print_json(scan_json("valid", &report))?;
+        }
+        Command::BaselineMysql {
+            state_dir,
+            connection_env,
+            ca_file,
+            table,
+            key_columns,
+            replace,
+        } => {
+            let agent = DatabaseAgent::load(&state_dir)?;
+            let config = DatabaseScanConfig::new(table, key_columns)?;
+            let options = mysql_options(&connection_env, ca_file)?;
+            let report = scan_mysql(&options, &config, agent.scope_id(), now_ms()?)?;
+            agent.create_baseline_from_report(&report, replace)?;
+            let mut value = scan_json("baseline-created", &report);
+            value["scopeId"] = json!(agent.scope_id());
+            value["keyId"] = json!(hex::encode(agent.key_id()));
+            print_json(value)?;
+        }
+        Command::VerifyMysql {
+            state_dir,
+            connection_env,
+            ca_file,
+            table,
+            key_columns,
+        } => {
+            let agent = DatabaseAgent::load(&state_dir)?;
+            let config = DatabaseScanConfig::new(table, key_columns)?;
+            let options = mysql_options(&connection_env, ca_file)?;
+            let scan = scan_mysql(&options, &config, agent.scope_id(), now_ms()?)?;
+            let verification = agent.verify_report(&scan)?;
+            print_verification(&scan, &verification)?;
+            if !verification.is_match() {
+                std::process::exit(2);
+            }
+        }
     }
     Ok(())
 }
@@ -228,6 +311,16 @@ fn postgres_options(
     Ok(PostgresScanOptions::new(connection)?
         .with_schema(schema)?
         .with_ca_file(ca_file)?)
+}
+
+fn mysql_options(
+    connection_env: &str,
+    ca_file: Option<PathBuf>,
+) -> Result<MySqlScanOptions, Box<dyn std::error::Error>> {
+    let connection = std::env::var(connection_env).map_err(|_| {
+        format!("MySQL connection environment variable is missing: {connection_env}")
+    })?;
+    Ok(MySqlScanOptions::new(connection)?.with_ca_file(ca_file)?)
 }
 
 fn print_verification(
