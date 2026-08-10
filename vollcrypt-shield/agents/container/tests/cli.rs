@@ -63,6 +63,41 @@ fn cli_initializes_baselines_and_verifies_an_oci_layout() {
             .unwrap()
             .contains("\"match\"")
     );
+
+    let digest = format!("sha256:{}", "a".repeat(64));
+    let policy = Command::new(binary)
+        .args(["approve-docker", "--state-dir"])
+        .arg(&state)
+        .args(["--image-digest", &digest])
+        .output()
+        .unwrap();
+    assert!(policy.status.success());
+    assert!(String::from_utf8(policy.stdout).unwrap().contains(&digest));
+
+    let duplicate = Command::new(binary)
+        .args(["approve-docker", "--state-dir"])
+        .arg(&state)
+        .args(["--image-digest", &digest])
+        .output()
+        .unwrap();
+    assert!(!duplicate.status.success());
+    assert!(
+        String::from_utf8(duplicate.stderr)
+            .unwrap()
+            .contains("--replace")
+    );
+
+    let audit = Command::new(binary)
+        .args(["runtime-audit-verify", "--state-dir"])
+        .arg(&state)
+        .output()
+        .unwrap();
+    assert!(audit.status.success());
+    assert!(
+        String::from_utf8(audit.stdout)
+            .unwrap()
+            .contains("\"records\": 0")
+    );
 }
 
 fn create_layout(root: &Path) {

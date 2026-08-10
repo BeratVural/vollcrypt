@@ -65,3 +65,28 @@ target/debug/vollcrypt-shield-container scan --layout /tmp/shield-oci
 Expected: a non-zero exit stating that `index.json` is not a regular
 non-symlink file. These commands only target disposable `/tmp` paths created by
 this procedure.
+
+## Live Docker host monitor
+
+The policy pins Docker's immutable local image ID. Do not substitute a mutable
+tag such as `latest`.
+
+```console
+docker pull alpine:3.20
+digest=$(docker image inspect alpine:3.20 --format '{{.Id}}')
+target/debug/vollcrypt-shield-container approve-docker \
+  --state-dir /tmp/shield-container-state --image-digest "$digest"
+docker run -d --name shield-approved alpine:3.20 sleep 120
+target/debug/vollcrypt-shield-container watch-docker \
+  --state-dir /tmp/shield-container-state --max-observations 1
+target/debug/vollcrypt-shield-container runtime-audit-verify \
+  --state-dir /tmp/shield-container-state
+docker rm -f shield-approved
+```
+
+Expected: the observation reports `host-agent`, `strong`, and
+`"approved":true`; audit verification reports `valid`. Repeat with an image
+whose immutable ID is absent from the policy. A bounded monitor run must report
+`"approved":false`, persist the violation, and exit with status 2. A daemon
+disconnect or malformed event fails the monitor closed and appends a
+`MonitoringFailed` audit event when the journal remains writable.

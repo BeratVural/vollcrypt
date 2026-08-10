@@ -1,5 +1,9 @@
 #![forbid(unsafe_code)]
 
+mod runtime;
+
+pub use runtime::{MonitorSummary, RuntimeDecision, RuntimeKind, RuntimePolicy, monitor_docker};
+
 use std::collections::{BTreeMap, VecDeque};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};

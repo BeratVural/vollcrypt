@@ -4,7 +4,9 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use serde_json::json;
-use vollcrypt_shield_container::{ContainerAgent, OciLayoutScanner, OciScanLimits};
+use vollcrypt_shield_container::{
+    ContainerAgent, OciLayoutScanner, OciScanLimits, RuntimeKind, monitor_docker,
+};
 
 #[derive(Parser)]
 #[command(name = "vollcrypt-shield-container")]
@@ -40,16 +42,35 @@ enum Command {
         #[arg(long)]
         layout: PathBuf,
     },
+    ApproveDocker {
+        #[arg(long)]
+        state_dir: PathBuf,
+        #[arg(long = "image-digest", required = true)]
+        image_digests: Vec<String>,
+        #[arg(long)]
+        replace: bool,
+    },
+    WatchDocker {
+        #[arg(long)]
+        state_dir: PathBuf,
+        #[arg(long)]
+        max_observations: Option<usize>,
+    },
+    RuntimeAuditVerify {
+        #[arg(long)]
+        state_dir: PathBuf,
+    },
 }
 
-fn main() {
-    if let Err(error) = run() {
+#[tokio::main]
+async fn main() {
+    if let Err(error) = run().await {
         eprintln!("{error}");
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<(), Box<dyn std::error::Error>> {
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
     match Cli::parse().command {
         Command::Init { state_dir, scope } => {
             let agent = ContainerAgent::initialize(&state_dir, &scope)?;
@@ -102,6 +123,50 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if !verification.is_match() {
                 std::process::exit(2);
             }
+        }
+        Command::ApproveDocker {
+            state_dir,
+            image_digests,
+            replace,
+        } => {
+            let agent = ContainerAgent::load(&state_dir)?;
+            let policy =
+                agent.create_runtime_policy(RuntimeKind::Docker, &image_digests, replace)?;
+            print_json(json!({
+                "status": "docker-policy-approved",
+                "scopeId": agent.scope_id(),
+                "runtime": policy.runtime(),
+                "approvedImageDigests": policy.approved_image_digests(),
+            }))?;
+        }
+        Command::WatchDocker {
+            state_dir,
+            max_observations,
+        } => {
+            let agent = ContainerAgent::load(&state_dir)?;
+            let summary = monitor_docker(&agent, max_observations, |decision| {
+                if let Ok(encoded) = serde_json::to_string(decision) {
+                    println!("{encoded}");
+                }
+            })
+            .await?;
+            print_json(json!({
+                "status": if summary.violations == 0 { "monitor-complete" } else { "violations-detected" },
+                "observations": summary.observations,
+                "violations": summary.violations,
+            }))?;
+            if summary.violations > 0 {
+                std::process::exit(2);
+            }
+        }
+        Command::RuntimeAuditVerify { state_dir } => {
+            let agent = ContainerAgent::load(&state_dir)?;
+            let events = agent.verify_runtime_audit()?;
+            print_json(json!({
+                "status": "valid",
+                "scopeId": agent.scope_id(),
+                "records": events.len(),
+            }))?;
         }
     }
     Ok(())

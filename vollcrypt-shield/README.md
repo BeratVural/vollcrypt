@@ -186,8 +186,26 @@ vollcrypt-shield-container verify --state-dir /var/lib/vollcrypt-shield/containe
 ```
 
 The current guarantee is `strong` only for this host-level OCI verification
-path. Sidecar and admission-controller integrations are not implemented yet and
-must not be treated as equivalent runtime guarantees. Follow
+path and the local Docker host monitor. Docker approval uses the immutable local
+image ID reported by the daemon, not a mutable repository tag. The monitor
+inventories running containers before following live `create` and `start`
+events, records every decision in an ML-DSA-signed audit chain, and treats an
+unknown or non-canonical image identity as a violation.
+
+```console
+vollcrypt-shield-container approve-docker \
+  --state-dir /var/lib/vollcrypt-shield/container/my-image \
+  --image-digest sha256:<64-lowercase-hex>
+vollcrypt-shield-container watch-docker \
+  --state-dir /var/lib/vollcrypt-shield/container/my-image
+vollcrypt-shield-container runtime-audit-verify \
+  --state-dir /var/lib/vollcrypt-shield/container/my-image
+```
+
+The Docker socket is a privileged local trust boundary; Shield never exposes it
+over its own network interface. Containerd, sidecar, and admission-controller
+integrations are not implemented yet and must not be treated as equivalent
+runtime guarantees. Follow
 [`docs/CONTAINER_LINUX_TEST.md`](docs/CONTAINER_LINUX_TEST.md) for the Linux
 runtime validation matrix.
 
