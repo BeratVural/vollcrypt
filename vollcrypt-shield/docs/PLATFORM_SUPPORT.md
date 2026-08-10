@@ -30,6 +30,10 @@ until every listed gate passes for a Shield release:
 | Platform | Architecture | Current gate |
 | --- | --- | --- |
 | Windows 11 | ARM64 | Dedicated Rust/CLI, Node binding, and Viewer CI plus signed real-device installer smoke test |
+| Fedora 42 | x86_64 | Pinned CI, unrestricted watcher, and RPM smoke; real-host release evidence pending |
+| RHEL 9 / UBI 9.6 | x86_64 | Pinned ABI-compatible CI and RPM smoke; licensed RHEL real-host evidence pending |
+| Rocky Linux 9.6 | x86_64 | Pinned CI, unrestricted watcher, and RPM smoke; real-host release evidence pending |
+| AlmaLinux 9.6 | x86_64 | Pinned CI, unrestricted watcher, and RPM smoke; real-host release evidence pending |
 
 Qualification results must be recorded as `blocked`, rather than product
 failures, when a test environment denies required Unix-domain sockets, network

@@ -86,3 +86,16 @@ prove live local-status IPC without persisted-state fallback, install and
 execute the package, and uninstall it cleanly. A container or runner that
 blocks inotify, Unix sockets, or package installation is not promotion
 evidence.
+
+Fedora 42, RHEL-compatible UBI 9.6, Rocky Linux 9.6, and AlmaLinux 9.6 use the
+same unrestricted behavioral gate with the RPM backend:
+
+```console
+bash vollcrypt-shield/scripts/linux-qualification.sh \
+  target/release/vollcrypt-shield rocky9 rpm
+```
+
+The script builds an RPM, checks its digest metadata, installs it, executes the
+installed CLI, and removes it. Container CI is qualification evidence, not a
+substitute for the required real-host release smoke on each promoted
+distribution.
