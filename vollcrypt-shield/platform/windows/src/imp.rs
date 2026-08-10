@@ -581,9 +581,10 @@ mod tests {
         let lock = OwnedHandle(handle);
 
         assert!(move_file_noreplace_durable(&source, &destination).is_err());
-        assert_eq!(std::fs::read(&source).unwrap(), b"locked");
+        assert!(source.exists());
         assert!(!destination.exists());
         drop(lock);
+        assert_eq!(std::fs::read(&source).unwrap(), b"locked");
     }
 
     #[test]
