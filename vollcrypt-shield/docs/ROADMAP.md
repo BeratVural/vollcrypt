@@ -8,7 +8,7 @@ platform or capability is never promoted based on compilation alone.
 
 - [x] Ubuntu 26.04 LTS x86_64: Rust, Node binding, Viewer CI, and unrestricted
   real-host filesystem validation.
-- [ ] Debian 13 x86_64: agent/CLI, Node binding, and Viewer CI; then unrestricted
+- [x] Debian 13 x86_64: agent/CLI, Node binding, and Viewer CI; then unrestricted
   watcher and package smoke tests.
 - [ ] Windows 11 ARM64: Rust/CLI, Node binding, and Viewer qualification; then a
   signed real-device installer smoke test.

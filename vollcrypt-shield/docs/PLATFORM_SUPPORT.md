@@ -12,6 +12,7 @@ the exact Shield release. Support removal follows
 | Ubuntu 22.04 LTS | x86_64 | Supported | Supported for non-system regular-file scopes | Supported on desktop installs | Dedicated CI and release smoke test |
 | Ubuntu 24.04 LTS | x86_64 | Supported | Supported for non-system regular-file scopes | Supported on desktop installs | Dedicated CI and release smoke test |
 | Ubuntu 26.04 LTS | x86_64 | Supported | Supported for non-system regular-file scopes | Supported on desktop installs | Dedicated CI and real-host smoke test |
+| Debian 13 | x86_64 | Supported | Supported for non-system regular-file scopes | Supported on desktop installs | Pinned CI, unrestricted watcher, and package smoke test |
 | Windows Server 2022 | x86_64 | Supported | Implemented behind a privilege/capability gate; qualification pending | Supported | Dedicated CI and release smoke test |
 | Windows Server 2025 | x86_64 | Supported | Implemented behind a privilege/capability gate; qualification pending | Supported | Dedicated CI and release smoke test |
 
@@ -28,7 +29,6 @@ until every listed gate passes for a Shield release:
 
 | Platform | Architecture | Current gate |
 | --- | --- | --- |
-| Debian 13 | x86_64 | Dedicated agent/CLI, Node binding, and Viewer CI plus unrestricted watcher and package smoke tests |
 | Windows 11 | ARM64 | Dedicated Rust/CLI, Node binding, and Viewer CI plus signed real-device installer smoke test |
 
 Qualification results must be recorded as `blocked`, rather than product
@@ -85,7 +85,7 @@ published:
 3. Viewer frontend build and independent verifier tests on each release-gated
    operating system.
 4. Installer/package smoke tests on Ubuntu 22.04, Ubuntu 24.04, Ubuntu 26.04,
-   Windows Server 2022, and Windows Server 2025.
+   Debian 13, Windows Server 2022, and Windows Server 2025.
 5. A real-host Windows 11 smoke test before marking Windows 11 as verified in
    release notes.
 
