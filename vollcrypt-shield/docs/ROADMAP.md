@@ -62,8 +62,10 @@ platform or capability is never promoted based on compilation alone.
 
 - [ ] Add signed native packages and installation smoke tests for every promoted
   Linux distribution and Windows architecture.
-- [ ] Add upgrade, downgrade-rejection, state migration, backup restoration, and
-  break-glass recovery drills to release evidence.
+- [x] Add upgrade, downgrade-rejection, state migration, backup restoration, and
+  break-glass recovery drills to release evidence. The named cross-platform and
+  Unix vault drills are required by both CI and the release workflow; see
+  `RELEASE_OPERATIONS.md`.
 - [ ] Add long-running watcher resource and notification-delivery soak tests.
 - [x] Define deprecation windows for operating systems, protocol versions, and
   package formats before removing support.

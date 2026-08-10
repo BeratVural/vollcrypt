@@ -96,8 +96,22 @@ impl ShieldAgent {
         }
         let break_glass_public =
             MlDsa65PublicKey::from_bytes(&std::fs::read(keys.join("break-glass.public"))?)?;
-        let state = StateStore::load_or_new(config.state_dir.join("state.cbor"), &agent_public)?;
+        let mut state =
+            StateStore::load_or_new(config.state_dir.join("state.cbor"), &agent_public)?;
+        let migrated_from = state.persist_pending_migration(&agent_secret)?;
         let mut audit = AuditStore::load_or_new(config.state_dir.join("audit.log"), &agent_public)?;
+        if let Some(source_version) = migrated_from {
+            audit.append(
+                now_unix_ms()?,
+                "agent",
+                AuditEventKind::AgentStarted,
+                None,
+                format!(
+                    "agent state migrated from schema v{source_version} to v2; signed source retained"
+                ),
+                &agent_secret,
+            )?;
+        }
         let response = ResponseEngine::new(&config.state_dir, &config.notifications)?;
         for recovery in response
             .vault()
@@ -697,11 +711,11 @@ fn secure_directory(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(unix)]
     use vollcrypt_shield_core::{
-        BreakGlassCommand, PolicyMode, ResponseAction, SignedBreakGlassCommand,
+        BreakGlassCommand, MetadataPolicy, ResponsePolicy, ScanProfile, SignedBreakGlassCommand,
     };
-    use vollcrypt_shield_core::{MetadataPolicy, ResponsePolicy, ScanProfile};
+    #[cfg(unix)]
+    use vollcrypt_shield_core::{PolicyMode, ResponseAction};
 
     fn scope(id: &str, root: PathBuf, response: ResponsePolicy) -> ScopeConfig {
         ScopeConfig {
@@ -778,6 +792,44 @@ mod tests {
     }
 
     #[test]
+    fn release_break_glass_recovery_drill() {
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("scope");
+        let state = base.path().join("state");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("app.conf"), b"approved").unwrap();
+        let break_glass_path = base.path().join("offline-break-glass.seed");
+        let mut agent = ShieldAgent::initialize(
+            config(state, vec![scope("scope", root, ResponsePolicy::default())]),
+            &break_glass_path,
+        )
+        .unwrap();
+        agent
+            .state
+            .contain_scope("scope", "release recovery drill", 1);
+        agent.state.save(&agent.agent_secret).unwrap();
+        assert!(agent.is_contained("scope"));
+
+        let break_secret =
+            MlDsa65SecretKey::from_seed(&std::fs::read(&break_glass_path).unwrap()).unwrap();
+        let now = now_unix_ms().unwrap();
+        let command = BreakGlassCommand::release("scope", now, now + 60_000).unwrap();
+        let signed = SignedBreakGlassCommand::sign(&command, &break_secret).unwrap();
+        let encoded = signed.to_cbor().unwrap();
+        agent.apply_break_glass(&encoded, "scope").unwrap();
+        assert!(!agent.is_contained("scope"));
+        agent
+            .state
+            .contain_scope("scope", "second containment", now + 1);
+        agent.state.save(&agent.agent_secret).unwrap();
+        assert!(matches!(
+            agent.apply_break_glass(&encoded, "scope"),
+            Err(AgentError::BreakGlassReplay)
+        ));
+        assert!(agent.verify_audit().unwrap() >= 1);
+    }
+
+    #[test]
     fn corrupted_existing_vault_object_blocks_new_baseline() {
         let base = tempfile::tempdir().unwrap();
         let root = base.path().join("scope");
@@ -803,7 +855,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn active_response_is_reversible_scope_local_and_break_glass_protected() {
+    fn release_backup_rollback_and_break_glass_recovery_drill() {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
         let base = tempfile::tempdir().unwrap();

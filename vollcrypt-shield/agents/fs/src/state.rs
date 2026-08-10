@@ -1,11 +1,13 @@
 use std::path::{Path, PathBuf};
 
 use minicbor::{Decode, Encode};
-use vollcrypt_shield_core::{FORMAT_VERSION, MlDsa65PublicKey, MlDsa65SecretKey, MlDsa65Signature};
+use vollcrypt_shield_core::{MlDsa65PublicKey, MlDsa65SecretKey, MlDsa65Signature};
 
 use crate::error::{AgentError, Result};
 
 const STATE_SIGNATURE_CONTEXT: &[u8] = b"Vollcrypt Shield Agent State v1";
+const STATE_FORMAT_VERSION: u16 = 2;
+const MIN_MIGRATABLE_STATE_VERSION: u16 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 #[cbor(array)]
@@ -34,7 +36,7 @@ struct StateDocument {
 impl Default for StateDocument {
     fn default() -> Self {
         Self {
-            version: FORMAT_VERSION,
+            version: STATE_FORMAT_VERSION,
             contained_scopes: Vec::new(),
             used_break_glass_nonces: Vec::new(),
         }
@@ -56,6 +58,13 @@ struct SignedState {
 pub struct StateStore {
     path: PathBuf,
     document: StateDocument,
+    pending_migration: Option<PendingMigration>,
+}
+
+#[derive(Debug)]
+struct PendingMigration {
+    source_version: u16,
+    signed_bytes: Vec<u8>,
 }
 
 impl StateStore {
@@ -65,6 +74,7 @@ impl StateStore {
             return Ok(Self {
                 path,
                 document: StateDocument::default(),
+                pending_migration: None,
             });
         }
         let bytes = std::fs::read(&path)?;
@@ -77,13 +87,27 @@ impl StateStore {
         }
         let signature = MlDsa65Signature::from_bytes(&signed.signature)?;
         trusted_key.verify_with_context(&signed.payload, STATE_SIGNATURE_CONTEXT, &signature)?;
-        let document: StateDocument = decode_exact(&signed.payload)?;
-        if document.version != FORMAT_VERSION {
+        let mut document: StateDocument = decode_exact(&signed.payload)?;
+        if document.version > STATE_FORMAT_VERSION
+            || document.version < MIN_MIGRATABLE_STATE_VERSION
+        {
             return Err(
                 vollcrypt_shield_core::ShieldError::UnsupportedVersion(document.version).into(),
             );
         }
-        Ok(Self { path, document })
+        let pending_migration = (document.version < STATE_FORMAT_VERSION).then(|| {
+            let source_version = document.version;
+            document.version = STATE_FORMAT_VERSION;
+            PendingMigration {
+                source_version,
+                signed_bytes: bytes,
+            }
+        });
+        Ok(Self {
+            path,
+            document,
+            pending_migration,
+        })
     }
 
     pub fn is_contained(&self, scope_id: &str) -> bool {
@@ -162,6 +186,29 @@ impl StateStore {
             .map_err(|error| AgentError::Serialization(error.to_string()))?;
         write_atomic(&self.path, &encoded)
     }
+
+    pub fn persist_pending_migration(&mut self, secret: &MlDsa65SecretKey) -> Result<Option<u16>> {
+        let Some(pending) = &self.pending_migration else {
+            return Ok(None);
+        };
+        let backup = self
+            .path
+            .with_extension(format!("v{}.backup.cbor", pending.source_version));
+        if backup.exists() {
+            if std::fs::read(&backup)? != pending.signed_bytes {
+                return Err(AgentError::Config(format!(
+                    "state migration backup already exists with different contents: {}",
+                    backup.display()
+                )));
+            }
+        } else {
+            write_new_durable(&backup, &pending.signed_bytes)?;
+        }
+        self.save(secret)?;
+        let source_version = pending.source_version;
+        self.pending_migration = None;
+        Ok(Some(source_version))
+    }
 }
 
 fn decode_exact<'a, T>(bytes: &'a [u8]) -> Result<T>
@@ -211,6 +258,22 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+fn write_new_durable(path: &Path, bytes: &[u8]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+    }
+    sync_parent_directory(path)
+}
+
 pub(crate) fn sync_parent_directory(_path: &Path) -> Result<()> {
     #[cfg(unix)]
     if let Some(parent) = _path.parent() {
@@ -223,6 +286,20 @@ pub(crate) fn sync_parent_directory(_path: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use vollcrypt_shield_core::MlDsa65KeyPair;
+
+    fn signed_state(document: &StateDocument, secret: &MlDsa65SecretKey) -> Vec<u8> {
+        let payload = minicbor::to_vec(document).unwrap();
+        let public = secret.public_key().unwrap();
+        let signature = secret
+            .sign_with_context(&payload, STATE_SIGNATURE_CONTEXT)
+            .unwrap();
+        minicbor::to_vec(SignedState {
+            payload,
+            public_key: public.as_bytes().to_vec(),
+            signature: signature.as_bytes().to_vec(),
+        })
+        .unwrap()
+    }
 
     #[test]
     fn containment_is_scope_local_and_nonce_is_single_use() {
@@ -251,5 +328,60 @@ mod tests {
         assert_eq!(state.due_reminders(61_000, |_| 60).len(), 1);
         assert!(state.due_reminders(61_001, |_| 60).is_empty());
         assert_eq!(state.due_reminders(121_000, |_| 60).len(), 1);
+    }
+
+    #[test]
+    fn release_upgrade_migration_downgrade_and_backup_restore_drill() {
+        let pair = MlDsa65KeyPair::generate().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.cbor");
+        let legacy = StateDocument {
+            version: 1,
+            contained_scopes: vec![ContainmentState {
+                scope_id: "critical".to_owned(),
+                reason: "release drill".to_owned(),
+                contained_at_unix_ms: 10,
+                last_reminder_unix_ms: 10,
+            }],
+            used_break_glass_nonces: vec![[7; 32]],
+        };
+        let legacy_signed = signed_state(&legacy, &pair.secret);
+        std::fs::write(&path, &legacy_signed).unwrap();
+
+        let mut upgraded = StateStore::load_or_new(&path, &pair.public).unwrap();
+        assert!(upgraded.is_contained("critical"));
+        assert_eq!(
+            upgraded.persist_pending_migration(&pair.secret).unwrap(),
+            Some(1)
+        );
+        let backup = path.with_extension("v1.backup.cbor");
+        assert_eq!(std::fs::read(&backup).unwrap(), legacy_signed);
+
+        let current = StateStore::load_or_new(&path, &pair.public).unwrap();
+        assert!(current.is_contained("critical"));
+        let current_signed: SignedState = decode_exact(&std::fs::read(&path).unwrap()).unwrap();
+        let current_document: StateDocument = decode_exact(&current_signed.payload).unwrap();
+        assert_eq!(current_document.version, STATE_FORMAT_VERSION);
+        assert_ne!(current_document.version, legacy.version);
+
+        std::fs::write(&path, std::fs::read(&backup).unwrap()).unwrap();
+        let mut restored = StateStore::load_or_new(&path, &pair.public).unwrap();
+        assert!(restored.is_contained("critical"));
+        assert_eq!(
+            restored.persist_pending_migration(&pair.secret).unwrap(),
+            Some(1)
+        );
+
+        let future = StateDocument {
+            version: STATE_FORMAT_VERSION + 1,
+            ..StateDocument::default()
+        };
+        std::fs::write(&path, signed_state(&future, &pair.secret)).unwrap();
+        assert!(matches!(
+            StateStore::load_or_new(&path, &pair.public),
+            Err(AgentError::Core(
+                vollcrypt_shield_core::ShieldError::UnsupportedVersion(3)
+            ))
+        ));
     }
 }

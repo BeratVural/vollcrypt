@@ -46,6 +46,15 @@ jobs:
       - name: Test Shield
         run: cargo test --locked -p vollcrypt-shield-core -p vollcrypt-shield-protocol -p vollcrypt-shield-witness -p vollcrypt-shield-windows -p vollcrypt-shield-fs -p vollcrypt-shield-container -p vollcrypt-shield-db -p vollcrypt-shield-embedded -p vollcrypt-shield-cli -p vollcrypt-scan-core -p vollcrypt-shield-classifier
 
+      - name: Drill state migration and break-glass recovery
+        run: |
+          cargo test --locked -p vollcrypt-shield-fs release_upgrade_migration_downgrade_and_backup_restore_drill
+          cargo test --locked -p vollcrypt-shield-fs release_break_glass_recovery_drill
+
+      - name: Drill Unix baseline-vault rollback
+        if: runner.os == 'Linux'
+        run: cargo test --locked -p vollcrypt-shield-fs release_backup_rollback_and_break_glass_recovery_drill
+
   embedded-no-std:
     name: Embedded no_std (${{ matrix.target }})
     runs-on: ubuntu-latest
