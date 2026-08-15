@@ -19,7 +19,7 @@ use windows::Win32::Storage::FileSystem::{
     BackupRead, BackupWrite, CREATE_NEW, CreateFileW, FILE_ATTRIBUTE_ENCRYPTED,
     FILE_ATTRIBUTE_REPARSE_POINT, FILE_BASIC_INFO, FILE_FLAG_BACKUP_SEMANTICS,
     FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_DELETE,
-    FILE_SHARE_READ, FILE_SHARE_WRITE, FileBasicInfo, FlushFileBuffers,
+    FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_WRITE_ATTRIBUTES, FileBasicInfo, FlushFileBuffers,
     GetFileInformationByHandleEx, GetVolumePathNameW, MOVEFILE_WRITE_THROUGH, MoveFileExW,
     OPEN_EXISTING, READ_CONTROL, ReadFile, SetFileInformationByHandle, WRITE_DAC, WRITE_OWNER,
 };
@@ -36,16 +36,18 @@ pub fn capture_file(source: &Path, archive: &Path) -> Result<FileBasicMetadata> 
     let handle = open_source(source)?;
     let initial = query_basic(handle.raw())?;
     validate_attributes(source, initial.FileAttributes)?;
+    suppress_timestamp_updates(handle.raw())?;
     let mut output = OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(archive)?;
     backup_read_all(handle.raw(), &mut output)?;
     output.sync_all()?;
-    // BackupRead can update NTFS access/change timestamps. Preserve the stable
-    // post-capture state rather than metadata observed before the backup read.
     let captured = query_basic(handle.raw())?;
     validate_attributes(source, captured.FileAttributes)?;
+    if captured != initial {
+        return Err(WindowsBackupError::PartialWrite);
+    }
     Ok(captured.into())
 }
 
@@ -54,6 +56,7 @@ pub fn restore_file(archive: &Path, destination: &Path, metadata: FileBasicMetad
     let mut input = File::open(archive)?;
     let handle = create_destination(destination)?;
     let result = (|| {
+        suppress_timestamp_updates(handle.raw())?;
         backup_write_all(handle.raw(), &mut input)?;
         // SAFETY: the synchronous destination handle remains valid and writable.
         unsafe { FlushFileBuffers(handle.raw()) }
@@ -198,7 +201,8 @@ fn ads_path(path: &Path) -> PathBuf {
 
 fn open_source(path: &Path) -> Result<OwnedHandle> {
     let wide = wide_path(path)?;
-    let access = FILE_GENERIC_READ.0 | READ_CONTROL.0 | ACCESS_SYSTEM_SECURITY;
+    let access =
+        FILE_GENERIC_READ.0 | FILE_WRITE_ATTRIBUTES.0 | READ_CONTROL.0 | ACCESS_SYSTEM_SECURITY;
     let share = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
     let flags = FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT;
     // SAFETY: `wide` is NUL-terminated for the duration of the call. No optional
@@ -267,6 +271,22 @@ fn set_basic(handle: HANDLE, info: FILE_BASIC_INFO) -> Result<()> {
         )
     }
     .map_err(|error| windows_error("SetFileInformationByHandle", error))
+}
+
+fn suppress_timestamp_updates(handle: HANDLE) -> Result<()> {
+    // Windows documents -1 as the per-handle request to keep I/O from
+    // updating these timestamps. This prevents BackupRead/BackupWrite from
+    // manufacturing metadata drift while streams are copied.
+    set_basic(
+        handle,
+        FILE_BASIC_INFO {
+            CreationTime: 0,
+            LastAccessTime: -1,
+            LastWriteTime: -1,
+            ChangeTime: -1,
+            FileAttributes: 0,
+        },
+    )
 }
 
 fn backup_read_all(handle: HANDLE, output: &mut File) -> Result<()> {
