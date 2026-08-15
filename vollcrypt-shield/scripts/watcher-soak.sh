@@ -33,6 +33,21 @@ cleanup() {
   fi
   rm -rf -- "$WORK"
 }
+report_error() {
+  status=$?
+  echo "watcher soak failed at line $1 with status $status" >&2
+  if [ -n "$WATCH_PID" ] && kill -0 "$WATCH_PID" 2>/dev/null; then
+    echo "watcher process is still running" >&2
+    awk '/^(VmRSS|VmPeak|Threads):/ { print }' "/proc/$WATCH_PID/status" >&2 || true
+    echo "open file descriptors: $(find "/proc/$WATCH_PID/fd" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)" >&2
+  else
+    echo "watcher process is not running" >&2
+  fi
+  test -f "$WATCH_LOG" && tail -n 40 "$WATCH_LOG" >&2 || true
+  test -f "$WORK/status.err" && cat "$WORK/status.err" >&2 || true
+  exit "$status"
+}
+trap 'report_error $LINENO' ERR
 trap cleanup EXIT INT TERM
 
 mkdir -p "$ROOT"
@@ -51,6 +66,20 @@ test -S "$STATE/ipc/status.sock"
 read_rss() {
   awk '/^VmRSS:/ { print $2; found=1 } END { if (!found) print 0 }' "/proc/$WATCH_PID/status"
 }
+
+# Exclude one-time scanner and crypto allocations from leak measurements.
+printf 'warmup\n' > "$ROOT/app.conf"
+for _ in $(seq 1 100); do
+  if test -f "$STATE/notifications.jsonl" && grep -q '"kind":"dry-run-response"' "$STATE/notifications.jsonl"; then
+    break
+  fi
+  kill -0 "$WATCH_PID"
+  sleep 0.1
+done
+grep -q '"kind":"dry-run-response"' "$STATE/notifications.jsonl"
+"$BINARY" status --config "$CONFIG" --scope default >"$WORK/status.json" 2>"$WORK/status.err"
+test ! -s "$WORK/status.err"
+sleep 1
 
 BASELINE_RSS=$(read_rss)
 BASELINE_FDS=$(find "/proc/$WATCH_PID/fd" -mindepth 1 -maxdepth 1 | wc -l)
