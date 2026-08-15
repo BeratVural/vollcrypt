@@ -70,13 +70,19 @@ try {
     }
 
     if ($entry.InstallLocation) {
-        $candidate = Join-Path $entry.InstallLocation "vollcrypt-shield-viewer.exe"
+        $installLocation = ([string]$entry.InstallLocation).Trim().Trim('"')
+        $candidate = Join-Path $installLocation "vollcrypt-shield-viewer.exe"
         if (Test-Path -LiteralPath $candidate -PathType Leaf) {
             $installedExecutable = $candidate
         }
     }
     if ($null -eq $installedExecutable -and $entry.DisplayIcon) {
-        $candidate = ($entry.DisplayIcon -replace '^"|"$|,\d+$', '')
+        $displayIcon = ([string]$entry.DisplayIcon).Trim()
+        if ($displayIcon -match '^"([^\"]+)"') {
+            $candidate = $Matches[1]
+        } else {
+            $candidate = ($displayIcon -replace ',\d+$', '').Trim().Trim('"')
+        }
         if (Test-Path -LiteralPath $candidate -PathType Leaf) {
             $installedExecutable = $candidate
         }
@@ -93,7 +99,8 @@ try {
     if ($entry.UninstallString -and $entry.UninstallString -match '^"([^\"]+)"') {
         $uninstaller = $Matches[1]
     } elseif ($entry.InstallLocation) {
-        $candidate = Join-Path $entry.InstallLocation "uninstall.exe"
+        $installLocation = ([string]$entry.InstallLocation).Trim().Trim('"')
+        $candidate = Join-Path $installLocation "uninstall.exe"
         if (Test-Path -LiteralPath $candidate -PathType Leaf) {
             $uninstaller = $candidate
         }

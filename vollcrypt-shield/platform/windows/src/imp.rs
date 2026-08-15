@@ -34,15 +34,19 @@ const BUFFER_SIZE: usize = 128 * 1024;
 pub fn capture_file(source: &Path, archive: &Path) -> Result<FileBasicMetadata> {
     let _privileges = PrivilegeGuard::enable_all()?;
     let handle = open_source(source)?;
-    let basic = query_basic(handle.raw())?;
-    validate_attributes(source, basic.FileAttributes)?;
+    let initial = query_basic(handle.raw())?;
+    validate_attributes(source, initial.FileAttributes)?;
     let mut output = OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(archive)?;
     backup_read_all(handle.raw(), &mut output)?;
     output.sync_all()?;
-    Ok(basic.into())
+    // BackupRead can update NTFS access/change timestamps. Preserve the stable
+    // post-capture state rather than metadata observed before the backup read.
+    let captured = query_basic(handle.raw())?;
+    validate_attributes(source, captured.FileAttributes)?;
+    Ok(captured.into())
 }
 
 pub fn restore_file(archive: &Path, destination: &Path, metadata: FileBasicMetadata) -> Result<()> {
