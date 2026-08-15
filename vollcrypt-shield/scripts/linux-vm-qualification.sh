@@ -25,6 +25,8 @@ CONFIG=/etc/vollcrypt-shield/default.toml
 BREAK_GLASS=/var/lib/vollcrypt-shield/default-break-glass.seed
 PACKAGE_DIR=/root/vollcrypt-shield-package
 PACKAGE_INSTALLED=0
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd)
 
 cleanup() {
   systemctl disable --now vollcrypt-shield@default.service >/dev/null 2>&1 || true
@@ -36,7 +38,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-cd /root/vollcrypt
+cd "$REPO_ROOT"
 cargo test --locked -p vollcrypt-shield-core -p vollcrypt-shield-protocol -p vollcrypt-shield-fs -p vollcrypt-shield-cli
 cargo build --locked --release -p vollcrypt-shield-cli
 bash vollcrypt-shield/scripts/linux-qualification.sh target/release/vollcrypt-shield vm rpm

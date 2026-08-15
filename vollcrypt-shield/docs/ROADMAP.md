@@ -18,6 +18,8 @@ platform or capability is never promoted based on compilation alone.
   RPM builds, and retained full-VM systemd/watcher/package smoke evidence.
 - [ ] RHEL 9: native RPM build plus retained smoke evidence from a licensed
   real host before support promotion. UBI evidence is not accepted as RHEL.
+  The fail-closed self-hosted qualification workflow is ready; promotion awaits
+  a licensed runner carrying the `rhel-9` and `shield-qualification` labels.
 
 ## Interactive terminal interface
 

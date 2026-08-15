@@ -42,6 +42,13 @@ exercises watcher/IPC/audit delivery, and retains kernel, package digest,
 service journal, and systemd hardening evidence. RHEL promotion still requires
 licensed real-host evidence; UBI is not treated as a RHEL host.
 
+The manual `Vollcrypt Shield RHEL Host Qualification` workflow is prepared for
+that promotion gate. It runs only on a maintainer-controlled self-hosted runner
+with the labels `self-hosted`, `linux`, `x64`, `rhel-9`, and
+`shield-qualification`. The workflow verifies `subscription-manager
+identity` without logging or retaining subscription identifiers, then retains
+the exact commit, RPM, systemd, watcher, and signed-audit evidence for 365 days.
+
 Run `31873772624` passed this gate for Fedora 44, Rocky Linux 9.8, and
 AlmaLinux 9.8 from public commit `7dae462`. Its per-platform artifacts retain
 the exact OS release, kernel, architecture, package SHA-256, systemd hardening

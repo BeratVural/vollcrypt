@@ -1,0 +1,108 @@
+name: Vollcrypt Shield RHEL Host Qualification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shield-rhel-9-host-qualification
+  cancel-in-progress: false
+
+jobs:
+  rhel-9-real-host:
+    name: Licensed RHEL 9 real host
+    runs-on: [self-hosted, linux, x64, rhel-9, shield-qualification]
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Verify licensed RHEL 9 host
+        shell: bash
+        run: |
+          set -euo pipefail
+          source /etc/os-release
+          test "${ID:-}" = rhel
+          case "${VERSION_ID:-}" in
+            9|9.*) ;;
+            *) echo "expected RHEL 9, found ${PRETTY_NAME:-unknown}" >&2; exit 65 ;;
+          esac
+          test "$(uname -m)" = x86_64
+          test "$(cat /proc/1/comm)" = systemd
+          sudo subscription-manager identity >/dev/null
+          touch "$RUNNER_TEMP/rhel-subscription-verified"
+
+      - name: Install qualification dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo dnf install -y cargo rust gcc gcc-c++ make openssl-devel pkgconf-pkg-config rpm-build shadow-utils systemd tar gzip
+          rustc --version
+          cargo --version
+
+      - name: Stage immutable exact-commit source
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage="/root/vollcrypt-shield-rhel-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          evidence="/root/vollcrypt-shield-rhel-evidence-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          case "$stage" in /root/vollcrypt-shield-rhel-*) ;; *) exit 70 ;; esac
+          case "$evidence" in /root/vollcrypt-shield-rhel-evidence-*) ;; *) exit 70 ;; esac
+          git archive --format=tar HEAD -o "$RUNNER_TEMP/vollcrypt-shield-rhel.tar"
+          sudo install -d -m 0700 "$stage" "$evidence"
+          sudo tar -xf "$RUNNER_TEMP/vollcrypt-shield-rhel.tar" -C "$stage"
+          printf 'RHEL_STAGE=%s\nRHEL_EVIDENCE=%s\n' "$stage" "$evidence" >> "$GITHUB_ENV"
+
+      - name: Qualify RPM, systemd, watcher, and signed audit
+        shell: bash
+        run: sudo bash "$RHEL_STAGE/vollcrypt-shield/scripts/linux-vm-qualification.sh" rhel 9 "$RHEL_EVIDENCE/result.json"
+
+      - name: Collect redacted exact-commit evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$GITHUB_WORKSPACE/qualification-evidence/rhel-9"
+          mkdir -p "$output"
+          if [ -n "${RHEL_EVIDENCE:-}" ] && [ -d "$RHEL_EVIDENCE" ]; then
+            sudo cp -a "$RHEL_EVIDENCE"/. "$output"/
+            sudo chown -R "$(id -u):$(id -g)" "$output"
+          fi
+          cp /etc/os-release "$output/os-release.txt"
+          uname -a > "$output/uname.txt"
+          subscription_verified=false
+          if [ -f "$RUNNER_TEMP/rhel-subscription-verified" ]; then
+            subscription_verified=true
+          fi
+          printf '{"commit":"%s","runId":"%s","runAttempt":"%s","subscriptionIdentityVerified":%s}\n' \
+            "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$subscription_verified" \
+            > "$output/qualification-context.json"
+
+      - name: Upload licensed-host evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: shield-rhel-9-real-host-${{ github.sha }}
+          path: qualification-evidence/rhel-9/
+          if-no-files-found: error
+          retention-days: 365
+
+      - name: Remove staged source and evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${RHEL_STAGE:-}" ]; then
+            case "$RHEL_STAGE" in
+              /root/vollcrypt-shield-rhel-*) sudo rm -rf -- "$RHEL_STAGE" ;;
+              *) echo "refusing unsafe cleanup path" >&2; exit 70 ;;
+            esac
+          fi
+          if [ -n "${RHEL_EVIDENCE:-}" ]; then
+            case "$RHEL_EVIDENCE" in
+              /root/vollcrypt-shield-rhel-evidence-*) sudo rm -rf -- "$RHEL_EVIDENCE" ;;
+              *) echo "refusing unsafe cleanup path" >&2; exit 70 ;;
+            esac
+          fi
