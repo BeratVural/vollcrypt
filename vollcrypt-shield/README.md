@@ -108,7 +108,8 @@ independently verifies the agent key, signed state, baseline snapshots, witness
 registry, and audit chain; filesystem scans run in a background worker. Changed
 files are displayed with absolute paths, and bounded regular text files can be
 opened as digest-verified unified diffs. `--no-color` retains the same layout
-without relying on color.
+without relying on color. Use `[` and `]` to move between configured folders
+without leaving the current view.
 
 `dashboard --once` remains the non-interactive interface for scripts, service
 diagnostics, and support captures. It emits no terminal control sequences when

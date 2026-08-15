@@ -449,6 +449,24 @@ fn handle_key(app: &mut App, key: KeyEvent) -> TuiResult<Action> {
             app.view = View::ALL[(value as usize) - ('1' as usize)];
             app.clamp_selection();
         }
+        KeyCode::Char('[') => {
+            let len = app
+                .snapshot
+                .as_ref()
+                .map_or(0, |snapshot| snapshot.scopes.len());
+            if len > 0 {
+                app.select_scope((app.scope_index + len - 1) % len);
+            }
+        }
+        KeyCode::Char(']') => {
+            let len = app
+                .snapshot
+                .as_ref()
+                .map_or(0, |snapshot| snapshot.scopes.len());
+            if len > 0 {
+                app.select_scope((app.scope_index + 1) % len);
+            }
+        }
         KeyCode::Up | KeyCode::Char('k') => app.move_selection(-1),
         KeyCode::Down | KeyCode::Char('j') => app.move_selection(1),
         KeyCode::PageUp => app.move_selection(-10),
@@ -497,7 +515,7 @@ fn draw(frame: &mut Frame<'_>, app: &mut App) {
     let sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),
+            Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Min(4),
             Constraint::Length(2),
@@ -529,28 +547,48 @@ fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let scope = app
         .selected_scope()
         .map_or("no scope", |scope| scope.id.as_str());
+    let root = app.selected_scope().map_or_else(
+        || "unavailable".to_owned(),
+        |scope| scope.root.display().to_string(),
+    );
+    let (scope_position, scope_count) = app.snapshot.as_ref().map_or((0, 0), |snapshot| {
+        (app.scope_index.saturating_add(1), snapshot.scopes.len())
+    });
     let refresh = if app.loading { "VERIFYING" } else { "READY" };
-    let line = Line::from(vec![
-        Span::styled(
-            " VOLLCRYPT SHIELD ",
-            Style::default()
-                .fg(color(app, Color::Black))
-                .bg(color(app, Color::White))
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("  "),
-        Span::styled(status, status_style(app, status)),
-        Span::raw(format!("  Scope: {scope}")),
-        Span::raw(format!("  {refresh}")),
-    ]);
-    frame.render_widget(Paragraph::new(line), area);
+    let lines = vec![
+        Line::from(vec![
+            Span::styled(
+                " VOLLCRYPT SHIELD ",
+                accent_style(app).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                " LOCAL INTEGRITY CONSOLE ",
+                Style::default()
+                    .fg(color(app, Color::Black))
+                    .bg(color(app, Color::White))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  "),
+            Span::styled(status, status_style(app, status)),
+            Span::raw(format!("  SCOPE {scope_position}/{scope_count}: {scope}  ")),
+            Span::styled(refresh, status_style(app, refresh)),
+        ]),
+        Line::from(vec![
+            Span::styled(" ROOT ", muted_style(app).add_modifier(Modifier::BOLD)),
+            Span::raw(root),
+        ]),
+    ];
+    frame.render_widget(
+        Paragraph::new(lines).block(Block::default().borders(Borders::BOTTOM)),
+        area,
+    );
 }
 
 fn render_tabs(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let titles = View::ALL
         .iter()
         .enumerate()
-        .map(|(index, view)| Line::from(format!("{} {}", index + 1, view.label())))
+        .map(|(index, view)| Line::from(format!(" {} {} ", index + 1, view.label())))
         .collect::<Vec<_>>();
     let selected = View::ALL
         .iter()
@@ -559,13 +597,9 @@ fn render_tabs(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let tabs = Tabs::new(titles)
         .block(Block::default().borders(Borders::BOTTOM))
         .select(selected)
-        .style(Style::default().fg(color(app, Color::DarkGray)))
-        .highlight_style(
-            Style::default()
-                .fg(color(app, Color::Cyan))
-                .add_modifier(Modifier::BOLD),
-        )
-        .divider(" | ");
+        .style(muted_style(app))
+        .highlight_style(accent_style(app).add_modifier(Modifier::BOLD))
+        .divider("  ");
     frame.render_widget(tabs, area);
 }
 
@@ -603,6 +637,103 @@ fn render_overview(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .iter()
         .map(|scope| scope.notifications.len())
         .sum();
+    if area.width < 92 || area.height < 18 {
+        render_compact_overview(
+            frame,
+            app,
+            area,
+            snapshot,
+            verified,
+            changed,
+            contained,
+            differences,
+            notification_count,
+        );
+        return;
+    }
+
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(5), Constraint::Min(8)])
+        .split(area);
+    let metrics = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+        ])
+        .split(sections[0]);
+    render_metric(
+        frame,
+        app,
+        metrics[0],
+        "MONITORED",
+        &snapshot.scopes.len().to_string(),
+        &format!("{verified} verified"),
+        "VERIFIED",
+    );
+    render_metric(
+        frame,
+        app,
+        metrics[1],
+        "DRIFT",
+        &differences.to_string(),
+        &format!("{changed} affected scopes"),
+        if differences == 0 {
+            "VERIFIED"
+        } else {
+            "CHANGED"
+        },
+    );
+    render_metric(
+        frame,
+        app,
+        metrics[2],
+        "CONTAINED",
+        &contained.to_string(),
+        "scope-local locks",
+        if contained == 0 {
+            "VERIFIED"
+        } else {
+            "CONTAINED"
+        },
+    );
+    render_metric(
+        frame,
+        app,
+        metrics[3],
+        "SIGNALS",
+        &notification_count.to_string(),
+        &format!("{} audit records", snapshot.events.len()),
+        if notification_count == 0 {
+            "VERIFIED"
+        } else {
+            "CHECKING"
+        },
+    );
+
+    let details = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(62), Constraint::Percentage(38)])
+        .split(sections[1]);
+    render_scope_overview(frame, app, details[0]);
+    render_trust_overview(frame, app, details[1], snapshot);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_compact_overview(
+    frame: &mut Frame<'_>,
+    app: &App,
+    area: Rect,
+    snapshot: &SnapshotView,
+    verified: usize,
+    changed: usize,
+    contained: usize,
+    differences: usize,
+    notification_count: usize,
+) {
     let mut lines = vec![
         Line::from(vec![
             label(app, "Trust source"),
@@ -716,7 +847,7 @@ fn render_overview(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let mut text = Paragraph::new(lines)
         .block(
             Block::default()
-                .title(" Integrity summary ")
+                .title(" OPERATIONAL OVERVIEW ")
                 .borders(Borders::ALL),
         )
         .wrap(Wrap { trim: false });
@@ -724,12 +855,163 @@ fn render_overview(frame: &mut Frame<'_>, app: &App, area: Rect) {
         text = text.block(
             Block::default()
                 .title(format!(
-                    " Integrity summary | Last refresh failed: {error} "
+                    " OPERATIONAL OVERVIEW | Last refresh failed: {error} "
                 ))
                 .borders(Borders::ALL),
         );
     }
     frame.render_widget(text, area);
+}
+
+fn render_metric(
+    frame: &mut Frame<'_>,
+    app: &App,
+    area: Rect,
+    title: &str,
+    value: &str,
+    detail: &str,
+    status: &str,
+) {
+    let paragraph = Paragraph::new(vec![
+        Line::from(Span::styled(
+            value.to_owned(),
+            status_style(app, status).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(detail.to_owned(), muted_style(app))),
+    ])
+    .alignment(Alignment::Center)
+    .block(
+        Block::default()
+            .title(format!(" {title} "))
+            .title_style(muted_style(app).add_modifier(Modifier::BOLD))
+            .borders(Borders::ALL),
+    );
+    frame.render_widget(paragraph, area);
+}
+
+fn render_scope_overview(frame: &mut Frame<'_>, app: &App, area: Rect) {
+    let lines = app.selected_scope().map_or_else(
+        || vec![Line::from("No scope evidence is available.")],
+        |scope| {
+            let boundary = if scope.protected_system_path {
+                "passive (protected system path)"
+            } else {
+                scope.policy_mode.as_str()
+            };
+            let mut lines = vec![
+                Line::from(vec![
+                    label(app, "Status"),
+                    Span::styled(scope.status.clone(), status_style(app, &scope.status)),
+                ]),
+                Line::from(vec![
+                    label(app, "Root"),
+                    Span::raw(scope.root.display().to_string()),
+                ]),
+                Line::from(vec![label(app, "Policy boundary"), Span::raw(boundary)]),
+                Line::from(vec![
+                    label(app, "Entries"),
+                    Span::raw(scope.entry_count.to_string()),
+                ]),
+                Line::from(vec![
+                    label(app, "Differences"),
+                    Span::styled(
+                        scope.difference_count.to_string(),
+                        if scope.difference_count == 0 {
+                            status_style(app, "VERIFIED")
+                        } else {
+                            status_style(app, "CHANGED")
+                        },
+                    ),
+                ]),
+                Line::from(vec![
+                    label(app, "Baseline root"),
+                    Span::raw(
+                        scope
+                            .baseline_root
+                            .as_deref()
+                            .map(short_hash)
+                            .unwrap_or_else(|| "unavailable".to_owned()),
+                    ),
+                ]),
+                Line::from(vec![
+                    label(app, "Observed root"),
+                    Span::raw(
+                        scope
+                            .observed_root
+                            .as_deref()
+                            .map(short_hash)
+                            .unwrap_or_else(|| "unavailable".to_owned()),
+                    ),
+                ]),
+            ];
+            if let Some(reason) = &scope.containment_reason {
+                lines.push(Line::from(vec![
+                    label(app, "Containment"),
+                    Span::styled(reason.clone(), status_style(app, "CONTAINED")),
+                ]));
+            }
+            lines
+        },
+    );
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .title(" SELECTED SCOPE ")
+                    .title_style(accent_text_style(app))
+                    .borders(Borders::ALL),
+            )
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+fn render_trust_overview(frame: &mut Frame<'_>, app: &App, area: Rect, snapshot: &SnapshotView) {
+    let lines = vec![
+        Line::from(vec![
+            label(app, "Evidence"),
+            Span::raw("signed local state"),
+        ]),
+        Line::from(vec![
+            label(app, "Audit chain"),
+            trust_span(
+                app,
+                snapshot.audit_chain_valid,
+                snapshot.audit_error.as_deref(),
+            ),
+        ]),
+        Line::from(vec![
+            label(app, "Agent state"),
+            trust_span(
+                app,
+                snapshot.state_signature_valid,
+                snapshot.state_error.as_deref(),
+            ),
+        ]),
+        Line::from(vec![
+            label(app, "Agent key"),
+            Span::raw(short_hash(&snapshot.agent_key_id)),
+        ]),
+        Line::from(vec![
+            label(app, "Witnesses"),
+            Span::raw(snapshot.witnesses.len().to_string()),
+        ]),
+        Line::from(vec![
+            label(app, "Refreshed"),
+            Span::raw(format!("{} ms", snapshot.refreshed_at_unix_ms)),
+        ]),
+    ];
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .title(" TRUST CHAIN ")
+                    .title_style(accent_text_style(app))
+                    .borders(Borders::ALL),
+            )
+            .wrap(Wrap { trim: false }),
+        area,
+    );
 }
 
 fn render_scopes(frame: &mut Frame<'_>, app: &App, area: Rect) {
@@ -970,21 +1252,18 @@ fn render_table<const N: usize>(
     view: TableView<'_, N>,
 ) {
     let header = Row::new(view.headers)
-        .style(
-            Style::default()
-                .fg(color(app, Color::White))
-                .add_modifier(Modifier::BOLD),
-        )
+        .style(accent_text_style(app).add_modifier(Modifier::BOLD))
         .bottom_margin(1);
     let table = Table::new(view.rows, view.widths)
         .header(header)
-        .block(Block::default().title(view.title).borders(Borders::ALL))
-        .row_highlight_style(
-            Style::default()
-                .bg(color(app, Color::DarkGray))
-                .add_modifier(Modifier::BOLD),
+        .block(
+            Block::default()
+                .title(view.title)
+                .title_style(accent_text_style(app))
+                .borders(Borders::ALL),
         )
-        .highlight_symbol("> ");
+        .row_highlight_style(selection_style(app))
+        .highlight_symbol(">> ");
     let mut state = TableState::default().with_selected(Some(view.selected));
     frame.render_stateful_widget(table, area, &mut state);
 }
@@ -996,23 +1275,26 @@ fn render_footer(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .map(|value| format!("  Refresh error: {value}"))
         .unwrap_or_default();
     let footer = Line::from(vec![
-        Span::styled(
-            " Tab/Left/Right ",
-            Style::default().add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("views  "),
-        Span::styled(" j/k ", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw("select  "),
-        Span::styled(" r ", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw("refresh  "),
-        Span::styled(" ? ", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw("help  "),
-        Span::styled(" q ", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw("quit"),
+        key_span(app, "1-6"),
+        Span::raw(" views  "),
+        key_span(app, "[ ]"),
+        Span::raw(" scope  "),
+        key_span(app, "j/k"),
+        Span::raw(" select  "),
+        key_span(app, "Enter"),
+        Span::raw(" inspect  "),
+        key_span(app, "r"),
+        Span::raw(" refresh  "),
+        key_span(app, "?"),
+        Span::raw(" help  "),
+        key_span(app, "q"),
+        Span::raw(" quit"),
         Span::styled(error, Style::default().fg(color(app, Color::Red))),
     ]);
     frame.render_widget(
-        Paragraph::new(footer).style(Style::default().fg(color(app, Color::Gray))),
+        Paragraph::new(footer)
+            .style(muted_style(app))
+            .block(Block::default().borders(Borders::TOP)),
         area,
     );
 }
@@ -1024,6 +1306,7 @@ fn render_help(frame: &mut Frame<'_>, app: &App, area: Rect) {
         Line::from("1-6                 Open a view"),
         Line::from("Tab / Shift-Tab     Next / previous view"),
         Line::from("Left / Right        Previous / next view"),
+        Line::from("[ / ]               Previous / next monitoring scope"),
         Line::from("j / k, Up / Down    Move selection"),
         Line::from("Home / End          First / last record"),
         Line::from("PageUp / PageDown   Move ten records"),
@@ -1096,6 +1379,44 @@ fn label(app: &App, value: &'static str) -> Span<'static> {
             .fg(color(app, Color::Gray))
             .add_modifier(Modifier::BOLD),
     )
+}
+
+fn accent_style(app: &App) -> Style {
+    if app.no_color {
+        Style::default().add_modifier(Modifier::REVERSED)
+    } else {
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    }
+}
+
+fn accent_text_style(app: &App) -> Style {
+    Style::default()
+        .fg(color(app, Color::Cyan))
+        .add_modifier(Modifier::BOLD)
+}
+
+fn muted_style(app: &App) -> Style {
+    Style::default().fg(color(app, Color::Gray))
+}
+
+fn selection_style(app: &App) -> Style {
+    if app.no_color {
+        Style::default()
+            .add_modifier(Modifier::REVERSED)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    }
+}
+
+fn key_span(app: &App, value: &'static str) -> Span<'static> {
+    Span::styled(format!(" {value} "), accent_style(app))
 }
 
 fn trust_span(app: &App, valid: bool, error: Option<&str>) -> Span<'static> {
@@ -1626,6 +1947,20 @@ mod tests {
             notification_error: None,
             error: None,
         };
+        let second_scope = ScopeView {
+            id: "database".to_owned(),
+            root: PathBuf::from("/srv/database"),
+            status: "VERIFIED".to_owned(),
+            policy_mode: "active".to_owned(),
+            baseline_root: Some("05".repeat(32)),
+            observed_root: Some("05".repeat(32)),
+            entry_count: 12,
+            difference_count: 0,
+            differences: Vec::new(),
+            notifications: Vec::new(),
+            invalid_notifications: 0,
+            ..scope.clone()
+        };
         let snapshot = SnapshotView {
             refreshed_at_unix_ms: 50,
             agent_key_id: "03".repeat(32),
@@ -1642,7 +1977,7 @@ mod tests {
                 "integrity mismatch",
                 [0; 32],
             )],
-            scopes: vec![scope],
+            scopes: vec![scope, second_scope],
             witnesses: vec![WitnessView {
                 id: "witness-a".to_owned(),
                 key_id: "04".repeat(32),
@@ -1702,6 +2037,52 @@ mod tests {
         )
         .unwrap();
         assert_eq!(app.notification_index, 0);
+    }
+
+    #[test]
+    fn scope_shortcuts_cycle_across_multiple_projects() {
+        let mut app = fixture();
+        assert_eq!(app.selected_scope().unwrap().id, "app");
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE),
+        )
+        .unwrap();
+        assert_eq!(app.selected_scope().unwrap().id, "database");
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE),
+        )
+        .unwrap();
+        assert_eq!(app.selected_scope().unwrap().id, "app");
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('['), KeyModifiers::NONE),
+        )
+        .unwrap();
+        assert_eq!(app.selected_scope().unwrap().id, "database");
+    }
+
+    #[test]
+    fn operational_overview_exposes_status_metrics_and_trust_chain() {
+        let mut app = fixture();
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let width = buffer.area.width as usize;
+        let rendered = buffer
+            .content()
+            .chunks(width)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("LOCAL INTEGRITY CONSOLE"));
+        assert!(rendered.contains("MONITORED"));
+        assert!(rendered.contains("DRIFT"));
+        assert!(rendered.contains("SELECTED SCOPE"));
+        assert!(rendered.contains("TRUST CHAIN"));
+        assert!(rendered.contains("SCOPE 1/2: app"));
     }
 
     #[test]
