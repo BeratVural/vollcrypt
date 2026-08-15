@@ -68,6 +68,16 @@ enum Command {
         #[arg(long, default_value = "default")]
         scope: String,
     },
+    /// Add another independent folder or project to an existing local agent.
+    #[command(visible_alias = "scope-add")]
+    AddFolder {
+        #[arg(long)]
+        config: PathBuf,
+        #[arg(long)]
+        root: PathBuf,
+        #[arg(long)]
+        scope: String,
+    },
     ConfigExample {
         #[arg(long)]
         root: PathBuf,
@@ -93,6 +103,11 @@ enum Command {
         config: PathBuf,
         #[arg(long)]
         scope: String,
+    },
+    /// Verify every configured scope and return a combined JSON report.
+    VerifyAll {
+        #[arg(long)]
+        config: PathBuf,
     },
     Watch {
         #[arg(long)]
@@ -311,6 +326,56 @@ fn run(arguments: Arguments) -> Result<(), Box<dyn std::error::Error>> {
                 }))?
             );
         }
+        Command::AddFolder {
+            config,
+            root,
+            scope,
+        } => {
+            let metadata = std::fs::symlink_metadata(&root)?;
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                return Err("monitored root must be a regular directory, not a symlink".into());
+            }
+            let root = root.canonicalize()?;
+            let config = config.canonicalize()?;
+            if config.starts_with(&root) {
+                return Err("configuration must be stored outside the monitored root".into());
+            }
+            let mut value = load_config(&config)?;
+            if value.scopes.iter().any(|candidate| candidate.id == scope) {
+                return Err(format!("scope id already exists: {scope}").into());
+            }
+            let scope_config = ScopeConfig {
+                id: scope.clone(),
+                root,
+                include: vec!["**".to_owned()],
+                exclude: vec![],
+                metadata: MetadataPolicy::default(),
+                full_scan: ScanProfile::full_default(),
+                incremental_scan: ScanProfile::incremental_default(),
+                full_rescan_interval_secs: 300,
+                response: ResponsePolicy::default(),
+            };
+            value.scopes.push(scope_config.clone());
+            value.validate()?;
+            Scanner::new(&scope_config)?.full_scan(&scope_config)?;
+            replace_file(&config, value.to_toml()?.as_bytes())?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "config": &config,
+                    "scope": &scope,
+                    "root": &scope_config.root,
+                    "scopeCount": value.scopes.len(),
+                    "policyMode": "dry-run",
+                    "baselineRequired": true,
+                    "next": {
+                        "command": "baseline",
+                        "config": &config,
+                        "scope": &scope_config.id,
+                    },
+                }))?
+            );
+        }
         Command::ConfigExample {
             root,
             state_dir,
@@ -359,6 +424,49 @@ fn run(arguments: Arguments) -> Result<(), Box<dyn std::error::Error>> {
             );
             if !report.is_match() {
                 return Err("integrity verification failed".into());
+            }
+        }
+        Command::VerifyAll { config } => {
+            let value = load_config(&config)?;
+            let scope_ids = value
+                .scopes
+                .iter()
+                .map(|scope| scope.id.clone())
+                .collect::<Vec<_>>();
+            let mut agent = ShieldAgent::load(value)?;
+            let mut all_match = true;
+            let mut results = Vec::with_capacity(scope_ids.len());
+            for scope in &scope_ids {
+                match agent.verify_scope(scope) {
+                    Ok((report, outcomes)) => {
+                        all_match &= report.is_match();
+                        results.push(serde_json::json!({
+                            "scope": scope,
+                            "match": report.is_match(),
+                            "report": report,
+                            "outcomes": outcomes,
+                        }));
+                    }
+                    Err(error) => {
+                        all_match = false;
+                        results.push(serde_json::json!({
+                            "scope": scope,
+                            "match": false,
+                            "error": error.to_string(),
+                        }));
+                    }
+                }
+            }
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "match": all_match,
+                    "scopeCount": scope_ids.len(),
+                    "results": results,
+                }))?
+            );
+            if !all_match {
+                return Err("one or more integrity verifications failed".into());
             }
         }
         Command::Watch { config, scope } => {

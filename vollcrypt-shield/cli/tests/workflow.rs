@@ -57,6 +57,80 @@ fn monitor_folder_creates_a_complete_dry_run_setup() {
 }
 
 #[test]
+fn multiple_folders_can_be_added_and_verified_together() {
+    let directory = tempfile::tempdir().unwrap();
+    let first = directory.path().join("first project");
+    let second = directory.path().join("second project");
+    let state = directory.path().join("state");
+    let config = directory.path().join("shield.toml");
+    let break_glass = directory.path().join("offline-break-glass.seed");
+    std::fs::create_dir(&first).unwrap();
+    std::fs::create_dir(&second).unwrap();
+    std::fs::write(first.join("app.conf"), b"approved-first").unwrap();
+    std::fs::write(second.join("app.conf"), b"approved-second").unwrap();
+
+    let setup = shield(&[
+        "monitor-folder",
+        "--root",
+        value(&first),
+        "--state-dir",
+        value(&state),
+        "--config",
+        value(&config),
+        "--break-glass-key",
+        value(&break_glass),
+        "--scope",
+        "first",
+    ]);
+    assert!(setup.status.success(), "{setup:?}");
+
+    let added = shield(&[
+        "add-folder",
+        "--config",
+        value(&config),
+        "--root",
+        value(&second),
+        "--scope",
+        "second",
+    ]);
+    assert!(added.status.success(), "{added:?}");
+    let added: serde_json::Value = serde_json::from_slice(&added.stdout).unwrap();
+    assert_eq!(added["scopeCount"], 2);
+    assert_eq!(added["baselineRequired"], true);
+    assert_eq!(added["next"]["command"], "baseline");
+    assert_eq!(added["next"]["scope"], "second");
+
+    let baseline = shield(&["baseline", "--config", value(&config), "--scope", "second"]);
+    assert!(baseline.status.success(), "{baseline:?}");
+
+    let verified = shield(&["verify-all", "--config", value(&config)]);
+    assert!(verified.status.success(), "{verified:?}");
+    let verified: serde_json::Value = serde_json::from_slice(&verified.stdout).unwrap();
+    assert_eq!(verified["match"], true);
+    assert_eq!(verified["scopeCount"], 2);
+    assert_eq!(verified["results"].as_array().unwrap().len(), 2);
+
+    std::fs::write(second.join("app.conf"), b"tampered").unwrap();
+    let changed = shield(&["verify-all", "--config", value(&config)]);
+    assert!(!changed.status.success());
+    let changed: serde_json::Value = serde_json::from_slice(&changed.stdout).unwrap();
+    assert_eq!(changed["match"], false);
+    assert_eq!(changed["results"][0]["match"], true);
+    assert_eq!(changed["results"][1]["match"], false);
+
+    let overlap = shield(&[
+        "add-folder",
+        "--config",
+        value(&config),
+        "--root",
+        value(&second),
+        "--scope",
+        "duplicate-root",
+    ]);
+    assert!(!overlap.status.success());
+}
+
+#[test]
 fn baseline_verify_and_status_workflow_is_fail_safe() {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().join("watched");

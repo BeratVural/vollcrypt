@@ -81,6 +81,19 @@ vollcrypt-shield init --config shield.toml --break-glass-key /offline/shield-bre
 vollcrypt-shield baseline --config shield.toml --scope default
 ```
 
+One local agent can protect multiple independent folders or projects. This is a
+public Shield capability, not a commercial-only feature:
+
+```console
+vollcrypt-shield add-folder --config shield.toml --root /srv/second-app --scope second-app
+vollcrypt-shield baseline --config shield.toml --scope second-app
+vollcrypt-shield verify-all --config shield.toml
+```
+
+`add-folder` rejects duplicate, nested, overlapping, and symlinked roots. It
+preflights the new folder and leaves baseline creation as a separate explicit
+step so a failed baseline cannot leave the configuration half-applied.
+
 Every generated response policy is dry-run. Shield requires signed verification
 evidence for the exact current scope and policy fingerprint before
 `policy-activate` succeeds. Changing a rule invalidates prior evidence. A

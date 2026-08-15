@@ -53,6 +53,14 @@ impl ScopeConfig {
                 self.root.display()
             )));
         }
+        let metadata = std::fs::symlink_metadata(&self.root)?;
+        if metadata.file_type().is_symlink() {
+            return Err(AgentError::Config(format!(
+                "scope {} root must not be a symlink: {}",
+                self.id,
+                self.root.display()
+            )));
+        }
         if self.full_rescan_interval_secs < 60 {
             return Err(AgentError::Config(format!(
                 "scope {} full_rescan_interval_secs must be at least 60",
@@ -101,6 +109,7 @@ impl AgentConfig {
             ));
         }
         let mut ids = std::collections::BTreeSet::new();
+        let mut roots: Vec<(&str, PathBuf)> = Vec::with_capacity(self.scopes.len());
         for scope in &self.scopes {
             scope.validate()?;
             if !ids.insert(&scope.id) {
@@ -109,6 +118,20 @@ impl AgentConfig {
                     scope.id
                 )));
             }
+            let canonical_root = scope.root.canonicalize()?;
+            for (other_id, other_root) in &roots {
+                if canonical_root.starts_with(other_root) || other_root.starts_with(&canonical_root)
+                {
+                    return Err(AgentError::Config(format!(
+                        "scope roots must not overlap: {} ({}) and {} ({})",
+                        other_id,
+                        other_root.display(),
+                        scope.id,
+                        canonical_root.display()
+                    )));
+                }
+            }
+            roots.push((&scope.id, canonical_root));
             if scope.root.starts_with(&self.state_dir) || self.state_dir.starts_with(&scope.root) {
                 return Err(AgentError::Config(format!(
                     "state_dir and scope {} must not contain one another",
@@ -176,5 +199,60 @@ mod tests {
         assert!(is_protected_system_path(Path::new("/etc/vollcrypt")));
         assert!(is_protected_system_path(Path::new("/usr/local/bin")));
         assert!(!is_protected_system_path(Path::new("/home/user/project")));
+    }
+}
+
+#[cfg(test)]
+mod config_validation_tests {
+    use super::*;
+
+    fn scope(id: &str, root: PathBuf) -> ScopeConfig {
+        ScopeConfig {
+            id: id.to_owned(),
+            root,
+            include: vec!["**".to_owned()],
+            exclude: Vec::new(),
+            metadata: MetadataPolicy::default(),
+            full_scan: ScanProfile::full_default(),
+            incremental_scan: ScanProfile::incremental_default(),
+            full_rescan_interval_secs: 300,
+            response: ResponsePolicy::default(),
+        }
+    }
+
+    #[test]
+    fn rejects_duplicate_and_nested_scope_roots() {
+        let directory = tempfile::tempdir().unwrap();
+        let first = directory.path().join("first");
+        let nested = first.join("nested");
+        let state = directory.path().join("state");
+        std::fs::create_dir_all(&nested).unwrap();
+
+        let duplicate = AgentConfig {
+            state_dir: state.clone(),
+            scopes: vec![scope("first", first.clone()), scope("alias", first.clone())],
+            notifications: NotificationConfig::default(),
+        };
+        assert!(duplicate.validate().is_err());
+
+        let overlapping = AgentConfig {
+            state_dir: state,
+            scopes: vec![scope("first", first), scope("nested", nested)],
+            notifications: NotificationConfig::default(),
+        };
+        assert!(overlapping.validate().is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlink_scope_root() {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("target");
+        let link = directory.path().join("link");
+        std::fs::create_dir(&target).unwrap();
+        symlink(&target, &link).unwrap();
+        assert!(scope("linked", link).validate().is_err());
     }
 }
