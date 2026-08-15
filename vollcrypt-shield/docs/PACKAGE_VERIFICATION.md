@@ -38,16 +38,23 @@ must additionally sign its repository metadata with an offline-controlled key.
 The release workflow never accepts an unsigned artifact merely because its
 filename or version is expected.
 
-Tag and draft-producing release runs require the repository secrets
-`VOLLCRYPT_WINDOWS_CERTIFICATE_BASE64` and
+Shield Viewer also has a Microsoft Store MSIX path. The release workflow builds
+an unsigned exact-commit x64/ARM64 bundle using the identity assigned by
+Partner Center, but deliberately keeps that artifact outside the GitHub
+release. Microsoft validates and signs it during Store certification. Store
+users do not import any Vollcrypt certificate. The temporary
+`Vollcrypt Shield CI` identity is qualification-only and never ships.
+
+Direct GitHub distribution of Windows executables requires the repository
+secrets `VOLLCRYPT_WINDOWS_CERTIFICATE_BASE64` and
 `VOLLCRYPT_WINDOWS_CERTIFICATE_PASSWORD`. The certificate must be a currently
 valid trusted code-signing certificate with a private key and Code Signing EKU.
-The workflow signs the Windows CLI and asks Tauri to sign both the Viewer
-executable and NSIS installer, applies an RFC 3161 SHA-256 timestamp, and then
-requires `Get-AuthenticodeSignature` to report `Valid` for the installer and
-installed Viewer. Missing or invalid credentials stop publishing. Ordinary CI
-and qualification-only dispatches continue to build unsigned disposable
-artifacts and never promote them.
+When configured, the workflow signs the Windows CLI, Viewer executable, and
+NSIS installer, applies an RFC 3161 SHA-256 timestamp, and requires
+`Get-AuthenticodeSignature` to report `Valid`. Without those credentials,
+release assembly removes all direct Windows EXE/MSI artifacts instead of
+publishing them unsigned. The Microsoft Store-signed Viewer is then the Windows
+application channel; libraries and Linux packages are unaffected.
 
 Manual workflow dispatches are qualification-only by default. They exercise
 all build, install, recovery, soak, and attestation jobs without creating a tag

@@ -12,8 +12,11 @@ platform or capability is never promoted based on compilation alone.
   watcher and package smoke tests.
 - [x] Windows 11 ARM64: Rust/CLI, Node binding, Viewer, strict recovery, and
   unsigned real-device installer qualification.
+- [x] Build and install Store-shaped x64/ARM64 MSIX packages in CI with an
+  ephemeral qualification identity, keeping the temporary certificate out of
+  release artifacts and user trust stores.
 - [ ] Promote Windows 11 ARM64 only after retaining an exact-commit installer
-  smoke with a trusted Authenticode signature.
+  smoke with a trusted Authenticode signature or Microsoft Store signature.
 - [x] Fedora 44, Rocky Linux 9.8, and AlmaLinux 9.8: pinned CI images, native
   RPM builds, and retained full-VM systemd/watcher/package smoke evidence.
 - [ ] RHEL 9: native RPM build plus retained smoke evidence from a licensed
@@ -75,8 +78,9 @@ platform or capability is never promoted based on compilation alone.
 - [x] Fail release publication closed on missing trusted Authenticode or pinned
   detached-GPG signing credentials, and smoke-test detached signing with an
   ephemeral CI key.
-- [ ] Configure the maintainer-controlled production GPG identity and trusted
-  Authenticode certificate, then retain the first exact-commit signed release
+- [ ] Configure the maintainer-controlled production GPG identity and either a
+  trusted Authenticode certificate or the production Microsoft Store identity,
+  then retain the first exact-commit signed release
   evidence. Signing secrets must never be generated in or committed to CI.
 - [x] Add upgrade, downgrade-rejection, state migration, backup restoration, and
   break-glass recovery drills to release evidence. The named cross-platform and

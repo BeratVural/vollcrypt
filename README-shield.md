@@ -37,6 +37,12 @@ Every generated response policy begins in mandatory dry-run. Linux active respon
 
 Use **Vollcrypt Shield Viewer** on supported desktop Linux and Windows systems. Select a folder, save the emergency recovery seed outside that folder, and let Viewer create the first signed baseline. Verification runs on background workers so navigation and settings remain responsive during long scans.
 
+The Windows Store channel packages Viewer as one x64/ARM64 MSIX bundle.
+Microsoft signs the package after certification; users never install a
+Vollcrypt root certificate. Store signing covers Viewer only. Shield libraries
+and the CLI remain independently installable through their native package
+channels.
+
 On headless Linux systems, use the full-screen TUI or script-safe dashboard:
 
 ```bash
@@ -78,6 +84,8 @@ Windows 11 ARM64 has passed Rust, Node, Viewer, installer, and strict recovery q
 - [Security model](vollcrypt-shield/docs/SECURITY_MODEL.md)
 - [Platform support](vollcrypt-shield/docs/PLATFORM_SUPPORT.md)
 - [Package and signature verification](vollcrypt-shield/docs/PACKAGE_VERIFICATION.md)
+- [Microsoft Store distribution](vollcrypt-shield/docs/STORE_DISTRIBUTION.md)
+- [Shield Viewer privacy policy](PRIVACY-SHIELD.md)
 - [Linux filesystem validation](vollcrypt-shield/docs/FILESYSTEM_LINUX_TEST.md)
 - [Offline signed packages](vollcrypt-shield/docs/OFFLINE_PACKAGES.md)
 

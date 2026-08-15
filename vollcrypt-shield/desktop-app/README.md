@@ -21,3 +21,8 @@ npm run tauri dev
 
 Shield Viewer is dual-licensed under
 `GPL-3.0-only OR LicenseRef-Commercial`.
+
+The Microsoft Store MSIX pipeline is documented in
+[`STORE_DISTRIBUTION.md`](../docs/STORE_DISTRIBUTION.md). Store signing is a
+publisher responsibility; end users must not install the CI qualification
+certificate or modify their Windows root certificate store.
