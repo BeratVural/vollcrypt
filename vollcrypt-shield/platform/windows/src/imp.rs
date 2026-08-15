@@ -141,11 +141,14 @@ pub fn validate_active_response_capability(directory: &Path) -> Result<()> {
         ));
     }
     let roundtrip_metadata = capture_file(&restored, &restored_archive)?;
-    if roundtrip_metadata != metadata
-        || std::fs::read(&restored_archive)? != std::fs::read(&archive)?
-    {
+    if roundtrip_metadata != metadata {
         return Err(WindowsBackupError::PartialWrite(
-            "round-trip metadata or backup stream differs",
+            "round-trip basic metadata differs",
+        ));
+    }
+    if std::fs::read(&restored_archive)? != std::fs::read(&archive)? {
+        return Err(WindowsBackupError::PartialWrite(
+            "round-trip backup stream differs",
         ));
     }
     drop(cleanup);
