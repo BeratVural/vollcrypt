@@ -1,0 +1,89 @@
+name: Vollcrypt Shield RPM VM Qualification
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "19 4 * * 2"
+
+permissions:
+  contents: read
+
+jobs:
+  rpm-real-host:
+    name: Real host (${{ matrix.platform }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: fedora-42
+            image: images:fedora/42/cloud
+            os_id: fedora
+            version: "42"
+          - platform: rocky-linux-9-6
+            image: images:rockylinux/9.6/cloud
+            os_id: rocky
+            version: "9.6"
+          - platform: alma-linux-9-6
+            image: images:almalinux/9.6/cloud
+            os_id: almalinux
+            version: "9.6"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup LXD
+        uses: canonical/setup-lxd@da2ac84e727dc534215fd14cd088b9209d65893b
+        with:
+          channel: 5.21/stable
+
+      - name: Launch real VM and copy source
+        shell: bash
+        run: |
+          git archive --format=tar HEAD -o "$RUNNER_TEMP/vollcrypt.tar"
+          lxc launch "${{ matrix.image }}" shield --vm -c limits.cpu=4 -c limits.memory=6GiB
+          for attempt in $(seq 1 180); do
+            lxc exec shield -- true >/dev/null 2>&1 && break
+            sleep 2
+          done
+          lxc exec shield -- cloud-init status --wait
+          lxc exec shield -- mkdir -p /root/vollcrypt
+          lxc file push "$RUNNER_TEMP/vollcrypt.tar" shield/root/vollcrypt/source.tar
+          lxc exec shield -- tar -xf /root/vollcrypt/source.tar -C /root/vollcrypt
+
+      - name: Install VM build dependencies
+        shell: bash
+        run: |
+          lxc exec shield -- dnf install -y cargo rust gcc gcc-c++ make openssl-devel pkgconf-pkg-config rpm-build shadow-utils systemd tar gzip
+          lxc exec shield -- rustc --version
+          lxc exec shield -- cargo --version
+
+      - name: Qualify kernel, package, systemd service, watcher, and audit
+        shell: bash
+        run: lxc exec shield -- bash /root/vollcrypt/vollcrypt-shield/scripts/linux-vm-qualification.sh "${{ matrix.os_id }}" "${{ matrix.version }}" "/root/evidence/${{ matrix.platform }}.json"
+
+      - name: Collect real-host evidence
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "qualification-evidence/${{ matrix.platform }}"
+          lxc exec shield -- cat /etc/os-release > "qualification-evidence/${{ matrix.platform }}/os-release.txt" || true
+          lxc exec shield -- uname -a > "qualification-evidence/${{ matrix.platform }}/uname.txt" || true
+          lxc file pull "shield/root/evidence/${{ matrix.platform }}.json" "qualification-evidence/${{ matrix.platform }}/result.json" || true
+          lxc file pull "shield/root/evidence/systemd-security.txt" "qualification-evidence/${{ matrix.platform }}/systemd-security.txt" || true
+          lxc file pull "shield/root/evidence/service-journal.txt" "qualification-evidence/${{ matrix.platform }}/service-journal.txt" || true
+
+      - name: Upload real-host evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: shield-rpm-real-host-${{ matrix.platform }}
+          path: qualification-evidence/${{ matrix.platform }}/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Destroy disposable VM
+        if: always()
+        shell: bash
+        run: lxc delete shield --force || true

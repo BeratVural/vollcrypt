@@ -35,6 +35,13 @@ until every listed gate passes for a Shield release:
 | Rocky Linux 9.6 | x86_64 | Pinned CI, unrestricted watcher, and RPM smoke; real-host release evidence pending |
 | AlmaLinux 9.6 | x86_64 | Pinned CI, unrestricted watcher, and RPM smoke; real-host release evidence pending |
 
+The weekly `Vollcrypt Shield RPM VM Qualification` gate boots Fedora, Rocky
+Linux, and AlmaLinux as full virtual machines with systemd as PID 1. It builds
+and installs the native RPM, runs the agent as the packaged service identity,
+exercises watcher/IPC/audit delivery, and retains kernel, package digest,
+service journal, and systemd hardening evidence. RHEL promotion still requires
+licensed real-host evidence; UBI is not treated as a RHEL host.
+
 Qualification results must be recorded as `blocked`, rather than product
 failures, when a test environment denies required Unix-domain sockets, network
 access, package installation, or a graphical session. A blocked result never
