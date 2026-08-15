@@ -19,10 +19,10 @@ platform or capability is never promoted based on compilation alone.
   smoke with a trusted Authenticode signature or Microsoft Store signature.
 - [x] Fedora 44, Rocky Linux 9.8, and AlmaLinux 9.8: pinned CI images, native
   RPM builds, and retained full-VM systemd/watcher/package smoke evidence.
-- [ ] RHEL 9: native RPM build plus retained smoke evidence from a licensed
-  real host before support promotion. UBI evidence is not accepted as RHEL.
-  The fail-closed self-hosted qualification workflow is ready; promotion awaits
-  a licensed runner carrying the `rhel-9` and `shield-qualification` labels.
+- [x] RHEL 9.8 x86_64: native RPM, systemd, watcher, and signed-audit
+  qualification passed on a licensed real host. Run `31889088368` retained
+  exact-commit evidence for public commit `c21c79a`; UBI remains separate
+  ABI-compatible container evidence and is not accepted as a RHEL host.
 
 ## Interactive terminal interface
 

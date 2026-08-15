@@ -65,6 +65,7 @@ vollcrypt-shield dashboard --config shield.toml --scope default --once --no-colo
 | Ubuntu 26.04 LTS x86_64 | Supported | Non-system regular-file scopes | Supported on desktop installs |
 | Debian 13 x86_64 | Supported | Non-system regular-file scopes | Supported on desktop installs |
 | Fedora 44 / Rocky 9.8 / AlmaLinux 9.8 x86_64 | Supported | Non-system regular-file scopes | Not packaged |
+| RHEL 9.8 x86_64 | Supported | Non-system regular-file scopes | Not packaged |
 | Windows Server 2022/2025 x86_64 | Supported | Privilege/capability gated | Supported |
 | Windows 11 x86_64 | Supported after trusted-signed release smoke | Privilege/capability gated | Supported |
 

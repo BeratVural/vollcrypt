@@ -16,6 +16,7 @@ the exact Shield release. Support removal follows
 | Fedora 44 | x86_64 | Supported | Supported for non-system regular-file scopes | Not packaged | Full-VM systemd, watcher, audit, and RPM smoke |
 | Rocky Linux 9.8 | x86_64 | Supported | Supported for non-system regular-file scopes | Not packaged | Full-VM systemd, watcher, audit, and RPM smoke |
 | AlmaLinux 9.8 | x86_64 | Supported | Supported for non-system regular-file scopes | Not packaged | Full-VM systemd, watcher, audit, and RPM smoke |
+| RHEL 9.8 | x86_64 | Supported | Supported for non-system regular-file scopes | Not packaged | Licensed real-host subscription, RPM, systemd, watcher, and signed-audit qualification |
 | Windows Server 2022 | x86_64 | Supported | Supported behind a privilege/capability gate | Supported | Strict real-host recovery and release smoke |
 | Windows Server 2025 | x86_64 | Supported | Supported behind a privilege/capability gate | Supported | Strict real-host recovery and release smoke |
 
@@ -33,21 +34,22 @@ until every listed gate passes for a Shield release:
 | Platform | Architecture | Current gate |
 | --- | --- | --- |
 | Windows 11 | ARM64 | Dedicated Rust/CLI, Node binding, and Viewer CI plus signed real-device installer smoke test |
-| RHEL 9 / UBI 9.8 | x86_64 | Digest-pinned ABI-compatible CI and RPM smoke; licensed RHEL real-host evidence pending |
 
 The weekly `Vollcrypt Shield RPM VM Qualification` gate boots Fedora, Rocky
 Linux, and AlmaLinux as full virtual machines with systemd as PID 1. It builds
 and installs the native RPM, runs the agent as the packaged service identity,
 exercises watcher/IPC/audit delivery, and retains kernel, package digest,
-service journal, and systemd hardening evidence. RHEL promotion still requires
-licensed real-host evidence; UBI is not treated as a RHEL host.
+service journal, and systemd hardening evidence. UBI remains ABI-compatible
+container evidence and is not treated as a substitute for a licensed RHEL host.
 
-The manual `Vollcrypt Shield RHEL Host Qualification` workflow is prepared for
-that promotion gate. It runs only on a maintainer-controlled self-hosted runner
+The manual `Vollcrypt Shield RHEL Host Qualification` workflow runs only on a
+maintainer-controlled self-hosted runner
 with the labels `self-hosted`, `linux`, `x64`, `rhel-9`, and
 `shield-qualification`. The workflow verifies `subscription-manager
 identity` without logging or retaining subscription identifiers, then retains
-the exact commit, RPM, systemd, watcher, and signed-audit evidence for 365 days.
+the exact commit, RPM, systemd, watcher, and signed-audit evidence for 90 days.
+Run [`31889088368`](https://github.com/BeratVural/vollcrypt/actions/runs/31889088368)
+passed this gate on licensed RHEL 9.8 x86_64 for public commit `c21c79a`.
 
 Run `31873772624` passed this gate for Fedora 44, Rocky Linux 9.8, and
 AlmaLinux 9.8 from public commit `7dae462`. Its per-platform artifacts retain
