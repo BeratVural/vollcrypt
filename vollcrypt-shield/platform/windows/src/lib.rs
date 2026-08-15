@@ -30,8 +30,8 @@ pub enum WindowsBackupError {
     Io(#[from] std::io::Error),
     #[error("Windows backup stream made no progress during {0}")]
     NoProgress(&'static str),
-    #[error("Windows backup stream was only partially written")]
-    PartialWrite,
+    #[error("Windows backup validation failed: {0}")]
+    PartialWrite(&'static str),
     #[error("durable move cannot cross Windows volumes: {source_path} -> {destination_path}")]
     CrossVolumeMove {
         source_path: String,

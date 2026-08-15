@@ -46,7 +46,9 @@ pub fn capture_file(source: &Path, archive: &Path) -> Result<FileBasicMetadata> 
     let captured = query_basic(handle.raw())?;
     validate_attributes(source, captured.FileAttributes)?;
     if captured != initial {
-        return Err(WindowsBackupError::PartialWrite);
+        return Err(WindowsBackupError::PartialWrite(
+            "source basic metadata changed during capture",
+        ));
     }
     Ok(captured.into())
 }
@@ -117,19 +119,27 @@ pub fn validate_active_response_capability(directory: &Path) -> Result<()> {
     restore_file(&archive, &restored, metadata)?;
     let restored_metadata = query_metadata(&restored)?;
     if restored_metadata != metadata {
-        return Err(WindowsBackupError::PartialWrite);
+        return Err(WindowsBackupError::PartialWrite(
+            "restored basic metadata differs",
+        ));
     }
     if std::fs::read(&restored)? != b"vollcrypt-shield-windows-capability-v1" {
-        return Err(WindowsBackupError::PartialWrite);
+        return Err(WindowsBackupError::PartialWrite(
+            "restored default stream differs",
+        ));
     }
     if std::fs::read(ads_path(&restored))? != b"vollcrypt-shield-ads-v1" {
-        return Err(WindowsBackupError::PartialWrite);
+        return Err(WindowsBackupError::PartialWrite(
+            "restored alternate stream differs",
+        ));
     }
     let roundtrip_metadata = capture_file(&restored, &restored_archive)?;
     if roundtrip_metadata != metadata
         || std::fs::read(&restored_archive)? != std::fs::read(&archive)?
     {
-        return Err(WindowsBackupError::PartialWrite);
+        return Err(WindowsBackupError::PartialWrite(
+            "round-trip metadata or backup stream differs",
+        ));
     }
     drop(cleanup);
     Ok(())
@@ -556,7 +566,7 @@ mod tests {
                 error,
                 WindowsBackupError::PrivilegeUnavailable(_)
                     | WindowsBackupError::Windows { .. }
-                    | WindowsBackupError::PartialWrite
+                    | WindowsBackupError::PartialWrite(_)
             ));
         }
     }
