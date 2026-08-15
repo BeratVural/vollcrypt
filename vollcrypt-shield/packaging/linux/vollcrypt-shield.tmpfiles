@@ -1,0 +1,2 @@
+d /var/lib/vollcrypt-shield 0700 vollcrypt-shield vollcrypt-shield -
+d /etc/vollcrypt-shield 0750 root vollcrypt-shield -

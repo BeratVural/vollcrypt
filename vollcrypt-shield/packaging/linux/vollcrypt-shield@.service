@@ -1,0 +1,37 @@
+[Unit]
+Description=Vollcrypt Shield integrity agent for scope %i
+Documentation=https://beratvural.github.io/vollcrypt/shield/
+After=local-fs.target
+
+[Service]
+Type=simple
+User=vollcrypt-shield
+Group=vollcrypt-shield
+ExecStart=/usr/bin/vollcrypt-shield watch --config /etc/vollcrypt-shield/%i.toml --scope %i
+Restart=on-failure
+RestartSec=5s
+UMask=0077
+StateDirectory=vollcrypt-shield
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=read-only
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/vollcrypt-shield
+
+[Install]
+WantedBy=multi-user.target

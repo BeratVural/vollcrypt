@@ -25,7 +25,7 @@ CONFIG="$WORK/agent.toml"
 BREAK_GLASS="$WORK/break-glass.seed"
 WATCH_LOG="$WORK/watch.log"
 WATCH_PID=
-PACKAGE_NAME="vollcrypt-shield-cli-${PACKAGE_SUFFIX}"
+PACKAGE_NAME="vollcrypt-shield"
 PACKAGE_INSTALLED=0
 
 cleanup() {
@@ -90,53 +90,25 @@ wait "$WATCH_PID" || true
 WATCH_PID=
 
 if [ "$PACKAGE_FORMAT" = deb ]; then
-  ARCH=$(dpkg --print-architecture)
-  PACKAGE_ROOT="$WORK/package"
-  mkdir -p "$PACKAGE_ROOT/DEBIAN" "$PACKAGE_ROOT/usr/bin"
-  install -m 0755 "$BINARY" "$PACKAGE_ROOT/usr/bin/vollcrypt-shield"
-  cat > "$PACKAGE_ROOT/DEBIAN/control" <<EOF
-Package: $PACKAGE_NAME
-Version: 1.0.0
-Architecture: $ARCH
-Maintainer: Vollcrypt <security@vollcrypt.dev>
-Description: Vollcrypt Shield filesystem integrity agent and CLI qualification package
-EOF
-  dpkg-deb --root-owner-group --build "$PACKAGE_ROOT" "$WORK/$PACKAGE_NAME.deb"
-  dpkg-deb --info "$WORK/$PACKAGE_NAME.deb"
-  dpkg --install "$WORK/$PACKAGE_NAME.deb"
+  PACKAGE=$(bash "$(dirname "$0")/build-linux-package.sh" "$BINARY" "$WORK/packages" deb | tail -n 1)
+  dpkg-deb --info "$PACKAGE"
+  dpkg --install "$PACKAGE"
   PACKAGE_INSTALLED=1
-  /usr/bin/vollcrypt-shield --help >/dev/null
+  systemd-analyze verify /usr/lib/systemd/system/vollcrypt-shield@.service
+  id vollcrypt-shield >/dev/null
+  test "$(stat -c %a /var/lib/vollcrypt-shield)" = 700
+  /usr/bin/vollcrypt-shield --version | grep -q '1.0.0'
   dpkg --remove "$PACKAGE_NAME"
   PACKAGE_INSTALLED=0
 else
-  RPM_ROOT="$WORK/rpmbuild"
-  mkdir -p "$RPM_ROOT/BUILD" "$RPM_ROOT/BUILDROOT" "$RPM_ROOT/RPMS" "$RPM_ROOT/SOURCES" "$RPM_ROOT/SPECS" "$RPM_ROOT/SRPMS"
-  install -m 0755 "$BINARY" "$RPM_ROOT/SOURCES/vollcrypt-shield"
-  cat > "$RPM_ROOT/SPECS/vollcrypt-shield.spec" <<EOF
-Name: $PACKAGE_NAME
-Version: 1.0.0
-Release: 1
-Summary: Vollcrypt Shield filesystem integrity agent and CLI qualification package
-License: GPL-3.0-only OR LicenseRef-Commercial
-Source0: vollcrypt-shield
-
-%description
-Vollcrypt Shield filesystem integrity agent and CLI qualification package.
-
-%install
-mkdir -p %{buildroot}/usr/bin
-install -m 0755 %{SOURCE0} %{buildroot}/usr/bin/vollcrypt-shield
-
-%files
-/usr/bin/vollcrypt-shield
-EOF
-  rpmbuild --define "_topdir $RPM_ROOT" -bb "$RPM_ROOT/SPECS/vollcrypt-shield.spec"
-  RPM_PACKAGE=$(find "$RPM_ROOT/RPMS" -type f -name '*.rpm' -print -quit)
-  test -n "$RPM_PACKAGE"
-  rpm --checksig "$RPM_PACKAGE"
-  rpm --install "$RPM_PACKAGE"
+  PACKAGE=$(bash "$(dirname "$0")/build-linux-package.sh" "$BINARY" "$WORK/packages" rpm | tail -n 1)
+  rpm --checksig "$PACKAGE"
+  rpm --install "$PACKAGE"
   PACKAGE_INSTALLED=1
-  /usr/bin/vollcrypt-shield --help >/dev/null
+  systemd-analyze verify /usr/lib/systemd/system/vollcrypt-shield@.service
+  id vollcrypt-shield >/dev/null
+  test "$(stat -c %a /var/lib/vollcrypt-shield)" = 700
+  /usr/bin/vollcrypt-shield --version | grep -q '1.0.0'
   rpm --erase "$PACKAGE_NAME"
   PACKAGE_INSTALLED=0
 fi
