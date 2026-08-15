@@ -35,3 +35,10 @@ Retain the complete test log, exact Git commit, operating-system build,
 architecture, filesystem type, volume identifiers, and service-account
 privilege output as release evidence. Compilation or a non-strict test run is
 not qualification evidence.
+
+The `Vollcrypt Shield Windows Recovery` workflow automates this gate weekly and
+on demand for Windows Server 2022/2025 x86_64 and Windows 11 ARM64. It provisions
+a disposable second NTFS volume, requires the three service-account privileges,
+runs the strict suites serially, and retains the host manifest, privilege list,
+test logs, and disk lifecycle logs as workflow artifacts. A failed or missing
+artifact is not qualification evidence.
