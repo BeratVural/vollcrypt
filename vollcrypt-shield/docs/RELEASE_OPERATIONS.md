@@ -31,6 +31,13 @@ and `Vollcrypt Shield Soak` runs for fifteen minutes daily or with a manually
 selected duration. The Rust `notification_delivery_soak` test separately
 delivers a 128-event burst to both the durable log and a loopback webhook.
 
+The first complete fifteen-minute gate after bounded unstable-file retry passed
+from public commit `3638047` in workflow run `31872218019`. It delivered at
+least one signed dry-run response per mutation while bounding RSS and file
+descriptor growth, retaining live IPC/status access, and verifying the signed
+audit chain. Every release still runs its own five-minute gate; the historical
+result is regression evidence rather than a substitute for exact-commit tests.
+
 ## Downgrade rule
 
 State schema v2 is intentionally rejected by a v1 reader. Downgrading a binary
