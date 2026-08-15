@@ -355,7 +355,9 @@ jobs:
           fingerprint=$(gpg --batch --with-colons --list-secret-keys |
             awk -F: '$1 == "fpr" { print $10; exit }')
           export VOLLCRYPT_RELEASE_GPG_PRIVATE_KEY_BASE64
-          VOLLCRYPT_RELEASE_GPG_PRIVATE_KEY_BASE64=$(gpg --batch +            --pinentry-mode loopback --passphrase ci-only-passphrase +            --export-secret-keys "$fingerprint" | base64 -w0)
+          VOLLCRYPT_RELEASE_GPG_PRIVATE_KEY_BASE64=$(gpg --batch \
+            --pinentry-mode loopback --passphrase ci-only-passphrase \
+            --export-secret-keys "$fingerprint" | base64 -w0)
           export VOLLCRYPT_RELEASE_GPG_PASSPHRASE=ci-only-passphrase
           export VOLLCRYPT_RELEASE_GPG_FINGERPRINT="$fingerprint"
           printf 'release-signing-smoke\n' > "$assets/payload.bin"

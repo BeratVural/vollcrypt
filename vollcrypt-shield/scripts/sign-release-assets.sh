@@ -47,6 +47,11 @@ EOF
 mapfile -d '' FILES < <(find "$ASSETS" -maxdepth 1 -type f ! -name '*.asc' -print0 | sort -z)
 test "${#FILES[@]}" -gt 0
 for file in "${FILES[@]}"; do
-  gpg --batch --yes --armor --detach-sign +    --pinentry-mode loopback +    --passphrase-file "$PASS_FILE" +    --local-user "$EXPECTED" +    --output "$file.asc" +    "$file"
+  gpg --batch --yes --armor --detach-sign \
+    --pinentry-mode loopback \
+    --passphrase-file "$PASS_FILE" \
+    --local-user "$EXPECTED" \
+    --output "$file.asc" \
+    "$file"
   gpg --batch --verify "$file.asc" "$file"
 done
