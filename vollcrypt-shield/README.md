@@ -246,6 +246,8 @@ For PostgreSQL or MySQL, set SHIELD_POSTGRES_URL or SHIELD_MYSQL_URL and use
 the matching baseline/verify command; private trust roots are passed with
 --ca-file. Credentials are never accepted as CLI arguments. Optional db-guard
 enhanced context uses a versioned data contract and remains independent.
+Public adapter and private commercial staging evidence is recorded in
+[`docs/DATABASE_QUALIFICATION.md`](docs/DATABASE_QUALIFICATION.md).
 
 ## Embedded integrity foundation
 
@@ -271,8 +273,9 @@ bootstrap provisioning, mTLS fleet transport, centralized inventory,
 replay-protected signed-summary retention, air-gapped ingestion, and signed
 service responses, a centralized terminal dashboard, OIDC/RBAC, signed
 compliance exports, managed certificates, raw retention, and PostgreSQL-backed
-shared state. Production PostgreSQL qualification remains environment-specific,
-and external incident delivery is opt-in rather than enabled by default.
+shared state. Disposable TLS 1.3 staging qualification is complete; production
+qualification remains customer- and environment-specific. External incident
+delivery is opt-in rather than enabled by default.
 
 The product remains Vollcrypt Shield; licensed customer deployment archives
 and their administration command use `shield-commercial`. Those private

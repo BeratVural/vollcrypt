@@ -51,12 +51,16 @@ platform or capability is never promoted based on compilation alone.
 
 ## Database integrity
 
-- [ ] Implement PostgreSQL and MySQL adapters using consistent read-only
-  snapshots and the existing canonical record-source contract.
+- [x] Implement PostgreSQL and MySQL adapters using consistent read-only
+  snapshots and the existing canonical record-source contract. Disposable
+  TLS baseline/match/drift evidence is recorded in
+  `DATABASE_QUALIFICATION.md`.
 - [x] Add optional db-guard enhanced context through an explicit versioned
   adapter; standalone Shield DB behavior must remain independent.
-- [ ] Qualify the commercial PostgreSQL backend against a disposable,
-  TLS-enabled staging database without publishing private implementation code.
+- [x] Qualify the commercial PostgreSQL backend against a disposable,
+  TLS 1.3 staging database without publishing private implementation code.
+  The private commit and job evidence are recorded in
+  `DATABASE_QUALIFICATION.md`.
 
 ## Release and operations
 

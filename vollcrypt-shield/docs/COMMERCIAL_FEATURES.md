@@ -40,8 +40,10 @@ licensee's own application, subject to the applicable agreement.
 - ML-DSA-signed service responses, storage policy, state, and reports; and
 - prebuilt `shield-commercial` Windows/Linux deployment bundles.
 
-PostgreSQL production qualification requires a customer's disposable
-TLS-enabled staging database. External Slack, Teams, PagerDuty, or SIEM event
+The private backend has passed synthetic disposable PostgreSQL 17 TLS 1.3
+qualification. Customer production qualification still requires that
+customer's disposable TLS-enabled staging database. External Slack, Teams,
+PagerDuty, or SIEM event
 delivery is disabled unless the customer explicitly authorizes and configures
 off-device event transmission. The current centralized dashboard is terminal
 based; a graphical fleet mode is not included in this delivery.
