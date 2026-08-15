@@ -16,8 +16,8 @@ the exact Shield release. Support removal follows
 | Fedora 44 | x86_64 | Supported | Supported for non-system regular-file scopes | Not packaged | Full-VM systemd, watcher, audit, and RPM smoke |
 | Rocky Linux 9.8 | x86_64 | Supported | Supported for non-system regular-file scopes | Not packaged | Full-VM systemd, watcher, audit, and RPM smoke |
 | AlmaLinux 9.8 | x86_64 | Supported | Supported for non-system regular-file scopes | Not packaged | Full-VM systemd, watcher, audit, and RPM smoke |
-| Windows Server 2022 | x86_64 | Supported | Implemented behind a privilege/capability gate; qualification pending | Supported | Dedicated CI and release smoke test |
-| Windows Server 2025 | x86_64 | Supported | Implemented behind a privilege/capability gate; qualification pending | Supported | Dedicated CI and release smoke test |
+| Windows Server 2022 | x86_64 | Supported | Supported behind a privilege/capability gate | Supported | Strict real-host recovery and release smoke |
+| Windows Server 2025 | x86_64 | Supported | Supported behind a privilege/capability gate | Supported | Strict real-host recovery and release smoke |
 
 Windows 11 x86_64 is a supported desktop target for the CLI, detection,
 reporting, notifications, and Viewer. It requires a signed release smoke test

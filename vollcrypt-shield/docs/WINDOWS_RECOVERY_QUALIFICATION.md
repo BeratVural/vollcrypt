@@ -45,8 +45,11 @@ artifact is not qualification evidence.
 
 ## Retained qualification
 
-The first complete automated gate passed from public commit `8deb907` in
-workflow run `31872332039` on all three claimed targets. GitHub retains one
-artifact per target containing `host.json`, `privileges.json`, strict test logs,
-the transcript, and disposable-disk lifecycle logs. A release must run the gate
-again for its own commit; this historical result does not replace that gate.
+The current complete automated gate passed from public commit `183def5` in
+workflow run `31874458044` on all three claimed targets. GitHub retains one
+artifact per target containing `host.json`, `privileges.json`, strict test
+logs, the transcript, and disposable-disk lifecycle logs. The run includes the
+ARM64-safe NTFS timestamp handling that still rejects creation-time,
+last-write-time, or attribute drift and restores all signed basic metadata
+after `BackupRead`. A release must run the gate again for its own commit; this
+historical result does not replace that gate.

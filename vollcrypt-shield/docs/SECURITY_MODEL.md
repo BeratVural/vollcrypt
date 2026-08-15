@@ -34,8 +34,10 @@ round-trip probe under a service account with `SeBackupPrivilege`,
 `SeRestorePrivilege`, and `SeSecurityPrivilege`. A missing privilege, incomplete
 baseline, corrupted backup, reparse point, EFS file, or restore error rejects
 activation or contains the affected scope instead of applying a partial
-response. Windows active response remains qualification-only until the
-real-host crash and recovery matrix is complete.
+response. The strict crash and recovery matrix passes on Windows Server
+2022/2025 x86_64 and Windows 11 ARM64. Server active response is release
+supported behind this capability gate; Windows 11 distribution has separate
+real-host and trusted-package promotion gates.
 
 Transaction recovery never trusts a staging filename by itself. The signed
 record binds the scope, normalized original path, observed digest, optional
