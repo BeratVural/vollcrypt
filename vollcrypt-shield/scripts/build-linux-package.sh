@@ -120,7 +120,7 @@ install -d -m 0750 %{buildroot}/etc/vollcrypt-shield
 /usr/bin/getent passwd vollcrypt-shield >/dev/null 2>&1 || /usr/sbin/useradd -r -g vollcrypt-shield -d /var/lib/vollcrypt-shield -s /sbin/nologin -c 'Vollcrypt Shield integrity agent' vollcrypt-shield
 
 %post
-/usr/bin/systemd-tmpfiles --create %{_tmpfilesdir}/vollcrypt-shield.conf
+/usr/bin/systemd-tmpfiles --create /usr/lib/tmpfiles.d/vollcrypt-shield.conf
 /usr/bin/systemctl daemon-reload >/dev/null 2>&1 || :
 
 %preun
@@ -142,6 +142,11 @@ EOF
   rpmbuild --define "_topdir $RPM_ROOT" -bb "$RPM_ROOT/SPECS/vollcrypt-shield.spec"
   BUILT=$(find "$RPM_ROOT/RPMS" -type f -name '*.rpm' -print -quit)
   test -n "$BUILT"
+  rpm -qp --scripts "$BUILT" | grep -Fq '/usr/lib/tmpfiles.d/vollcrypt-shield.conf'
+  if rpm -qp --scripts "$BUILT" | grep -Fq '%{'; then
+    echo "RPM scriptlets contain an unexpanded macro" >&2
+    exit 1
+  fi
   PACKAGE="$OUTPUT/$(basename "$BUILT")"
   cp "$BUILT" "$PACKAGE"
 fi
