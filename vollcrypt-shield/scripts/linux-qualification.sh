@@ -103,7 +103,7 @@ if [ "$PACKAGE_FORMAT" = deb ]; then
 else
   PACKAGE=$(bash "$(dirname "$0")/build-linux-package.sh" "$BINARY" "$WORK/packages" rpm | tail -n 1)
   rpm --checksig "$PACKAGE"
-  rpm --install "$PACKAGE"
+  dnf install -y "$PACKAGE"
   PACKAGE_INSTALLED=1
   systemd-analyze verify /usr/lib/systemd/system/vollcrypt-shield@.service
   id vollcrypt-shield >/dev/null
