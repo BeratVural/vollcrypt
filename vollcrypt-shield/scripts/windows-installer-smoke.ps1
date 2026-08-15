@@ -95,6 +95,10 @@ try {
     if ($actualArchitecture -ne $ExpectedArchitecture) {
         throw "installed Viewer architecture is $actualArchitecture, expected $ExpectedArchitecture"
     }
+    $executableSignature = Get-AuthenticodeSignature -LiteralPath $installedExecutable
+    if ($env:VOLLCRYPT_REQUIRE_AUTHENTICODE -eq "1" -and $executableSignature.Status -ne "Valid") {
+        throw "installed Viewer Authenticode signature is not valid: $($executableSignature.Status)"
+    }
 
     if ($entry.UninstallString -and $entry.UninstallString -match '^"([^\"]+)"') {
         $uninstaller = $Matches[1]
@@ -115,6 +119,8 @@ try {
         installerSha256 = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
         authenticodeStatus = $signature.Status.ToString()
         authenticodeSigner = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { $null }
+        executableAuthenticodeStatus = $executableSignature.Status.ToString()
+        executableAuthenticodeSigner = if ($executableSignature.SignerCertificate) { $executableSignature.SignerCertificate.Subject } else { $null }
         installedExecutable = $installedExecutable
         architecture = $actualArchitecture
         version = [Diagnostics.FileVersionInfo]::GetVersionInfo($installedExecutable).FileVersion

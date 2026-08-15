@@ -21,6 +21,17 @@ must additionally sign its repository metadata with an offline-controlled key.
 The release workflow never accepts an unsigned artifact merely because its
 filename or version is expected.
 
+Tag and draft-producing release runs require the repository secrets
+`VOLLCRYPT_WINDOWS_CERTIFICATE_BASE64` and
+`VOLLCRYPT_WINDOWS_CERTIFICATE_PASSWORD`. The certificate must be a currently
+valid trusted code-signing certificate with a private key and Code Signing EKU.
+The workflow signs the Windows CLI and asks Tauri to sign both the Viewer
+executable and NSIS installer, applies an RFC 3161 SHA-256 timestamp, and then
+requires `Get-AuthenticodeSignature` to report `Valid` for the installer and
+installed Viewer. Missing or invalid credentials stop publishing. Ordinary CI
+and qualification-only dispatches continue to build unsigned disposable
+artifacts and never promote them.
+
 Manual workflow dispatches are qualification-only by default. They exercise
 all build, install, recovery, soak, and attestation jobs without creating a tag
 or draft release. Publishing requires the explicit `create_draft` input; a

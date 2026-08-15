@@ -107,6 +107,13 @@ jobs:
         run: |
           mkdir -p dist
           cp "target/release/${{ matrix.binary }}" "dist/vollcrypt-shield-${{ matrix.platform }}${{ runner.os == 'Windows' && '.exe' || '' }}"
+      - name: Authenticode-sign Windows CLI
+        if: runner.os == 'Windows' && (startsWith(github.ref, 'refs/tags/') || inputs.create_draft == true)
+        shell: pwsh
+        env:
+          VOLLCRYPT_WINDOWS_CERTIFICATE_BASE64: ${{ secrets.VOLLCRYPT_WINDOWS_CERTIFICATE_BASE64 }}
+          VOLLCRYPT_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.VOLLCRYPT_WINDOWS_CERTIFICATE_PASSWORD }}
+        run: ./vollcrypt-shield/scripts/prepare-windows-signing.ps1 -Files "dist/vollcrypt-shield-${{ matrix.platform }}.exe"
       - name: Attest CLI
         uses: actions/attest-build-provenance@8beda2b7ed98355c0e97c0a63bec38ae472e66c4 # v4
         with:
@@ -214,12 +221,28 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
       - name: Install dependencies
         run: npm ci
-      - name: Build Viewer bundles
+      - name: Build Linux Viewer bundles
+        if: runner.os == 'Linux'
         run: npm run tauri build
+      - name: Build unsigned Windows qualification bundles
+        if: runner.os == 'Windows' && !(startsWith(github.ref, 'refs/tags/') || inputs.create_draft == true)
+        run: npm run tauri build
+      - name: Build trusted-signed Windows release bundles
+        if: runner.os == 'Windows' && (startsWith(github.ref, 'refs/tags/') || inputs.create_draft == true)
+        shell: pwsh
+        env:
+          VOLLCRYPT_WINDOWS_CERTIFICATE_BASE64: ${{ secrets.VOLLCRYPT_WINDOWS_CERTIFICATE_BASE64 }}
+          VOLLCRYPT_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.VOLLCRYPT_WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $config = Join-Path $env:RUNNER_TEMP "vollcrypt-shield-tauri-signing.json"
+          ../../vollcrypt-shield/scripts/prepare-windows-signing.ps1 -TauriConfig $config
+          npm run tauri build -- --config $config
       - name: Install and remove Windows Viewer
         if: runner.os == 'Windows'
         working-directory: .
         shell: pwsh
+        env:
+          VOLLCRYPT_REQUIRE_AUTHENTICODE: ${{ (startsWith(github.ref, 'refs/tags/') || inputs.create_draft == true) && '1' || '0' }}
         run: |
           $installer = Get-ChildItem target/release/bundle/nsis -Filter '*-setup.exe' | Select-Object -First 1
           if ($null -eq $installer) { throw 'NSIS installer was not produced' }
