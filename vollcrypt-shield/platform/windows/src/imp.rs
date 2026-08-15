@@ -37,6 +37,7 @@ pub fn capture_file(source: &Path, archive: &Path) -> Result<FileBasicMetadata> 
     let initial = query_basic(handle.raw())?;
     validate_attributes(source, initial.FileAttributes)?;
     suppress_timestamp_updates(handle.raw())?;
+    let guarded = query_basic(handle.raw())?;
     let mut output = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -45,12 +46,18 @@ pub fn capture_file(source: &Path, archive: &Path) -> Result<FileBasicMetadata> 
     output.sync_all()?;
     let captured = query_basic(handle.raw())?;
     validate_attributes(source, captured.FileAttributes)?;
-    if captured != initial {
+    if captured != guarded {
         return Err(WindowsBackupError::PartialWrite(
-            "source basic metadata changed during capture",
+            "source basic metadata changed during BackupRead",
         ));
     }
-    Ok(captured.into())
+    set_basic(handle.raw(), initial)?;
+    if query_basic(handle.raw())? != initial {
+        return Err(WindowsBackupError::PartialWrite(
+            "source basic metadata could not be restored after capture",
+        ));
+    }
+    Ok(initial.into())
 }
 
 pub fn restore_file(archive: &Path, destination: &Path, metadata: FileBasicMetadata) -> Result<()> {
