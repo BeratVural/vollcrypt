@@ -10,8 +10,10 @@ platform or capability is never promoted based on compilation alone.
   real-host filesystem validation.
 - [x] Debian 13 x86_64: agent/CLI, Node binding, and Viewer CI; then unrestricted
   watcher and package smoke tests.
-- [ ] Windows 11 ARM64: Rust/CLI, Node binding, and Viewer qualification; then a
-  signed real-device installer smoke test.
+- [x] Windows 11 ARM64: Rust/CLI, Node binding, Viewer, strict recovery, and
+  unsigned real-device installer qualification.
+- [ ] Promote Windows 11 ARM64 only after retaining an exact-commit installer
+  smoke with a trusted Authenticode signature.
 - [x] Fedora 44, Rocky Linux 9.8, and AlmaLinux 9.8: pinned CI images, native
   RPM builds, and retained full-VM systemd/watcher/package smoke evidence.
 - [ ] RHEL 9: native RPM build plus retained smoke evidence from a licensed
@@ -66,8 +68,14 @@ platform or capability is never promoted based on compilation alone.
 
 ## Release and operations
 
-- [ ] Add signed native packages and installation smoke tests for every promoted
-  Linux distribution and Windows architecture.
+- [x] Build, attest, install, verify, and remove native packages for every
+  promoted Linux distribution and Windows architecture in the release gate.
+- [x] Fail release publication closed on missing trusted Authenticode or pinned
+  detached-GPG signing credentials, and smoke-test detached signing with an
+  ephemeral CI key.
+- [ ] Configure the maintainer-controlled production GPG identity and trusted
+  Authenticode certificate, then retain the first exact-commit signed release
+  evidence. Signing secrets must never be generated in or committed to CI.
 - [x] Add upgrade, downgrade-rejection, state migration, backup restoration, and
   break-glass recovery drills to release evidence. The named cross-platform and
   Unix vault drills are required by both CI and the release workflow; see

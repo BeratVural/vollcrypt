@@ -16,17 +16,23 @@ binary, private source, or customer credential is published here.
 - TLS 1.3 mutual-authentication fleet transport;
 - pinned agent identities and signed-summary replay protection;
 - air-gapped signed-package ingestion;
-- ML-DSA-signed service responses; and
+- ML-DSA-signed service responses;
+- centralized terminal fleet dashboard and comparative integrity reporting;
+- pinned-JWKS OIDC SSO with Viewer, Auditor, Operator, and SecurityAdmin roles;
+- signed JSON/CSV compliance reports;
+- per-agent `raw` or `signed-summary` retention;
+- managed certificate issuance, rotation, CRL refresh, and revocation;
+- SQLite WAL or TLS 1.3 PostgreSQL shared state with stale-writer rejection;
+- durable local incident export; and
 - prebuilt `shield-commercial` Windows/Linux deployment bundles.
 
 ## Contract-specific roadmap
 
-- centralized fleet dashboard and comparative integrity reporting;
-- SSO, RBAC, separate viewer/control authorization, and audit roles;
-- compliance reports and export workflows;
-- database-backed high availability and horizontal scaling;
-- per-agent `raw` or `signed-summary` retention policy;
-- enterprise notification and incident-routing integrations.
+- graphical fleet desktop mode;
+- customer-specific identity-provider and compliance templates;
+- external incident-routing and support integrations; and
+- qualification for additional databases, operating systems, or
+  high-availability topologies.
 
 Roadmap items are not included in the current licensed binary unless a signed
 agreement explicitly schedules their delivery. No commercial capability is

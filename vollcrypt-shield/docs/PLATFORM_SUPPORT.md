@@ -107,8 +107,12 @@ published:
 3. Viewer frontend build and independent verifier tests on each release-gated
    operating system.
 4. Installer/package smoke tests on Ubuntu 22.04, Ubuntu 24.04, Ubuntu 26.04,
-   Debian 13, Windows Server 2022, and Windows Server 2025.
-5. A real-host Windows 11 smoke test before marking Windows 11 as verified in
-   release notes.
+   Debian 13, Fedora 44, Rocky Linux 9.8, AlmaLinux 9.8, Windows Server 2022,
+   and Windows Server 2025.
+5. A trusted-Authenticode real-host Windows 11 smoke test before marking that
+   Windows architecture as verified in release notes.
+6. OIDC provenance for every staged artifact plus detached GPG signatures for
+   every published asset; Windows executables and installers additionally
+   require a trusted Authenticode signature.
 
 CI success on a floating `*-latest` image is not accepted as platform evidence.

@@ -42,11 +42,11 @@ shutdown, network isolation, and permission-destructive responses are rejected.
 The release-gated platform matrix is Ubuntu 22.04/24.04/26.04, Debian 13,
 Fedora 44, Rocky Linux 9.8, and AlmaLinux 9.8 x86_64, plus Windows Server
 2022/2025 x86_64. Windows 11 x86_64 is a supported desktop target after a
-real-host smoke test for the release. Exact capability and validation limits
-are documented in
+trusted-signed real-host smoke test for the release. Exact capability and
+validation limits are documented in
 [`docs/PLATFORM_SUPPORT.md`](docs/PLATFORM_SUPPORT.md). Windows 11 ARM64 remains
-an active qualification target. The ordered implementation backlog, including
-the full headless TUI, is maintained in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+an active qualification target. The remaining external qualification gates
+are maintained in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 Platform, protocol, and package support removal follows the published
 [`deprecation policy`](docs/DEPRECATION_POLICY.md).
 Release artifact verification, including OIDC provenance and native-signature
@@ -322,5 +322,5 @@ read-only inspection does not persist a cursor. See
 
 The public Shield core, agents, witness components, protocol, and SDK bindings
 are dual-licensed under `GPL-3.0-only OR LicenseRef-Commercial`. The fleet
-fleet platform, SSO/RBAC, enterprise reporting, and centralized operations are
+platform, SSO/RBAC, enterprise reporting, and centralized operations are
 commercial only. Their implementation is not included in this public repo.
