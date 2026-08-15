@@ -48,6 +48,7 @@ jobs:
             sleep 2
           done
           lxc exec shield -- cloud-init status --wait
+          lxc exec shield -- dnf install -y tar
           lxc exec shield -- mkdir -p /root/vollcrypt
           lxc file push "$RUNNER_TEMP/vollcrypt.tar" shield/root/vollcrypt/source.tar
           lxc exec shield -- tar -xf /root/vollcrypt/source.tar -C /root/vollcrypt
