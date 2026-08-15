@@ -36,3 +36,8 @@ Manual workflow dispatches are qualification-only by default. They exercise
 all build, install, recovery, soak, and attestation jobs without creating a tag
 or draft release. Publishing requires the explicit `create_draft` input; a
 `shield-v*` tag continues to run the full draft-release path automatically.
+The exact release commit must install, verify, and remove the native package on
+Ubuntu 22.04/24.04/26.04, Debian 13, Fedora 44, Rocky Linux 9.8, and AlmaLinux
+9.8 before the draft job can start. All non-Ubuntu images are immutable
+digest-pinned; the separate full-VM gate supplies systemd PID 1 and live
+watcher evidence for the promoted RPM platforms.
