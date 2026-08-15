@@ -325,10 +325,50 @@ jobs:
       - name: Run five-minute live watcher soak
         run: bash vollcrypt-shield/scripts/watcher-soak.sh target/release/vollcrypt-shield 300
 
+  release-signing-smoke:
+    name: Detached release-signing smoke
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Generate an ephemeral key and verify release signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GNUPGHOME
+          GNUPGHOME=$(mktemp -d)
+          assets=$(mktemp -d)
+          cleanup() {
+            rm -rf -- "$GNUPGHOME" "$assets"
+          }
+          trap cleanup EXIT
+          chmod 0700 "$GNUPGHOME"
+          cat > "$GNUPGHOME/key-parameters" <<'EOF'
+          Key-Type: RSA
+          Key-Length: 2048
+          Name-Real: Vollcrypt Shield CI
+          Name-Email: shield-ci@example.invalid
+          Expire-Date: 1d
+          Passphrase: ci-only-passphrase
+          %commit
+          EOF
+          gpg --batch --pinentry-mode loopback --generate-key "$GNUPGHOME/key-parameters"
+          fingerprint=$(gpg --batch --with-colons --list-secret-keys |
+            awk -F: '$1 == "fpr" { print $10; exit }')
+          export VOLLCRYPT_RELEASE_GPG_PRIVATE_KEY_BASE64
+          VOLLCRYPT_RELEASE_GPG_PRIVATE_KEY_BASE64=$(gpg --batch +            --pinentry-mode loopback --passphrase ci-only-passphrase +            --export-secret-keys "$fingerprint" | base64 -w0)
+          export VOLLCRYPT_RELEASE_GPG_PASSPHRASE=ci-only-passphrase
+          export VOLLCRYPT_RELEASE_GPG_FINGERPRINT="$fingerprint"
+          printf 'release-signing-smoke\n' > "$assets/payload.bin"
+          bash vollcrypt-shield/scripts/sign-release-assets.sh "$assets"
+          test -s "$assets/payload.bin.asc"
+          test -s "$assets/SIGNING_IDENTITY.txt.asc"
+          test -s "$assets/VOLLCRYPT_RELEASE_SIGNING_KEY.asc"
+          gpg --batch --verify "$assets/payload.bin.asc" "$assets/payload.bin"
+
   release:
     name: Draft GitHub release
     if: startsWith(github.ref, 'refs/tags/') || inputs.create_draft == true
-    needs: [platform-qualification, windows-recovery, cli, deb-package, rpm-package, linux-package-qualification, viewer, watcher-soak]
+    needs: [platform-qualification, windows-recovery, cli, deb-package, rpm-package, linux-package-qualification, viewer, watcher-soak, release-signing-smoke]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -342,6 +382,12 @@ jobs:
         run: |
           cd release-assets
           sha256sum * > SHA256SUMS
+      - name: Sign release assets with the offline-controlled key
+        env:
+          VOLLCRYPT_RELEASE_GPG_PRIVATE_KEY_BASE64: ${{ secrets.VOLLCRYPT_RELEASE_GPG_PRIVATE_KEY_BASE64 }}
+          VOLLCRYPT_RELEASE_GPG_PASSPHRASE: ${{ secrets.VOLLCRYPT_RELEASE_GPG_PASSPHRASE }}
+          VOLLCRYPT_RELEASE_GPG_FINGERPRINT: ${{ secrets.VOLLCRYPT_RELEASE_GPG_FINGERPRINT }}
+        run: bash vollcrypt-shield/scripts/sign-release-assets.sh release-assets
       - name: Create draft release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:

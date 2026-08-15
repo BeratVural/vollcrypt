@@ -14,6 +14,23 @@ The release also publishes `SHA256SUMS`. A checksum detects transfer damage;
 the attestation authenticates the repository workflow and subject digest. Both
 checks are required for manual distribution.
 
+Published drafts additionally contain an armored detached `.asc` signature
+for every release asset and `SHA256SUMS`, plus
+`VOLLCRYPT_RELEASE_SIGNING_KEY.asc` and a pinned-fingerprint
+`SIGNING_IDENTITY.txt`. Verify a downloaded asset before installation:
+
+```console
+gpg --import VOLLCRYPT_RELEASE_SIGNING_KEY.asc
+gpg --verify vollcrypt-shield_1.0.0_amd64.deb.asc vollcrypt-shield_1.0.0_amd64.deb
+```
+
+The draft job requires `VOLLCRYPT_RELEASE_GPG_PRIVATE_KEY_BASE64`,
+`VOLLCRYPT_RELEASE_GPG_PASSPHRASE`, and
+`VOLLCRYPT_RELEASE_GPG_FINGERPRINT`. It imports the key into an ephemeral
+`GNUPGHOME`, rejects a fingerprint mismatch, verifies every generated
+signature, and removes temporary secret material. Qualification-only runs do
+not access these secrets because they never execute the publishing job.
+
 GitHub provenance does not substitute for an operating-system trust signature.
 Windows installers are not promoted as trusted until Authenticode validation
 returns `Valid`. A package-manager repository that redistributes DEB or RPM
