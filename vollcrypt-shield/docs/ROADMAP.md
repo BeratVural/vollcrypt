@@ -12,8 +12,10 @@ platform or capability is never promoted based on compilation alone.
   watcher and package smoke tests.
 - [ ] Windows 11 ARM64: Rust/CLI, Node binding, and Viewer qualification; then a
   signed real-device installer smoke test.
-- [ ] Fedora, RHEL, Rocky Linux, and AlmaLinux: pinned CI images, native package
-  builds, and real-host smoke evidence before support promotion.
+- [x] Fedora 44, Rocky Linux 9.8, and AlmaLinux 9.8: pinned CI images, native
+  RPM builds, and retained full-VM systemd/watcher/package smoke evidence.
+- [ ] RHEL 9: native RPM build plus retained smoke evidence from a licensed
+  real host before support promotion. UBI evidence is not accepted as RHEL.
 
 ## Interactive terminal interface
 

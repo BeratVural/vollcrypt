@@ -38,10 +38,11 @@ Active quarantine and rollback accept regular, non-reparse, non-EFS files only.
 Directories, symlinks, operating-system shutdown, network isolation, and
 permission-destructive responses are rejected.
 
-The release-gated platform matrix is Ubuntu 22.04/24.04/26.04 and Debian 13
-x86_64, plus Windows Server 2022/2025 x86_64. Windows 11 x86_64 is a supported
-desktop target after a real-host smoke test for the release. Exact capability
-and validation limits are documented in
+The release-gated platform matrix is Ubuntu 22.04/24.04/26.04, Debian 13,
+Fedora 44, Rocky Linux 9.8, and AlmaLinux 9.8 x86_64, plus Windows Server
+2022/2025 x86_64. Windows 11 x86_64 is a supported desktop target after a
+real-host smoke test for the release. Exact capability and validation limits
+are documented in
 [`docs/PLATFORM_SUPPORT.md`](docs/PLATFORM_SUPPORT.md). Windows 11 ARM64 remains
 an active qualification target. The ordered implementation backlog, including
 the full headless TUI, is maintained in [`docs/ROADMAP.md`](docs/ROADMAP.md).

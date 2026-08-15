@@ -13,6 +13,9 @@ the exact Shield release. Support removal follows
 | Ubuntu 24.04 LTS | x86_64 | Supported | Supported for non-system regular-file scopes | Supported on desktop installs | Dedicated CI and release smoke test |
 | Ubuntu 26.04 LTS | x86_64 | Supported | Supported for non-system regular-file scopes | Supported on desktop installs | Dedicated CI and real-host smoke test |
 | Debian 13 | x86_64 | Supported | Supported for non-system regular-file scopes | Supported on desktop installs | Pinned CI, unrestricted watcher, and package smoke test |
+| Fedora 44 | x86_64 | Supported | Supported for non-system regular-file scopes | Not packaged | Full-VM systemd, watcher, audit, and RPM smoke |
+| Rocky Linux 9.8 | x86_64 | Supported | Supported for non-system regular-file scopes | Not packaged | Full-VM systemd, watcher, audit, and RPM smoke |
+| AlmaLinux 9.8 | x86_64 | Supported | Supported for non-system regular-file scopes | Not packaged | Full-VM systemd, watcher, audit, and RPM smoke |
 | Windows Server 2022 | x86_64 | Supported | Implemented behind a privilege/capability gate; qualification pending | Supported | Dedicated CI and release smoke test |
 | Windows Server 2025 | x86_64 | Supported | Implemented behind a privilege/capability gate; qualification pending | Supported | Dedicated CI and release smoke test |
 
@@ -30,10 +33,7 @@ until every listed gate passes for a Shield release:
 | Platform | Architecture | Current gate |
 | --- | --- | --- |
 | Windows 11 | ARM64 | Dedicated Rust/CLI, Node binding, and Viewer CI plus signed real-device installer smoke test |
-| Fedora 44 | x86_64 | Digest-pinned CI, unrestricted watcher, and RPM smoke; real-host release evidence pending |
 | RHEL 9 / UBI 9.8 | x86_64 | Digest-pinned ABI-compatible CI and RPM smoke; licensed RHEL real-host evidence pending |
-| Rocky Linux 9.8 | x86_64 | Digest-pinned CI, unrestricted watcher, and RPM smoke; real-host release evidence pending |
-| AlmaLinux 9.8 | x86_64 | Digest-pinned CI, unrestricted watcher, and RPM smoke; real-host release evidence pending |
 
 The weekly `Vollcrypt Shield RPM VM Qualification` gate boots Fedora, Rocky
 Linux, and AlmaLinux as full virtual machines with systemd as PID 1. It builds
@@ -41,6 +41,11 @@ and installs the native RPM, runs the agent as the packaged service identity,
 exercises watcher/IPC/audit delivery, and retains kernel, package digest,
 service journal, and systemd hardening evidence. RHEL promotion still requires
 licensed real-host evidence; UBI is not treated as a RHEL host.
+
+Run `31873772624` passed this gate for Fedora 44, Rocky Linux 9.8, and
+AlmaLinux 9.8 from public commit `7dae462`. Its per-platform artifacts retain
+the exact OS release, kernel, architecture, package SHA-256, systemd hardening
+report, service journal, active service state, and dry-run policy result.
 
 Qualification results must be recorded as `blocked`, rather than product
 failures, when a test environment denies required Unix-domain sockets, network
