@@ -509,17 +509,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: Fedora 42
-            image: fedora:42
-            suffix: fedora42
-          - platform: RHEL UBI 9.6
-            image: registry.access.redhat.com/ubi9/ubi:9.6
+          - platform: Fedora 44
+            image: fedora:44@sha256:6c75d5bf57cb0fa5aa4b92c6a83c86c791644496d9ac230de7711f5b8ec3b898
+            suffix: fedora44
+          - platform: RHEL UBI 9.8
+            image: registry.access.redhat.com/ubi9/ubi:9.8@sha256:bcbf1fe577df63bd975ea19ebae604b5f072e1833b2bde417a0ffd4afd938b96
             suffix: rhel9
-          - platform: Rocky Linux 9.6
-            image: rockylinux/rockylinux:9.6@sha256:91bbb8eb52ca462611c1f9ce5c4cede4172a31bfe64f336e82f29648694a3cfe
+          - platform: Rocky Linux 9.8
+            image: rockylinux/rockylinux:9.8@sha256:8101994123cf3d0a8fee517bee7f39e555c7d92bd2d9eb3303cc988a0eeed00f
             suffix: rocky9
-          - platform: AlmaLinux 9.6
-            image: almalinux:9.6
+          - platform: AlmaLinux 9.8
+            image: almalinux:9.8@sha256:d2515c769e7b73f95c4fde38c0a505336ff38f14990c0b7253b77060a049a743
             suffix: alma9
     container:
       image: ${{ matrix.image }}

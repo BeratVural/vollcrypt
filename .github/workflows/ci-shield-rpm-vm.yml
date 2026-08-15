@@ -17,18 +17,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: fedora-42
-            image: images:fedora/42/cloud
+          - platform: fedora-44
+            image: images:fedora/44/cloud
             os_id: fedora
-            version: "42"
-          - platform: rocky-linux-9-6
-            image: images:rockylinux/9.6/cloud
+            version: "44"
+          - platform: rocky-linux-9-8
+            image: images:rockylinux/9.8/cloud
             os_id: rocky
-            version: "9.6"
-          - platform: alma-linux-9-6
-            image: images:almalinux/9.6/cloud
+            version: "9.8"
+          - platform: alma-linux-9-8
+            image: images:almalinux/9.8/cloud
             os_id: almalinux
-            version: "9.6"
+            version: "9.8"
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

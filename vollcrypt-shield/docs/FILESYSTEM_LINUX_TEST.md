@@ -87,7 +87,7 @@ execute the package, and uninstall it cleanly. A container or runner that
 blocks inotify, Unix sockets, or package installation is not promotion
 evidence.
 
-Fedora 42, RHEL-compatible UBI 9.6, Rocky Linux 9.6, and AlmaLinux 9.6 use the
+Fedora 44, RHEL-compatible UBI 9.8, Rocky Linux 9.8, and AlmaLinux 9.8 use the
 same unrestricted behavioral gate with the RPM backend:
 
 ```console

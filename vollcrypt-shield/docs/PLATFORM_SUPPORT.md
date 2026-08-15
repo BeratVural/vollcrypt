@@ -30,10 +30,10 @@ until every listed gate passes for a Shield release:
 | Platform | Architecture | Current gate |
 | --- | --- | --- |
 | Windows 11 | ARM64 | Dedicated Rust/CLI, Node binding, and Viewer CI plus signed real-device installer smoke test |
-| Fedora 42 | x86_64 | Pinned CI, unrestricted watcher, and RPM smoke; real-host release evidence pending |
-| RHEL 9 / UBI 9.6 | x86_64 | Pinned ABI-compatible CI and RPM smoke; licensed RHEL real-host evidence pending |
-| Rocky Linux 9.6 | x86_64 | Pinned CI, unrestricted watcher, and RPM smoke; real-host release evidence pending |
-| AlmaLinux 9.6 | x86_64 | Pinned CI, unrestricted watcher, and RPM smoke; real-host release evidence pending |
+| Fedora 44 | x86_64 | Digest-pinned CI, unrestricted watcher, and RPM smoke; real-host release evidence pending |
+| RHEL 9 / UBI 9.8 | x86_64 | Digest-pinned ABI-compatible CI and RPM smoke; licensed RHEL real-host evidence pending |
+| Rocky Linux 9.8 | x86_64 | Digest-pinned CI, unrestricted watcher, and RPM smoke; real-host release evidence pending |
+| AlmaLinux 9.8 | x86_64 | Digest-pinned CI, unrestricted watcher, and RPM smoke; real-host release evidence pending |
 
 The weekly `Vollcrypt Shield RPM VM Qualification` gate boots Fedora, Rocky
 Linux, and AlmaLinux as full virtual machines with systemd as PID 1. It builds
