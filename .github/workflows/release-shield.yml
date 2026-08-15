@@ -311,6 +311,39 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  viewer-windows-server-2025-smoke:
+    name: Viewer package smoke (windows-server-2025-x86_64)
+    needs: viewer
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: shield-viewer-windows-x86_64
+          path: dist
+      - name: Install, verify, and remove x86_64 Viewer package
+        shell: pwsh
+        env:
+          VOLLCRYPT_REQUIRE_AUTHENTICODE: ${{ (startsWith(github.ref, 'refs/tags/') || inputs.create_draft == true) && '1' || '0' }}
+        run: |
+          $installer = Get-ChildItem dist -Filter '*-setup.exe' | Select-Object -First 1
+          if ($null -eq $installer) { throw 'NSIS installer was not downloaded' }
+          $parameters = @{
+            Installer = $installer.FullName
+            ExpectedArchitecture = 'x86_64'
+            EvidenceFile = 'dist/installer-smoke-windows-server-2025-x86_64.json'
+          }
+          ./vollcrypt-shield/scripts/windows-installer-smoke.ps1 @parameters
+      - name: Upload exact-commit package smoke evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: qualification-viewer-windows-server-2025-x86_64
+          path: dist/installer-smoke-windows-server-2025-x86_64.json
+          if-no-files-found: error
+          retention-days: 90
+
   watcher-soak:
     name: Watcher release soak
     runs-on: ubuntu-24.04
@@ -370,7 +403,7 @@ jobs:
   release:
     name: Draft GitHub release
     if: startsWith(github.ref, 'refs/tags/') || inputs.create_draft == true
-    needs: [platform-qualification, windows-recovery, cli, deb-package, rpm-package, linux-package-qualification, viewer, watcher-soak, release-signing-smoke]
+    needs: [platform-qualification, windows-recovery, cli, deb-package, rpm-package, linux-package-qualification, viewer, viewer-windows-server-2025-smoke, watcher-soak, release-signing-smoke]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
