@@ -42,3 +42,11 @@ a disposable second NTFS volume, requires the three service-account privileges,
 runs the strict suites serially, and retains the host manifest, privilege list,
 test logs, and disk lifecycle logs as workflow artifacts. A failed or missing
 artifact is not qualification evidence.
+
+## Retained qualification
+
+The first complete automated gate passed from public commit `8deb907` in
+workflow run `31872332039` on all three claimed targets. GitHub retains one
+artifact per target containing `host.json`, `privileges.json`, strict test logs,
+the transcript, and disposable-disk lifecycle logs. A release must run the gate
+again for its own commit; this historical result does not replace that gate.

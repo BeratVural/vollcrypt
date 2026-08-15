@@ -35,11 +35,11 @@ platform or capability is never promoted based on compilation alone.
 - [x] Implement Windows quarantine and rollback only after owners, DACLs, SACLs,
   integrity labels, alternate data streams, timestamps, and relevant attributes
   can be captured and restored atomically without weakening access control.
-- [ ] Add crash recovery, power-loss, locked-file, junction/reparse-point, and
+- [x] Add crash recovery, power-loss, locked-file, junction/reparse-point, and
   cross-volume rollback tests on real Windows hosts.
-  The implementation and strict test harness are complete; promotion remains
-  blocked until the strict gate in `WINDOWS_RECOVERY_QUALIFICATION.md` is
-  retained as release evidence on each claimed Windows target.
+  The strict gate in `WINDOWS_RECOVERY_QUALIFICATION.md` passes on Windows
+  Server 2022/2025 x86_64 and Windows 11 ARM64 with retained host, privilege,
+  volume, and test-log evidence.
 
 ## Container integrity
 

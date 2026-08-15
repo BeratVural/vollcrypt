@@ -62,8 +62,9 @@ access, write, and change times plus file attributes separately in the signed
 sidecar. Activation performs a create-new backup/restore probe and fails closed
 unless `SeBackupPrivilege`, `SeRestorePrivilege`, and `SeSecurityPrivilege` are
 all assigned and can be enabled. Regular non-reparse, non-EFS files are the only
-accepted targets. The feature is not release-qualified until the real-host
-recovery tests listed in the roadmap pass.
+accepted targets. Strict real-host recovery qualification runs weekly and on
+demand across Windows Server 2022/2025 x86_64 and Windows 11 ARM64; each release
+must retain a passing artifact for its exact commit.
 
 The dedicated Windows 11 ARM64 runner also builds the native NSIS installer,
 installs it silently, validates the installed PE machine type, and uninstalls
