@@ -46,9 +46,9 @@ pub fn capture_file(source: &Path, archive: &Path) -> Result<FileBasicMetadata> 
     output.sync_all()?;
     let captured = query_basic(handle.raw())?;
     validate_attributes(source, captured.FileAttributes)?;
-    if captured != guarded {
+    if !stable_capture_metadata_equal(captured, guarded) {
         return Err(WindowsBackupError::PartialWrite(
-            "source basic metadata changed during BackupRead",
+            "source content metadata changed during BackupRead",
         ));
     }
     set_basic(handle.raw(), initial)?;
@@ -130,16 +130,6 @@ pub fn validate_active_response_capability(directory: &Path) -> Result<()> {
             "restored basic metadata differs",
         ));
     }
-    if std::fs::read(&restored)? != b"vollcrypt-shield-windows-capability-v1" {
-        return Err(WindowsBackupError::PartialWrite(
-            "restored default stream differs",
-        ));
-    }
-    if std::fs::read(ads_path(&restored))? != b"vollcrypt-shield-ads-v1" {
-        return Err(WindowsBackupError::PartialWrite(
-            "restored alternate stream differs",
-        ));
-    }
     let roundtrip_metadata = capture_file(&restored, &restored_archive)?;
     if roundtrip_metadata != metadata {
         return Err(WindowsBackupError::PartialWrite(
@@ -149,6 +139,16 @@ pub fn validate_active_response_capability(directory: &Path) -> Result<()> {
     if std::fs::read(&restored_archive)? != std::fs::read(&archive)? {
         return Err(WindowsBackupError::PartialWrite(
             "round-trip backup stream differs",
+        ));
+    }
+    if std::fs::read(&restored)? != b"vollcrypt-shield-windows-capability-v1" {
+        return Err(WindowsBackupError::PartialWrite(
+            "restored default stream differs",
+        ));
+    }
+    if std::fs::read(ads_path(&restored))? != b"vollcrypt-shield-ads-v1" {
+        return Err(WindowsBackupError::PartialWrite(
+            "restored alternate stream differs",
         ));
     }
     drop(cleanup);
@@ -307,6 +307,12 @@ fn suppress_timestamp_updates(handle: HANDLE) -> Result<()> {
             FileAttributes: 0,
         },
     )
+}
+
+fn stable_capture_metadata_equal(left: FILE_BASIC_INFO, right: FILE_BASIC_INFO) -> bool {
+    left.CreationTime == right.CreationTime
+        && left.LastWriteTime == right.LastWriteTime
+        && left.FileAttributes == right.FileAttributes
 }
 
 fn backup_read_all(handle: HANDLE, output: &mut File) -> Result<()> {
@@ -551,6 +557,37 @@ mod tests {
 
     fn qualification_required() -> bool {
         std::env::var_os("VOLLCRYPT_SHIELD_WINDOWS_ACTIVE_QUALIFICATION").is_some()
+    }
+
+    #[test]
+    fn capture_metadata_filter_allows_only_system_managed_time_drift() {
+        let expected = FILE_BASIC_INFO {
+            CreationTime: 10,
+            LastAccessTime: 20,
+            LastWriteTime: 30,
+            ChangeTime: 40,
+            FileAttributes: 0x20,
+        };
+        let system_time_drift = FILE_BASIC_INFO {
+            LastAccessTime: 21,
+            ChangeTime: 41,
+            ..expected
+        };
+        assert!(stable_capture_metadata_equal(system_time_drift, expected));
+        assert!(!stable_capture_metadata_equal(
+            FILE_BASIC_INFO {
+                LastWriteTime: 31,
+                ..expected
+            },
+            expected
+        ));
+        assert!(!stable_capture_metadata_equal(
+            FILE_BASIC_INFO {
+                FileAttributes: 0x21,
+                ..expected
+            },
+            expected
+        ));
     }
 
     fn privileged_host_available() -> bool {
