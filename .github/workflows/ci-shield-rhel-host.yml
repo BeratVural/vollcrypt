@@ -16,9 +16,6 @@ jobs:
     runs-on: [self-hosted, linux, x64, rhel-9, shield-qualification]
     timeout-minutes: 90
     steps:
-      - name: Checkout exact commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
       - name: Verify licensed RHEL 9 host
         shell: bash
         run: |
@@ -41,6 +38,9 @@ jobs:
           sudo dnf install -y cargo rust git gcc gcc-c++ make openssl-devel pkgconf-pkg-config rpm-build shadow-utils systemd tar gzip
           rustc --version
           cargo --version
+
+      - name: Checkout exact commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Stage immutable exact-commit source
         shell: bash
