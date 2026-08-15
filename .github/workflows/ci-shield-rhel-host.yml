@@ -38,7 +38,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo dnf install -y cargo rust gcc gcc-c++ make openssl-devel pkgconf-pkg-config rpm-build shadow-utils systemd tar gzip
+          sudo dnf install -y cargo rust git gcc gcc-c++ make openssl-devel pkgconf-pkg-config rpm-build shadow-utils systemd tar gzip
           rustc --version
           cargo --version
 
@@ -87,7 +87,7 @@ jobs:
           name: shield-rhel-9-real-host-${{ github.sha }}
           path: qualification-evidence/rhel-9/
           if-no-files-found: error
-          retention-days: 365
+          retention-days: 90
 
       - name: Remove staged source and evidence
         if: always()
