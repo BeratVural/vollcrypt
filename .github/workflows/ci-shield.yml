@@ -523,6 +523,8 @@ jobs:
             suffix: alma9
     container:
       image: ${{ matrix.image }}
+      env:
+        PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     steps:
       - name: Install system dependencies
         shell: bash
