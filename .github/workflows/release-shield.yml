@@ -10,6 +10,11 @@ on:
         description: "Shield release tag (for example shield-v1.0.0)"
         required: true
         type: string
+      create_draft:
+        description: "Create the GitHub draft after all qualification gates pass"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -257,6 +262,7 @@ jobs:
 
   release:
     name: Draft GitHub release
+    if: startsWith(github.ref, 'refs/tags/') || inputs.create_draft == true
     needs: [platform-qualification, windows-recovery, cli, deb-package, rpm-package, viewer, watcher-soak]
     runs-on: ubuntu-22.04
     permissions:

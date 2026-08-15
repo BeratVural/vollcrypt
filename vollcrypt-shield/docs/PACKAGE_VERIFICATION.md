@@ -20,3 +20,8 @@ returns `Valid`. A package-manager repository that redistributes DEB or RPM
 must additionally sign its repository metadata with an offline-controlled key.
 The release workflow never accepts an unsigned artifact merely because its
 filename or version is expected.
+
+Manual workflow dispatches are qualification-only by default. They exercise
+all build, install, recovery, soak, and attestation jobs without creating a tag
+or draft release. Publishing requires the explicit `create_draft` input; a
+`shield-v*` tag continues to run the full draft-release path automatically.
