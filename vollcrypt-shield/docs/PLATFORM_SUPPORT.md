@@ -65,6 +65,11 @@ all assigned and can be enabled. Regular non-reparse, non-EFS files are the only
 accepted targets. The feature is not release-qualified until the real-host
 recovery tests listed in the roadmap pass.
 
+The dedicated Windows 11 ARM64 runner also builds the native NSIS installer,
+installs it silently, validates the installed PE machine type, and uninstalls
+it. This is package smoke evidence, but Windows 11 ARM64 remains a qualification
+target until the same installer has a valid trusted Authenticode signature.
+
 ## User interfaces
 
 - `vollcrypt-shield tui` is the full-screen interface for headless Linux and
