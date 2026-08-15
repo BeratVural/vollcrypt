@@ -22,11 +22,11 @@ jobs:
             os_id: fedora
             version: "44"
           - platform: rocky-linux-9-8
-            image: images:rockylinux/9.8/cloud
+            image: images:rockylinux/9/cloud
             os_id: rocky
             version: "9.8"
           - platform: alma-linux-9-8
-            image: images:almalinux/9.8/cloud
+            image: images:almalinux/9/cloud
             os_id: almalinux
             version: "9.8"
     steps:
