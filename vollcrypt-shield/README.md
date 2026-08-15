@@ -47,6 +47,8 @@ an active qualification target. The ordered implementation backlog, including
 the full headless TUI, is maintained in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 Platform, protocol, and package support removal follows the published
 [`deprecation policy`](docs/DEPRECATION_POLICY.md).
+Release artifact verification, including OIDC provenance and native-signature
+boundaries, is documented in [`package verification`](docs/PACKAGE_VERIFICATION.md).
 
 Shield does not depend on any other Vollcrypt product. Published agents and
 bindings include the Shield core they need and do not require another
