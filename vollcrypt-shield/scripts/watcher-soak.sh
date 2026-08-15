@@ -38,8 +38,8 @@ report_error() {
   echo "watcher soak failed at line $1 with status $status" >&2
   if [ -n "$WATCH_PID" ] && kill -0 "$WATCH_PID" 2>/dev/null; then
     echo "watcher process is still running" >&2
-    awk '/^(VmRSS|VmPeak|Threads):/ { print }' "/proc/$WATCH_PID/status" >&2 || true
-    echo "open file descriptors: $(find "/proc/$WATCH_PID/fd" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)" >&2
+    test ! -r "/proc/$WATCH_PID/status" || awk '/^(VmRSS|VmPeak|Threads):/ { print }' "/proc/$WATCH_PID/status" >&2
+    test ! -d "/proc/$WATCH_PID/fd" || echo "open file descriptors: $(find "/proc/$WATCH_PID/fd" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)" >&2
   else
     echo "watcher process is not running" >&2
   fi

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
     #[error(transparent)]
@@ -13,6 +15,8 @@ pub enum AgentError {
     Config(String),
     #[error("scan error: {0}")]
     Scan(String),
+    #[error("scan error: file changed while being hashed: {0}")]
+    FileChangedDuringScan(PathBuf),
     #[error("scope is contained: {0}")]
     ScopeContained(String),
     #[error("unsafe response target: {0}")]

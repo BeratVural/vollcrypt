@@ -18,6 +18,7 @@ use crate::metadata::CapturedMetadata;
 const FILE_DOMAIN: &[u8] = b"VOLLCRYPT-SHIELD-FILE-v1\0";
 const DIRECTORY_DOMAIN: &[u8] = b"VOLLCRYPT-SHIELD-DIRECTORY-v1\0";
 const SYMLINK_DOMAIN: &[u8] = b"VOLLCRYPT-SHIELD-SYMLINK-v1\0";
+const UNSTABLE_FILE_SCAN_ATTEMPTS: usize = 4;
 
 #[derive(Debug, Clone)]
 pub struct ScanResult {
@@ -333,6 +334,28 @@ fn scan_entry(
     normalized: NormalizedPath,
     scope: &ScopeConfig,
 ) -> Result<IntegrityEntry> {
+    retry_unstable_file_scan(|| scan_entry_once(path, normalized.clone(), scope))
+}
+
+fn retry_unstable_file_scan<T>(mut operation: impl FnMut() -> Result<T>) -> Result<T> {
+    for attempt in 0..UNSTABLE_FILE_SCAN_ATTEMPTS {
+        match operation() {
+            Err(AgentError::FileChangedDuringScan(_))
+                if attempt + 1 < UNSTABLE_FILE_SCAN_ATTEMPTS =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10 * (attempt as u64 + 1)));
+            }
+            result => return result,
+        }
+    }
+    unreachable!("the bounded retry loop always returns on its last attempt")
+}
+
+fn scan_entry_once(
+    path: &Path,
+    normalized: NormalizedPath,
+    scope: &ScopeConfig,
+) -> Result<IntegrityEntry> {
     let metadata = std::fs::symlink_metadata(path)?;
     let captured = CapturedMetadata::capture(path, &scope.metadata)?;
     let metadata_digest = captured.digest()?;
@@ -387,10 +410,7 @@ fn scan_entry(
     }
     let after = reader.get_ref().metadata()?;
     if metadata_changed_during_read(&before, &after) {
-        return Err(AgentError::Scan(format!(
-            "file changed while being hashed: {}",
-            path.display()
-        )));
+        return Err(AgentError::FileChangedDuringScan(path.to_path_buf()));
     }
 
     Ok(IntegrityEntry::new(
@@ -421,6 +441,7 @@ fn metadata_changed_during_read(before: &std::fs::Metadata, after: &std::fs::Met
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
     use std::io::Write;
     use vollcrypt_shield_core::{MetadataPolicy, ResponsePolicy, ScanProfile};
 
@@ -490,5 +511,31 @@ mod tests {
         let full = scanner.full_scan(&scope).unwrap();
         assert_eq!(incremental.root, full.root);
         assert_eq!(incremental.entries, full.entries);
+    }
+
+    #[test]
+    fn unstable_file_scan_is_retried_but_remains_bounded() {
+        let attempts = Cell::new(0usize);
+        let value = retry_unstable_file_scan(|| {
+            let current = attempts.get() + 1;
+            attempts.set(current);
+            if current < 3 {
+                Err(AgentError::FileChangedDuringScan(PathBuf::from("changing")))
+            } else {
+                Ok(42)
+            }
+        })
+        .unwrap();
+        assert_eq!(value, 42);
+        assert_eq!(attempts.get(), 3);
+
+        let attempts = Cell::new(0usize);
+        let error = retry_unstable_file_scan::<()>(|| {
+            attempts.set(attempts.get() + 1);
+            Err(AgentError::FileChangedDuringScan(PathBuf::from("changing")))
+        })
+        .unwrap_err();
+        assert!(matches!(error, AgentError::FileChangedDuringScan(_)));
+        assert_eq!(attempts.get(), UNSTABLE_FILE_SCAN_ATTEMPTS);
     }
 }
