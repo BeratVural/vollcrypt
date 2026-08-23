@@ -1,14 +1,46 @@
-use std::process::{Command, Output};
+#[path = "../../test-support/cargo_binary.rs"]
+mod cargo_binary;
+
+use std::{
+    path::Path,
+    process::{Command, Output},
+};
 
 fn shield(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_vollcrypt-shield"))
+    let executable =
+        cargo_binary::resolve(env!("CARGO_BIN_EXE_vollcrypt-shield"), "vollcrypt-shield");
+    Command::new(&executable)
         .args(arguments)
         .output()
-        .unwrap()
+        .unwrap_or_else(|error| panic!("failed to run {}: {error}", executable.display()))
 }
 
-fn value(path: &std::path::Path) -> &str {
+fn value(path: &Path) -> &str {
     path.to_str().unwrap()
+}
+
+#[test]
+fn prefers_workspace_binary_over_a_cached_absolute_path() {
+    let directory = tempfile::tempdir().unwrap();
+    let profile = directory.path().join("debug");
+    let deps = profile.join("deps");
+    let cached = directory
+        .path()
+        .join("old-checkout")
+        .join(format!("vollcrypt-shield{}", std::env::consts::EXE_SUFFIX));
+    std::fs::create_dir_all(&deps).unwrap();
+    std::fs::create_dir_all(cached.parent().unwrap()).unwrap();
+    let workspace = profile.join(format!("vollcrypt-shield{}", std::env::consts::EXE_SUFFIX));
+    std::fs::write(&workspace, b"workspace executable placeholder").unwrap();
+    std::fs::write(&cached, b"cached executable placeholder").unwrap();
+
+    let resolved = cargo_binary::resolve_from(
+        &cached,
+        &deps.join(format!("workflow-test{}", std::env::consts::EXE_SUFFIX)),
+        "vollcrypt-shield",
+    );
+
+    assert_eq!(resolved, workspace);
 }
 
 #[test]

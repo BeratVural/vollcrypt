@@ -1,13 +1,20 @@
+#[path = "../../../test-support/cargo_binary.rs"]
+mod cargo_binary;
+
 use std::path::Path;
 use std::process::{Command, Output};
 
 use rusqlite::Connection;
 
 fn run(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_vollcrypt-shield-db"))
+    let executable = cargo_binary::resolve(
+        env!("CARGO_BIN_EXE_vollcrypt-shield-db"),
+        "vollcrypt-shield-db",
+    );
+    Command::new(&executable)
         .args(arguments)
         .output()
-        .unwrap()
+        .unwrap_or_else(|error| panic!("failed to run {}: {error}", executable.display()))
 }
 
 fn text(path: &Path) -> &str {

@@ -1,3 +1,6 @@
+#[path = "../../../test-support/cargo_binary.rs"]
+mod cargo_binary;
+
 use std::path::Path;
 use std::process::Command;
 
@@ -12,9 +15,12 @@ fn cli_initializes_baselines_and_verifies_an_oci_layout() {
     let layout = directory.path().join("layout");
     let state = directory.path().join("state");
     create_layout(&layout);
-    let binary = env!("CARGO_BIN_EXE_vollcrypt-shield-container");
+    let binary = cargo_binary::resolve(
+        env!("CARGO_BIN_EXE_vollcrypt-shield-container"),
+        "vollcrypt-shield-container",
+    );
 
-    let initialized = Command::new(binary)
+    let initialized = Command::new(&binary)
         .args(["init", "--state-dir"])
         .arg(&state)
         .args(["--scope", "cli-image"])
@@ -27,7 +33,7 @@ fn cli_initializes_baselines_and_verifies_an_oci_layout() {
             .contains("initialized")
     );
 
-    let baseline = Command::new(binary)
+    let baseline = Command::new(&binary)
         .args(["baseline", "--state-dir"])
         .arg(&state)
         .arg("--layout")
@@ -36,7 +42,7 @@ fn cli_initializes_baselines_and_verifies_an_oci_layout() {
         .unwrap();
     assert!(baseline.status.success());
 
-    let duplicate = Command::new(binary)
+    let duplicate = Command::new(&binary)
         .args(["baseline", "--state-dir"])
         .arg(&state)
         .arg("--layout")
@@ -50,7 +56,7 @@ fn cli_initializes_baselines_and_verifies_an_oci_layout() {
             .contains("--replace")
     );
 
-    let verified = Command::new(binary)
+    let verified = Command::new(&binary)
         .args(["verify", "--state-dir"])
         .arg(&state)
         .arg("--layout")
@@ -65,7 +71,7 @@ fn cli_initializes_baselines_and_verifies_an_oci_layout() {
     );
 
     let digest = format!("sha256:{}", "a".repeat(64));
-    let policy = Command::new(binary)
+    let policy = Command::new(&binary)
         .args(["approve-docker", "--state-dir"])
         .arg(&state)
         .args(["--image-digest", &digest])
@@ -74,7 +80,7 @@ fn cli_initializes_baselines_and_verifies_an_oci_layout() {
     assert!(policy.status.success());
     assert!(String::from_utf8(policy.stdout).unwrap().contains(&digest));
 
-    let duplicate = Command::new(binary)
+    let duplicate = Command::new(&binary)
         .args(["approve-docker", "--state-dir"])
         .arg(&state)
         .args(["--image-digest", &digest])
@@ -87,7 +93,7 @@ fn cli_initializes_baselines_and_verifies_an_oci_layout() {
             .contains("--replace")
     );
 
-    let audit = Command::new(binary)
+    let audit = Command::new(&binary)
         .args(["runtime-audit-verify", "--state-dir"])
         .arg(&state)
         .output()
@@ -99,7 +105,7 @@ fn cli_initializes_baselines_and_verifies_an_oci_layout() {
             .contains("\"records\": 0")
     );
 
-    let containerd_policy = Command::new(binary)
+    let containerd_policy = Command::new(&binary)
         .args(["approve-containerd", "--state-dir"])
         .arg(&state)
         .args(["--namespace", "k8s.io", "--image-digest", &digest])
@@ -112,7 +118,7 @@ fn cli_initializes_baselines_and_verifies_an_oci_layout() {
             .contains("k8s.io")
     );
 
-    let containerd_audit = Command::new(binary)
+    let containerd_audit = Command::new(&binary)
         .args(["runtime-audit-verify", "--state-dir"])
         .arg(&state)
         .args(["--runtime", "containerd"])
@@ -135,14 +141,14 @@ fn cli_initializes_baselines_and_verifies_an_oci_layout() {
     )
     .unwrap();
     let sidecar_state = directory.path().join("sidecar-state");
-    let initialized_sidecar = Command::new(binary)
+    let initialized_sidecar = Command::new(&binary)
         .args(["init", "--state-dir"])
         .arg(&sidecar_state)
         .args(["--scope", "sidecar-cli"])
         .output()
         .unwrap();
     assert!(initialized_sidecar.status.success());
-    let approve_sidecar = Command::new(binary)
+    let approve_sidecar = Command::new(&binary)
         .args(["approve-sidecar", "--state-dir"])
         .arg(&sidecar_state)
         .args([
@@ -160,7 +166,7 @@ fn cli_initializes_baselines_and_verifies_an_oci_layout() {
             .contains("\"guaranteeLevel\": \"constrained\"")
     );
 
-    let check = Command::new(binary)
+    let check = Command::new(&binary)
         .args(["sidecar-check", "--state-dir"])
         .arg(&sidecar_state)
         .arg("--evidence-file")
@@ -172,7 +178,7 @@ fn cli_initializes_baselines_and_verifies_an_oci_layout() {
     assert!(check_output.contains("\"integrationMode\": \"sidecar\""));
     assert!(check_output.contains("\"guaranteeLevel\": \"constrained\""));
 
-    let sidecar_audit = Command::new(binary)
+    let sidecar_audit = Command::new(&binary)
         .args(["runtime-audit-verify", "--state-dir"])
         .arg(&sidecar_state)
         .args(["--runtime", "sidecar"])

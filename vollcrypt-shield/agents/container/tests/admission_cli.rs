@@ -1,3 +1,6 @@
+#[path = "../../../test-support/cargo_binary.rs"]
+mod cargo_binary;
+
 use std::process::Command;
 
 use serde_json::json;
@@ -7,11 +10,14 @@ fn admission_cli_approves_pins_and_rejects_tags() {
     let directory = tempfile::tempdir().unwrap();
     let state = directory.path().join("state");
     let review = directory.path().join("review.json");
-    let binary = env!("CARGO_BIN_EXE_vollcrypt-shield-container");
+    let binary = cargo_binary::resolve(
+        env!("CARGO_BIN_EXE_vollcrypt-shield-container"),
+        "vollcrypt-shield-container",
+    );
     let digest = format!("sha256:{}", "a".repeat(64));
 
     assert!(
-        Command::new(binary)
+        Command::new(&binary)
             .args(["init", "--state-dir"])
             .arg(&state)
             .args(["--scope", "admission-cli"])
@@ -20,7 +26,7 @@ fn admission_cli_approves_pins_and_rejects_tags() {
             .success()
     );
     assert!(
-        Command::new(binary)
+        Command::new(&binary)
             .args(["approve-admission", "--state-dir"])
             .arg(&state)
             .args([
@@ -35,7 +41,7 @@ fn admission_cli_approves_pins_and_rejects_tags() {
     );
 
     write_review(&review, &format!("registry.example/app@{digest}"));
-    let approved = Command::new(binary)
+    let approved = Command::new(&binary)
         .args(["admission-check", "--state-dir"])
         .arg(&state)
         .arg("--review")
@@ -50,7 +56,7 @@ fn admission_cli_approves_pins_and_rejects_tags() {
     );
 
     write_review(&review, "registry.example/app:latest");
-    let denied = Command::new(binary)
+    let denied = Command::new(&binary)
         .args(["admission-check", "--state-dir"])
         .arg(&state)
         .arg("--review")
@@ -64,7 +70,7 @@ fn admission_cli_approves_pins_and_rejects_tags() {
             .contains("\"allowed\": false")
     );
 
-    let audit = Command::new(binary)
+    let audit = Command::new(&binary)
         .args(["runtime-audit-verify", "--state-dir"])
         .arg(&state)
         .args(["--runtime", "admission"])
