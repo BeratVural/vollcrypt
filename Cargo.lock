@@ -1327,25 +1327,24 @@ dependencies = [
 
 [[package]]
 name = "cryptoki"
-version = "0.7.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60d645cc2c5faf466571c0c752d39d8fbc2746773b2f043ac8f9cd73bec55db9"
+checksum = "ff765b99fc49f3116c9a908484486a2b92fd73c48da45c3a69716471c6cc56c6"
 dependencies = [
- "bitflags 1.3.2",
+ "bitflags 2.13.0",
  "cryptoki-sys",
- "libloading 0.7.4",
+ "libloading 0.8.9",
  "log",
- "paste",
- "secrecy",
+ "secrecy 0.10.3",
 ]
 
 [[package]]
 name = "cryptoki-sys"
-version = "0.1.8"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "750380200f47d4ff677be725b6e0d78b590e1d0343573dcd4b62147f25dc6efa"
+checksum = "f1fd850498411e4057f1cba79e6e2bc7cbe960544c1046ab46d4685c403a1121"
 dependencies = [
- "libloading 0.7.4",
+ "libloading 0.8.9",
 ]
 
 [[package]]
@@ -4395,12 +4394,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "paste"
-version = "1.0.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
 name = "pathdiff"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5588,6 +5581,15 @@ name = "secrecy"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9bd1c54ea06cfd2f6b63219704de0b9b4f72dcc2b8fdef820be6cd799780e91e"
+dependencies = [
+ "zeroize",
+]
+
+[[package]]
+name = "secrecy"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e891af845473308773346dc847b2c23ee78fe442e0472ac50e22a18a93d3ae5a"
 dependencies = [
  "zeroize",
 ]
@@ -7452,7 +7454,7 @@ dependencies = [
  "once_cell",
  "rand 0.8.6",
  "sea-orm",
- "secrecy",
+ "secrecy 0.8.0",
  "sha2 0.10.9",
  "zeroize",
 ]
