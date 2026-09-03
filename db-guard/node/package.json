@@ -98,7 +98,7 @@
     }
   },
   "devDependencies": {
-    "@prisma/client": "^5.0.0",
+    "@prisma/client": "^7.10.0",
     "@types/node": "^20.11.0",
     "@types/pg": "^8.20.0",
     "drizzle-orm": "^0.45.2",
