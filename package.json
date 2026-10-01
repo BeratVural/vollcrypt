@@ -22,7 +22,7 @@
     "format": "cargo fmt --all"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^2.18.4",
+    "@napi-rs/cli": "^3.10.5",
     "@types/node": "^25.3.0"
   }
 }
