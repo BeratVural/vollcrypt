@@ -7472,7 +7472,7 @@ dependencies = [
  "tokio",
  "vollcrypt-files-core",
  "windows 0.61.3",
- "windows-core 0.61.2",
+ "windows-core 0.62.2",
  "windows-future",
  "zeroize",
 ]
